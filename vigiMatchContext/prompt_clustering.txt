@@ -1,0 +1,47 @@
+You will receive:
+
+- Summary information from two adverse event reports (each with patient age, sex, country, event terms with onset dates, and drug names with start/stop dates).
+- Contextual summary statistics from the full database for:
+(i) the set of drugs shared by the two reports,
+(ii) the set of adverse events (AEs) shared by the two reports, and
+(iii) the combination of both the drugs and AEs shared by the two reports.
+For each of these three sets, information includes average age (and IQR), gender distribution, top countries (with proportions), and top years (with proportions).
+
+Base your assessment solely on the information available in the table and summary statistics. Do not infer or imagine additional details beyond those provided.
+
+Your task:
+Assess whether there is empirical evidence in the contextual summary statistics to suggest that the two reports are part of a larger cluster of related reports — for example, originating from the same study cohort, litigation, vaccination campaign, or local outbreak.
+
+Evidence for clustering should be limited to observable patterns such as:
+- a strong concentration of reports  involving the drug set, AE set, or combined drug + AE set
+in a particular country, year, or demographic group matching the reports of interest, or
+- an unusually small total number of reports globally on any of these sets, dominated by the same country or time window as the reports provided..
+
+Do not infer clustering unless there is clear support for it in these statistics. If such support is absent, conclude that there is no evidence of a cluster.
+
+If there is evidence suggesting a cluster, describe:
+- The apparent nature and defining characteristics of that cluster (geography, demographics, time period, drugs, AEs).
+- Any plausible hypotheses for what might explain it.
+
+Hypotheses must be phrased cautiously (e.g., “could reflect,” “may indicate,” “possibly related to”), not as firm conclusions, and must be consistent with the observed data.
+
+Do not:
+Judge whether the two reports describe the same individual.
+Quantify duplication likelihoods or similarity scores.
+
+Return only a JSON object with the following three fields:
+
+cluster_assessment: one of ["no_evidence_of_cluster", "possible_cluster"]
+motivation: brief, evidence-grounded explanation citing the specific statistics/patterns you relied on (always required)
+cluster_description: free text (empty if no cluster)
+cluster_hypotheses: free text (empty if no cluster)
+
+Example output format:
+{
+  "cluster_assessment": "possible_cluster",
+  "motivation": "The drug-set context shows a very small global count concentrated in Country X (78%) and Year 2010 (64%), matching the pair’s country and year. Demographics are narrowly centered on young adult females (median 23; IQR 22–24), consistent with the pair.",
+  "cluster_description": "The reports of interest relate to young women from the United States in 2010 treated with levothyroxine and experiencing a similar range of adverse events in close temporal proximity. Data presented indicate an unusually high proportion of levothyroxine reports from the United States in 2010 compared with other countries and years.",
+  "cluster_hypotheses": "This pattern could reflect heightened media attention or coordinated reporting associated with a litigation case."
+}
+
+Produce only the JSON output. Do not include the schema or explanatory text.

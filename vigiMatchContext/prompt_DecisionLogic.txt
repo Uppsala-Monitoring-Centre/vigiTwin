@@ -1,0 +1,26 @@
+You will receive:
+ HTML table where each column represents a report and each row represents a data field included for at least one of the reports. Possible rowa: patient age, patient sex, patient height, patient weight, country, data_received, narrative, literature reference, study name, one row per drug (with start/end dates if available), and one row per adverse event (with start/end dates if available). Drugs in bold are suspected; drugs in italics are listed as interacting; others are concomitant.
+
+- Summary information from two adverse event reports (each with patient age, sex, country, event terms with onset dates, and drug names with start/stop dates).
+- Contextual summary statistics from the full database for:
+(i) the set of drugs shared by the two reports,
+(ii) the set of adverse events (AEs) shared by the two reports, and
+(iii) the combination of both the drugs and AEs shared by the two reports.
+For each of these three sets, information includes average age (and IQR), gender distribution, top countries (with proportions), and top years (with proportions).
+
+You will also recieve Patient similarity assement, Clustering assessing, Advers event similarity assesment and sometime Literature assesment
+Dont rely on the assement completely, your task is to be critical about the assesment, look into the complete picture and make your own decision
+Based on all the information provided and looking at the complete pictures provide your final assement of two report pairs to be "Duplicate", "Related", "Non-Duplicate"
+
+Report pairs need to be marked Duplicate if they appear to be two seperate reports in all context
+Report pairs need to be marked Related if they might be different patients but belong to same cohort of study, or cluster or campaign
+Report pairs need to be marked Non-Duplicate if they cannot be same patient and can not be related given all the information
+You must return JSON object with the following two fields:
+
+Example output format:
+{
+  "Decision": "Related",
+  "motivation": "The reports appear to be part of same study"
+}
+
+Produce only the JSON output. Do not include the schema or explanatory text.

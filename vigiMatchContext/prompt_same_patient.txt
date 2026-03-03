@@ -1,0 +1,65 @@
+You will be given an HTML table where each row represents a report and each column represents a data field included for at least one of the reports.
+Possible rows: patient age, patient sex, patient height, patient weight, country, data_received, narrative, literature reference, study name, one row per drug (with start/end dates if available), and one row per adverse event (with start/end dates if available).
+Drugs in bold are suspected; drugs in italics are listed as interacting; others are concomitant.
+
+Base your assessment solely on information that helps determine whether the two reports describe the same individual.
+Completely ignore any details about adverse events, event descriptions, symptoms, outcomes, or medical terms related to the events.
+Such details must never influence your decision.
+
+Task:
+You are given two adverse event reports. Assess whether they likely describe the same individual.
+Ignore whether they describe the same event, the same clinical episode, or the same time period.
+Ignore all content about adverse events.
+
+Inputs:
+Report 1 and Report 2 with drugs (and dates), patient demographics (age, sex, height, weight, country), and any helpful context (e.g., report source).
+
+Demographics for Common Drugs table summarizing how often the shared drug combination co-occurs in the database and its overall demographic profile (age distribution, gender split, countries, years).
+
+How to reason (use two pillars):
+
+Pillar A – Demographics
+Consider age, sex, height, weight (weight may vary), and country (duplicates can cross countries via travel/multinational reporting especially for cases derived from scientific publication - so-called literature cases).
+
+Treat major contradictions (e.g., male vs female; incompatible age like toddler vs elderly) as compelling evidence for different.
+
+Treat close alignment (e.g., exact matches on height/weight or age) as compelling evidence of same, if drug combination is rare or treatment dates match exactly.
+
+
+Pillar B – Drug-regimen similarity (including rarity/context)
+Use drug names, treatment dates/timing, purpose/indication if available, and the provided “Demographics for Common Drugs” table.
+
+Compelling for same if regimens are nearly identical and several treatment dates match (allowing for some missing values), or if the shared drug combination is rare and demographics/timing align.
+
+Compelling for different if there are clear regimen contradictions (distinct, largely non-overlapping drug sets (each report includes several drugs not listed on the other), or incompatible treatment periods for the same drugs).
+
+In the absence of compelling information either way, always output "unclear" (abstain). Only give "same" or "different" when you are completely sure. In case of any uncertainity be conservative and give "unclear"
+
+Do not infer beyond available data.
+
+Integrate both pillars when deciding: compelling evidence from either pillar may be sufficient for “different,” but both should generally support “same.”
+
+Respond only with a single valid JSON object exactly matching the key names below (no explanations, no Markdown, no text outside the JSON block):
+
+{
+  "same_individual_assessment": "same | different | unclear",
+  "motivation": "1–2 sentences summarizing key evidence from demographics and drug-regimen (including rarity/context)."
+}
+
+
+Example outputs:
+
+{
+  "same_individual_assessment": "same",
+  "motivation": "Reports both describe a 48 year old male weighing 85 kg with identical atorvastatin, pregabalin, omeprazole, and lisinopril regimens, which is uncommon, supporting same individual."
+}
+
+{
+  "same_individual_assessment": "different",
+  "motivation": "Whereas both reports describe 27-year-old females on isotretinoin, one refers to a treatment start date on Feb 12 2012 with concomitant terbinafine and the other to a treatment start date in March 2014 with concomitant fluoxetine."
+}
+
+{
+  "same_individual_assessment": "unclear",
+  "motivation": "Both reports are for 24 year olds but patient sex is missing. The two matching drugs are commonly used together and since one of the reports lacks information on drug start and end dates, there is insufficient information either way."
+}
