@@ -18,11 +18,16 @@ from html import escape as _escape
 # Local packages
 from lib.constants import TARGET_DB
 from lib.data_extraction import (
-    fetch_report_counts_for_common_drugs,
-    fetch_report_counts_for_common_reactions,
-    fetch_demographic_for_give_reports_ids_via_temp_table,
+
     Report,
 )
+
+from lib.data_extraction_demographics import (
+    fetch_drug_demographics_summary, 
+    fetch_reaction_demographics_summary, 
+fetch_drug_reaction_demographics_summary)
+
+
 from lib.util import is_missing
 
 
@@ -47,93 +52,314 @@ def clean_age_column(df):
 # ----------------------------------------------------------------------------------------------
 
 
+# def create_reports_overview(report1: Report, report2: Report):
+#     """
+#     Return three HTML snippets:
+#       1) drug_reaction_summary_html  -> demographics for reports sharing BOTH common drugs & common AEs
+#       2) drug_summary_html           -> demographics for reports sharing common drugs
+#       3) reaction_summary_html       -> demographics for reports sharing common AEs
+#     """
+
+#     # --- Common drug names ---
+#     drug_name_rep1 = {drug.drug_name for drug in report1.drugs}
+#     drug_name_rep2 = {drug.drug_name for drug in report2.drugs}
+#     common_drug_names = drug_name_rep1 & drug_name_rep2
+
+#     if not common_drug_names:
+#         drug_summary_html = (
+#             "<section><h3>Common Drugs</h3>"
+#             "<p><em>No common drugs found in the two reports.</em></p></section>"
+#         )
+#         drug_report_ids = set()
+#     else:
+#         print(f"fetching common drug reports for: {common_drug_names}")
+#         common_drug_reports = fetch_report_counts_for_common_drugs(
+#             common_drug_names, TARGET_DB
+#         )
+#         print( " function retunned length: ", len(common_drug_reports))
+#         # Ensure we have a set of IDs to intersect later (handles both DF/Series/iterables)
+#         drug_report_ids = set(common_drug_reports["ReportID"])
+#         print(f"fetched demographics for common drug reports for {len(drug_report_ids)} reports")
+#         drug_demo = fetch_demographic_for_give_reports_ids_via_temp_table(
+#             common_drug_reports, TARGET_DB
+#         )
+#         print(len(drug_demo), "demographic records fetched for common drug reports")
+#         drug_demo = clean_age_column(drug_demo)  # Clean the age column
+#         drug_summary_html = summary_of_demographics_html(
+#             drug_demo, common_names=common_drug_names, title_heading="Common Drugs"
+#         )
+
+#     # --- Common adverse event (reaction) names ---
+#     Reaction_name_rep1 = {React.pt_name for React in report1.reactions}
+#     Reaction_name_rep2 = {React.pt_name for React in report2.reactions}
+#     common_Reaction_names = Reaction_name_rep1 & Reaction_name_rep2
+
+#     if not common_Reaction_names:
+#         reaction_summary_html = (
+#             "<section><h3>Common Adverse Events</h3>"
+#             "<p><em>No common adverse events found in the two reports.</em></p></section>"
+#         )
+#         react_report_ids = set()
+#     else:
+#         print(f"fetching common reaction reports for: {common_Reaction_names}")
+#         common_react_reports = fetch_report_counts_for_common_reactions(
+#             common_Reaction_names, TARGET_DB
+#         )
+#         print(f"fetching demographics for common reaction reports")
+#         react_report_ids = set(common_react_reports["ReportID"])
+#         reaction_demo = fetch_demographic_for_give_reports_ids_via_temp_table(
+#             common_react_reports, TARGET_DB
+#         )
+#         reaction_demo = clean_age_column(reaction_demo)  # Clean the age column
+#         reaction_summary_html = summary_of_demographics_html(
+#             reaction_demo,
+#             common_names=common_Reaction_names,
+#             title_heading="Common Adverse Events",
+#         )
+
+#     # --- Common drug–AE pairs (intersection of report IDs) ---
+#     both_ids = drug_report_ids & react_report_ids
+#     if not both_ids:
+#         drug_reaction_summary_html = (
+#             "<section><h3>Common Drug–Adverse Event Pairs</h3>"
+#             "<p><em>No common drug–adverse event pairs found in the two reports.</em></p></section>"
+#         )
+#     else:
+#         # If your temp-table helper accepts an iterable of IDs directly, pass both_ids;
+#         # otherwise wrap as the expected structure (e.g., DataFrame/Series with 'ReportID').
+#         drug_reaction_demo = fetch_demographic_for_give_reports_ids_via_temp_table(
+#             both_ids, TARGET_DB
+#         )
+#         drug_reaction_demo = clean_age_column(
+#             drug_reaction_demo
+#         )  # Clean the age column
+#         # both_names = common_drug_names.union(common_Reaction_names)
+#         both_names = list(common_drug_names) + list(common_Reaction_names)
+
+#         drug_reaction_summary_html = summary_of_demographics_html(
+#             drug_reaction_demo,
+#             common_names=both_names,
+#             title_heading="Common Drug–Adverse Event",
+#         )
+
+#     # Return the three pieces so you can place them independently
+#     return drug_reaction_summary_html, drug_summary_html, reaction_summary_html
+
+
+# ======================================================================
+# HTML RENDERER  (unchanged from previous refactor)
+# ======================================================================
+
+def summary_of_demographics_html_from_summary(
+    summary_df: pd.DataFrame,
+    common_names: list[str],
+    title_heading: str,
+    reporter_countries: tuple[str, ...] = (),   # highlight these in the countries table
+) -> str:
+    names_str = ", ".join(common_names) if common_names else "Selection"
+
+    if summary_df is None or summary_df.empty:
+        return (
+            f"<section style='margin-top:1.5em'>"
+            f"  <h3>Demographics for {title_heading} ({_escape(names_str)})</h3>"
+            f"  <p><em>No records available.</em></p>"
+            f"</section>"
+        )
+
+    def _get(section, metric):
+        row = summary_df[
+            (summary_df["section"] == section) & (summary_df["metric"] == metric)
+        ]
+        return None if row.empty else row.iloc[0]["value"]
+
+    def fmt(x):
+        return "NA" if x is None or (isinstance(x, float) and np.isnan(x)) else str(int(x))
+
+    def _render_overview(section_prefix):
+        total_reports = _get(section_prefix, "total_reports")
+        avg_age       = _get(section_prefix, "avg_age")
+        q1            = _get(section_prefix, "q1_age")
+        q3            = _get(section_prefix, "q3_age")
+        return total_reports, avg_age, q1, q3
+
+    def _render_sex(section_prefix):
+        sex_df = summary_df[summary_df["section"] == section_prefix].copy()
+        def sex_pct(label):
+            row = sex_df[sex_df["metric"].str.title() == label]
+            return int(row.iloc[0]["pct"]) if not row.empty else 0
+        return sex_pct("Male"), sex_pct("Female"), sex_pct("Unknown")
+
+    total_reports, avg_age, q1, q3 = _render_overview("overview")
+    pct_male, pct_female, pct_unknown = _render_sex("sex")
+
+    countries_df = summary_df[summary_df["section"] == "country"].sort_values("metric")
+    years_df     = summary_df[summary_df["section"] == "year"].sort_values("metric")
+
+    html = []
+    html.append("<section style='margin-top:1.5em'>")
+    html.append(f"<h3>Demographics for {title_heading} ({_escape(names_str)})</h3>")
+
+    html.append("  <table border='1' cellspacing='0' cellpadding='5' style='margin-top:0.5em'>")
+    html.append("    <thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>")
+    html.append(f"      <tr><td>Total Reports</td><td>{_escape(fmt(total_reports))}</td></tr>")
+    html.append(
+        f"      <tr><td>Average Age (Q1–Q3)</td>"
+        f"<td>{_escape(fmt(avg_age))} (Q1={_escape(fmt(q1))}, Q3={_escape(fmt(q3))})</td></tr>"
+    )
+    html.append("    </tbody></table>")
+
+    html.append("  <h4 style='margin-top:1em'>Gender Distribution</h4>")
+    html.append("  <table border='1' cellspacing='0' cellpadding='5'>")
+    html.append("    <thead><tr><th>Male</th><th>Female</th><th>Unknown</th></tr></thead>")
+    html.append(
+        f"    <tbody><tr><td>{pct_male}%</td><td>{pct_female}%</td><td>{pct_unknown}%</td></tr></tbody>"
+    )
+    html.append("  </table>")
+
+    html.append("  <h4 style='margin-top:1em'>Top Reporting Countries</h4>")
+    if countries_df.empty:
+        html.append("  <p><em>No country data.</em></p>")
+    else:
+        # normalise reporter countries for comparison
+        rc_set = {c for c in reporter_countries if c}
+        # split into top-3 and reporter-country-only rows
+        all_countries = countries_df.copy()
+        top3 = all_countries[all_countries["metric"].astype(int) <= 3]
+        rc_rows = all_countries[
+            all_countries["label"].isin(rc_set) &
+            (all_countries["metric"].astype(int) > 3)
+        ] if rc_set else all_countries.iloc[0:0]
+
+        html.append("  <table border='1' cellspacing='0' cellpadding='5'>")
+        html.append("    <thead><tr><th>Country</th><th>Share of records</th><th>Count</th></tr></thead><tbody>")
+
+        # render top 3
+        for _, row in top3.iterrows():
+            country_name = str(row['label'])
+            style = " style='background:#fffbdd'" if country_name in rc_set else ""
+            tag = f" <small><em>(reporter country)</em></small>" if country_name in rc_set else ""
+            html.append(
+                f"      <tr{style}><td>{_escape(country_name)}{tag}</td>"
+                f"<td>{int(row['pct'])}%</td><td>{int(row['value'])}</td></tr>"
+            )
+
+        # render reporter countries outside top 3 with a separator row
+        if not rc_rows.empty:
+            html.append(
+                "      <tr><td colspan='3' style='background:#f0f0f0; font-size:0.8em; "                "padding:2px 5px'><em>Reporter countries (outside top 3)</em></td></tr>"
+            )
+            for _, row in rc_rows.iterrows():
+                country_name = str(row['label'])
+                html.append(
+                    f"      <tr style='background:#fffbdd'><td>{_escape(country_name)}"                    f" <small><em>(reporter country)</em></small></td>"
+                    f"<td>{int(row['pct'])}%</td><td>{int(row['value'])}</td></tr>"
+                )
+
+        html.append("    </tbody></table>")
+
+    html.append("  <h4 style='margin-top:1em'>Top Years</h4>")
+    if years_df.empty:
+        html.append("  <p><em>No year data.</em></p>")
+    else:
+        html.append("  <table border='1' cellspacing='0' cellpadding='5'>")
+        html.append("    <thead><tr><th>Year</th><th>Share of records</th><th>Count</th></tr></thead><tbody>")
+        for _, row in years_df.iterrows():
+            html.append(
+                f"      <tr><td>{_escape(str(row['label']))}</td>"
+                f"<td>{int(row['pct'])}%</td><td>{int(row['value'])}</td></tr>"
+            )
+        html.append("    </tbody></table>")
+
+    html.append("</section>")
+    return "".join(html)
+
+
+# ======================================================================
+# MAIN ENTRY POINT  — drop-in replacement for create_reports_overview()
+# Same signature, same return value, no temp tables, no Python set ops.
+# ======================================================================
+
 def create_reports_overview(report1: Report, report2: Report):
     """
     Return three HTML snippets:
-      1) drug_reaction_summary_html  -> demographics for reports sharing BOTH common drugs & common AEs
-      2) drug_summary_html           -> demographics for reports sharing common drugs
-      3) reaction_summary_html       -> demographics for reports sharing common AEs
+      1) drug_reaction_summary_html  — demographics for reports with BOTH common drugs & AEs
+      2) drug_summary_html           — demographics for reports with common drugs
+      3) reaction_summary_html       — demographics for reports with common AEs
+
+    Reporter countries from report1/report2 are highlighted in the
+    Top Reporting Countries table of each section.
     """
 
-    # --- Common drug names ---
-    drug_name_rep1 = {drug.drug_name for drug in report1.drugs}
-    drug_name_rep2 = {drug.drug_name for drug in report2.drugs}
-    common_drug_names = drug_name_rep1 & drug_name_rep2
+    # ---- common names ------------------------------------------------
+    common_drug_names = (
+        {d.drug_name for d in report1.drugs} & {d.drug_name for d in report2.drugs}
+    )
+    common_reaction_names = (
+        {r.pt_name for r in report1.reactions} & {r.pt_name for r in report2.reactions}
+    )
 
-    if not common_drug_names:
+    # sort so joblib cache key is consistent regardless of set ordering
+    drug_names     = sorted(common_drug_names)
+    reaction_names = sorted(common_reaction_names)
+
+    # ---- reporter countries — for highlighting only, not SQL params -----
+    def _clean_country(c):
+        if not c or str(c).lower() in ("unknown", "none", ""):
+            return None
+        return c
+
+    reporter_countries = tuple(
+        c for c in (_clean_country(getattr(report1, "country", None)),
+                    _clean_country(getattr(report2, "country", None)))
+        if c is not None
+    )
+
+    # ---- drugs -------------------------------------------------------
+    if not drug_names:
         drug_summary_html = (
             "<section><h3>Common Drugs</h3>"
             "<p><em>No common drugs found in the two reports.</em></p></section>"
         )
-        drug_report_ids = set()
     else:
-        common_drug_reports = fetch_report_counts_for_common_drugs(
-            common_drug_names, TARGET_DB
-        )
-        # Ensure we have a set of IDs to intersect later (handles both DF/Series/iterables)
-        drug_report_ids = set(common_drug_reports["ReportID"])
-        drug_demo = fetch_demographic_for_give_reports_ids_via_temp_table(
-            common_drug_reports, TARGET_DB
-        )
-        drug_demo = clean_age_column(drug_demo)  # Clean the age column
-        drug_summary_html = summary_of_demographics_html(
-            drug_demo, common_names=common_drug_names, title_heading="Common Drugs"
+        print(f"Fetching drug demographics for: {drug_names}")
+        df = fetch_drug_demographics_summary(tuple(drug_names), TARGET_DB)
+        drug_summary_html = summary_of_demographics_html_from_summary(
+            df, common_names=drug_names, title_heading="Common Drugs",
+            reporter_countries=reporter_countries,
         )
 
-    # --- Common adverse event (reaction) names ---
-    Reaction_name_rep1 = {React.pt_name for React in report1.reactions}
-    Reaction_name_rep2 = {React.pt_name for React in report2.reactions}
-    common_Reaction_names = Reaction_name_rep1 & Reaction_name_rep2
-
-    if not common_Reaction_names:
+    # ---- reactions ---------------------------------------------------
+    if not reaction_names:
         reaction_summary_html = (
             "<section><h3>Common Adverse Events</h3>"
             "<p><em>No common adverse events found in the two reports.</em></p></section>"
         )
-        react_report_ids = set()
     else:
-        common_react_reports = fetch_report_counts_for_common_reactions(
-            common_Reaction_names, TARGET_DB
-        )
-        react_report_ids = set(common_react_reports["ReportID"])
-        reaction_demo = fetch_demographic_for_give_reports_ids_via_temp_table(
-            common_react_reports, TARGET_DB
-        )
-        reaction_demo = clean_age_column(reaction_demo)  # Clean the age column
-        reaction_summary_html = summary_of_demographics_html(
-            reaction_demo,
-            common_names=common_Reaction_names,
-            title_heading="Common Adverse Events",
+        print(f"Fetching reaction demographics for: {reaction_names}")
+        df = fetch_reaction_demographics_summary(tuple(reaction_names), TARGET_DB)
+        reaction_summary_html = summary_of_demographics_html_from_summary(
+            df, common_names=reaction_names, title_heading="Common Adverse Events",
+            reporter_countries=reporter_countries,
         )
 
-    # --- Common drug–AE pairs (intersection of report IDs) ---
-    both_ids = drug_report_ids & react_report_ids
-    if not both_ids:
+    # ---- intersection ------------------------------------------------
+    if not drug_names or not reaction_names:
         drug_reaction_summary_html = (
             "<section><h3>Common Drug–Adverse Event Pairs</h3>"
             "<p><em>No common drug–adverse event pairs found in the two reports.</em></p></section>"
         )
     else:
-        # If your temp-table helper accepts an iterable of IDs directly, pass both_ids;
-        # otherwise wrap as the expected structure (e.g., DataFrame/Series with 'ReportID').
-        drug_reaction_demo = fetch_demographic_for_give_reports_ids_via_temp_table(
-            both_ids, TARGET_DB
+        print("Fetching drug+reaction intersection demographics")
+        df = fetch_drug_reaction_demographics_summary(
+            tuple(drug_names), tuple(reaction_names), TARGET_DB
         )
-        drug_reaction_demo = clean_age_column(
-            drug_reaction_demo
-        )  # Clean the age column
-        # both_names = common_drug_names.union(common_Reaction_names)
-        both_names = list(common_drug_names) + list(common_Reaction_names)
-
-        drug_reaction_summary_html = summary_of_demographics_html(
-            drug_reaction_demo,
-            common_names=both_names,
-            title_heading="Common Drug–Adverse Event",
+        both_names = drug_names + reaction_names
+        drug_reaction_summary_html = summary_of_demographics_html_from_summary(
+            df, common_names=both_names, title_heading="Common Drug–Adverse Event",
+            reporter_countries=reporter_countries,
         )
 
-    # Return the three pieces so you can place them independently
     return drug_reaction_summary_html, drug_summary_html, reaction_summary_html
-
 
 def _sanitize_text(val):
     """Remove LaTeX-style backslash escapes and normalize to plain text."""
