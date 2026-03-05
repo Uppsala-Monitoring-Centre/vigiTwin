@@ -146,15 +146,17 @@ def clean_age_column(df):
 #     return drug_reaction_summary_html, drug_summary_html, reaction_summary_html
 
 
+
 # ======================================================================
 # HTML RENDERER  (unchanged from previous refactor)
 # ======================================================================
+
 
 def summary_of_demographics_html_from_summary(
     summary_df: pd.DataFrame,
     common_names: list[str],
     title_heading: str,
-    reporter_countries: tuple[str, ...] = (),   # highlight these in the countries table
+    reporter_countries: tuple[str, ...] = (),
 ) -> str:
     names_str = ", ".join(common_names) if common_names else "Selection"
 
@@ -175,22 +177,19 @@ def summary_of_demographics_html_from_summary(
     def fmt(x):
         return "NA" if x is None or (isinstance(x, float) and np.isnan(x)) else str(int(x))
 
-    def _render_overview(section_prefix):
-        total_reports = _get(section_prefix, "total_reports")
-        avg_age       = _get(section_prefix, "avg_age")
-        q1            = _get(section_prefix, "q1_age")
-        q3            = _get(section_prefix, "q3_age")
-        return total_reports, avg_age, q1, q3
+    total_reports = _get("overview", "total_reports")
+    avg_age       = _get("overview", "avg_age")
+    q1            = _get("overview", "q1_age")
+    q3            = _get("overview", "q3_age")
 
-    def _render_sex(section_prefix):
-        sex_df = summary_df[summary_df["section"] == section_prefix].copy()
-        def sex_pct(label):
-            row = sex_df[sex_df["metric"].str.title() == label]
-            return int(row.iloc[0]["pct"]) if not row.empty else 0
-        return sex_pct("Male"), sex_pct("Female"), sex_pct("Unknown")
+    sex_df = summary_df[summary_df["section"] == "sex"].copy()
+    def sex_pct(label):
+        row = sex_df[sex_df["metric"].str.title() == label]
+        return int(row.iloc[0]["pct"]) if not row.empty else 0
 
-    total_reports, avg_age, q1, q3 = _render_overview("overview")
-    pct_male, pct_female, pct_unknown = _render_sex("sex")
+    pct_male    = sex_pct("Male")
+    pct_female  = sex_pct("Female")
+    pct_unknown = sex_pct("Unknown")
 
     countries_df = summary_df[summary_df["section"] == "country"].sort_values("metric")
     years_df     = summary_df[summary_df["section"] == "year"].sort_values("metric")
@@ -220,41 +219,38 @@ def summary_of_demographics_html_from_summary(
     if countries_df.empty:
         html.append("  <p><em>No country data.</em></p>")
     else:
-        # normalise reporter countries for comparison
         rc_set = {c for c in reporter_countries if c}
-        # split into top-3 and reporter-country-only rows
-        all_countries = countries_df.copy()
-        top3 = all_countries[all_countries["metric"].astype(int) <= 3]
-        rc_rows = all_countries[
-            all_countries["label"].isin(rc_set) &
-            (all_countries["metric"].astype(int) > 3)
-        ] if rc_set else all_countries.iloc[0:0]
+        top3   = countries_df[countries_df["metric"].astype(int) <= 3]
+        rc_rows = (
+            countries_df[
+                countries_df["label"].isin(rc_set) &
+                (countries_df["metric"].astype(int) > 3)
+            ]
+            if rc_set else countries_df.iloc[0:0]
+        )
 
         html.append("  <table border='1' cellspacing='0' cellpadding='5'>")
         html.append("    <thead><tr><th>Country</th><th>Share of records</th><th>Count</th></tr></thead><tbody>")
-
-        # render top 3
         for _, row in top3.iterrows():
-            country_name = str(row['label'])
+            country_name = str(row["label"])
             style = " style='background:#fffbdd'" if country_name in rc_set else ""
-            tag = f" <small><em>(reporter country)</em></small>" if country_name in rc_set else ""
+            tag   = " <small><em>(reporter country)</em></small>" if country_name in rc_set else ""
             html.append(
                 f"      <tr{style}><td>{_escape(country_name)}{tag}</td>"
                 f"<td>{int(row['pct'])}%</td><td>{int(row['value'])}</td></tr>"
             )
-
-        # render reporter countries outside top 3 with a separator row
         if not rc_rows.empty:
             html.append(
-                "      <tr><td colspan='3' style='background:#f0f0f0; font-size:0.8em; "                "padding:2px 5px'><em>Reporter countries (outside top 3)</em></td></tr>"
+                "      <tr><td colspan='3' style='background:#f0f0f0; font-size:0.8em; "
+                "padding:2px 5px'><em>Reporter countries (outside top 3)</em></td></tr>"
             )
             for _, row in rc_rows.iterrows():
-                country_name = str(row['label'])
+                country_name = str(row["label"])
                 html.append(
-                    f"      <tr style='background:#fffbdd'><td>{_escape(country_name)}"                    f" <small><em>(reporter country)</em></small></td>"
+                    f"      <tr style='background:#fffbdd'><td>{_escape(country_name)}"
+                    f" <small><em>(reporter country)</em></small></td>"
                     f"<td>{int(row['pct'])}%</td><td>{int(row['value'])}</td></tr>"
                 )
-
         html.append("    </tbody></table>")
 
     html.append("  <h4 style='margin-top:1em'>Top Years</h4>")
@@ -275,8 +271,7 @@ def summary_of_demographics_html_from_summary(
 
 
 # ======================================================================
-# MAIN ENTRY POINT  — drop-in replacement for create_reports_overview()
-# Same signature, same return value, no temp tables, no Python set ops.
+# MAIN ENTRY POINT
 # ======================================================================
 
 def create_reports_overview(report1: Report, report2: Report):
@@ -290,27 +285,23 @@ def create_reports_overview(report1: Report, report2: Report):
     Top Reporting Countries table of each section.
     """
 
-    # ---- common names ------------------------------------------------
-    common_drug_names = (
-        {d.drug_name for d in report1.drugs} & {d.drug_name for d in report2.drugs}
-    )
-    common_reaction_names = (
-        {r.pt_name for r in report1.reactions} & {r.pt_name for r in report2.reactions}
-    )
+    common_drug_names     = {d.drug_name for d in report1.drugs} & {d.drug_name for d in report2.drugs}
+    common_reaction_names = {r.pt_name   for r in report1.reactions} & {r.pt_name for r in report2.reactions}
 
-    # sort so joblib cache key is consistent regardless of set ordering
+    # Sort so joblib cache key is consistent regardless of set ordering
     drug_names     = sorted(common_drug_names)
     reaction_names = sorted(common_reaction_names)
 
-    # ---- reporter countries — for highlighting only, not SQL params -----
     def _clean_country(c):
         if not c or str(c).lower() in ("unknown", "none", ""):
             return None
         return c
 
     reporter_countries = tuple(
-        c for c in (_clean_country(getattr(report1, "country", None)),
-                    _clean_country(getattr(report2, "country", None)))
+        c for c in (
+            _clean_country(getattr(report1, "country", None)),
+            _clean_country(getattr(report2, "country", None)),
+        )
         if c is not None
     )
 
@@ -353,13 +344,14 @@ def create_reports_overview(report1: Report, report2: Report):
         df = fetch_drug_reaction_demographics_summary(
             tuple(drug_names), tuple(reaction_names), TARGET_DB
         )
-        both_names = drug_names + reaction_names
         drug_reaction_summary_html = summary_of_demographics_html_from_summary(
-            df, common_names=both_names, title_heading="Common Drug–Adverse Event",
+            df, common_names=drug_names + reaction_names,
+            title_heading="Common Drug–Adverse Event",
             reporter_countries=reporter_countries,
         )
 
     return drug_reaction_summary_html, drug_summary_html, reaction_summary_html
+
 
 def _sanitize_text(val):
     """Remove LaTeX-style backslash escapes and normalize to plain text."""
