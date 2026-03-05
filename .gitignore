@@ -27,3 +27,11 @@ Thumbs.db
 *.pem
 *.key
 *.crt
+
+# Data files
+*.csv
+*.parquet
+*.pkl
+*.feather
+*.json
+*.xlsx
