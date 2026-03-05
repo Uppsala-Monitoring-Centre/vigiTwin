@@ -132,9 +132,9 @@ def _literature_shortcuts(literature_json: Any) -> Tuple[str, List[str]]:
         return "Duplicates", reasons
     if multi and cohort:
         reasons.append(
-            "Literature: multiple cases in same paper ⇒ Related (upgrade possible with same-patient evidence)."
+            "Literature: multiple cases in same paper ⇒ Otherwise_related (upgrade possible with same-patient evidence)."
         )
-        return "Related", reasons
+        return "Otherwise_related", reasons
 
     if su or mu or cu:
         reasons.append(
@@ -167,7 +167,7 @@ def classify_pair(
         reasons.extend(lit_reasons)
 
     # If literature already forces Duplicates, exit.
-    allow_upgrade = early_label == "Related"
+    allow_upgrade = early_label == "Otherwise_related"
     ae_sim, ae_expl = _ae_similar(ae_json)
     reasons.append(ae_expl)
     cluster, cl_expl = _cluster_flag(clustering_json)
@@ -188,34 +188,34 @@ def classify_pair(
         # N → Same patient?
         if sp == "same":
             # Y → Related (then 'Timing?' may upgrade to Duplicates)
-            reasons.append("AE not similar + same patient ⇒ Related (check Timing?).")
+            reasons.append("AE not similar + same patient ⇒ Otherwise_related (check Timing?).")
             t_ok, t_unc, t_expl = _timing_ok(same_patient_json)
             reasons.append(t_expl)
             if t_ok:  # 'Y?' path to Duplicates
                 reasons.append("Timing consistent ⇒ Duplicates.")
                 return {"label": "Duplicates", "explanation": " | ".join(reasons)}
             else:
-                reasons.append("Timing not confirmed ⇒ keep as Related.")
-                return {"label": "Related", "explanation": " | ".join(reasons)}
+                reasons.append("Timing not confirmed ⇒ keep as Otherwise_related.")
+                return {"label": "Otherwise_related", "explanation": " | ".join(reasons)}
         else:
             # N? → Non-duplicates
             reasons.append(
-                "AE not similar + not same patient/unclear ⇒ Non-duplicates."
+                "AE not similar + not same patient/unclear ⇒ Unrelated."
             )
-            return {"label": "Non-duplicates", "explanation": " | ".join(reasons)}
+            return {"label": "Unrelated", "explanation": " | ".join(reasons)}
 
     # AE similar == True
     # → Same patient?
     if sp == "different":
         # N → Cluster?
         if cluster:
-            reasons.append("AE similar + different patients + cluster ⇒ Related.")
-            return {"label": "Related", "explanation": " | ".join(reasons)}
+            reasons.append("AE similar + different patients + cluster ⇒ Otherwise_related.")
+            return {"label": "Otherwise_related", "explanation": " | ".join(reasons)}
         else:
             reasons.append(
-                "AE similar + different patients + no cluster ⇒ Non-duplicates."
+                "AE similar + different patients + no cluster ⇒ Unrelated."
             )
-            return {"label": "Non-duplicates", "explanation": " | ".join(reasons)}
+            return {"label": "Unrelated", "explanation": " | ".join(reasons)}
 
     if sp == "same":
         # Y → (diagram doesn't show timing here; treat as duplicates directly)
@@ -225,8 +225,8 @@ def classify_pair(
     # sp == 'unclear' (the '?' branch in the diagram)
     # ? → Cluster?
     if cluster:
-        reasons.append("AE similar + same patient unclear + cluster ⇒ Related.")
-        return {"label": "Related", "explanation": " | ".join(reasons)}
+        reasons.append("AE similar + same patient unclear + cluster ⇒ Otherwise_related.")
+        return {"label": "Otherwise_related", "explanation": " | ".join(reasons)}
     else:
         reasons.append("AE similar + same patient unclear + no cluster ⇒ Duplicates.")
         return {"label": "Duplicates", "explanation": " | ".join(reasons)}
@@ -249,8 +249,8 @@ def classification_result_to_html(
     # Simple label-to-color map
     color_map = {
         "Duplicates": "#198F8A",  # teal
-        "Related": "#F4B400",  # amber
-        "Non-duplicates": "#D93025",  # red
+        "Otherwise_related": "#F4B400",  # amber
+        "Unrelated": "#D93025",  # red
         "Unknown": "#5f6368",  # gray
     }
     badge_color = color_map.get(label, color_map["Unknown"])
