@@ -1,20 +1,21 @@
-from sqlalchemy import text as text, bindparam
+from sqlalchemy.engine import Engine
 import pandas as pd
-from umc_research.datascience.database import get_database_engine
-#from joblib import Memory
+import re
 
 # ======================================================================
-# CACHE SETUP
+# DROP GUARDS  – prepended to every setup block
 # ======================================================================
-# Caches query results to disk so repeated calls with the same
-# drug/reaction names skip the database entirely.
-#
-# To clear (e.g. after weekly DB refresh):
-#   demographics_cache.clear()
-# Or just delete the .demographics_cache folder manually.
-# ======================================================================
-#demographics_cache = Memory(location="./.testdemographics_cache", verbose=1)
+_DROP_TEMPS = """
+IF OBJECT_ID('tempdb..#matched_drugs')    IS NOT NULL DROP TABLE #matched_drugs;
+IF OBJECT_ID('tempdb..#matched_reactions') IS NOT NULL DROP TABLE #matched_reactions;
+IF OBJECT_ID('tempdb..#matched')          IS NOT NULL DROP TABLE #matched;
+IF OBJECT_ID('tempdb..#pt_map')           IS NOT NULL DROP TABLE #pt_map;
+IF OBJECT_ID('tempdb..#base')             IS NOT NULL DROP TABLE #base;
+"""
 
+# ======================================================================
+# SETUP QUERIES
+# ======================================================================
 _SETUP_DRUGS_ONLY = """
 SELECT ReportID
 INTO #matched
@@ -46,7 +47,7 @@ SELECT DISTINCT PT_CODE, PT_NAME
 INTO #pt_map
 FROM MeddraWeekly.Meddra.MEDDRA_MD_HIERARCHY
 WHERE PT_NAME IN ({reaction_placeholders});
-
+-- ;; --
 SELECT re.ReportID
 INTO #matched
 FROM [UMCReport].[Reaction] AS re
@@ -77,7 +78,7 @@ SELECT DISTINCT PT_CODE, PT_NAME
 INTO #pt_map
 FROM MeddraWeekly.Meddra.MEDDRA_MD_HIERARCHY
 WHERE PT_NAME IN ({reaction_placeholders});
-
+-- ;; --
 SELECT ReportID
 INTO #matched_drugs
 FROM [UMCReport].[Drug]
@@ -116,13 +117,8 @@ LEFT JOIN [Lexicon].[Sex] S
        ON S.SexID = TRY_CONVERT(TINYINT, pat.PatientSex);
 """
 
-
 # ======================================================================
 # AGGREGATION QUERY
-# ======================================================================
-# Runs AFTER the setup SQL has materialised #base in the same connection.
-# Uses DECLARE scalars so COUNT(*) is computed once, not per-row.
-# PERCENTILE_CONT now operates on the small temp table, not the raw joins.
 # ======================================================================
 _AGG_QUERY = """
 DECLARE @n             INT = (SELECT COUNT(*)                FROM #base);
@@ -157,7 +153,7 @@ country_ranked AS (
 year_ranked AS (
     SELECT
         YEAR(report_date)                          AS yr,
-        COUNT(*) AS cnt,
+        COUNT(*)                                   AS cnt,
         ROUND(100.0 * COUNT(*) / @n, 0)            AS pct,
         ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS rn
     FROM #base
@@ -181,15 +177,10 @@ FROM year_ranked WHERE rn <= 3;
 """
 
 # ======================================================================
-# PARAMETER BUILDERS
-# ======================================================================
-# IN-list placeholders must be built dynamically because SQLAlchemy's
-# expanding bindparam is not compatible with multi-statement execution
-# (which we need so temp tables persist across statements).
+# INTERNAL HELPERS
 # ======================================================================
 
 def _drug_params(drug_names: list[str]) -> tuple[str, dict]:
-    """Returns (placeholder_string, params_dict) for drug IN-list."""
     placeholders = ", ".join(f":drug_{i}" for i in range(len(drug_names)))
     params = {f"drug_{i}": name for i, name in enumerate(drug_names)}
     params["n_drugs"] = len(drug_names)
@@ -197,85 +188,80 @@ def _drug_params(drug_names: list[str]) -> tuple[str, dict]:
 
 
 def _reaction_params(reaction_names: list[str]) -> tuple[str, dict]:
-    """Returns (placeholder_string, params_dict) for reaction IN-list."""
     placeholders = ", ".join(f":rxn_{i}" for i in range(len(reaction_names)))
     params = {f"rxn_{i}": name for i, name in enumerate(reaction_names)}
     params["n_reactions"] = len(reaction_names)
     return placeholders, params
 
 
-# ======================================================================
-# CORE RUNNER
-# ======================================================================
-# Executes setup SQL (creates temp tables) and aggregation SQL in the
-# SAME connection so SQL Server temp tables remain visible.
-# Each statement is executed individually because most ODBC drivers
-# do not support multi-statement batches via execute().
-# ======================================================================
+def _bind_literals(sql: str, params: dict) -> str:
+    """Safely interpolate :name placeholders as literal SQL values."""
+    def replacer(m):
+        val = params.get(m.group(1))
+        if isinstance(val, str):
+            return f"'{val.replace(chr(39), chr(39) * 2)}'"
+        return str(val)
+    return re.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", replacer, sql)
 
-def _run_with_temps(setup_sql: str, params: dict, target_db: str) -> pd.DataFrame:
-    import re
 
-    def _bind(sql: str, params: dict) -> str:
-        """Replace :name placeholders with safely-escaped literal values."""
-        def replacer(m):
-            val = params.get(m.group(1))
-            if isinstance(val, str):
-                return f"'{val.replace(chr(39), chr(39)*2)}'"
-            return str(val)
-        return re.sub(r':([a-zA-Z_][a-zA-Z0-9_]*)', replacer, sql)
+def _execute_setup_and_aggregate(setup_sql: str, params: dict, engine: Engine) -> pd.DataFrame:
+    """
+    Opens a single raw connection, drops any leftover temp tables,
+    runs the parameterised setup SQL, then the aggregation query.
+    """
+    full_setup = _DROP_TEMPS + setup_sql
+    bound_sql  = _bind_literals(full_setup, params)
+    statements = [s.strip() for s in bound_sql.split("-- ;; --") if s.strip()]
 
-    engine = get_database_engine(target_db, driver="{ODBC Driver 18 for SQL Server}")
     raw_conn = engine.raw_connection()
     try:
         cursor = raw_conn.cursor()
-        for stmt in [s.strip() for s in _bind(setup_sql, params).split("-- ;; --") if s.strip()]:
+        for stmt in statements:
             cursor.execute(stmt)
         cursor.execute(_AGG_QUERY)
-        df = pd.DataFrame.from_records(cursor.fetchall(),
-                                       columns=[col[0] for col in cursor.description])
+        rows    = cursor.fetchall()
+        columns = [col[0] for col in cursor.description]
         raw_conn.commit()
         cursor.close()
-        return df
+        return pd.DataFrame.from_records(rows, columns=columns)
     except Exception:
         raw_conn.rollback()
         raise
     finally:
         raw_conn.close()
 
+
 # ======================================================================
-# FETCH HELPERS  (joblib-cached)
+# PUBLIC API
 # ======================================================================
 
-#@demographics_cache.cache
 def fetch_drug_demographics_summary(
-    drug_names: tuple[str], target_db: str
+    drug_names: tuple[str, ...],
+    engine: Engine,
 ) -> pd.DataFrame:
     drug_ph, params = _drug_params(list(drug_names))
     setup = _SETUP_DRUGS_ONLY.format(drug_placeholders=drug_ph)
-    return _run_with_temps(setup, params, target_db)
+    return _execute_setup_and_aggregate(setup, params, engine)
 
 
-#@demographics_cache.cache
 def fetch_reaction_demographics_summary(
-    reaction_names: tuple[str], target_db: str
+    reaction_names: tuple[str, ...],
+    engine: Engine,
 ) -> pd.DataFrame:
     rxn_ph, params = _reaction_params(list(reaction_names))
     setup = _SETUP_REACTIONS_ONLY.format(reaction_placeholders=rxn_ph)
-    return _run_with_temps(setup, params, target_db)
+    return _execute_setup_and_aggregate(setup, params, engine)
 
 
-#@demographics_cache.cache
 def fetch_drug_reaction_demographics_summary(
-    drug_names: tuple[str],
-    reaction_names: tuple[str],
-    target_db: str,
+    drug_names: tuple[str, ...],
+    reaction_names: tuple[str, ...],
+    engine: Engine,
 ) -> pd.DataFrame:
-    drug_ph, drug_params = _drug_params(list(drug_names))
-    rxn_ph,  rxn_params  = _reaction_params(list(reaction_names))
-    params = {**drug_params, **rxn_params}  # no key collisions: drug_N vs rxn_N
+    drug_ph, drug_p = _drug_params(list(drug_names))
+    rxn_ph,  rxn_p  = _reaction_params(list(reaction_names))
     setup = _SETUP_DRUGS_AND_REACTIONS.format(
         drug_placeholders=drug_ph,
         reaction_placeholders=rxn_ph,
     )
-    return _run_with_temps(setup, params, target_db)
+    return _execute_setup_and_aggregate(setup, {**drug_p, **rxn_p}, engine)

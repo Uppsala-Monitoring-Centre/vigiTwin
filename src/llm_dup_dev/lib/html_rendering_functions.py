@@ -12,11 +12,11 @@ sys.path.append("..")
 
 # Third-party
 import pandas as pd
+from sqlalchemy.engine import Engine
 
 from html import escape as _escape
 
 # Local packages
-from llm_dup_dev.lib.constants import TARGET_DB
 from llm_dup_dev.lib.data_extraction import (
 
     Report,
@@ -274,7 +274,7 @@ def summary_of_demographics_html_from_summary(
 # MAIN ENTRY POINT
 # ======================================================================
 
-def create_reports_overview(report1: Report, report2: Report):
+def create_reports_overview(report1: Report, report2: Report, engine: Engine):
     """
     Return three HTML snippets:
       1) drug_reaction_summary_html  — demographics for reports with BOTH common drugs & AEs
@@ -313,7 +313,7 @@ def create_reports_overview(report1: Report, report2: Report):
         )
     else:
         print(f"Fetching drug demographics for: {drug_names}")
-        df = fetch_drug_demographics_summary(tuple(drug_names), TARGET_DB)
+        df = fetch_drug_demographics_summary(tuple(drug_names), engine)
         drug_summary_html = summary_of_demographics_html_from_summary(
             df, common_names=drug_names, title_heading="Common Drugs",
             reporter_countries=reporter_countries,
@@ -327,7 +327,7 @@ def create_reports_overview(report1: Report, report2: Report):
         )
     else:
         print(f"Fetching reaction demographics for: {reaction_names}")
-        df = fetch_reaction_demographics_summary(tuple(reaction_names), TARGET_DB)
+        df = fetch_reaction_demographics_summary(tuple(reaction_names), engine)
         reaction_summary_html = summary_of_demographics_html_from_summary(
             df, common_names=reaction_names, title_heading="Common Adverse Events",
             reporter_countries=reporter_countries,
@@ -342,7 +342,7 @@ def create_reports_overview(report1: Report, report2: Report):
     else:
         print("Fetching drug+reaction intersection demographics")
         df = fetch_drug_reaction_demographics_summary(
-            tuple(drug_names), tuple(reaction_names), TARGET_DB
+            tuple(drug_names), tuple(reaction_names), engine
         )
         drug_reaction_summary_html = summary_of_demographics_html_from_summary(
             df, common_names=drug_names + reaction_names,

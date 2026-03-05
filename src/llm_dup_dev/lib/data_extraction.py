@@ -4,11 +4,6 @@ from re import escape
 from decimal import Decimal
 
 import pandas as pd
-
-from umc_research.datascience.database import (
-    get_database_engine,
-    upload_report_ids_to_temp_table,
-)
 from collections import defaultdict
 from sqlalchemy import text as sql_text
 from pathlib import Path
@@ -394,8 +389,8 @@ def make_fetch_data_sql(engine: Engine, report_id):
 #         return pd.DataFrame(result.fetchall(), columns=result.keys())
 
 
-def make_report_from_report_id(report_id, Target_DB="UMCReportWeekly"):
-    engine = get_database_engine(Target_DB, driver="{ODBC Driver 18 for SQL Server}")
+def make_report_from_report_id(report_id, engine):
+    # engine = get_database_engine(Target_DB, driver="{ODBC Driver 18 for SQL Server}")
 
     report_df = make_fetch_data_sql(engine, report_id)
     if report_df.empty:
