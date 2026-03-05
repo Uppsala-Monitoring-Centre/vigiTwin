@@ -2,10 +2,8 @@ import pandas as pd
 import json
 import re
 import math
-from umc_research.datascience.database import get_database_engine
 from typing import Optional, Dict, Any
-import lib.fetch_study as fs
-from umc_research.meddra_whodrug.meddra_codes import map_meddra_codes_to_names
+import llm_dup_dev.lib.fetch_study as fs
 # ---- computations (same logic as your text version) ----
 
 

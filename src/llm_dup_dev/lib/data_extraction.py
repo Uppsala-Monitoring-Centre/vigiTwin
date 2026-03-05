@@ -14,7 +14,7 @@ from sqlalchemy import text as sql_text
 from pathlib import Path
 from sqlalchemy.sql import text, bindparam
 from sqlalchemy.engine import Engine
-from lib.util import is_missing
+from llm_dup_dev.lib.util import is_missing
 import re
 
 
