@@ -16,19 +16,19 @@ import pandas as pd
 from html import escape as _escape
 
 # Local packages
-from lib.constants import TARGET_DB
-from lib.data_extraction import (
+from llm_dup_dev.lib.constants import TARGET_DB
+from llm_dup_dev.lib.data_extraction import (
 
     Report,
 )
 
-from lib.data_extraction_demographics import (
+from llm_dup_dev.lib.data_extraction_demographics import (
     fetch_drug_demographics_summary, 
     fetch_reaction_demographics_summary, 
 fetch_drug_reaction_demographics_summary)
 
 
-from lib.util import is_missing
+from llm_dup_dev.lib.util import is_missing
 
 
 def clean_age_column(df):
