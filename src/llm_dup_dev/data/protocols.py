@@ -1,0 +1,131 @@
+"""Abstract protocols for data access.
+
+These protocols define the contract between the pipeline and the data
+layer. The secure repo implements these against a real database; this
+repo provides a synthetic implementation for testing.
+
+Usage in the secure repo::
+
+    from llm_dup_dev.data.protocols import ReportLoader, StatsProvider
+
+    class SqlReportLoader:
+        '''Implements ReportLoader against SQL Server.'''
+        def load_report(self, report_id: str) -> Report: ...
+        def load_pair(self, pair: ReportPair) -> tuple[Report, Report]: ...
+        def load_pairs(self, pairs: Sequence[ReportPair]) -> ...: ...
+
+    assert isinstance(SqlReportLoader(), ReportLoader)  # structural check
+"""
+
+from __future__ import annotations
+
+from typing import Iterator, Protocol, Sequence, runtime_checkable
+
+from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.models.report import Report
+from llm_dup_dev.models.report_pair import ReportPair
+
+
+@runtime_checkable
+class ReportLoader(Protocol):
+    """Loads structured Report objects from the data source.
+
+    Implementations must convert raw database rows / JSON into the
+    ``Report`` Pydantic model. Multi-valued attributes should be
+    populated from all available sources (database + LLM extraction).
+    """
+
+    def load_report(self, report_id: str) -> Report:
+        """Load a single report by ID.
+
+        Parameters
+        ----------
+        report_id : str
+            Unique identifier of the report in the database.
+
+        Returns
+        -------
+        Report
+
+        Raises
+        ------
+        KeyError
+            If the report_id is not found.
+        """
+        ...
+
+    def load_pair(self, pair: ReportPair) -> tuple[Report, Report]:
+        """Load both reports for a candidate pair.
+
+        Parameters
+        ----------
+        pair : ReportPair
+            The candidate pair to load.
+
+        Returns
+        -------
+        tuple[Report, Report]
+            (report_1, report_2) in pair order.
+        """
+        ...
+
+    def load_pairs(
+        self, pairs: Sequence[ReportPair]
+    ) -> Iterator[tuple[ReportPair, Report, Report]]:
+        """Load reports for multiple pairs.
+
+        Yields
+        ------
+        tuple[ReportPair, Report, Report]
+            (pair, report_1, report_2) for each pair.
+
+        Notes
+        -----
+        Implementations may batch database queries for efficiency.
+        """
+        ...
+
+
+@runtime_checkable
+class StatsProvider(Protocol):
+    """Provides frequency statistics for a report pair's shared clinical context.
+
+    Given two reports and their matching feature sets, computes the
+    database-level counts needed for probability estimation:
+
+    - N_total: total reports in the reporting context
+    - N_drugs: reports containing all matching drugs
+    - N_AEs: reports containing all matching AEs
+    - N_drugs_AEs: reports containing both
+
+    These counts depend on the reporting context (country+year / country / global)
+    which is determined by the pipeline before calling this provider.
+    """
+
+    def compute_stats(
+        self,
+        matching_drugs: Sequence[str],
+        matching_AEs: Sequence[str],
+        country: str | None,
+        year: int | None,
+    ) -> FrequencyStats:
+        """Compute frequency statistics for the given clinical context.
+
+        Parameters
+        ----------
+        matching_drugs : Sequence[str]
+            Set of matching drug substances (canonical sorted order).
+        matching_AEs : Sequence[str]
+            Set of matching AE preferred terms (canonical sorted order).
+        country : str or None
+            Reporting country for context filtering. None for global.
+        year : int or None
+            Reporting year for context filtering. None for country-only
+            or global context.
+
+        Returns
+        -------
+        FrequencyStats
+            Database-level counts within the reporting context.
+        """
+        ...
