@@ -35,3 +35,7 @@ Thumbs.db
 *.feather
 *.json
 *.xlsx
+
+# Allow JSON schemas and examples to be tracked
+!schemas/*.json
+!examples/*.json

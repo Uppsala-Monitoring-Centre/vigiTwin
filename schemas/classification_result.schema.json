@@ -1,0 +1,56 @@
+{
+  "$defs": {
+    "PrimaryClassification": {
+      "description": "Primary classification outcome for a report pair.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Decision logic",
+      "enum": [
+        "Same individual",
+        "Different individuals",
+        "Abstain"
+      ],
+      "title": "PrimaryClassification",
+      "type": "string"
+    },
+    "RelationshipClassification": {
+      "description": "Sub-classification when primary is 'Different individuals'.\n\nDetermines whether non-duplicate reports are clinically related.\nSee: docs/same_individual_assessment_spec.md \u00a7 Decision logic",
+      "enum": [
+        "Related",
+        "Unrelated",
+        "Abstain"
+      ],
+      "title": "RelationshipClassification",
+      "type": "string"
+    }
+  },
+  "description": "Full classification output for a report pair.\n\nThe primary classification determines whether the reports describe\nthe same individual. When primary is 'Different individuals', the\nrelationship sub-classification assesses clinical relatedness.",
+  "properties": {
+    "pair_id": {
+      "title": "Pair Id",
+      "type": "string"
+    },
+    "primary": {
+      "$ref": "#/$defs/PrimaryClassification"
+    },
+    "relationship": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RelationshipClassification"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "explanation": {
+      "default": "",
+      "title": "Explanation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pair_id",
+    "primary"
+  ],
+  "title": "ClassificationResult",
+  "type": "object"
+}

@@ -1,0 +1,29 @@
+{
+  "description": "Pre-computed database statistics for a report pair's shared clinical context.\n\nThese must be provided by the secure repo's data extraction layer.\nAll counts are within the determined reporting context.",
+  "properties": {
+    "N_total": {
+      "title": "N Total",
+      "type": "integer"
+    },
+    "N_drugs": {
+      "title": "N Drugs",
+      "type": "integer"
+    },
+    "N_AEs": {
+      "title": "N Aes",
+      "type": "integer"
+    },
+    "N_drugs_AEs": {
+      "title": "N Drugs Aes",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "N_total",
+    "N_drugs",
+    "N_AEs",
+    "N_drugs_AEs"
+  ],
+  "title": "FrequencyStats",
+  "type": "object"
+}

@@ -1,0 +1,68 @@
+{
+  "pair_id": "R001__R002",
+  "feature_version": "1.0",
+  "reporting_context": {
+    "level": "country_year",
+    "country": "US",
+    "year": 2020
+  },
+  "matching_drugs": [
+    "pregabalin",
+    "sertraline"
+  ],
+  "matching_AEs": [
+    "somnolence"
+  ],
+  "anchor": {
+    "N_drugs": 45,
+    "N_AEs": 120,
+    "N_drugs_AEs": 18,
+    "type": "drugs",
+    "N_anchor": 45
+  },
+  "probability": {
+    "p_joint": 2.3e-08,
+    "expected_collisions": 2.3e-05
+  },
+  "L_match": 4.64,
+  "inconsistencies": [
+    {
+      "feature": "weight",
+      "severity": "moderate",
+      "difference": 2.0,
+      "units": "kg",
+      "description": null
+    }
+  ],
+  "inconsistency_counts": {
+    "moderate": 1,
+    "strong": 0,
+    "decisive": 0
+  },
+  "narrative_consistency": "consistent",
+  "evidence_summary": {
+    "shared": {
+      "drugs": [
+        "pregabalin",
+        "sertraline"
+      ],
+      "adverse_events": [
+        "somnolence"
+      ]
+    },
+    "report1_only": {
+      "drugs": [],
+      "adverse_events": [
+        "dizziness"
+      ]
+    },
+    "report2_only": {
+      "drugs": [
+        "omeprazole"
+      ],
+      "adverse_events": [
+        "nausea"
+      ]
+    }
+  }
+}

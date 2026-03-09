@@ -1,0 +1,100 @@
+{
+  "report_id": "R001",
+  "patient_sex_values": [
+    {
+      "value": "female",
+      "sources": [
+        "structured"
+      ]
+    }
+  ],
+  "patient_age_values": [
+    {
+      "value": 54.0,
+      "unit": "years",
+      "sources": [
+        "structured"
+      ]
+    }
+  ],
+  "patient_height_values": [
+    {
+      "value": 165.0,
+      "unit": "cm",
+      "sources": [
+        "structured"
+      ]
+    }
+  ],
+  "patient_weight_values": [
+    {
+      "value": 68.0,
+      "unit": "kg",
+      "sources": [
+        "structured"
+      ]
+    }
+  ],
+  "country_of_origin_values": [
+    {
+      "value": "US",
+      "sources": [
+        "structured"
+      ]
+    }
+  ],
+  "report_date_values": [
+    {
+      "value": "2020-06-12",
+      "resolution": "day",
+      "sources": [
+        "structured"
+      ]
+    }
+  ],
+  "drugs": [
+    {
+      "substance": "pregabalin",
+      "sources": [
+        "structured"
+      ],
+      "form": null,
+      "strength": null,
+      "start_date": {
+        "value": "2020-05-01",
+        "resolution": "day"
+      },
+      "end_date": null
+    },
+    {
+      "substance": "sertraline",
+      "sources": [
+        "structured"
+      ],
+      "form": null,
+      "strength": null,
+      "start_date": {
+        "value": "2020-03-15",
+        "resolution": "day"
+      },
+      "end_date": null
+    }
+  ],
+  "adverse_events": [
+    {
+      "pt_name": "somnolence",
+      "sources": [
+        "structured"
+      ],
+      "start_date": null
+    },
+    {
+      "pt_name": "dizziness",
+      "sources": [
+        "structured"
+      ],
+      "start_date": null
+    }
+  ],
+  "narrative": "Patient experienced somnolence and dizziness after starting pregabalin."
+}

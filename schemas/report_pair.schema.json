@@ -1,0 +1,24 @@
+{
+  "description": "Identifies a candidate pair of reports to evaluate for duplication.\n\nContains only identifiers. All derived information used in\nduplicate assessment is stored in the PairFeatures layer.\n\nThe pair_id is typically constructed deterministically as:\n    {report_1_id}__{report_2_id}",
+  "properties": {
+    "pair_id": {
+      "title": "Pair Id",
+      "type": "string"
+    },
+    "report_1_id": {
+      "title": "Report 1 Id",
+      "type": "string"
+    },
+    "report_2_id": {
+      "title": "Report 2 Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "pair_id",
+    "report_1_id",
+    "report_2_id"
+  ],
+  "title": "ReportPair",
+  "type": "object"
+}

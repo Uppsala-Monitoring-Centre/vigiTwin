@@ -1,0 +1,305 @@
+{
+  "$defs": {
+    "AnchorPopulation": {
+      "description": "Anchor population statistics for probability estimation.\n\nContains three candidate population sizes and the selected anchor.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Anchor Selection",
+      "properties": {
+        "N_drugs": {
+          "title": "N Drugs",
+          "type": "integer"
+        },
+        "N_AEs": {
+          "title": "N Aes",
+          "type": "integer"
+        },
+        "N_drugs_AEs": {
+          "title": "N Drugs Aes",
+          "type": "integer"
+        },
+        "type": {
+          "$ref": "#/$defs/AnchorType"
+        },
+        "N_anchor": {
+          "title": "N Anchor",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "N_drugs",
+        "N_AEs",
+        "N_drugs_AEs",
+        "type",
+        "N_anchor"
+      ],
+      "title": "AnchorPopulation",
+      "type": "object"
+    },
+    "AnchorType": {
+      "description": "Type of anchor population selected for probability estimation.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Anchor Selection",
+      "enum": [
+        "drugs",
+        "AEs",
+        "drugs_AEs"
+      ],
+      "title": "AnchorType",
+      "type": "string"
+    },
+    "EvidenceSummary": {
+      "description": "Diagnostic summary of shared and report-specific evidence.\n\nOptional field for debugging and interpretability.\nDoes not affect the decision logic.",
+      "properties": {
+        "shared": {
+          "additionalProperties": true,
+          "title": "Shared",
+          "type": "object"
+        },
+        "report1_only": {
+          "additionalProperties": true,
+          "title": "Report1 Only",
+          "type": "object"
+        },
+        "report2_only": {
+          "additionalProperties": true,
+          "title": "Report2 Only",
+          "type": "object"
+        }
+      },
+      "title": "EvidenceSummary",
+      "type": "object"
+    },
+    "Inconsistency": {
+      "description": "A detected inconsistency between two reports.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Inconsistency Detection",
+      "properties": {
+        "feature": {
+          "title": "Feature",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/InconsistencySeverity"
+        },
+        "difference": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Difference"
+        },
+        "units": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Units"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "feature",
+        "severity"
+      ],
+      "title": "Inconsistency",
+      "type": "object"
+    },
+    "InconsistencyCounts": {
+      "description": "Summary counts of inconsistencies by severity level.\n\nDecisive inconsistencies (e.g. distinct patient IDs from the\nsame study identified in the narratives) override all other\nevidence and force a Different individuals classification.",
+      "properties": {
+        "moderate": {
+          "default": 0,
+          "title": "Moderate",
+          "type": "integer"
+        },
+        "strong": {
+          "default": 0,
+          "title": "Strong",
+          "type": "integer"
+        },
+        "decisive": {
+          "default": 0,
+          "title": "Decisive",
+          "type": "integer"
+        }
+      },
+      "title": "InconsistencyCounts",
+      "type": "object"
+    },
+    "InconsistencySeverity": {
+      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Severity Levels\n\nLevels:\n    moderate  \u2013 weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
+      "enum": [
+        "moderate",
+        "strong",
+        "decisive"
+      ],
+      "title": "InconsistencySeverity",
+      "type": "string"
+    },
+    "NarrativeConsistency": {
+      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Narrative Consistency Assessment",
+      "enum": [
+        "strongly_consistent",
+        "consistent",
+        "neutral",
+        "inconsistent"
+      ],
+      "title": "NarrativeConsistency",
+      "type": "string"
+    },
+    "ProbabilityEstimate": {
+      "description": "Result of the collision probability computation.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Probability estimation",
+      "properties": {
+        "p_joint": {
+          "title": "P Joint",
+          "type": "number"
+        },
+        "expected_collisions": {
+          "title": "Expected Collisions",
+          "type": "number"
+        }
+      },
+      "required": [
+        "p_joint",
+        "expected_collisions"
+      ],
+      "title": "ProbabilityEstimate",
+      "type": "object"
+    },
+    "ReportingContext": {
+      "description": "The population context for frequency estimation.\n\nDefines the subset of the database within which probabilities\nand frequencies are evaluated.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Reporting Context",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/ReportingContextLevel"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Country"
+        },
+        "year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Year"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "ReportingContext",
+      "type": "object"
+    },
+    "ReportingContextLevel": {
+      "description": "Granularity of the reporting context used for probability estimation.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Reporting Context",
+      "enum": [
+        "country_year",
+        "country",
+        "global"
+      ],
+      "title": "ReportingContextLevel",
+      "type": "string"
+    }
+  },
+  "description": "All derived features for evaluating whether two reports\nrefer to the same individual.\n\nComputed from the Report layer and statistical summaries.\nProvides inputs to the decision logic.\n\nSee: docs/data_contracts.md \u00a7 PairFeatures Layer",
+  "properties": {
+    "pair_id": {
+      "title": "Pair Id",
+      "type": "string"
+    },
+    "feature_version": {
+      "default": "1.0",
+      "title": "Feature Version",
+      "type": "string"
+    },
+    "reporting_context": {
+      "$ref": "#/$defs/ReportingContext"
+    },
+    "matching_drugs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Matching Drugs",
+      "type": "array"
+    },
+    "matching_AEs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Matching Aes",
+      "type": "array"
+    },
+    "anchor": {
+      "$ref": "#/$defs/AnchorPopulation"
+    },
+    "probability": {
+      "$ref": "#/$defs/ProbabilityEstimate"
+    },
+    "L_match": {
+      "title": "L Match",
+      "type": "number"
+    },
+    "inconsistencies": {
+      "items": {
+        "$ref": "#/$defs/Inconsistency"
+      },
+      "title": "Inconsistencies",
+      "type": "array"
+    },
+    "inconsistency_counts": {
+      "$ref": "#/$defs/InconsistencyCounts"
+    },
+    "narrative_consistency": {
+      "$ref": "#/$defs/NarrativeConsistency"
+    },
+    "evidence_summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EvidenceSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "pair_id",
+    "reporting_context",
+    "anchor",
+    "probability",
+    "L_match",
+    "narrative_consistency"
+  ],
+  "title": "PairFeatures",
+  "type": "object"
+}

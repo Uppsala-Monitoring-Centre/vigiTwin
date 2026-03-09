@@ -1,0 +1,323 @@
+{
+  "$defs": {
+    "AdverseEvent": {
+      "description": "An adverse event reported as a MedDRA Preferred Term (PT).\n\nAdverse events are treated as sets when comparing reports.\n\nSee: docs/data_contracts.md \u00a7 Adverse Events",
+      "properties": {
+        "pt_name": {
+          "title": "Pt Name",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PartialDate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "pt_name",
+        "sources"
+      ],
+      "title": "AdverseEvent",
+      "type": "object"
+    },
+    "AgeValue": {
+      "description": "Patient age with unit and provenance.",
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "number"
+        },
+        "unit": {
+          "default": "years",
+          "title": "Unit",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "value",
+        "sources"
+      ],
+      "title": "AgeValue",
+      "type": "object"
+    },
+    "DateValue": {
+      "description": "A dated value with resolution and provenance.\n\nUsed for report-level date attributes (report_date_values).\nResolution affects domain size in probability calculations.",
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "resolution": {
+          "enum": [
+            "day",
+            "month",
+            "year"
+          ],
+          "title": "Resolution",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "value",
+        "resolution",
+        "sources"
+      ],
+      "title": "DateValue",
+      "type": "object"
+    },
+    "Drug": {
+      "description": "A drug reported in a pharmacovigilance report.\n\nIdentified by WHODrug active substance name.\nDrugs are treated as sets when comparing reports.\n\nSee: docs/data_contracts.md \u00a7 Drug Information",
+      "properties": {
+        "substance": {
+          "title": "Substance",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "form": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Form"
+        },
+        "strength": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strength"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PartialDate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PartialDate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "substance",
+        "sources"
+      ],
+      "title": "Drug",
+      "type": "object"
+    },
+    "MeasurementValue": {
+      "description": "Physical measurement (height or weight) with unit and provenance.",
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "number"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "value",
+        "unit",
+        "sources"
+      ],
+      "title": "MeasurementValue",
+      "type": "object"
+    },
+    "PartialDate": {
+      "description": "A date with potentially reduced resolution.\n\nUsed for drug start/end dates and AE start dates within\ndrug and adverse_event objects (no separate provenance).",
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "resolution": {
+          "enum": [
+            "day",
+            "month",
+            "year"
+          ],
+          "title": "Resolution",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "resolution"
+      ],
+      "title": "PartialDate",
+      "type": "object"
+    },
+    "SourcedValue": {
+      "description": "A categorical value with provenance tracking.\n\nUsed for demographic attributes (sex, country) where the same field may\nhave multiple candidate values from different sources.",
+      "properties": {
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "value",
+        "sources"
+      ],
+      "title": "SourcedValue",
+      "type": "object"
+    }
+  },
+  "description": "Structured representation of a single pharmacovigilance report.\n\nCombines structured database fields and LLM-extracted narrative attributes.\nMulti-valued attributes preserve all candidate values with provenance.\nMissing/uncertain values are represented as empty lists.\n\nSee: docs/data_contracts.md \u00a7 Report Layer",
+  "properties": {
+    "report_id": {
+      "title": "Report Id",
+      "type": "string"
+    },
+    "patient_sex_values": {
+      "items": {
+        "$ref": "#/$defs/SourcedValue"
+      },
+      "title": "Patient Sex Values",
+      "type": "array"
+    },
+    "patient_age_values": {
+      "items": {
+        "$ref": "#/$defs/AgeValue"
+      },
+      "title": "Patient Age Values",
+      "type": "array"
+    },
+    "patient_height_values": {
+      "items": {
+        "$ref": "#/$defs/MeasurementValue"
+      },
+      "title": "Patient Height Values",
+      "type": "array"
+    },
+    "patient_weight_values": {
+      "items": {
+        "$ref": "#/$defs/MeasurementValue"
+      },
+      "title": "Patient Weight Values",
+      "type": "array"
+    },
+    "country_of_origin_values": {
+      "items": {
+        "$ref": "#/$defs/SourcedValue"
+      },
+      "title": "Country Of Origin Values",
+      "type": "array"
+    },
+    "report_date_values": {
+      "items": {
+        "$ref": "#/$defs/DateValue"
+      },
+      "title": "Report Date Values",
+      "type": "array"
+    },
+    "drugs": {
+      "items": {
+        "$ref": "#/$defs/Drug"
+      },
+      "title": "Drugs",
+      "type": "array"
+    },
+    "adverse_events": {
+      "items": {
+        "$ref": "#/$defs/AdverseEvent"
+      },
+      "title": "Adverse Events",
+      "type": "array"
+    },
+    "narrative": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Narrative"
+    }
+  },
+  "required": [
+    "report_id"
+  ],
+  "title": "Report",
+  "type": "object"
+}
