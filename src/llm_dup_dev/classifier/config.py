@@ -1,0 +1,129 @@
+"""Configurable parameters for the same-individual assessment pipeline.
+
+Thresholds define the decision boundaries and probability estimation
+parameters. These are meant to be tuned during method development
+using annotated report pairs.
+
+See: docs/same_individual_assessment_spec.md
+"""
+
+from pydantic import BaseModel, Field
+
+
+class DomainSizeConfig(BaseModel):
+    """Default domain sizes (D_f) for features without empirical frequencies.
+
+    Used when computing p_f = 1/D_f for matched features.
+
+    See: docs/same_individual_assessment_spec.md § Determining Domain Size
+    """
+
+    # Age
+    age_years_range: int = 101  # 0–100 years
+    age_months_range: int = 24  # plausible infant months
+
+    # Sex
+    sex_categories: int = 2
+
+    # Height (adult defaults, cm)
+    height_cm_range: int = 50  # ~150–200 cm
+
+    # Weight (adult defaults, kg)
+    weight_kg_range: int = 100  # ~40–140 kg
+
+    # Dates — base value for temporal span
+    date_plausible_years: int = 10  # treatment history span
+
+    @property
+    def date_exact(self) -> int:
+        """Domain size for exact date (day resolution)."""
+        return 365 * self.date_plausible_years
+
+    @property
+    def date_month(self) -> int:
+        """Domain size for month-year resolution."""
+        return 12 * self.date_plausible_years
+
+    @property
+    def date_year(self) -> int:
+        """Domain size for year-only resolution."""
+        return self.date_plausible_years
+
+
+class InconsistencyThresholds(BaseModel):
+    """Thresholds for classifying feature differences as inconsistencies.
+
+    These are starting values from the specification and may need
+    refinement based on evaluation results.
+
+    See: docs/same_individual_assessment_spec.md § Structured Data Inconsistencies
+    """
+
+    # Age (years)
+    age_moderate: float = 3.0
+    age_strong: float = 10.0
+
+    # Height (cm)
+    height_moderate: float = 5.0
+    height_strong: float = 10.0
+
+    # Weight (kg)
+    weight_moderate: float = 5.0
+    weight_strong: float = 15.0
+
+    # Sex: any mismatch is a strong inconsistency (no threshold needed)
+
+
+class AnchorConfig(BaseModel):
+    """Parameters for anchor population selection.
+
+    See: docs/same_individual_assessment_spec.md § Anchor Selection
+    """
+
+    threshold: int = Field(
+        default=50,
+        description=(
+            "T: if either N_drugs or N_AEs <= T, "
+            "use the smaller of the two as anchor."
+        ),
+    )
+
+
+class DecisionThresholds(BaseModel):
+    """Thresholds for the decision logic (phase 8).
+
+    Three L_match zones define progressively stricter requirements for
+    classifying a pair as Same individual:
+
+    - strong zone (L_match > lmatch_strong): tolerates limited inconsistencies
+    - medium zone (L_match > lmatch_med): requires zero strong inconsistencies
+    - weak zone   (L_match > lmatch_weak): requires zero inconsistencies of any kind
+    - below weak: always Different individuals / Unrelated
+
+    See: docs/same_individual_assessment_spec.md § Decision logic
+    """
+
+    # L_match zone boundaries
+    lmatch_strong: float = 3.0
+    lmatch_med: float = 2.0
+    lmatch_weak: float = 1.0
+
+
+class PipelineConfig(BaseModel):
+    """Configuration for the feature generation pipeline (phases 1–7).
+
+    Does NOT include decision logic thresholds — use DecisionThresholds
+    separately for the classifier.
+    """
+
+    domain_sizes: DomainSizeConfig = Field(default_factory=DomainSizeConfig)
+    inconsistency_thresholds: InconsistencyThresholds = Field(
+        default_factory=InconsistencyThresholds
+    )
+    anchor: AnchorConfig = Field(default_factory=AnchorConfig)
+
+    epsilon: float = Field(
+        default=1e-15,
+        description="Small constant for numerical stability in log computation.",
+    )
+    feature_version: str = "1.0"

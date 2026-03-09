@@ -84,7 +84,7 @@ This avoids premature information loss and allows downstream methods to evaluate
 
 ## Support for probabilistic reasoning
 
-The schema is designed to support the probabilistic matching framework described in the method specification, in which the evidential value of matching features depends on the size of the corresponding anchor population and the joint probability of observing the matched feature set by chance. data_contracts
+The schema is designed to support the probabilistic matching framework described in the method specification, in which the evidential value of matching features depends on the size of the corresponding anchor population and the joint probability of observing the matched feature set by chance.
 
 ------
 
@@ -360,7 +360,7 @@ These features are computed from the Report layer and statistical summaries of t
 - **detected inconsistencies**
 - **narrative similarity assessments**
 
-These features provide the inputs to the **duplicate decision logic**. data_contracts
+These features provide the inputs to the **duplicate decision logic**.
 
 ------
 

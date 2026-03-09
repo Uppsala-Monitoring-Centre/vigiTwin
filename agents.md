@@ -62,32 +62,59 @@ If specifications conflict with legacy code, **the specification takes precedenc
 
 ## Repository Structure
 ```
-src/llm_dup_dev/
-├── eval/                              # Evaluation framework (imported by secure repo)
-│   ├── labels.py                      # Canonical label constants
-│   ├── metrics.py                     # ConfusionMatrix, accuracy functions, EvalSummary
-│   ├── comparison.py                  # evaluate() — main entry point
-│   └── report.py                      # Text/markdown summary formatting
-├── lib/
-│   ├── data_extraction.py             # LEGACY - Fetches & structures individual reports from SQL Server
-│   ├── data_extraction_demographics.py# LEGACY - Aggregate demographic profiles (joblib-cached SQL CTEs)
-│   ├── decision_logic.py              # LEGACY - Deterministic classification decision tree
-│   ├── fetch_study.py                 # LEGACY - Multi-source literature lookup (PubMed/Crossref/EuropePMC)
-│   ├── html_rendering_functions.py    # LEGACY HTML output generation
-│   └── util.py                        # LEGACY - Shared helpers (JSON parsing, missing-value checks)
-└── docs/                              
-│   ├── repository_roles.md            # Specification of repository roles and responsibilities
-│   └── same_individual_assessment.md  # Specification of same_individual_assessment pipeline
-└── vigiMatchContext/                  # LLM system prompts and annotation guidelines
-    ├── prompt_system.txt              # LEGACY - LLM role definition
-    ├── prompt_same_patient.txt        # LEGACY - Same-patient assessment prompt
-    ├── prompt_AE_similarity.txt       # LEGACY - Adverse-event similarity prompt
-    ├── prompt_clustering.txt          # LEGACY - Cluster-detection prompt
-    ├── prompt_DecisionLogic.txt       # LEGACY: LLM-based final classification (not production)
-    ├── prompt_literature.txt          # LEGACY Literature/study evaluation prompt
-    ├── context01.txt                  # Full vigiMatch annotation guidelines
-    ├── context_nn1.txt                # LEGACY — combined drug+AE prompt (superseded)
-    └── context_nn1b.txt               # LEGACY — revised combined prompt (superseded)
+./
+├── agents.md
+├── README.md
+├── main.py
+├── pyproject.toml
+│
+├── docs/
+│   ├── data_contracts.md                   # Data layer schemas and contracts
+│   ├── pipeline_overview.md                # End-to-end pipeline description
+│   ├── repository_roles.md                 # Repo separation and security controls
+│   └── same_individual_assessment_spec.md  # Primary method specification
+│
+├── examples/
+│   ├── pair_features_example.json
+│   ├── report_example.json
+│   └── report_pair_example.json
+│
+├── schemas/
+│   ├── pair_features.schema.json
+│   ├── report.schema.json
+│   └── report_pair.schema.json
+│
+└── src/llm_dup_dev/
+    ├── classifier/                    # (planned) Duplicate classification logic
+    ├── data_extraction/               # (planned) Report extraction and structuring
+    ├── feature_generation/            # (planned) PairFeatures computation
+    ├── narrative_analysis/            # (planned) LLM-based narrative assessment
+    ├── prompts/                       # (planned) LLM prompt templates
+    │
+    ├── eval/                          # Evaluation framework (imported by secure repo)
+    │   ├── labels.py                  # Canonical label constants
+    │   ├── metrics.py                 # ConfusionMatrix, accuracy functions, EvalSummary
+    │   ├── comparison.py              # evaluate() — main entry point
+    │   └── report.py                  # Text/markdown summary formatting
+    │
+    ├── lib/                           # LEGACY reference implementations
+    │   ├── data_extraction.py         # LEGACY - Fetches & structures individual reports from SQL Server
+    │   ├── data_extraction_demographics.py  # LEGACY - Aggregate demographic profiles (joblib-cached SQL CTEs)
+    │   ├── decision_logic.py          # LEGACY - Deterministic classification decision tree
+    │   ├── fetch_study.py             # LEGACY - Multi-source literature lookup (PubMed/Crossref/EuropePMC)
+    │   ├── html_rendering_functions.py  # LEGACY - HTML output generation
+    │   └── util.py                    # LEGACY - Shared helpers (JSON parsing, missing-value checks)
+    │
+    └── vigiMatchContext/              # LEGACY - LLM system prompts and annotation guidelines
+        ├── prompt_system.txt          # LEGACY - LLM role definition
+        ├── prompt_same_patient.txt    # LEGACY - Same-patient assessment prompt
+        ├── prompt_AE_similarity.txt   # LEGACY - Adverse-event similarity prompt
+        ├── prompt_clustering.txt      # LEGACY - Cluster-detection prompt
+        ├── prompt_DecisionLogic.txt   # LEGACY - LLM-based final classification (not production)
+        ├── prompt_literature.txt      # LEGACY - Literature/study evaluation prompt
+        ├── context01.txt              # Full vigiMatch annotation guidelines
+        ├── context_nn1.txt            # LEGACY — combined drug+AE prompt (superseded)
+        └── context_nn1b.txt           # LEGACY — revised combined prompt (superseded)
 ```
 
 ## Companion Repository
@@ -127,5 +154,4 @@ in this repo and as an extra precaution are gitignored — never commit them
 
 ## What This Repo Is NOT
 - No UI layer — HTML snippets are embedded in a larger calling system
-- No test suite here — tests live elsewhere
 - No real data or sensitive information — all credentials are in environment variables or the secure companion repo
