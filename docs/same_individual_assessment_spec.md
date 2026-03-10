@@ -395,14 +395,17 @@ The number of inconsistencies of different types can then be derived when applyi
 
 #### Severity Levels
 
-Two levels of inconsistency severity are defined:
+Three levels of inconsistency severity are defined:
 
 | Severity | Interpretation                                          |
 | -------- | ------------------------------------------------------- |
 | moderate | difference that weakens the duplicate hypothesis        |
 | strong   | difference that strongly suggests different individuals |
+| decisive | hard contradiction that overrides all matching evidence |
 
-These thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified in the below are just starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence. Please see the description of Decision logic below.
+Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
+
+Decisive inconsistencies are expected to originate from narrative analysis (e.g. distinct patient identifiers mentioned in case narratives from the same study). When present, they override all matching evidence and force a Different individuals classification.
 
 ------
 
@@ -523,21 +526,17 @@ $$
 
 which quantifies how unlikely the observed combination of matched features would be within the anchor population.
 
-**Anchor population**
+**Weighted inconsistency score**
 
 $$
-N_{\text{anchor}}
+w_{\text{tot}} = w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
 $$
 
-which provides contextual information about how common the shared clinical context is.
+which combines moderate and strong inconsistencies into a single score. The weights \(w_m\) and \(w_s\) are configurable (defaults: \(w_m = 1\), \(w_s = 3\)).
 
-**Inconsistency set**
+**Decisive inconsistency count**
 
-A structured set of detected inconsistencies including:
-
-- number of **moderate inconsistencies**
-- number of **strong inconsistencies**
-- the features involved
+The number of decisive inconsistencies detected (typically from narrative analysis). Any non-zero count overrides the zone-based logic.
 
 **Narrative consistency category**
 
@@ -550,63 +549,79 @@ One of:
 
 ---
 
-### Decision regions
+### Weighted inconsistency score
 
-The decision logic can be conceptualized as dividing the evidence space into three regions.
+Moderate and strong inconsistencies are combined into a single weighted score:
 
-#### Strong duplicate evidence
+$$
+w_{\text{tot}} = w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
+$$
 
-Report pairs are classified as **Same individual** when:
-
-- matching evidence \(L_{\text{match}}\) is sufficiently strong, and
-- no more than a limited number of inconsistencies are present.
-
-In this region, the combined rarity of the matched features makes it unlikely that the reports originate from different individuals, even if minor inconsistencies exist due to reporting errors.
-
-Strong narrative consistency may further support this classification but is not strictly required.
+where \(w_m\) and \(w_s\) are configurable weights. With the current defaults (\(w_m = 1\), \(w_s = 3\)), a single strong inconsistency contributes three times as much as a moderate one.
 
 ---
 
-#### Strong contradictory evidence
+### Decision zones
 
-Report pairs are classified as **Different individuals** when:
+The decision space is divided into four zones based on the magnitude of \(L_{\text{match}}\). Each zone applies a progressively stricter tolerance for \(w_{\text{tot}}\):
 
-- multiple strong inconsistencies are present, or
-- narrative evidence strongly suggests that the reports refer to different individuals.
+| Zone | Condition | Same individual if... | Otherwise |
+|---|---|---|---|
+| Strong evidence | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Different / Related |
+| Moderate evidence | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Different / Related |
+| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} = 0\) | Different / Unrelated |
+| Below threshold | \(L_{\text{match}} \leq 1.0\) | never | Different / Unrelated |
 
-In this region, the observed contradictions outweigh any similarity evidence.
+The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3), and the inconsistency weights (\(w_m\), \(w_s\)) are all configurable parameters.
 
-When this classification is reached, the method optionally assesses whether the reports are **clinically related** based on shared drugs, adverse events, or other contextual similarities.
+**Examples** (using default parameters):
+
+- \(L_{\text{match}} = 4.2\), one strong inconsistency: \(w_{\text{tot}} = 3 < 4\) → **Same individual**
+- \(L_{\text{match}} = 4.2\), one strong + one moderate: \(w_{\text{tot}} = 4\), not \(< 4\) → **Different / Related**
+- \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Same individual**
+- \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Different / Related**
+- \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Same individual**
+- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1 > 0\) → **Different / Unrelated**
+- \(L_{\text{match}} = 0.8\): below threshold → **Different / Unrelated** regardless of inconsistencies
 
 ---
 
-#### Uncertain evidence
+### Decisive inconsistencies
 
-Report pairs are classified as **Abstain** when:
+Decisive inconsistencies (e.g. distinct patient identifiers from the same study, identified through narrative analysis) override all matching evidence and force a **Different individuals** classification.
 
-- the matching evidence is not sufficiently strong to support a duplicate classification, and
-- the detected inconsistencies are insufficient to confidently conclude that the reports refer to different individuals.
+When a decisive inconsistency is present, the relationship sub-classification is determined solely by whether the reports share meaningful clinical context:
 
-This region captures cases where the available information does not allow a confident determination.
+- \(L_{\text{match}} > 2.0\) → **Related**
+- \(L_{\text{match}} \leq 2.0\) → **Unrelated**
 
 ---
 
-### Role of matching evidence and inconsistencies
+### Relationship between matching evidence and inconsistency tolerance
 
-The decision logic explicitly allows strong matching evidence to outweigh isolated inconsistencies.
+The zone-based design explicitly allows strong matching evidence to outweigh isolated inconsistencies. This reflects the known variability and occasional recording errors in pharmacovigilance data:
 
-For example:
+- In the strong evidence zone, a single strong inconsistency (such as mismatching patient sex) is tolerated because the combined rarity of the matched features makes coincidence unlikely.
+- In the moderate evidence zone, only moderate inconsistencies are tolerated, and only a limited number.
+- In the weak evidence zone, any inconsistency tips the balance towards different individuals.
 
-- a single strong inconsistency (such as mismatching patient sex) may be tolerated when the anchor population is extremely small and multiple highly specific matches are observed.
-- conversely, when matching evidence is weak, even moderate inconsistencies may lead to a classification of **Different individuals**.
-
-This design reflects the known variability and occasional recording errors in pharmacovigilance data.
+When a pair is classified as **Different individuals** in the strong or moderate evidence zones, the reports are labelled **Related** because significant clinical overlap remains. In the weak evidence and below-threshold zones, they are labelled **Unrelated**.
 
 ---
 
 ### Parameter tuning
 
-The thresholds defining the decision regions (e.g., minimum \(L_{\text{match}}\), allowable numbers of inconsistencies) are configurable parameters.
+The following parameters define the decision behaviour and are configurable:
 
-These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behavior.
+| Parameter | Default | Role |
+|---|---|---|
+| `lmatch_strong` | 3.0 | L\_match boundary for the strong evidence zone |
+| `lmatch_med` | 2.0 | L\_match boundary for the moderate evidence zone |
+| `lmatch_weak` | 1.0 | L\_match boundary for the weak evidence zone |
+| `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
+| `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
+| `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for Same in the strong zone |
+| `w_tot_med_zone` | 3.0 | Maximum \(w_{\text{tot}}\) for Same in the moderate zone |
+
+These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behaviour.
 
