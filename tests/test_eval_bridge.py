@@ -1,4 +1,4 @@
-"""Tests for the eval bridge between new pipeline output and legacy eval framework."""
+"""Tests for the eval bridge between new pipeline output and eval framework."""
 
 import pytest
 
@@ -58,17 +58,11 @@ def _make_pair_result(
 
 def _make_annotation(
     pair_id: str,
-    assessment: str,
-    same_individual: str = "same",
-    certainty: float = 80.0,
+    duplicates_assessment: str,
 ) -> dict:
     return {
         "pair_id": pair_id,
-        "same_individual": same_individual,
-        "ae_consistency": "consistent",
-        "cluster_assessment": "no_evidence_of_cluster",
-        "assessment": assessment,
-        "certainty": certainty,
+        "duplicates_assessment": duplicates_assessment,
     }
 
 
@@ -83,7 +77,6 @@ class TestToEvalDict:
         d = to_eval_dict(r)
         assert d["pair_id"] == "p1"
         assert d["final_label"] == "Duplicates"
-        assert d["same_patient_json"]["same_individual_assessment"] == "same"
 
     def test_different_related(self):
         r = _make_pair_result(
@@ -93,7 +86,6 @@ class TestToEvalDict:
         )
         d = to_eval_dict(r)
         assert d["final_label"] == "Otherwise_related"
-        assert d["same_patient_json"]["same_individual_assessment"] == "different"
 
     def test_different_unrelated(self):
         r = _make_pair_result(
@@ -103,20 +95,17 @@ class TestToEvalDict:
         )
         d = to_eval_dict(r)
         assert d["final_label"] == "Unrelated"
-        assert d["same_patient_json"]["same_individual_assessment"] == "different"
 
     def test_abstain(self):
         r = _make_pair_result("p4", PrimaryClassification.ABSTAIN)
         d = to_eval_dict(r)
         assert d["final_label"] == "Abstain"
-        assert d["same_patient_json"]["same_individual_assessment"] == "unclear"
 
-    def test_ae_and_cluster_not_assessed(self):
-        """New pipeline doesn't produce these — should be sentinel values."""
+    def test_dict_is_minimal(self):
+        """to_eval_dict should only contain pair_id and final_label."""
         r = _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)
         d = to_eval_dict(r)
-        assert d["ae_json"]["ae_consistency"] == "_not_assessed"
-        assert d["clustering_json"]["cluster_assessment"] == "_not_assessed"
+        assert set(d.keys()) == {"pair_id", "final_label"}
 
 
 # ===================================================================
@@ -135,8 +124,8 @@ class TestEvaluateResults:
             ),
         ]
         annotations = [
-            _make_annotation("p1", "Duplicates", "same"),
-            _make_annotation("p2", "Unrelated", "different"),
+            _make_annotation("p1", "duplicates"),
+            _make_annotation("p2", "unrelated"),
         ]
         summary = evaluate_results(results, annotations, experiment_id="test")
         assert summary.experiment_id == "test"
@@ -148,7 +137,7 @@ class TestEvaluateResults:
             _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
         ]
         annotations = [
-            _make_annotation("p1", "Unrelated", "different"),
+            _make_annotation("p1", "unrelated"),
         ]
         summary = evaluate_results(results, annotations)
         assert summary.final_accuracy == 0.0
@@ -159,44 +148,46 @@ class TestEvaluateResults:
             _make_pair_result("p2", PrimaryClassification.SAME_INDIVIDUAL),
         ]
         annotations = [
-            _make_annotation("p1", "Duplicates", "same"),
-            _make_annotation("p2", "Abstain", "unclear"),
+            _make_annotation("p1", "duplicates"),
+            _make_annotation("p2", "abstain"),
         ]
         summary = evaluate_results(results, annotations)
         assert summary.n_pairs == 1
         assert summary.n_abstained == 1
 
-    def test_same_patient_accuracy(self):
-        """same_individual field should match when pipeline agrees."""
+    def test_otherwise_related_label_normalisation(self):
+        """Pipeline uses 'Otherwise_related', annotation uses 'otherwise_related'."""
         results = [
-            _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
+            _make_pair_result(
+                "p1",
+                PrimaryClassification.DIFFERENT_INDIVIDUALS,
+                RelationshipClassification.RELATED,
+            ),
         ]
         annotations = [
-            _make_annotation("p1", "Duplicates", "same"),
+            _make_annotation("p1", "otherwise_related"),
         ]
         summary = evaluate_results(results, annotations)
-        assert summary.same_patient_accuracy == 1.0
-
-    def test_ae_and_cluster_accuracy_zero(self):
-        """New pipeline returns sentinels → per-field accuracy should be 0."""
-        results = [
-            _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
-        ]
-        annotations = [
-            _make_annotation("p1", "Duplicates", "same"),
-        ]
-        summary = evaluate_results(results, annotations)
-        assert summary.ae_consistency_accuracy == 0.0
-        assert summary.cluster_accuracy == 0.0
+        assert summary.final_accuracy == 1.0
 
     def test_config_snapshot_preserved(self):
         results = [_make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)]
-        annotations = [_make_annotation("p1", "Duplicates")]
+        annotations = [_make_annotation("p1", "duplicates")]
         config = {"model": "v2", "thresholds": {"strong": 3.0}}
         summary = evaluate_results(
             results, annotations, config_snapshot=config,
         )
         assert summary.config_snapshot == config
+
+    def test_no_per_field_accuracies(self):
+        """EvalSummary should not have per-field accuracy attributes."""
+        results = [_make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)]
+        annotations = [_make_annotation("p1", "duplicates")]
+        summary = evaluate_results(results, annotations)
+        assert not hasattr(summary, "same_patient_accuracy")
+        assert not hasattr(summary, "ae_consistency_accuracy")
+        assert not hasattr(summary, "cluster_accuracy")
+        assert not hasattr(summary, "final_certainty_weighted_accuracy")
 
 
 # ===================================================================
@@ -217,8 +208,8 @@ class TestEvaluateBatch:
             ]
         )
         annotations = [
-            _make_annotation("p1", "Duplicates"),
-            _make_annotation("p2", "Unrelated"),
+            _make_annotation("p1", "duplicates"),
+            _make_annotation("p2", "unrelated"),
         ]
         summary = evaluate_batch(batch, annotations, experiment_id="batch_test")
         assert summary.n_pairs == 2
@@ -232,8 +223,8 @@ class TestEvaluateBatch:
             errors=[("p_bad", KeyError("missing"))],
         )
         annotations = [
-            _make_annotation("p1", "Duplicates"),
-            _make_annotation("p_bad", "Unrelated"),
+            _make_annotation("p1", "duplicates"),
+            _make_annotation("p_bad", "unrelated"),
         ]
         summary = evaluate_batch(batch, annotations)
         assert summary.n_pairs == 1  # only p1 evaluated

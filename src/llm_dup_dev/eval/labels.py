@@ -1,19 +1,35 @@
 """
 Canonical label constants for the duplicate-detection pipeline and eval set.
 
-Both the pipeline (decision_logic.classify_pair) and the human-annotated eval set
-use the same vocabulary, so no mapping layer is needed. This module defines the
-shared constants and provides a helper to identify Abstain annotations.
+Both the pipeline (decision_logic.classify) and the human-annotated eval set
+use the same three-class vocabulary. This module defines the shared constants
+and provides helpers for normalisation and Abstain detection.
 """
 
 # --- Final classification labels ---
-# Used by both classify_pair() output and eval set "assessment" column.
+# Used by both classify() output and eval set "duplicates_assessment" column.
 FINAL_LABELS = ("Duplicates", "Otherwise_related", "Unrelated")
 
-# --- Per-field label vocabularies ---
-SAME_PATIENT_VALUES = ("same", "different", "unclear")
-AE_CONSISTENCY_VALUES = ("consistent", "partially_consistent", "inconsistent")
-CLUSTER_VALUES = ("possible_cluster", "no_evidence_of_cluster")
+# Mapping from lower-case / flexible forms to canonical labels.
+_LABEL_MAP: dict[str, str] = {
+    "duplicates": "Duplicates",
+    "otherwise_related": "Otherwise_related",
+    "unrelated": "Unrelated",
+}
+
+
+def normalise_label(label: str) -> str:
+    """Map a label (case-insensitive) to the canonical FINAL_LABELS form.
+
+    Accepts both pipeline output (e.g. "Duplicates") and annotation
+    vocabulary (e.g. "duplicates", "otherwise_related").
+
+    Raises ValueError for unknown labels (except Abstain — use is_abstain first).
+    """
+    key = label.strip().lower()
+    if key in _LABEL_MAP:
+        return _LABEL_MAP[key]
+    raise ValueError(f"Unknown label: {label!r}")
 
 
 def is_abstain(label: str) -> bool:

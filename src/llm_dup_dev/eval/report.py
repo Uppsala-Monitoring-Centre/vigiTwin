@@ -19,15 +19,9 @@ def summary_to_text(summary: EvalSummary) -> str:
 
         --- Final Classification ---
           Accuracy:                    0.823
-          Certainty-weighted accuracy: 0.841
           Duplicates            P=0.880  R=0.850  F1=0.865
           Otherwise_related     P=0.720  R=0.690  F1=0.705
           Unrelated             P=0.810  R=0.840  F1=0.825
-
-        --- Per-Field Accuracy ---
-          Same patient:     0.890
-          AE consistency:   0.820
-          Cluster:          0.910
     """
     lines = [
         f"=== Experiment: {summary.experiment_id} ===",
@@ -35,7 +29,6 @@ def summary_to_text(summary: EvalSummary) -> str:
         "",
         "--- Final Classification ---",
         f"  Accuracy:                    {summary.final_accuracy:.3f}",
-        f"  Certainty-weighted accuracy: {summary.final_certainty_weighted_accuracy:.3f}",
     ]
 
     for label in FINAL_LABELS:
@@ -45,14 +38,6 @@ def summary_to_text(summary: EvalSummary) -> str:
             f"  R={m.get('recall', 0):.3f}"
             f"  F1={m.get('f1', 0):.3f}"
         )
-
-    lines += [
-        "",
-        "--- Per-Field Accuracy ---",
-        f"  Same patient:     {summary.same_patient_accuracy:.3f}",
-        f"  AE consistency:   {summary.ae_consistency_accuracy:.3f}",
-        f"  Cluster:          {summary.cluster_accuracy:.3f}",
-    ]
 
     lines += ["", _format_confusion_text(summary.final_confusion)]
     return "\n".join(lines)
@@ -72,7 +57,6 @@ def summary_to_markdown(summary: EvalSummary) -> str:
         f"| Metric | Value |",
         f"|--------|-------|",
         f"| Accuracy | {summary.final_accuracy:.3f} |",
-        f"| Certainty-weighted accuracy | {summary.final_certainty_weighted_accuracy:.3f} |",
         "",
         "| Label | Precision | Recall | F1 |",
         "|-------|-----------|--------|----|",
@@ -88,14 +72,6 @@ def summary_to_markdown(summary: EvalSummary) -> str:
         )
 
     lines += [
-        "",
-        "### Per-Field Accuracy",
-        "",
-        "| Field | Accuracy |",
-        "|-------|----------|",
-        f"| Same patient | {summary.same_patient_accuracy:.3f} |",
-        f"| AE consistency | {summary.ae_consistency_accuracy:.3f} |",
-        f"| Cluster | {summary.cluster_accuracy:.3f} |",
         "",
         "### Confusion Matrix",
         "",

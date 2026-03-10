@@ -108,6 +108,8 @@ class SqlReportLoader:
 |-----------|--------|-------|
 | `patient_sex_values` | Structured field + LLM extraction | Use `sources=["structured"]` or `sources=["narrative_llm"]` |
 | `patient_age_values` | Structured + LLM | Include `unit` ("years", "months", "days") |
+| `patient_height_values` | Structured + LLM | Values in **centimetres (cm)** |
+| `patient_weight_values` | Structured + LLM | Values in **kilograms (kg)** |
 | `drugs[].substance` | WHODrug active substance name | Case-insensitive matching is handled downstream |
 | `adverse_events[].pt_name` | MedDRA Preferred Term | Case-insensitive matching is handled downstream |
 | `report_date_values` | Structured | Set `resolution` to "day", "month", or "year" based on available precision |
@@ -249,8 +251,7 @@ Until then, the pipeline defaults to `NarrativeConsistency.NEUTRAL`, which has n
 from llm_dup_dev.eval import evaluate_batch, summary_to_text
 
 # annotations: list of dicts from the eval set
-# Each must have: pair_id, same_individual, ae_consistency,
-#                 cluster_assessment, assessment, certainty
+# Each must have: pair_id, duplicates_assessment
 annotations = load_eval_annotations()  # your loading function
 
 summary = evaluate_batch(
@@ -270,18 +271,10 @@ Pairs evaluated: 138  (abstained: 12)
 
 --- Final Classification ---
   Accuracy:                    0.823
-  Certainty-weighted accuracy: 0.841
   Duplicates              P=0.880  R=0.850  F1=0.865
   Otherwise_related       P=0.720  R=0.690  F1=0.705
   Unrelated               P=0.810  R=0.840  F1=0.825
-
---- Per-Field Accuracy ---
-  Same patient:     0.890
-  AE consistency:   0.000
-  Cluster:          0.000
 ```
-
-**Note:** AE consistency and Cluster accuracy will be 0.000 until the narrative analysis module is implemented. This is expected.
 
 ### Eval annotation format
 
@@ -290,11 +283,15 @@ Each annotation dict must contain:
 | Field | Type | Values |
 |-------|------|--------|
 | `pair_id` | str | Must match pipeline output |
-| `same_individual` | str | "same", "different", "unclear" |
-| `ae_consistency` | str | "consistent", "partially_consistent", "inconsistent" |
-| `cluster_assessment` | str | "possible_cluster", "no_evidence_of_cluster" |
-| `assessment` | str | "Duplicates", "Otherwise_related", "Unrelated", "Abstain" |
-| `certainty` | float | 0–100 (used for weighted accuracy) |
+| `duplicates_assessment` | str | "duplicates", "otherwise_related", "unrelated", "abstain" |
+
+The pipeline maps its internal labels to match:
+
+| Pipeline output | Annotation value |
+|-----------------|------------------|
+| Same individual | `duplicates` |
+| Different / Related | `otherwise_related` |
+| Different / Unrelated | `unrelated` |
 
 ---
 

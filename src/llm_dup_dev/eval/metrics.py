@@ -7,7 +7,7 @@ Label normalization / Abstain filtering happens upstream in comparison.py.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional, Sequence
 
 
@@ -62,41 +62,6 @@ def confusion_matrix(
     return ConfusionMatrix(labels=labels, matrix=mat)
 
 
-# ======================== simple metrics ========================
-
-
-def field_accuracy(
-    predicted: Sequence[str],
-    actual: Sequence[str],
-) -> float:
-    """Simple accuracy (fraction of exact matches) for a single field."""
-    if not predicted:
-        return 0.0
-    correct = sum(1 for p, a in zip(predicted, actual) if p == a)
-    return correct / len(predicted)
-
-
-def certainty_weighted_accuracy(
-    predicted: Sequence[str],
-    actual: Sequence[str],
-    certainties: Sequence[float],
-) -> float:
-    """
-    Accuracy weighted by annotator certainty (0–100 scale).
-
-    Higher-certainty annotations contribute more to the score.
-    A certainty of 0 contributes nothing; a certainty of 100 contributes fully.
-    """
-    total_weight = 0.0
-    weighted_correct = 0.0
-    for p, a, c in zip(predicted, actual, certainties):
-        w = c / 100.0
-        total_weight += w
-        if p == a:
-            weighted_correct += w
-    return weighted_correct / total_weight if total_weight > 0 else 0.0
-
-
 # ======================== summary dataclass ========================
 
 
@@ -110,14 +75,8 @@ class EvalSummary:
 
     # Final classification metrics
     final_accuracy: float
-    final_certainty_weighted_accuracy: float
     final_confusion: ConfusionMatrix
     final_per_class: dict[str, dict[str, float]]
-
-    # Per-field accuracies
-    same_patient_accuracy: float
-    ae_consistency_accuracy: float
-    cluster_accuracy: float
 
     # Metadata (frozen experiment config for reproducibility)
     config_snapshot: Optional[dict] = None
