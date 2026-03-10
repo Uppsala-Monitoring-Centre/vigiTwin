@@ -92,13 +92,18 @@ class AnchorConfig(BaseModel):
 class DecisionThresholds(BaseModel):
     """Thresholds for the decision logic (phase 8).
 
-    Three L_match zones define progressively stricter requirements for
-    classifying a pair as Same individual:
+    The decision uses a weighted inconsistency score:
 
-    - strong zone (L_match > lmatch_strong): tolerates limited inconsistencies
-    - medium zone (L_match > lmatch_med): requires zero strong inconsistencies
-    - weak zone   (L_match > lmatch_weak): requires zero inconsistencies of any kind
+        w_tot = w_moderate × moderate + w_strong × strong
+
+    Three L_match zones define progressively stricter tolerance for w_tot:
+
+    - strong zone (L_match > lmatch_strong): w_tot < 4 → Same
+    - medium zone (L_match > lmatch_med):    w_tot < 3 → Same
+    - weak zone   (L_match > lmatch_weak):   w_tot == 0 → Same
     - below weak: always Different individuals / Unrelated
+
+    Decisive inconsistencies override all zones → Different.
 
     See: docs/same_individual_assessment_spec.md § Decision logic
     """
@@ -107,6 +112,15 @@ class DecisionThresholds(BaseModel):
     lmatch_strong: float = 3.0
     lmatch_med: float = 2.0
     lmatch_weak: float = 1.0
+
+    # Inconsistency weights
+    w_moderate: float = 1.0
+    w_strong: float = 3.0
+
+    # Per-zone w_tot thresholds (Same if w_tot < threshold)
+    w_tot_strong_zone: float = 4.0
+    w_tot_med_zone: float = 3.0
+    # weak zone: requires w_tot == 0 (no configurable threshold needed)
 
 
 class PipelineConfig(BaseModel):

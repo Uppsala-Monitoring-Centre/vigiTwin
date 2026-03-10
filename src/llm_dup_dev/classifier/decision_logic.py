@@ -1,15 +1,19 @@
 """Decision logic for classifying report pairs.
 
-Jointly evaluates matching evidence (L_match), inconsistencies, and
-narrative consistency to produce a final Same / Different / Abstain
-classification with an optional Related / Unrelated sub-classification.
+Jointly evaluates matching evidence (L_match) and inconsistencies to
+produce a final Same / Different / Abstain classification with an
+optional Related / Unrelated sub-classification.
+
+Inconsistencies are combined into a single weighted score:
+
+    w_tot = w_moderate × moderate + w_strong × strong
 
 The decision space is divided into four zones by L_match thresholds.
-Each zone has its own tolerance for inconsistencies:
+Each zone has its own tolerance for w_tot:
 
-    L_match > strong  →  tolerates limited inconsistencies
-    L_match > med     →  requires zero strong inconsistencies
-    L_match > weak    →  requires zero inconsistencies of any kind
+    L_match > strong  →  w_tot < 4 allows Same
+    L_match > med     →  w_tot < 3 allows Same
+    L_match > weak    →  w_tot == 0 allows Same
     L_match ≤ weak    →  always Different / Unrelated
 
 Decisive inconsistencies (e.g. distinct patient IDs from the same
@@ -51,6 +55,7 @@ def classify(
 
     counts = features.inconsistency_counts
     L = features.L_match
+    w_tot = _weighted_inconsistency(counts, thresholds)
 
     # --- Decisive inconsistencies override everything ---
     if counts.decisive > 0:
@@ -65,14 +70,13 @@ def classify(
 
     # --- Strong zone: L_match > lmatch_strong ---
     if L > thresholds.lmatch_strong:
-        if _strong_zone_allows_same(counts):
+        if w_tot < thresholds.w_tot_strong_zone:
             return _same(
                 pair_id=features.pair_id,
                 explanation=(
                     f"Strong matching evidence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_strong}); inconsistencies "
-                    f"within tolerance (strong={counts.strong}, "
-                    f"moderate={counts.moderate})."
+                    f"{thresholds.lmatch_strong}); w_tot={w_tot:.1f} "
+                    f"< {thresholds.w_tot_strong_zone:.1f}."
                 ),
             )
         return _different(
@@ -80,20 +84,20 @@ def classify(
             relationship=RelationshipClassification.RELATED,
             explanation=(
                 f"Strong matching evidence (L_match={L:.2f}) but "
-                f"inconsistencies exceed tolerance for strong zone "
+                f"w_tot={w_tot:.1f} >= {thresholds.w_tot_strong_zone:.1f} "
                 f"(strong={counts.strong}, moderate={counts.moderate})."
             ),
         )
 
     # --- Medium zone: L_match > lmatch_med ---
     if L > thresholds.lmatch_med:
-        if _medium_zone_allows_same(counts):
+        if w_tot < thresholds.w_tot_med_zone:
             return _same(
                 pair_id=features.pair_id,
                 explanation=(
                     f"Moderate matching evidence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_med}); no strong "
-                    f"inconsistencies, moderate={counts.moderate}."
+                    f"{thresholds.lmatch_med}); w_tot={w_tot:.1f} "
+                    f"< {thresholds.w_tot_med_zone:.1f}."
                 ),
             )
         return _different(
@@ -101,14 +105,14 @@ def classify(
             relationship=RelationshipClassification.RELATED,
             explanation=(
                 f"Moderate matching evidence (L_match={L:.2f}) but "
-                f"inconsistencies exceed tolerance for medium zone "
+                f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f} "
                 f"(strong={counts.strong}, moderate={counts.moderate})."
             ),
         )
 
     # --- Weak zone: L_match > lmatch_weak ---
     if L > thresholds.lmatch_weak:
-        if _weak_zone_allows_same(counts):
+        if w_tot == 0:
             return _same(
                 pair_id=features.pair_id,
                 explanation=(
@@ -121,8 +125,9 @@ def classify(
             relationship=RelationshipClassification.UNRELATED,
             explanation=(
                 f"Weak matching evidence (L_match={L:.2f}) with "
-                f"inconsistencies present (strong={counts.strong}, "
-                f"moderate={counts.moderate}); classified as unrelated."
+                f"w_tot={w_tot:.1f} > 0 "
+                f"(strong={counts.strong}, moderate={counts.moderate}); "
+                f"classified as unrelated."
             ),
         )
 
@@ -138,38 +143,22 @@ def classify(
 
 
 # ---------------------------------------------------------------------------
-# Zone-specific inconsistency tolerance rules
+# Weighted inconsistency score
 # ---------------------------------------------------------------------------
 
 
-def _strong_zone_allows_same(counts: InconsistencyCounts) -> bool:
-    """Strong zone: tolerates limited inconsistencies.
+def _weighted_inconsistency(
+    counts: InconsistencyCounts,
+    thresholds: DecisionThresholds,
+) -> float:
+    """Compute the weighted inconsistency score.
 
-    Requires:
-        strong < 2  AND  strong + 2 * moderate < 4
+    w_tot = w_moderate × moderate + w_strong × strong
     """
     return (
-        counts.strong < 2
-        and counts.strong + 2 * counts.moderate < 4
+        thresholds.w_moderate * counts.moderate
+        + thresholds.w_strong * counts.strong
     )
-
-
-def _medium_zone_allows_same(counts: InconsistencyCounts) -> bool:
-    """Medium zone: requires zero strong inconsistencies.
-
-    Requires:
-        strong == 0  AND  moderate < 3
-    """
-    return counts.strong == 0 and counts.moderate < 3
-
-
-def _weak_zone_allows_same(counts: InconsistencyCounts) -> bool:
-    """Weak zone: requires zero inconsistencies of any kind.
-
-    Requires:
-        strong + moderate == 0
-    """
-    return counts.strong + counts.moderate == 0
 
 
 def _relationship_for_decisive(

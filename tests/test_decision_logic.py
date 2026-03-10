@@ -1,7 +1,12 @@
 """Tests for classifier.decision_logic.
 
-Covers all four L_match zones, inconsistency tolerance boundaries,
-decisive inconsistency overrides, and final_label mapping.
+Uses the weighted inconsistency score w_tot = w_m * moderate + w_s * strong
+(defaults: w_m=1, w_s=3) with per-zone thresholds:
+
+    strong zone (L > 3.0): w_tot < 4 → Same
+    medium zone (L > 2.0): w_tot < 3 → Same
+    weak zone   (L > 1.0): w_tot == 0 → Same
+    below weak:            always Different / Unrelated
 """
 
 import pytest
@@ -52,19 +57,20 @@ def _make_features(
     )
 
 
-# Default thresholds: strong=3.0, med=2.0, weak=1.0
+# Default thresholds: strong=3.0, med=2.0, weak=1.0, w_m=1, w_s=3
 THRESHOLDS = DecisionThresholds()
 
 
 # ===================================================================
-# Strong zone: L_match > 3.0
+# Strong zone: L_match > 3.0  —  w_tot < 4 → Same
+# w_tot = 1*moderate + 3*strong
 # ===================================================================
 
 class TestStrongZone:
     """L_match > lmatch_strong (default 3.0)."""
 
     def test_no_inconsistencies_same(self):
-        """Clean case — should classify as Same individual."""
+        """w_tot=0 < 4 → Same."""
         f = _make_features(L_match=4.0)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
@@ -72,41 +78,35 @@ class TestStrongZone:
         assert result.final_label == "Duplicates"
 
     def test_one_strong_zero_moderate_same(self):
-        """strong=1, moderate=0: strong<2 and 1+0=1<4 → Same."""
+        """w_tot = 3*1 = 3 < 4 → Same."""
         f = _make_features(L_match=4.0, strong=1)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
 
-    def test_one_strong_one_moderate_same(self):
-        """strong=1, moderate=1: strong<2 and 1+2=3<4 → Same."""
+    def test_three_moderate_same(self):
+        """w_tot = 1*3 = 3 < 4 → Same."""
+        f = _make_features(L_match=4.0, moderate=3)
+        result = classify(f, THRESHOLDS)
+        assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
+
+    def test_one_strong_one_moderate_boundary_different(self):
+        """w_tot = 3 + 1 = 4, NOT < 4 → Different / Related."""
         f = _make_features(L_match=4.0, strong=1, moderate=1)
         result = classify(f, THRESHOLDS)
-        assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
-
-    def test_zero_strong_one_moderate_same(self):
-        """strong=0, moderate=1: 0<2 and 0+2=2<4 → Same."""
-        f = _make_features(L_match=4.0, strong=0, moderate=1)
-        result = classify(f, THRESHOLDS)
-        assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
+        assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
+        assert result.relationship == RelationshipClassification.RELATED
 
     def test_two_strong_different_related(self):
-        """strong=2: fails strong<2 → Different / Related."""
+        """w_tot = 3*2 = 6 ≥ 4 → Different / Related."""
         f = _make_features(L_match=4.0, strong=2)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
         assert result.relationship == RelationshipClassification.RELATED
         assert result.final_label == "Otherwise_related"
 
-    def test_one_strong_two_moderate_different_related(self):
-        """strong=1, moderate=2: 1+4=5≥4 → Different / Related."""
-        f = _make_features(L_match=4.0, strong=1, moderate=2)
-        result = classify(f, THRESHOLDS)
-        assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
-        assert result.relationship == RelationshipClassification.RELATED
-
-    def test_zero_strong_two_moderate_boundary_different(self):
-        """strong=0, moderate=2: 0+4=4, NOT <4 → Different / Related."""
-        f = _make_features(L_match=4.0, strong=0, moderate=2)
+    def test_four_moderate_boundary_different(self):
+        """w_tot = 1*4 = 4, NOT < 4 → Different / Related."""
+        f = _make_features(L_match=4.0, moderate=4)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
         assert result.relationship == RelationshipClassification.RELATED
@@ -126,32 +126,33 @@ class TestStrongZone:
 
 
 # ===================================================================
-# Medium zone: lmatch_med < L_match ≤ lmatch_strong
+# Medium zone: lmatch_med < L_match ≤ lmatch_strong — w_tot < 3 → Same
 # ===================================================================
 
 class TestMediumZone:
     """lmatch_med (2.0) < L_match ≤ lmatch_strong (3.0)."""
 
     def test_no_inconsistencies_same(self):
+        """w_tot=0 < 3 → Same."""
         f = _make_features(L_match=2.5)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
 
     def test_two_moderate_same(self):
-        """strong=0, moderate=2: moderate<3 → Same."""
+        """w_tot = 1*2 = 2 < 3 → Same."""
         f = _make_features(L_match=2.5, moderate=2)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
 
-    def test_one_strong_different_related(self):
-        """strong=1: fails strong==0 → Different / Related."""
+    def test_one_strong_boundary_different(self):
+        """w_tot = 3*1 = 3, NOT < 3 → Different / Related."""
         f = _make_features(L_match=2.5, strong=1)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
         assert result.relationship == RelationshipClassification.RELATED
 
-    def test_three_moderate_different_related(self):
-        """moderate=3: fails moderate<3 → Different / Related."""
+    def test_three_moderate_boundary_different(self):
+        """w_tot = 1*3 = 3, NOT < 3 → Different / Related."""
         f = _make_features(L_match=2.5, moderate=3)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
@@ -167,19 +168,20 @@ class TestMediumZone:
 
 
 # ===================================================================
-# Weak zone: lmatch_weak < L_match ≤ lmatch_med
+# Weak zone: lmatch_weak < L_match ≤ lmatch_med — w_tot == 0 → Same
 # ===================================================================
 
 class TestWeakZone:
     """lmatch_weak (1.0) < L_match ≤ lmatch_med (2.0)."""
 
     def test_no_inconsistencies_same(self):
+        """w_tot=0 → Same."""
         f = _make_features(L_match=1.5)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
 
     def test_one_moderate_different_unrelated(self):
-        """Any inconsistency in weak zone → Different / Unrelated."""
+        """w_tot = 1 > 0 → Different / Unrelated."""
         f = _make_features(L_match=1.5, moderate=1)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
@@ -187,6 +189,7 @@ class TestWeakZone:
         assert result.final_label == "Unrelated"
 
     def test_one_strong_different_unrelated(self):
+        """w_tot = 3 > 0 → Different / Unrelated."""
         f = _make_features(L_match=1.5, strong=1)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
@@ -283,26 +286,50 @@ class TestDecisiveInconsistency:
 class TestCustomThresholds:
     """Verify that non-default thresholds work correctly."""
 
-    def test_relaxed_thresholds(self):
-        """With lower thresholds, same L_match enters a higher zone."""
+    def test_relaxed_lmatch(self):
+        """With lower L_match thresholds, same L_match enters a higher zone."""
         relaxed = DecisionThresholds(
-            lmatch_strong=2.0, lmatch_med=1.0, lmatch_weak=0.5
+            lmatch_strong=2.0, lmatch_med=1.0, lmatch_weak=0.5,
         )
         # L_match=2.5 is now in the strong zone (>2.0)
+        # strong=1 → w_tot=3 < 4 → Same
         f = _make_features(L_match=2.5, strong=1)
         result = classify(f, relaxed)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
 
-    def test_strict_thresholds(self):
-        """With higher thresholds, same L_match falls to lower zone."""
+    def test_strict_lmatch(self):
+        """With higher L_match thresholds, same L_match falls to lower zone."""
         strict = DecisionThresholds(
-            lmatch_strong=5.0, lmatch_med=4.0, lmatch_weak=3.0
+            lmatch_strong=5.0, lmatch_med=4.0, lmatch_weak=3.0,
         )
         # L_match=3.5 is now in the weak zone (>3.0 but ≤4.0)
+        # moderate=1 → w_tot=1 > 0 → Different / Unrelated
         f = _make_features(L_match=3.5, moderate=1)
         result = classify(f, strict)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
         assert result.relationship == RelationshipClassification.UNRELATED
+
+    def test_custom_weights(self):
+        """Custom weights change what w_tot value is produced."""
+        # With w_moderate=2, w_strong=5, w_tot_strong_zone=6
+        # strong=1, moderate=0 → w_tot = 5 < 6 → Same
+        custom = DecisionThresholds(
+            w_moderate=2.0, w_strong=5.0, w_tot_strong_zone=6.0,
+        )
+        f = _make_features(L_match=4.0, strong=1)
+        result = classify(f, custom)
+        assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
+
+    def test_custom_weights_boundary(self):
+        """Custom weights at boundary produce Different."""
+        # With w_moderate=2, w_strong=5, w_tot_strong_zone=6
+        # strong=1, moderate=1 → w_tot = 5+2 = 7 ≥ 6 → Different
+        custom = DecisionThresholds(
+            w_moderate=2.0, w_strong=5.0, w_tot_strong_zone=6.0,
+        )
+        f = _make_features(L_match=4.0, strong=1, moderate=1)
+        result = classify(f, custom)
+        assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
 
 
 # ===================================================================
@@ -317,9 +344,16 @@ class TestExplanations:
         result = classify(f, THRESHOLDS)
         assert "4.00" in result.explanation
 
-    def test_different_has_inconsistency_counts(self):
+    def test_same_has_w_tot(self):
+        """Same result explanation includes w_tot value."""
+        f = _make_features(L_match=4.0, moderate=1)
+        result = classify(f, THRESHOLDS)
+        assert "w_tot=1.0" in result.explanation
+
+    def test_different_has_w_tot_and_counts(self):
         f = _make_features(L_match=4.0, strong=2, moderate=1)
         result = classify(f, THRESHOLDS)
+        assert "w_tot=7.0" in result.explanation
         assert "strong=2" in result.explanation
         assert "moderate=1" in result.explanation
 

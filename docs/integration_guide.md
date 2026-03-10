@@ -327,6 +327,10 @@ thresholds = DecisionThresholds(
     lmatch_strong=3.0,   # strong evidence zone
     lmatch_med=2.0,      # moderate evidence zone
     lmatch_weak=1.0,     # weak evidence zone
+    w_moderate=1.0,      # weight for moderate inconsistencies
+    w_strong=3.0,        # weight for strong inconsistencies
+    w_tot_strong_zone=4.0,  # w_tot threshold for strong zone
+    w_tot_med_zone=3.0,     # w_tot threshold for medium zone
 )
 
 runner = PipelineRunner(
@@ -339,11 +343,15 @@ runner = PipelineRunner(
 
 ### Decision logic summary
 
+Inconsistencies are combined into a single weighted score:
+
+    w_tot = w_moderate × moderate + w_strong × strong  (defaults: 1 × moderate + 3 × strong)
+
 | L_match zone | Same individual if... | Otherwise → |
 |---|---|---|
-| > 3.0 (strong) | `strong < 2` AND `strong + 2×moderate < 4` | Different / Related |
-| > 2.0 (medium) | `strong == 0` AND `moderate < 3` | Different / Related |
-| > 1.0 (weak)   | `strong + moderate == 0` | Different / Unrelated |
+| > 3.0 (strong) | `w_tot < 4` | Different / Related |
+| > 2.0 (medium) | `w_tot < 3` | Different / Related |
+| > 1.0 (weak)   | `w_tot == 0` | Different / Unrelated |
 | ≤ 1.0          | never | Different / Unrelated |
 
 Decisive inconsistencies (e.g. distinct patient IDs from the same study) always force Different, with Related/Unrelated determined by whether L_match > lmatch_med.
