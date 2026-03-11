@@ -381,7 +381,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-195 tests covering all modules.
+208 tests covering all modules.
 
 ### Quick smoke test (in the secure repo)
 

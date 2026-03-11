@@ -9,6 +9,7 @@ from llm_dup_dev.models.report import (
     AgeValue,
     Drug,
     MeasurementValue,
+    PartialDate,
     Report,
     SourcedValue,
 )
@@ -472,3 +473,174 @@ class TestDrugSetInconsistency:
         result = detect_inconsistencies(r1, r2, thresholds)
         drug_incs = [i for i in result if i.feature == "drug_set"]
         assert len(drug_incs) == 0
+
+
+# ---- Drug dates ----
+
+
+def _drug(substance: str, start: str | None = None, end: str | None = None, role: DrugRole | None = None) -> Drug:
+    """Helper: build a Drug with optional PartialDate fields (day resolution)."""
+    return Drug(
+        substance=substance,
+        sources=["s"],
+        role=role,
+        start_date=PartialDate(value=start, resolution="day") if start else None,
+        end_date=PartialDate(value=end, resolution="day") if end else None,
+    )
+
+
+class TestDrugDateInconsistency:
+    """Drug date (timing) inconsistency detection."""
+
+    def test_identical_start_stop_dates(self, thresholds):
+        """Identical dates → diff = 0 → weight 0 → no inconsistency."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01", end="2023-02-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-01-01", end="2023-02-01")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 0
+
+    def test_small_diff_start_only_no_inconsistency(self, thresholds):
+        """Start diff 4 days (weight 0.5), no stop dates → total 0.5 < 1 → 0."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-01-05")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 0
+
+    def test_small_diff_start_and_stop_moderate(self, thresholds):
+        """Start diff 3d (0.5) + stop diff 3d (0.5) = 1.0 → moderate."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01", end="2023-03-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-01-04", end="2023-03-04")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.MODERATE
+
+    def test_moderate_diff_start_only_moderate(self, thresholds):
+        """Start diff 15 days (weight 1.0) → total 1.0 → moderate."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-01-16")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.MODERATE
+
+    def test_large_diff_stop_only_strong(self, thresholds):
+        """Stop diff 89 days (weight 3.0) → total 3.0 → strong."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", end="2023-02-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", end="2023-05-01")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.STRONG
+
+    def test_partial_date_month_overlaps_day_no_inconsistency(self, thresholds):
+        """A month-resolution date overlapping a day-resolution date → diff 0 → no inconsistency."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(
+                    substance="warfarin",
+                    sources=["s"],
+                    start_date=PartialDate(value="2023-05", resolution="month"),
+                )
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(
+                    substance="warfarin",
+                    sources=["s"],
+                    start_date=PartialDate(value="2023-05-15", resolution="day"),
+                )
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 0
+
+    def test_concomitant_downweighting(self, thresholds):
+        """Large stop diff (weight 3.0) × 0.5 concomitant factor = 1.5 → moderate (not strong)."""
+        r1 = Report(report_id="1", drugs=[_drug("aspirin", end="2023-02-01", role=DrugRole.CONCOMITANT)])
+        r2 = Report(report_id="2", drugs=[_drug("aspirin", end="2023-05-01", role=DrugRole.CONCOMITANT)])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.MODERATE
+
+    def test_missing_dates_one_side(self, thresholds):
+        """Only r1 has a start date; no comparison possible → 0 inconsistencies."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 0
+
+    def test_multiple_start_dates_uses_minimum_distance(self, thresholds):
+        """Multiple start dates: use the pair with minimum distance.
+
+        r1 starts: Jan 1, Jan 10 — r2 start: Jan 5
+        Distances: Jan1–Jan5 = 4d, Jan10–Jan5 = 5d → min = 4d → weight 0.5
+        Total 0.5 < 1.0 → no inconsistency.
+        """
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                _drug("warfarin", start="2023-01-01"),
+                _drug("warfarin", start="2023-01-10"),
+            ],
+        )
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-01-05")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 0
+
+    def test_score_cap_per_drug(self, thresholds):
+        """Start diff > 30d (3.0) + stop diff > 30d (3.0) = 6.0 → capped at 3.0 → strong."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01", end="2023-01-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-06-01", end="2023-06-01")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.STRONG
+        assert date_incs[0].difference == 3.0  # capped
+
+    def test_warfarin_example_from_spec(self, thresholds):
+        """Spec example: start 4d (0.5) + stop 89d (3.0) → min(3, 3.5) = 3.0 → strong."""
+        r1 = Report(report_id="1", drugs=[_drug("warfarin", start="2023-01-01", end="2023-02-01")])
+        r2 = Report(report_id="2", drugs=[_drug("warfarin", start="2023-01-05", end="2023-05-01")])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.STRONG
+        assert date_incs[0].difference == 3.0
+
+    def test_no_dates_on_shared_drugs(self, thresholds):
+        """Shared drugs with no dates at all → 0 inconsistencies."""
+        r1 = Report(report_id="1", drugs=[Drug(substance="aspirin", sources=["s"])])
+        r2 = Report(report_id="2", drugs=[Drug(substance="aspirin", sources=["s"])])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 0
+
+    def test_concomitant_start_diff_four_months_moderate(self, thresholds):
+        """Concomitant drug, start dates ~4 months apart (120d → weight 3.0 × 0.5 = 1.5) → moderate.
+
+        Regression test: this scenario produced an empty inconsistency list before
+        drug date detection was implemented.
+        """
+        r1 = Report(
+            report_id="1",
+            drugs=[_drug("metoprolol", start="2023-01-01", role=DrugRole.CONCOMITANT)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[_drug("metoprolol", start="2023-05-01", role=DrugRole.CONCOMITANT)],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.MODERATE
+        assert date_incs[0].difference == pytest.approx(1.5)

@@ -484,7 +484,54 @@ This yields 0, 1, or 2 moderate inconsistencies per pair.
 - Drug name matching is **case-insensitive**.
 - A drug present in both reports with **different roles** is not inconsistent — role differences do not indicate different individuals.
 - Reports with **no key drugs** (all concomitant or role unknown) produce no drug-set inconsistencies.
-- Only drug **presence** is evaluated; differences in dosage, form, or dates are not considered.
+- Only drug **presence** is evaluated; differences in dosage, form, or dates are not considered here — date differences are handled by the Drug Dates check below.
+
+-------
+
+##### Drug Dates
+
+Drug date inconsistencies detect timing mismatches for drugs that appear in **both** reports. Only shared drugs are evaluated.
+
+**Partial date intervals**
+
+Each `PartialDate` is converted to a date interval based on its resolution:
+
+| Resolution | Interval |
+| ---------- | -------- |
+| day | [date, date] |
+| month | [YYYY-MM-01, last day of month] |
+| year | [YYYY-01-01, YYYY-12-31] |
+
+**Interval distance**
+
+The minimum distance between two intervals is:
+```
+if overlap: diff_days = 0
+else:       diff_days = min(|start1 − end2|, |start2 − end1|)
+```
+
+**Weighting**
+
+| Difference | Weight |
+| ---------- | ------ |
+| 0 days (exact / overlapping) | 0.0 |
+| 1–7 days | 0.5 |
+| 8–30 days | 1.0 |
+| > 30 days | 3.0 |
+
+If the substance is concomitant in **both** reports, the weight is multiplied by 0.5 (lower reliability of timing for concomitant drugs).
+
+**Per-drug score**
+
+For each shared drug, start and stop dates are compared independently (if both reports have at least one value for that date type). Multiple dates per report are handled by taking the minimum pairwise interval distance. The per-drug contribution is capped at 3.0.
+
+**Classification**
+
+| Total score | Result |
+| ----------- | ------ |
+| ≥ 3.0 | strong inconsistency |
+| ≥ 1.0 | moderate inconsistency |
+| < 1.0 | no inconsistency |
 
 ------
 

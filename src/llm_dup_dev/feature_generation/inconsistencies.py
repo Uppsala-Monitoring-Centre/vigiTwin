@@ -12,10 +12,14 @@ See: docs/same_individual_assessment_spec.md § Inconsistency Detection
 
 from __future__ import annotations
 
+import calendar
+from collections import defaultdict
+from datetime import date
+
 from llm_dup_dev.classifier.config import InconsistencyThresholds
 from llm_dup_dev.models.enums import DrugRole, InconsistencySeverity
 from llm_dup_dev.models.pair_features import Inconsistency
-from llm_dup_dev.models.report import Report
+from llm_dup_dev.models.report import PartialDate, Report
 
 
 def detect_inconsistencies(
@@ -25,7 +29,7 @@ def detect_inconsistencies(
 ) -> list[Inconsistency]:
     """Detect all structured-data inconsistencies between two reports.
 
-    Checks: age, height, weight, sex, drug set (role-based).
+    Checks: age, height, weight, sex, drug set (role-based), drug dates (timing).
 
     For multi-valued attributes, the *minimum* difference across all
     value pairs is used (conservative: if any pair of values is close,
@@ -40,6 +44,7 @@ def detect_inconsistencies(
     inconsistencies.extend(_check_weight(r1, r2, thresholds))
     inconsistencies.extend(_check_sex(r1, r2))
     inconsistencies.extend(_check_drug_set(r1, r2))
+    inconsistencies.extend(_check_drug_dates(r1, r2, thresholds))
 
     severity_order = {
         InconsistencySeverity.STRONG: 0,
@@ -49,6 +54,152 @@ def detect_inconsistencies(
 
     return inconsistencies
 
+
+# ---------------------------------------------------------------------------
+# Drug-date inconsistency
+# ---------------------------------------------------------------------------
+
+DateInterval = tuple[date, date]
+
+
+def _partial_date_to_interval(pd: PartialDate) -> DateInterval:
+    """Convert a PartialDate to a [start, end] date interval.
+
+    day   → [date, date]
+    month → [YYYY-MM-01, last day of month]
+    year  → [YYYY-01-01, YYYY-12-31]
+    """
+    if pd.resolution == "day":
+        d = date.fromisoformat(pd.value)
+        return (d, d)
+    if pd.resolution == "month":
+        year, month = int(pd.value[:4]), int(pd.value[5:7])
+        last_day = calendar.monthrange(year, month)[1]
+        return (date(year, month, 1), date(year, month, last_day))
+    # year
+    year = int(pd.value[:4])
+    return (date(year, 1, 1), date(year, 12, 31))
+
+
+def _interval_distance_days(iv1: DateInterval, iv2: DateInterval) -> int:
+    """Minimum distance in days between two date intervals.
+
+    Returns 0 if the intervals overlap, otherwise the gap in days.
+    Uses .days on the timedelta result to return an int for threshold
+    comparisons.
+    """
+    start1, end1 = iv1
+    start2, end2 = iv2
+    if start1 <= end2 and start2 <= end1:
+        return 0
+    return min(
+        abs((start1 - end2).days),
+        abs((start2 - end1).days),
+    )
+
+
+def _date_weight(diff_days: int, thresholds: InconsistencyThresholds) -> float:
+    """Map a date difference in days to an inconsistency weight.
+
+    diff = 0             → 0.0  (exact or overlapping → no contribution)
+    1 ≤ diff ≤ small     → small_weight  (0.5)
+    small < diff ≤ mod   → moderate_weight  (1.0)
+    diff > moderate      → large_weight  (3.0)
+    """
+    if diff_days == 0:
+        return 0.0
+    if diff_days <= thresholds.drug_date_small_days:
+        return thresholds.drug_date_small_weight
+    if diff_days <= thresholds.drug_date_moderate_days:
+        return thresholds.drug_date_moderate_weight
+    return thresholds.drug_date_large_weight
+
+
+def _check_drug_dates(
+    r1: Report,
+    r2: Report,
+    thresholds: InconsistencyThresholds,
+) -> list[Inconsistency]:
+    """Check for drug date (timing) inconsistencies in shared drugs.
+
+    Only drugs present in both reports are evaluated. For each shared drug:
+    - Compare start dates (if both reports have at least one)
+    - Compare stop dates (if both reports have at least one)
+    - Use the minimum pairwise interval distance when multiple dates exist
+    - Down-weight if the drug is concomitant in both reports
+    - Cap per-drug contribution at drug_date_cap_per_drug
+
+    Returns 0 or 1 Inconsistency (moderate or strong).
+    """
+    groups1: dict[str, list] = defaultdict(list)
+    groups2: dict[str, list] = defaultdict(list)
+    for d in r1.drugs:
+        groups1[d.substance.lower()].append(d)
+    for d in r2.drugs:
+        groups2[d.substance.lower()].append(d)
+
+    shared = set(groups1) & set(groups2)
+    if not shared:
+        return []
+
+    total_score = 0.0
+
+    for substance in shared:
+        drugs1 = groups1[substance]
+        drugs2 = groups2[substance]
+
+        # Collect non-None date intervals — None guard is here, not in the helper
+        starts1 = [_partial_date_to_interval(d.start_date) for d in drugs1 if d.start_date is not None]
+        starts2 = [_partial_date_to_interval(d.start_date) for d in drugs2 if d.start_date is not None]
+        ends1 = [_partial_date_to_interval(d.end_date) for d in drugs1 if d.end_date is not None]
+        ends2 = [_partial_date_to_interval(d.end_date) for d in drugs2 if d.end_date is not None]
+
+        drug_score = 0.0
+
+        if starts1 and starts2:
+            min_diff = min(
+                _interval_distance_days(iv1, iv2)
+                for iv1 in starts1
+                for iv2 in starts2
+            )
+            drug_score += _date_weight(min_diff, thresholds)
+
+        if ends1 and ends2:
+            min_diff = min(
+                _interval_distance_days(iv1, iv2)
+                for iv1 in ends1
+                for iv2 in ends2
+            )
+            drug_score += _date_weight(min_diff, thresholds)
+
+        # Down-weight when the substance is concomitant on both sides
+        all_concomitant = all(d.role == DrugRole.CONCOMITANT for d in drugs1) and all(
+            d.role == DrugRole.CONCOMITANT for d in drugs2
+        )
+        if all_concomitant:
+            drug_score *= thresholds.drug_date_concomitant_factor
+
+        total_score += min(thresholds.drug_date_cap_per_drug, drug_score)
+
+    if total_score >= thresholds.drug_date_score_strong:
+        return [
+            Inconsistency(
+                feature="drug_dates",
+                severity=InconsistencySeverity.STRONG,
+                difference=total_score,
+                description=f"Drug date inconsistency score: {total_score:.2f}",
+            )
+        ]
+    if total_score >= thresholds.drug_date_score_moderate:
+        return [
+            Inconsistency(
+                feature="drug_dates",
+                severity=InconsistencySeverity.MODERATE,
+                difference=total_score,
+                description=f"Drug date inconsistency score: {total_score:.2f}",
+            )
+        ]
+    return []
 
 # ---------------------------------------------------------------------------
 # Helpers
