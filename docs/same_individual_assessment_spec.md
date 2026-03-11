@@ -403,7 +403,7 @@ Three levels of inconsistency severity are defined:
 | strong   | difference that strongly suggests different individuals |
 | decisive | hard contradiction that overrides all matching evidence |
 
-Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
+Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight, drug set). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
 
 Decisive inconsistencies are expected to originate from narrative analysis (e.g. distinct patient identifiers mentioned in case narratives from the same study). When present, they override all matching evidence and force a Different individuals classification.
 
@@ -451,6 +451,40 @@ A mismatch in recorded patient sex is treated as a strong inconsistency:
 ```
 sex_R1 ≠ sex_R2
 ```
+
+------
+
+##### Drug Set
+
+Drug-set inconsistencies detect when a clinically important drug from one report is entirely absent from the other report's drug list.
+
+Drugs are classified by their **role** in the report:
+
+| Role | Classification |
+| ---- | -------------- |
+| suspected | Key drug |
+| interacting | Key drug |
+| concomitant | Non-key (background medication) |
+| None / unknown | Non-key |
+
+The check is **directional**: for each report, its key drugs are compared against the full drug list (all roles) of the other report. Each direction produces at most one moderate inconsistency, regardless of how many key drugs are missing.
+
+```
+For each direction (r1→r2, r2→r1):
+  key_drugs(source) = substances with role ∈ {suspected, interacting}
+  all_drugs(target) = all substances regardless of role
+  missing = key_drugs(source) − all_drugs(target)
+  if missing is non-empty → 1 moderate inconsistency
+```
+
+This yields 0, 1, or 2 moderate inconsistencies per pair.
+
+**Design notes:**
+
+- Drug name matching is **case-insensitive**.
+- A drug present in both reports with **different roles** is not inconsistent — role differences do not indicate different individuals.
+- Reports with **no key drugs** (all concomitant or role unknown) produce no drug-set inconsistencies.
+- Only drug **presence** is evaluated; differences in dosage, form, or dates are not considered.
 
 ------
 
@@ -581,7 +615,7 @@ The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}
 - \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Same individual**
 - \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Different / Related**
 - \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Same individual**
-- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1 > 0\) → **Different / Unrelated**
+- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Different / Unrelated**
 - \(L_{\text{match}} = 0.8\): below threshold → **Different / Unrelated** regardless of inconsistencies
 
 ---
@@ -622,6 +656,7 @@ The following parameters define the decision behaviour and are configurable:
 | `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
 | `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for Same in the strong zone |
 | `w_tot_med_zone` | 3.0 | Maximum \(w_{\text{tot}}\) for Same in the moderate zone |
+| `w_tot_weak_zone` | 1.0 | Maximum \(w_{\text{tot}}\) for Same in the weak zone |
 
 These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behaviour.
 

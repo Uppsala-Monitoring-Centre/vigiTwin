@@ -111,6 +111,7 @@ class SqlReportLoader:
 | `patient_height_values` | Structured + LLM | Values in **centimetres (cm)** |
 | `patient_weight_values` | Structured + LLM | Values in **kilograms (kg)** |
 | `drugs[].substance` | WHODrug active substance name | Case-insensitive matching is handled downstream |
+| `drugs[].role` | Drug characterisation in the report | `"suspected"`, `"interacting"`, `"concomitant"`, or `null` (unknown). Used by drug-set inconsistency check. |
 | `adverse_events[].pt_name` | MedDRA Preferred Term | Case-insensitive matching is handled downstream |
 | `report_date_values` | Structured | Set `resolution` to "day", "month", or "year" based on available precision |
 | `narrative` | Free-text narrative from the report | Used by narrative analysis (future); set to `None` if unavailable |
@@ -331,6 +332,7 @@ thresholds = DecisionThresholds(
     w_strong=3.0,        # weight for strong inconsistencies
     w_tot_strong_zone=4.0,  # w_tot threshold for strong zone
     w_tot_med_zone=3.0,     # w_tot threshold for medium zone
+    w_tot_weak_zone=1.0,    # w_tot threshold for weak zone
 )
 
 runner = PipelineRunner(
@@ -379,7 +381,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-182 tests covering all modules.
+195 tests covering all modules.
 
 ### Quick smoke test (in the secure repo)
 

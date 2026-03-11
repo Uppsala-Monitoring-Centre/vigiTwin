@@ -221,6 +221,7 @@ drugs: [
   {
     "substance": "pregabalin",
     "sources": ["structured"],
+    "role": "suspected",
 
     "form": "capsule",
     "strength": "75 mg",
@@ -241,7 +242,8 @@ drugs: [
 Notes:
 
 - `substance` corresponds to the **WHODrug active substance**
-- additional attributes are optional
+- `role` classifies the drug's importance in the report: `"suspected"`, `"interacting"`, `"concomitant"`, or `null` (unknown). Used by the drug-set inconsistency check to distinguish clinically central drugs from background medication (see method specification § Inconsistency Detection).
+- additional attributes (`form`, `strength`, `start_date`, `end_date`) are optional
 - drugs are interpreted as **sets** when comparing reports
 
 ------
