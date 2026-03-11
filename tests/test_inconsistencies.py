@@ -624,3 +624,23 @@ class TestDrugDateInconsistency:
         result = detect_inconsistencies(r1, r2, thresholds)
         date_incs = [i for i in result if i.feature == "drug_dates"]
         assert len(date_incs) == 0
+
+    def test_concomitant_start_diff_four_months_moderate(self, thresholds):
+        """Concomitant drug, start dates ~4 months apart (120d → weight 3.0 × 0.5 = 1.5) → moderate.
+
+        Regression test: this scenario produced an empty inconsistency list before
+        drug date detection was implemented.
+        """
+        r1 = Report(
+            report_id="1",
+            drugs=[_drug("metoprolol", start="2023-01-01", role=DrugRole.CONCOMITANT)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[_drug("metoprolol", start="2023-05-01", role=DrugRole.CONCOMITANT)],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        date_incs = [i for i in result if i.feature == "drug_dates"]
+        assert len(date_incs) == 1
+        assert date_incs[0].severity == InconsistencySeverity.MODERATE
+        assert date_incs[0].difference == pytest.approx(1.5)
