@@ -100,7 +100,7 @@ class DecisionThresholds(BaseModel):
 
     - strong zone (L_match > lmatch_strong): w_tot < 4 → Same
     - medium zone (L_match > lmatch_med):    w_tot < 3 → Same
-    - weak zone   (L_match > lmatch_weak):   w_tot == 0 → Same
+    - weak zone   (L_match > lmatch_weak):   w_tot < 1 → Same
     - below weak: always Different individuals / Unrelated
 
     Decisive inconsistencies override all zones → Different.
@@ -120,7 +120,7 @@ class DecisionThresholds(BaseModel):
     # Per-zone w_tot thresholds (Same if w_tot < threshold)
     w_tot_strong_zone: float = 4.0
     w_tot_med_zone: float = 3.0
-    # weak zone: requires w_tot == 0 (no configurable threshold needed)
+    w_tot_weak_zone: float = 1.0
 
 
 class PipelineConfig(BaseModel):

@@ -13,7 +13,7 @@ Each zone has its own tolerance for w_tot:
 
     L_match > strong  →  w_tot < 4 allows Same
     L_match > med     →  w_tot < 3 allows Same
-    L_match > weak    →  w_tot == 0 allows Same
+    L_match > weak    →  w_tot < 1 allows Same
     L_match ≤ weak    →  always Different / Unrelated
 
 Decisive inconsistencies (e.g. distinct patient IDs from the same
@@ -112,12 +112,13 @@ def classify(
 
     # --- Weak zone: L_match > lmatch_weak ---
     if L > thresholds.lmatch_weak:
-        if w_tot == 0:
+        if w_tot < thresholds.w_tot_weak_zone:
             return _same(
                 pair_id=features.pair_id,
                 explanation=(
                     f"Weak matching evidence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_weak}); no inconsistencies."
+                    f"{thresholds.lmatch_weak}); w_tot={w_tot:.1f} "
+                    f"< {thresholds.w_tot_weak_zone:.1f}."
                 ),
             )
         return _different(
@@ -125,7 +126,7 @@ def classify(
             relationship=RelationshipClassification.UNRELATED,
             explanation=(
                 f"Weak matching evidence (L_match={L:.2f}) with "
-                f"w_tot={w_tot:.1f} > 0 "
+                f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f} "
                 f"(strong={counts.strong}, moderate={counts.moderate}); "
                 f"classified as unrelated."
             ),

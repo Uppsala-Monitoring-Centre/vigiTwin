@@ -5,7 +5,7 @@ Uses the weighted inconsistency score w_tot = w_m * moderate + w_s * strong
 
     strong zone (L > 3.0): w_tot < 4 → Same
     medium zone (L > 2.0): w_tot < 3 → Same
-    weak zone   (L > 1.0): w_tot == 0 → Same
+    weak zone   (L > 1.0): w_tot < 1 → Same
     below weak:            always Different / Unrelated
 """
 
@@ -168,20 +168,20 @@ class TestMediumZone:
 
 
 # ===================================================================
-# Weak zone: lmatch_weak < L_match ≤ lmatch_med — w_tot == 0 → Same
+# Weak zone: lmatch_weak < L_match ≤ lmatch_med — w_tot < 1 → Same
 # ===================================================================
 
 class TestWeakZone:
     """lmatch_weak (1.0) < L_match ≤ lmatch_med (2.0)."""
 
     def test_no_inconsistencies_same(self):
-        """w_tot=0 → Same."""
+        """w_tot=0 < 1 → Same."""
         f = _make_features(L_match=1.5)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.SAME_INDIVIDUAL
 
-    def test_one_moderate_different_unrelated(self):
-        """w_tot = 1 > 0 → Different / Unrelated."""
+    def test_one_moderate_boundary_different_unrelated(self):
+        """w_tot = 1, NOT < 1 → Different / Unrelated."""
         f = _make_features(L_match=1.5, moderate=1)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
@@ -189,7 +189,7 @@ class TestWeakZone:
         assert result.final_label == "Unrelated"
 
     def test_one_strong_different_unrelated(self):
-        """w_tot = 3 > 0 → Different / Unrelated."""
+        """w_tot = 3 ≥ 1 → Different / Unrelated."""
         f = _make_features(L_match=1.5, strong=1)
         result = classify(f, THRESHOLDS)
         assert result.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS

@@ -351,7 +351,7 @@ Inconsistencies are combined into a single weighted score:
 |---|---|---|
 | > 3.0 (strong) | `w_tot < 4` | Different / Related |
 | > 2.0 (medium) | `w_tot < 3` | Different / Related |
-| > 1.0 (weak)   | `w_tot == 0` | Different / Unrelated |
+| > 1.0 (weak)   | `w_tot < 1` | Different / Unrelated |
 | ≤ 1.0          | never | Different / Unrelated |
 
 Decisive inconsistencies (e.g. distinct patient IDs from the same study) always force Different, with Related/Unrelated determined by whether L_match > lmatch_med.
