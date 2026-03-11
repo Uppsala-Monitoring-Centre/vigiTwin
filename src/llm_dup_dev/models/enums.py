@@ -36,6 +36,20 @@ class InconsistencySeverity(str, Enum):
     DECISIVE = "decisive"
 
 
+class DrugRole(str, Enum):
+    """Role of a drug in a pharmacovigilance report.
+
+    Used by the drug-set inconsistency check to distinguish clinically
+    central drugs (suspected, interacting) from background medication.
+
+    See: docs/data_contracts.md § Drug Information
+    """
+
+    SUSPECTED = "suspected"
+    CONCOMITANT = "concomitant"
+    INTERACTING = "interacting"
+
+
 class ReportingContextLevel(str, Enum):
     """Granularity of the reporting context used for probability estimation.
 

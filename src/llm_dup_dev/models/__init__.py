@@ -10,6 +10,7 @@ Plus classification results and enumeration types.
 
 from .enums import (
     AnchorType,
+    DrugRole,
     InconsistencySeverity,
     NarrativeConsistency,
     PrimaryClassification,
@@ -41,6 +42,7 @@ from .classification import ClassificationResult
 __all__ = [
     # Enums
     "AnchorType",
+    "DrugRole",
     "InconsistencySeverity",
     "NarrativeConsistency",
     "PrimaryClassification",

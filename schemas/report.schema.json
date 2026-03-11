@@ -110,6 +110,17 @@
           "title": "Sources",
           "type": "array"
         },
+        "role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DrugRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "form": {
           "anyOf": [
             {
@@ -163,6 +174,16 @@
       ],
       "title": "Drug",
       "type": "object"
+    },
+    "DrugRole": {
+      "description": "Role of a drug in a pharmacovigilance report.\n\nUsed by the drug-set inconsistency check to distinguish clinically\ncentral drugs (suspected, interacting) from background medication.\n\nSee: docs/data_contracts.md \u00a7 Drug Information",
+      "enum": [
+        "suspected",
+        "concomitant",
+        "interacting"
+      ],
+      "title": "DrugRole",
+      "type": "string"
     },
     "MeasurementValue": {
       "description": "Physical measurement (height or weight) with unit and provenance.",

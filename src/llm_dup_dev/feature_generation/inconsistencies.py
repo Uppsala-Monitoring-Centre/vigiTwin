@@ -13,7 +13,7 @@ See: docs/same_individual_assessment_spec.md § Inconsistency Detection
 from __future__ import annotations
 
 from llm_dup_dev.classifier.config import InconsistencyThresholds
-from llm_dup_dev.models.enums import InconsistencySeverity
+from llm_dup_dev.models.enums import DrugRole, InconsistencySeverity
 from llm_dup_dev.models.pair_features import Inconsistency
 from llm_dup_dev.models.report import Report
 
@@ -25,7 +25,7 @@ def detect_inconsistencies(
 ) -> list[Inconsistency]:
     """Detect all structured-data inconsistencies between two reports.
 
-    Checks: age, height, weight, sex.
+    Checks: age, height, weight, sex, drug set (role-based).
 
     For multi-valued attributes, the *minimum* difference across all
     value pairs is used (conservative: if any pair of values is close,
@@ -39,6 +39,7 @@ def detect_inconsistencies(
     inconsistencies.extend(_check_height(r1, r2, thresholds))
     inconsistencies.extend(_check_weight(r1, r2, thresholds))
     inconsistencies.extend(_check_sex(r1, r2))
+    inconsistencies.extend(_check_drug_set(r1, r2))
 
     severity_order = {
         InconsistencySeverity.STRONG: 0,
@@ -193,3 +194,83 @@ def _check_sex(r1: Report, r2: Report) -> list[Inconsistency]:
             description=f"Sex mismatch: {sorted(sexes_1)} vs {sorted(sexes_2)}",
         )
     ]
+
+
+# ---------------------------------------------------------------------------
+# Drug-set inconsistency
+# ---------------------------------------------------------------------------
+
+_KEY_ROLES = {DrugRole.SUSPECTED, DrugRole.INTERACTING}
+
+
+def _key_substance_names(report: Report) -> set[str]:
+    """Extract lowercased substance names for drugs with key roles.
+
+    Key roles are 'suspected' and 'interacting'. Drugs with
+    role=None or role='concomitant' are excluded.
+    """
+    return {
+        d.substance.lower()
+        for d in report.drugs
+        if d.role in _KEY_ROLES
+    }
+
+
+def _all_substance_names(report: Report) -> set[str]:
+    """Extract lowercased substance names for all drugs regardless of role."""
+    return {d.substance.lower() for d in report.drugs}
+
+
+def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
+    """Check for directional drug-set inconsistencies.
+
+    For each direction (r1→r2, r2→r1): if any key drug from the source
+    report is NOT present in all drugs of the target report, emit one
+    moderate inconsistency for that direction. Multiple missing key drugs
+    in the same direction still produce only one inconsistency.
+
+    Key drugs are those with role 'suspected' or 'interacting'.
+    Concomitant-only drugs never trigger inconsistencies.
+    A drug present in both reports with different roles is NOT inconsistent.
+    Reports with no key drugs (including role=None) produce no inconsistencies.
+
+    Returns 0, 1, or 2 moderate inconsistencies.
+    """
+    key_1 = _key_substance_names(r1)
+    key_2 = _key_substance_names(r2)
+    all_1 = _all_substance_names(r1)
+    all_2 = _all_substance_names(r2)
+
+    inconsistencies: list[Inconsistency] = []
+
+    # Direction 1: r1 key drugs missing from r2 all drugs
+    if key_1:
+        missing_in_r2 = key_1 - all_2
+        if missing_in_r2:
+            inconsistencies.append(
+                Inconsistency(
+                    feature="drug_set",
+                    severity=InconsistencySeverity.MODERATE,
+                    description=(
+                        f"Key drug(s) in report 1 not found in report 2: "
+                        f"{sorted(missing_in_r2)}"
+                    ),
+                )
+            )
+
+    # Direction 2: r2 key drugs missing from r1 all drugs
+    if key_2:
+        missing_in_r1 = key_2 - all_1
+        if missing_in_r1:
+            inconsistencies.append(
+                Inconsistency(
+                    feature="drug_set",
+                    severity=InconsistencySeverity.MODERATE,
+                    description=(
+                        f"Key drug(s) in report 2 not found in report 1: "
+                        f"{sorted(missing_in_r1)}"
+                    ),
+                )
+            )
+
+    return inconsistencies

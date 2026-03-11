@@ -16,6 +16,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from llm_dup_dev.models.enums import DrugRole
+
 
 # ---------------------------------------------------------------------------
 # Value types with provenance tracking
@@ -88,6 +90,7 @@ class Drug(BaseModel):
 
     substance: str
     sources: list[str] = Field(min_length=1)
+    role: DrugRole | None = None
     form: str | None = None
     strength: str | None = None
     start_date: PartialDate | None = None

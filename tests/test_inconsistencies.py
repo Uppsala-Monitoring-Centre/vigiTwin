@@ -4,8 +4,10 @@ import pytest
 
 from llm_dup_dev.classifier.config import InconsistencyThresholds
 from llm_dup_dev.models.enums import InconsistencySeverity
+from llm_dup_dev.models.enums import DrugRole
 from llm_dup_dev.models.report import (
     AgeValue,
+    Drug,
     MeasurementValue,
     Report,
     SourcedValue,
@@ -291,3 +293,182 @@ class TestMultipleInconsistencies:
         assert len(result) == 2
         assert result[0].severity == InconsistencySeverity.STRONG
         assert result[1].severity == InconsistencySeverity.MODERATE
+
+
+# ---- Drug set ----
+
+
+class TestDrugSetInconsistency:
+    """Directional drug-set inconsistency: 0–2 moderate inconsistencies."""
+
+    def test_same_drugs_different_roles_no_inconsistency(self, thresholds):
+        """Case 1: A(suspected),B(concomitant) vs A(concomitant),B(suspected) → 0."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="B", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="A", sources=["s"], role=DrugRole.CONCOMITANT),
+                Drug(substance="B", sources=["s"], role=DrugRole.SUSPECTED),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_one_direction_missing_key_drug(self, thresholds):
+        """Case 2: A(suspected),B(concomitant) vs B(concomitant) → 1."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="B", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="B", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 1
+        assert drug_incs[0].severity == InconsistencySeverity.MODERATE
+
+    def test_bidirectional_mismatch(self, thresholds):
+        """Case 3: A(suspected) vs B(suspected) → 2."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="B", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 2
+        assert all(i.severity == InconsistencySeverity.MODERATE for i in drug_incs)
+
+    def test_extra_concomitant_no_inconsistency(self, thresholds):
+        """Case 4: A(suspected) vs A(suspected),B(concomitant),C(concomitant) → 0."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="B", sources=["s"], role=DrugRole.CONCOMITANT),
+                Drug(substance="C", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_case_insensitive_matching(self, thresholds):
+        """Substance name matching is case-insensitive."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="Pregabalin", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="pregabalin", sources=["s"], role=DrugRole.CONCOMITANT)],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_no_roles_set_no_inconsistency(self, thresholds):
+        """If no drugs have roles (all None), no drug-set inconsistencies."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"])],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="B", sources=["s"])],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_multiple_missing_key_drugs_one_inconsistency_per_direction(self, thresholds):
+        """Multiple missing key drugs in same direction = still 1 inconsistency."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="B", sources=["s"], role=DrugRole.INTERACTING),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="C", sources=["s"], role=DrugRole.SUSPECTED),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        # r1→r2: A and B both missing from r2 → 1 inconsistency
+        # r2→r1: C missing from r1 → 1 inconsistency
+        assert len(drug_incs) == 2
+
+    def test_interacting_is_key(self, thresholds):
+        """Interacting drugs count as key drugs."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.INTERACTING)],
+        )
+        r2 = Report(report_id="2", drugs=[])
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 1
+        assert drug_incs[0].severity == InconsistencySeverity.MODERATE
+
+    def test_empty_drug_lists(self, thresholds):
+        """Empty drug lists produce no inconsistencies."""
+        r1 = Report(report_id="1")
+        r2 = Report(report_id="2")
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_one_sided_roles(self, thresholds):
+        """Only one report has role info; directional check is one-sided."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="B", sources=["s"])],  # role=None
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        # r1→r2: A (key) missing from r2 → 1
+        # r2→r1: no key drugs in r2 → 0
+        assert len(drug_incs) == 1
+
+    def test_key_drug_present_as_concomitant_in_other(self, thresholds):
+        """A drug present in both reports with different roles is NOT inconsistent."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.CONCOMITANT)],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0

@@ -569,7 +569,7 @@ The decision space is divided into four zones based on the magnitude of \(L_{\te
 |---|---|---|---|
 | Strong evidence | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Different / Related |
 | Moderate evidence | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Different / Related |
-| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} = 0\) | Different / Unrelated |
+| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Different / Unrelated |
 | Below threshold | \(L_{\text{match}} \leq 1.0\) | never | Different / Unrelated |
 
 The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3), and the inconsistency weights (\(w_m\), \(w_s\)) are all configurable parameters.
