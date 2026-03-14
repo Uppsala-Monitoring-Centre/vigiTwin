@@ -49,6 +49,23 @@ class AnchorPopulation(BaseModel):
     N_anchor: int
 
 
+class FeatureContribution(BaseModel):
+    """Per-feature probability contribution to the composite p_joint.
+
+    Exposes the individual feature probabilities that are multiplied
+    together to form p_joint. Useful for debugging and method development:
+    understanding which features contributed how much evidence.
+
+    See: docs/same_individual_assessment_spec.md § Probability estimation
+    """
+
+    feature: str
+    p_f: float
+    method: str  # "empirical" or "domain_size"
+    domain_size: float | None = None
+    description: str = ""
+
+
 class ProbabilityEstimate(BaseModel):
     """Result of the collision probability computation.
 
@@ -57,6 +74,7 @@ class ProbabilityEstimate(BaseModel):
 
     p_joint: float
     expected_collisions: float
+    feature_contributions: list[FeatureContribution] = Field(default_factory=list)
 
 
 class Inconsistency(BaseModel):
