@@ -95,6 +95,103 @@ class TestProbabilityComputation:
         assert result.p_joint < 1
         assert result.expected_collisions >= 0
 
+    def test_estimate_carries_feature_contributions(
+        self, basic_match, anchor_drugs, stats, domain_config
+    ):
+        """ProbabilityResult.estimate should include per-feature contributions."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        estimate = result.estimate
+
+        # Should have the same number of contributions as internal feature_probabilities
+        assert len(estimate.feature_contributions) == len(result.feature_probabilities)
+
+        # Each contribution should mirror the internal FeatureProbability
+        for fc, fp in zip(estimate.feature_contributions, result.feature_probabilities):
+            assert fc.feature == fp.feature
+            assert fc.p_f == fp.p_f
+            assert fc.method == fp.method
+            assert fc.domain_size == fp.domain_size
+            assert fc.description == fp.description
+
+    def test_feature_contributions_product_equals_p_joint(
+        self, basic_match, anchor_drugs, stats, domain_config
+    ):
+        """Product of all feature p_f values should equal p_joint."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        estimate = result.estimate
+
+        product = 1.0
+        for fc in estimate.feature_contributions:
+            product *= fc.p_f
+
+        assert abs(product - estimate.p_joint) < 1e-15
+
+    def test_feature_contributions_include_expected_features(
+        self, basic_match, anchor_drugs, stats, domain_config
+    ):
+        """With DRUGS anchor: should see ae_set, patient_sex, patient_age, report_date."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        estimate = result.estimate
+        feature_names = {fc.feature for fc in estimate.feature_contributions}
+
+        # AE set should be included (anchor is DRUGS, not AES)
+        assert "ae_set" in feature_names
+        # Drug set should NOT be included (anchor is DRUGS)
+        assert "drug_set" not in feature_names
+        # Matched demographics
+        assert "patient_sex" in feature_names
+        assert "patient_age" in feature_names
+        assert "report_date" in feature_names
+        # Unmatched demographics should not appear
+        assert "patient_height" not in feature_names
+        assert "patient_weight" not in feature_names
+
+    def test_feature_contributions_method_types(
+        self, basic_match, anchor_drugs, stats, domain_config
+    ):
+        """AE set should be empirical; demographics should be domain_size."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        estimate = result.estimate
+
+        for fc in estimate.feature_contributions:
+            if fc.feature == "ae_set":
+                assert fc.method == "empirical"
+                assert fc.domain_size is None
+            elif fc.feature in ("patient_sex", "patient_age", "report_date"):
+                assert fc.method == "domain_size"
+                assert fc.domain_size is not None
+                assert fc.domain_size > 0
+
+    def test_empty_contributions_when_no_features(self, domain_config):
+        """No matched features → empty feature_contributions list."""
+        empty_match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=100,
+            N_AEs=100,
+            N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES,
+            N_anchor=50,
+        )
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
+        )
+        result = compute_probability(empty_match, anchor, stats, domain_config)
+        estimate = result.estimate
+        assert estimate.feature_contributions == []
+        assert estimate.p_joint == 1.0
+
     def test_drugs_excluded_when_anchor(
         self, basic_match, anchor_drugs, stats, domain_config
     ):

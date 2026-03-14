@@ -22,6 +22,7 @@ from llm_dup_dev.feature_generation.matching import MatchResult
 from llm_dup_dev.models.enums import AnchorType
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
+    FeatureContribution,
     ProbabilityEstimate,
 )
 
@@ -53,10 +54,24 @@ class ProbabilityResult:
 
     @property
     def estimate(self) -> ProbabilityEstimate:
-        """Convert to the PairFeatures-level model."""
+        """Convert to the PairFeatures-level model.
+
+        Carries through per-feature probability contributions for
+        debugging and method development.
+        """
         return ProbabilityEstimate(
             p_joint=self.p_joint,
             expected_collisions=self.expected_collisions,
+            feature_contributions=[
+                FeatureContribution(
+                    feature=fp.feature,
+                    p_f=fp.p_f,
+                    method=fp.method,
+                    domain_size=fp.domain_size,
+                    description=fp.description,
+                )
+                for fp in self.feature_probabilities
+            ],
         )
 
 

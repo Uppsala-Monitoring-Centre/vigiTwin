@@ -22,7 +22,30 @@
   },
   "probability": {
     "p_joint": 2.3e-08,
-    "expected_collisions": 2.3e-05
+    "expected_collisions": 2.3e-05,
+    "feature_contributions": [
+      {
+        "feature": "ae_set",
+        "p_f": 0.0012,
+        "method": "empirical",
+        "domain_size": null,
+        "description": "AE set: 120/100000"
+      },
+      {
+        "feature": "patient_sex",
+        "p_f": 0.5,
+        "method": "domain_size",
+        "domain_size": 2.0,
+        "description": "patient_sex: D_f=2"
+      },
+      {
+        "feature": "patient_age",
+        "p_f": 0.0099,
+        "method": "domain_size",
+        "domain_size": 101.0,
+        "description": "patient_age: D_f=101"
+      }
+    ]
   },
   "L_match": 4.64,
   "inconsistencies": [

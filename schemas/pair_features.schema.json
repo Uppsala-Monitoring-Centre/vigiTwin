@@ -65,6 +65,47 @@
       "title": "EvidenceSummary",
       "type": "object"
     },
+    "FeatureContribution": {
+      "description": "Per-feature probability contribution to the composite p_joint.\n\nExposes the individual feature probabilities that are multiplied\ntogether to form p_joint. Useful for debugging and method development:\nunderstanding which features contributed how much evidence.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Probability estimation",
+      "properties": {
+        "feature": {
+          "title": "Feature",
+          "type": "string"
+        },
+        "p_f": {
+          "title": "P F",
+          "type": "number"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "domain_size": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Domain Size"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "feature",
+        "p_f",
+        "method"
+      ],
+      "title": "FeatureContribution",
+      "type": "object"
+    },
     "Inconsistency": {
       "description": "A detected inconsistency between two reports.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Inconsistency Detection",
       "properties": {
@@ -172,6 +213,13 @@
         "expected_collisions": {
           "title": "Expected Collisions",
           "type": "number"
+        },
+        "feature_contributions": {
+          "items": {
+            "$ref": "#/$defs/FeatureContribution"
+          },
+          "title": "Feature Contributions",
+          "type": "array"
         }
       },
       "required": [
