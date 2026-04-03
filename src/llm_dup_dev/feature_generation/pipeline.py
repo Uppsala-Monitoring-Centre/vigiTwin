@@ -95,6 +95,7 @@ def generate_pair_features(
         stats=stats,
         config=config.domain_sizes,
         epsilon=config.epsilon,
+        smoothing_pseudocount=config.anchor.smoothing_pseudocount,
     )
 
     # Step 5: Detect inconsistencies

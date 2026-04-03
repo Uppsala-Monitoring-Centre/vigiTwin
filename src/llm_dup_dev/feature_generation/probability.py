@@ -94,6 +94,17 @@ class FrequencyStats(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+#: Pseudo-count for Bayesian smoothing of anchor-conditional probabilities.
+#: Controls how strongly the estimate is pulled toward the prior p0 when
+#: the leave-pair-out sample is small. Configurable via
+#: ``AnchorConfig.smoothing_pseudocount`` in ``PipelineConfig``.
+SMOOTHING_PSEUDOCOUNT: int = 10
+
+
+# ---------------------------------------------------------------------------
 # Main computation
 # ---------------------------------------------------------------------------
 
@@ -104,6 +115,7 @@ def compute_probability(
     stats: FrequencyStats,
     config: DomainSizeConfig,
     epsilon: float = 1e-15,
+    smoothing_pseudocount: int = SMOOTHING_PSEUDOCOUNT,
 ) -> ProbabilityResult:
     """Compute the composite matching probability and L_match.
 
@@ -114,7 +126,8 @@ def compute_probability(
         4. Compute L_match = max(0, -log10(E_joint + epsilon)).
 
     Drug/AE set frequencies are excluded when they form part of the
-    anchor (to avoid double-counting).
+    anchor (to avoid double-counting). When included, they are estimated
+    using leave-pair-out Bayesian smoothing (see ``leave_pair_out_probability``).
 
     Parameters
     ----------
@@ -128,6 +141,10 @@ def compute_probability(
         Domain size configuration.
     epsilon : float
         Small constant for numerical stability.
+    smoothing_pseudocount : int
+        Bayesian pseudo-count m for leave-pair-out smoothing. Defaults to
+        ``SMOOTHING_PSEUDOCOUNT`` (10); pass ``config.anchor.smoothing_pseudocount``
+        from ``PipelineConfig`` to use the configured value.
 
     Returns
     -------
@@ -136,35 +153,65 @@ def compute_probability(
     """
     feature_probs: list[FeatureProbability] = []
 
-    # Drug set probability — excluded if anchor uses drugs
+    # Drug set probability — excluded if anchor uses drugs.
+    # When the anchor is AEs, the drug set is an additional feature scored
+    # with leave-pair-out Bayesian smoothing:
+    #   n_anchor = N_AEs, k_anchor_and_feature = N_drugs_AEs,
+    #   p0 = N_drugs / N_total  (drug prevalence without AE conditioning)
     if (
         anchor.type not in (AnchorType.DRUGS, AnchorType.DRUGS_AES)
         and match_result.matching_drugs
     ):
-        p_drugs = _empirical_frequency(stats.N_drugs, stats.N_total)
+        p_drugs = leave_pair_out_probability(
+            n_anchor=anchor.N_anchor,
+            k_anchor_and_feature=stats.N_drugs_AEs,
+            n_feature_in_context=stats.N_drugs,
+            n_total_in_context=stats.N_total,
+            smoothing_pseudocount=smoothing_pseudocount,
+        )
         if p_drugs is not None and p_drugs > 0:
+            n_other = max(0, anchor.N_anchor - 2)
+            k_other = max(0, stats.N_drugs_AEs - 2)
             feature_probs.append(
                 FeatureProbability(
                     feature="drug_set",
                     p_f=p_drugs,
-                    method="empirical",
-                    description=f"Drug set: {stats.N_drugs}/{stats.N_total}",
+                    method="leave_pair_out",
+                    description=(
+                        f"Drug set: k_other={k_other}/{n_other} "
+                        f"smoothed with p0={stats.N_drugs}/{stats.N_total}"
+                    ),
                 )
             )
 
-    # AE set probability — excluded if anchor uses AEs
+    # AE set probability — excluded if anchor uses AEs.
+    # When the anchor is drugs, the AE set is an additional feature scored
+    # with leave-pair-out Bayesian smoothing:
+    #   n_anchor = N_drugs, k_anchor_and_feature = N_drugs_AEs,
+    #   p0 = N_AEs / N_total  (AE prevalence without drug conditioning)
     if (
         anchor.type not in (AnchorType.AES, AnchorType.DRUGS_AES)
         and match_result.matching_AEs
     ):
-        p_aes = _empirical_frequency(stats.N_AEs, stats.N_total)
+        p_aes = leave_pair_out_probability(
+            n_anchor=anchor.N_anchor,
+            k_anchor_and_feature=stats.N_drugs_AEs,
+            n_feature_in_context=stats.N_AEs,
+            n_total_in_context=stats.N_total,
+            smoothing_pseudocount=smoothing_pseudocount,
+        )
         if p_aes is not None and p_aes > 0:
+            n_other = max(0, anchor.N_anchor - 2)
+            k_other = max(0, stats.N_drugs_AEs - 2)
             feature_probs.append(
                 FeatureProbability(
                     feature="ae_set",
                     p_f=p_aes,
-                    method="empirical",
-                    description=f"AE set: {stats.N_AEs}/{stats.N_total}",
+                    method="leave_pair_out",
+                    description=(
+                        f"AE set: k_other={k_other}/{n_other} "
+                        f"smoothed with p0={stats.N_AEs}/{stats.N_total}"
+                    ),
                 )
             )
 
@@ -214,8 +261,79 @@ def compute_probability(
 # ---------------------------------------------------------------------------
 
 
+def leave_pair_out_probability(
+    n_anchor: int,
+    k_anchor_and_feature: int,
+    n_feature_in_context: int,
+    n_total_in_context: int,
+    smoothing_pseudocount: int = SMOOTHING_PSEUDOCOUNT,
+) -> float | None:
+    """Bayesian-smoothed, leave-pair-out conditional probability.
+
+    Estimates P(feature | anchor, context) for a candidate pair, removing
+    the two focal reports from the anchor counts to avoid self-inclusion
+    bias, then applying Bayesian smoothing toward a prior.
+
+    Formula::
+
+        n_other  = max(0, n_anchor - 2)
+        k_other  = max(0, k_anchor_and_feature - 2)
+        p0       = n_feature_in_context / n_total_in_context
+        p_hat    = (k_other + m * p0) / (n_other + m)
+
+    where m = smoothing_pseudocount (default SMOOTHING_PSEUDOCOUNT = 10).
+
+    Parameters
+    ----------
+    n_anchor : int
+        Number of reports in the relevant context that match the anchor
+        (e.g. reports with the matching drug set when anchor is DRUGS).
+    k_anchor_and_feature : int
+        Number of those anchor reports that *also* have the additional
+        feature (e.g. reports with both matching drugs AND matching AEs).
+    n_feature_in_context : int
+        Number of reports in the relevant context with the additional
+        feature, **without** conditioning on the anchor.  Used to compute
+        the prior p0.
+    n_total_in_context : int
+        Total reports in the relevant context.  Used to compute the
+        prior p0.
+    smoothing_pseudocount : int
+        Bayesian pseudo-count m. Defaults to ``SMOOTHING_PSEUDOCOUNT`` (10).
+        Configurable via ``AnchorConfig.smoothing_pseudocount`` in
+        ``PipelineConfig``.
+
+    Returns
+    -------
+    float or None
+        The smoothed probability estimate, or None if ``n_total_in_context``
+        is non-positive (cannot compute a meaningful prior).
+    """
+    if n_total_in_context <= 0:
+        return None
+
+    m = smoothing_pseudocount
+
+    # Leave-pair-out: remove the two focal reports from anchor counts
+    n_other = max(0, n_anchor - 2)
+    k_other = max(0, k_anchor_and_feature - 2)
+
+    # Prior: marginal prevalence of the feature in the relevant context,
+    # NOT conditioned on the anchor.
+    p0 = n_feature_in_context / n_total_in_context
+
+    # Bayesian-smoothed estimate
+    p_hat = (k_other + m * p0) / (n_other + m)
+
+    return p_hat
+
+
 def _empirical_frequency(count: int, total: int) -> float | None:
-    """Compute empirical relative frequency, or None if invalid."""
+    """General utility: empirical relative frequency, or None if inputs are invalid.
+
+    Not used for drug/AE set probabilities (which use ``leave_pair_out_probability``
+    instead), but kept as a utility for any caller that needs a simple ratio.
+    """
     if total <= 0 or count < 0:
         return None
     return count / total

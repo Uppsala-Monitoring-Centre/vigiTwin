@@ -280,15 +280,68 @@ Higher measurement precision increases domain size and therefore increases the e
 
 ##### Drug Sets and Adverse Event Sets
 
-For drug sets and adverse event sets, empirical reporting frequencies are used whenever possible.
-
-$$
-p_f = \frac{\text{number of reports containing the set}}{\text{total reports in context}}
-$$
-
-These probabilities reflect the rarity of specific drug or AE combinations within the reporting system.
+For drug sets and adverse event sets, the probability is estimated using a **leave-pair-out Bayesian-smoothed** conditional frequency within the anchor population. This avoids self-inclusion bias from the two focal reports and prevents zero-probability pathologies for rare combinations.
 
 Drug sets and AE sets are evaluated only when they are **not part of the anchor definition**, to avoid double-counting anchor information.
+
+###### Leave-Pair-Out Estimation
+
+When evaluating an additional matching feature \(F\) (e.g. the drug set) within an anchor population \(A\) (e.g. the AE set), for a candidate pair where both reports match on \(F\):
+
+1. **Remove the focal pair** from the anchor counts:
+
+$$
+n_{\text{other}} = \max(0,\; n_{\text{anchor}} - 2)
+$$
+$$
+k_{\text{other}} = \max(0,\; k_{\text{anchor+feature}} - 2)
+$$
+
+where \(n_{\text{anchor}}\) is the number of reports in the relevant context matching the anchor, and \(k_{\text{anchor+feature}}\) is the number of those also matching the additional feature.
+
+2. **Compute the prior** from the broader context (without conditioning on the anchor):
+
+$$
+p_0 = \frac{N_{\text{feature in context}}}{N_{\text{total in context}}}
+$$
+
+For example, if the anchor is the AE set and the additional feature is the drug set, then \(p_0\) is the prevalence of the drug set in the relevant context (country/year or global), **not** among only reports with those AEs.
+
+3. **Apply Bayesian smoothing**:
+
+$$
+\hat{p}(F \mid A, \text{context}) = \frac{k_{\text{other}} + m \cdot p_0}{n_{\text{other}} + m}
+$$
+
+where \(m = 10\) is a smoothing pseudo-count.
+
+###### Design Rationale
+
+- **Leave-pair-out** prevents the focal pair from inflating its own evidence. Without this correction, the two reports being evaluated contribute to the count that is supposed to measure how common their shared feature is among *other* reports.
+- **Bayesian smoothing** prevents zero probabilities when the leave-pair-out count is zero (i.e. no other reports in the anchor share the feature), which would otherwise cause undefined log-probability values. The prior \(p_0\) pulls the estimate toward the marginal prevalence.
+- **\(m = 10\)** provides moderate regularisation: with 23 or more leave-pair-out reports, the data dominates; with very few, the prior dominates.
+
+###### Worked Example
+
+Suppose:
+- Anchor = matching AE set, \(n_{\text{anchor}} = 25\)
+- Additional feature = matching drug set, \(k_{\text{anchor+feature}} = 3\) (3 of the 25 anchor reports also have the matching drugs)
+- The focal pair are among those 3
+- Drug set prevalence in context: \(N_{\text{drugs}} = 200\), \(N_{\text{total}} = 10{,}000\)
+
+Then:
+
+$$
+n_{\text{other}} = 25 - 2 = 23, \quad k_{\text{other}} = 3 - 2 = 1
+$$
+$$
+p_0 = \frac{200}{10{,}000} = 0.02
+$$
+$$
+\hat{p} = \frac{1 + 10 \times 0.02}{23 + 10} = \frac{1.2}{33} \approx 0.0364
+$$
+
+This logic applies symmetrically: if the anchor is the drug set and the additional feature is the AE set, the same formula is used with the AE set's marginal prevalence as \(p_0\).
 
 ---
 
