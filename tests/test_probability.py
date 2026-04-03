@@ -7,8 +7,10 @@ import pytest
 from llm_dup_dev.classifier.config import DomainSizeConfig
 from llm_dup_dev.feature_generation.matching import DemographicMatch, MatchResult
 from llm_dup_dev.feature_generation.probability import (
+    SMOOTHING_PSEUDOCOUNT,
     FrequencyStats,
     compute_probability,
+    leave_pair_out_probability,
 )
 from llm_dup_dev.models.enums import AnchorType
 from llm_dup_dev.models.pair_features import AnchorPopulation
@@ -155,7 +157,7 @@ class TestProbabilityComputation:
     def test_feature_contributions_method_types(
         self, basic_match, anchor_drugs, stats, domain_config
     ):
-        """AE set should be empirical; demographics should be domain_size."""
+        """AE set should be leave_pair_out; demographics should be domain_size."""
         result = compute_probability(
             basic_match, anchor_drugs, stats, domain_config
         )
@@ -163,7 +165,7 @@ class TestProbabilityComputation:
 
         for fc in estimate.feature_contributions:
             if fc.feature == "ae_set":
-                assert fc.method == "empirical"
+                assert fc.method == "leave_pair_out"
                 assert fc.domain_size is None
             elif fc.feature in ("patient_sex", "patient_age", "report_date"):
                 assert fc.method == "domain_size"
@@ -372,3 +374,266 @@ class TestProbabilityComputation:
 
         # Day resolution has larger D_f → smaller p_f → higher L_match
         assert result_day.L_match > result_month.L_match
+
+
+# ---------------------------------------------------------------------------
+# Leave-pair-out probability helper tests
+# ---------------------------------------------------------------------------
+
+
+class TestLeavePairOutProbability:
+    """Tests for the leave_pair_out_probability helper function."""
+
+    def test_standard_leave_pair_out(self):
+        """A. n_anchor=25, k_anchor=3, pair contributes 2 → k_other=1/n_other=23."""
+        m = SMOOTHING_PSEUDOCOUNT  # 10
+        p0 = 50 / 1000  # 0.05
+
+        result = leave_pair_out_probability(
+            n_anchor=25,
+            k_anchor_and_feature=3,
+            n_feature_in_context=50,
+            n_total_in_context=1000,
+        )
+
+        # Expected: (1 + 10*0.05) / (23 + 10) = (1 + 0.5) / 33 = 1.5/33
+        expected = (1 + m * p0) / (23 + m)
+        assert result == pytest.approx(expected)
+        assert result == pytest.approx(1.5 / 33)
+
+    def test_extreme_sparse_zero_k_other(self):
+        """B. k_anchor=2, pair are the only two → k_other=0, smoothed toward p0."""
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 50 / 1000  # 0.05
+
+        result = leave_pair_out_probability(
+            n_anchor=25,
+            k_anchor_and_feature=2,
+            n_feature_in_context=50,
+            n_total_in_context=1000,
+        )
+
+        # Expected: (0 + 10*0.05) / (23 + 10) = 0.5/33
+        expected = (0 + m * p0) / (23 + m)
+        assert result == pytest.approx(expected)
+        assert result > 0  # smoothing prevents zero
+
+    def test_symmetry_ae_anchor_drug_feature(self):
+        """C. AEs are anchor, drugs are additional feature."""
+        # Anchor = AEs, N_anchor = N_AEs = 30
+        # Feature = drugs, k = N_drugs_AEs = 5
+        # p0 = N_drugs / N_total = 100 / 5000
+        m = SMOOTHING_PSEUDOCOUNT
+        result = leave_pair_out_probability(
+            n_anchor=30,
+            k_anchor_and_feature=5,
+            n_feature_in_context=100,
+            n_total_in_context=5000,
+        )
+        p0 = 100 / 5000
+        expected = (3 + m * p0) / (28 + m)
+        assert result == pytest.approx(expected)
+
+    def test_symmetry_drug_anchor_ae_feature(self):
+        """C. Drugs are anchor, AEs are additional feature."""
+        # Anchor = drugs, N_anchor = N_drugs = 30
+        # Feature = AEs, k = N_drugs_AEs = 5
+        # p0 = N_AEs / N_total = 200 / 5000
+        m = SMOOTHING_PSEUDOCOUNT
+        result = leave_pair_out_probability(
+            n_anchor=30,
+            k_anchor_and_feature=5,
+            n_feature_in_context=200,
+            n_total_in_context=5000,
+        )
+        p0 = 200 / 5000
+        expected = (3 + m * p0) / (28 + m)
+        assert result == pytest.approx(expected)
+
+    def test_tiny_anchor_size_2(self):
+        """D. n_anchor=2, the minimum real pair → n_other=0."""
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 100 / 5000
+
+        result = leave_pair_out_probability(
+            n_anchor=2,
+            k_anchor_and_feature=2,
+            n_feature_in_context=100,
+            n_total_in_context=5000,
+        )
+
+        # n_other=0, k_other=0 → purely prior-driven
+        expected = (0 + m * p0) / (0 + m)
+        assert result == pytest.approx(expected)
+        assert result == pytest.approx(p0)  # reduces to p0 when n_other=0
+
+    def test_tiny_anchor_size_1(self):
+        """D. n_anchor=1, degenerate → n_other=0 (clamped)."""
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 100 / 5000
+
+        result = leave_pair_out_probability(
+            n_anchor=1,
+            k_anchor_and_feature=1,
+            n_feature_in_context=100,
+            n_total_in_context=5000,
+        )
+
+        # n_other=0, k_other=0 → purely prior-driven
+        expected = (0 + m * p0) / (0 + m)
+        assert result == pytest.approx(expected)
+
+    def test_clamping_k_at_zero(self):
+        """D. k_anchor_and_feature=0 → k_other stays 0 (no negative)."""
+        result = leave_pair_out_probability(
+            n_anchor=25,
+            k_anchor_and_feature=0,
+            n_feature_in_context=50,
+            n_total_in_context=1000,
+        )
+        # k_other = max(0, 0-2) = 0
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 50 / 1000
+        expected = (0 + m * p0) / (23 + m)
+        assert result == pytest.approx(expected)
+
+    def test_clamping_n_at_zero(self):
+        """D. n_anchor=0 → n_other stays 0 (clamped)."""
+        result = leave_pair_out_probability(
+            n_anchor=0,
+            k_anchor_and_feature=0,
+            n_feature_in_context=50,
+            n_total_in_context=1000,
+        )
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 50 / 1000
+        expected = (0 + m * p0) / (0 + m)
+        assert result == pytest.approx(expected)
+
+    def test_p0_zero(self):
+        """D. p0=0 (feature never seen in context) → smoothed result is k_other/(n_other+m)."""
+        result = leave_pair_out_probability(
+            n_anchor=25,
+            k_anchor_and_feature=3,
+            n_feature_in_context=0,
+            n_total_in_context=1000,
+        )
+        m = SMOOTHING_PSEUDOCOUNT
+        # p0 = 0, k_other=1, n_other=23
+        expected = 1 / (23 + m)
+        assert result == pytest.approx(expected)
+        assert result > 0  # no division by zero
+
+    def test_n_total_zero_returns_none(self):
+        """D. n_total=0 → cannot compute p0 → returns None."""
+        result = leave_pair_out_probability(
+            n_anchor=25,
+            k_anchor_and_feature=3,
+            n_feature_in_context=50,
+            n_total_in_context=0,
+        )
+        assert result is None
+
+    def test_result_always_positive_with_valid_inputs(self):
+        """Smoothing should ensure positive result when p0 > 0."""
+        result = leave_pair_out_probability(
+            n_anchor=100,
+            k_anchor_and_feature=2,
+            n_feature_in_context=1,
+            n_total_in_context=100_000,
+        )
+        assert result is not None
+        assert result > 0
+
+    def test_no_log_domain_errors(self):
+        """Result should be safe for log computation (positive and finite)."""
+        result = leave_pair_out_probability(
+            n_anchor=2,
+            k_anchor_and_feature=2,
+            n_feature_in_context=1,
+            n_total_in_context=100_000,
+        )
+        assert result is not None
+        assert result > 0
+        assert math.isfinite(math.log10(result))
+
+
+# ---------------------------------------------------------------------------
+# Integration: leave-pair-out in compute_probability
+# ---------------------------------------------------------------------------
+
+
+class TestLeavePairOutIntegration:
+    """Tests that compute_probability uses leave-pair-out for drug/AE features."""
+
+    def test_ae_feature_uses_leave_pair_out_when_anchor_drugs(self):
+        """When anchor is DRUGS, AE set should use leave_pair_out method."""
+        match = MatchResult(
+            matching_drugs=["drug_a"],
+            matching_AEs=["ae_a"],
+            demographic_matches=[],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=25, N_AEs=200, N_drugs_AEs=3,
+            type=AnchorType.DRUGS, N_anchor=25,
+        )
+        stats = FrequencyStats(N_total=1000, N_drugs=25, N_AEs=200, N_drugs_AEs=3)
+        config = DomainSizeConfig()
+
+        result = compute_probability(match, anchor, stats, config)
+
+        ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
+        assert len(ae_feats) == 1
+        assert ae_feats[0].method == "leave_pair_out"
+
+        # Verify the actual value: (1 + 10*0.2) / (23 + 10) = 3.0/33
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 200 / 1000
+        expected = (1 + m * p0) / (23 + m)
+        assert ae_feats[0].p_f == pytest.approx(expected)
+
+    def test_drug_feature_uses_leave_pair_out_when_anchor_aes(self):
+        """When anchor is AES, drug set should use leave_pair_out method."""
+        match = MatchResult(
+            matching_drugs=["drug_a"],
+            matching_AEs=["ae_a"],
+            demographic_matches=[],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=200, N_AEs=25, N_drugs_AEs=3,
+            type=AnchorType.AES, N_anchor=25,
+        )
+        stats = FrequencyStats(N_total=1000, N_drugs=200, N_AEs=25, N_drugs_AEs=3)
+        config = DomainSizeConfig()
+
+        result = compute_probability(match, anchor, stats, config)
+
+        drug_feats = [fp for fp in result.feature_probabilities if fp.feature == "drug_set"]
+        assert len(drug_feats) == 1
+        assert drug_feats[0].method == "leave_pair_out"
+
+        # Verify the actual value: (1 + 10*(200/1000)) / (23 + 10) = 3.0/33
+        m = SMOOTHING_PSEUDOCOUNT
+        p0 = 200 / 1000
+        expected = (1 + m * p0) / (23 + m)
+        assert drug_feats[0].p_f == pytest.approx(expected)
+
+    def test_description_shows_leave_pair_out_counts(self):
+        """Description should show k_other/n_other and p0 numerator/denominator."""
+        match = MatchResult(
+            matching_drugs=["drug_a"],
+            matching_AEs=["ae_a"],
+            demographic_matches=[],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=25, N_AEs=200, N_drugs_AEs=3,
+            type=AnchorType.DRUGS, N_anchor=25,
+        )
+        stats = FrequencyStats(N_total=1000, N_drugs=25, N_AEs=200, N_drugs_AEs=3)
+        config = DomainSizeConfig()
+
+        result = compute_probability(match, anchor, stats, config)
+        ae_feat = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"][0]
+
+        assert "k_other=1/23" in ae_feat.description
+        assert "p0=200/1000" in ae_feat.description

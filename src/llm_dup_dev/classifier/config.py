@@ -98,6 +98,14 @@ class AnchorConfig(BaseModel):
             "use the smaller of the two as anchor."
         ),
     )
+    smoothing_pseudocount: int = Field(
+        default=10,
+        description=(
+            "m: Bayesian pseudo-count for leave-pair-out probability smoothing. "
+            "Controls how strongly the estimate is pulled toward the prior p0 "
+            "when the leave-pair-out sample is small."
+        ),
+    )
 
 
 class DecisionThresholds(BaseModel):

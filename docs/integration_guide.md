@@ -430,7 +430,10 @@ config = PipelineConfig(
         height_moderate=5.0, height_strong=10.0,
         weight_moderate=5.0, weight_strong=15.0,
     ),
-    anchor=AnchorConfig(threshold=50),
+    anchor=AnchorConfig(
+        threshold=50,
+        smoothing_pseudocount=10,  # Bayesian pseudo-count m for leave-pair-out AE/drug scoring
+    ),
     epsilon=1e-15,
 )
 
@@ -491,7 +494,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-208 tests covering all modules.
+247 tests covering all modules.
 
 ### Quick smoke test (in the secure repo)
 
