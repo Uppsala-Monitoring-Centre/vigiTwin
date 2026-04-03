@@ -14,7 +14,7 @@ decision logic, eval framework       LLM execution via Azure
 
 Defines:                             Implements:
   Report, ReportPair, PairFeatures     ReportLoader protocol
-  FrequencyStats                       StatsProvider protocol
+  FrequencyStats                       StatsProvider protocol (live or offline)
   PipelineRunner                       NarrativeProvider (future)
   ClassificationResult
   EvalSummary
@@ -23,6 +23,15 @@ Defines:                             Implements:
 ```
 
 The secure repo installs `llm_dup_dev` as a dependency and provides concrete implementations of two protocols that connect the pipeline to the pharmacovigilance database.
+
+The pipeline supports **two operating modes**:
+
+| Mode | When to use | StatsProvider implementation |
+|------|-------------|------------------------------|
+| **Live** | Production / online evaluation | `SqlStatsProvider` — queries the database at runtime |
+| **Offline (frozen validation)** | Evaluation batches without DB access | `FrozenStatsProvider` — reads precomputed per-pair bundles |
+
+Both modes use the same `PipelineRunner` API. The only difference is which `StatsProvider` you pass in.
 
 ---
 
@@ -49,6 +58,104 @@ from llm_dup_dev.pipeline.runner import PipelineRunner
 from llm_dup_dev.data.protocols import ReportLoader, StatsProvider
 print("llm_dup_dev installed successfully")
 ```
+
+---
+
+---
+
+## Offline frozen-validation mode
+
+### Why it exists
+
+Frozen validation datasets are used to run evaluation batches in environments where no live database connection is available (e.g. locked-down compute clusters). The secure repo's preprocessing step computes all necessary frequency statistics up front and stores them alongside the reports. At evaluation time the pipeline reads these precomputed counts instead of querying the database.
+
+### Frozen pair-frequency artifact
+
+The preprocessing step produces one `FrozenPairBundle` per pair. Each bundle contains:
+
+```
+FrozenPairBundle
+  pair_id               — matches the ReportPair.pair_id used at eval time
+  matching_drugs        — canonical sorted list of shared drug substances
+  matching_AEs          — canonical sorted list of shared AE preferred terms
+  global_stats          — frequency counts for the global context (always present)
+  country_stats         — counts for the country context (present if reports share country)
+  country_year_stats    — counts for the country+year context (present if reports share both)
+```
+
+Each scope payload (`FrozenScopeStats`) contains `N_total`, `N_drugs`, `N_AEs`, `N_drugs_AEs` — the same four counts the live `StatsProvider` returns.
+
+### Scope rules
+
+These mirror the pipeline's `determine_reporting_context` logic:
+
+| Reports share... | Scopes to store |
+|-----------------|-----------------|
+| country + year  | global + country + country_year |
+| country only    | global + country |
+| neither         | global only |
+
+### How the pipeline uses it
+
+The pipeline still computes matching and reporting context as usual (steps 1–3 in `run_pair`). The `FrozenStatsProvider` intercepts step 4:
+
+1. `PipelineRunner` detects that the provider implements `PairContextSink` and calls `set_current_pair(pair.pair_id)`.
+2. `compute_stats(matching_drugs, matching_AEs, country, year)` is called as normal.
+3. The provider looks up the bundle by `pair_id`, verifies the recomputed matches against the frozen values, then returns the precomputed counts for the appropriate scope.
+
+No database query occurs.
+
+### Validation checks
+
+`FrozenStatsProvider` fails loudly if:
+
+- `set_current_pair` was not called (`RuntimeError`) — indicates the provider was used outside `PipelineRunner`.
+- No bundle exists for the current `pair_id` (`KeyError`) — indicates the preprocessing step missed this pair.
+- The requested scope is not in the bundle (`KeyError`) — indicates a scope rule mismatch between preprocessing and the pipeline.
+- The pipeline's recomputed `matching_drugs` or `matching_AEs` differ from the frozen values (`ValueError`) — indicates pipeline version drift since the bundles were generated.
+
+### Setting up offline mode in the secure repo
+
+```python
+from llm_dup_dev.data.offline import (
+    FrozenPairBundle,
+    FrozenScopeStats,
+    FrozenStatsProvider,
+)
+from llm_dup_dev.pipeline.runner import PipelineRunner
+
+# Build (or load from disk) a bundle for each pair
+bundles = {
+    "R001__R002": FrozenPairBundle(
+        pair_id="R001__R002",
+        matching_drugs=["pregabalin", "sertraline"],  # canonical sorted
+        matching_AEs=["somnolence"],
+        global_stats=FrozenScopeStats(
+            N_total=5000, N_drugs=200, N_AEs=300, N_drugs_AEs=40
+        ),
+        # country_stats and country_year_stats are optional;
+        # set them if the pair has a shared country / country+year context
+        country_stats=FrozenScopeStats(
+            N_total=1200, N_drugs=50, N_AEs=80, N_drugs_AEs=12
+        ),
+        country_year_stats=FrozenScopeStats(
+            N_total=300, N_drugs=15, N_AEs=22, N_drugs_AEs=4
+        ),
+    ),
+    # ... one bundle per pair
+}
+
+offline_provider = FrozenStatsProvider(bundles)
+
+runner = PipelineRunner(
+    report_loader=your_report_loader,   # ReportLoader as usual
+    stats_provider=offline_provider,    # no DB calls at eval time
+)
+
+result = runner.run_pair(pair)
+```
+
+No changes to `PipelineRunner` construction are required; the existing `ReportLoader` interface is unchanged.
 
 ---
 
@@ -181,13 +288,13 @@ Apply the same pattern for `N_AEs` and `N_drugs_AEs` (intersection).
 
 ## Running the pipeline
 
-### Single pair
+### Live mode (single pair)
 
 ```python
 from llm_dup_dev.pipeline.runner import PipelineRunner
 from llm_dup_dev.models.report_pair import ReportPair
 
-# Set up with your implementations
+# Live mode: SqlStatsProvider queries the database at runtime
 runner = PipelineRunner(
     report_loader=SqlReportLoader(conn_str),
     stats_provider=SqlStatsProvider(conn_str),
@@ -206,7 +313,10 @@ print(result.features.L_match)     # e.g. 4.2
 print(result.classification.explanation)  # human-readable reasoning
 ```
 
-### Batch processing
+For **offline/frozen-validation** mode, replace `SqlStatsProvider` with
+`FrozenStatsProvider` — see [Offline frozen-validation mode](#offline-frozen-validation-mode) above.
+
+### Batch processing (live or offline)
 
 ```python
 pairs = [

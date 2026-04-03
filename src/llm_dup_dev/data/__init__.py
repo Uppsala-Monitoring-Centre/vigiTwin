@@ -5,6 +5,9 @@ computing frequency statistics. Concrete implementations live either
 here (synthetic/testing) or in the secure repo (real database access).
 
 Submodules:
-    protocols   Abstract interfaces for data access.
+    protocols   Abstract interfaces for data access (ReportLoader, StatsProvider,
+                PairContextSink).
     synthetic   In-memory implementation using synthetic data for testing.
+    offline     Offline/frozen-validation implementation backed by precomputed
+                per-pair frequency bundles (FrozenStatsProvider).
 """
