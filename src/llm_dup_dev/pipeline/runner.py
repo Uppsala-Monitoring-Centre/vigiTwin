@@ -28,7 +28,7 @@ from typing import Callable, Sequence
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.data.protocols import ReportLoader, StatsProvider
+from llm_dup_dev.data.protocols import PairContextSink, ReportLoader, StatsProvider
 from llm_dup_dev.feature_generation.matching import compute_matches
 from llm_dup_dev.feature_generation.pipeline import generate_pair_features
 from llm_dup_dev.feature_generation.reporting_context import (
@@ -159,7 +159,12 @@ class PipelineRunner:
         country = context.country
         year = context.year
 
-        # Step 4: Get frequency statistics from the data layer
+        # Step 4: Get frequency statistics from the data layer.
+        # For offline providers that index stats by pair_id (PairContextSink),
+        # notify them which pair is being processed before the stats call.
+        if isinstance(self._stats_provider, PairContextSink):
+            self._stats_provider.set_current_pair(pair.pair_id)
+
         stats = self._stats_provider.compute_stats(
             matching_drugs=match_result.matching_drugs,
             matching_AEs=match_result.matching_AEs,

@@ -87,6 +87,38 @@ class ReportLoader(Protocol):
 
 
 @runtime_checkable
+class PairContextSink(Protocol):
+    """Optional companion protocol for StatsProviders that need pair context.
+
+    A StatsProvider may also implement this protocol to receive the
+    current ``pair_id`` before each ``compute_stats`` call.
+    ``PipelineRunner`` checks for this protocol at runtime and calls
+    ``set_current_pair`` when available — existing providers that do not
+    implement it are unaffected.
+
+    This is the recommended extension point for offline providers that
+    look up precomputed statistics by ``pair_id``.
+
+    Example::
+
+        class MyOfflineProvider:
+            def set_current_pair(self, pair_id: str) -> None:
+                self._current_pair_id = pair_id
+
+            def compute_stats(self, ...) -> FrequencyStats:
+                bundle = self._bundles[self._current_pair_id]
+                ...
+    """
+
+    def set_current_pair(self, pair_id: str) -> None:
+        """Record which pair is currently being processed.
+
+        Called by PipelineRunner before ``compute_stats`` for each pair.
+        """
+        ...
+
+
+@runtime_checkable
 class StatsProvider(Protocol):
     """Provides frequency statistics for a report pair's shared clinical context.
 
