@@ -473,6 +473,110 @@ Decisive inconsistencies (e.g. distinct patient IDs from the same study) always 
 
 ---
 
+## Generating HTML review pages
+
+The `review_html` module produces standalone HTML files for human inspection of suspected duplicate pairs. It is a dev-side implementation — the secure repo only needs thin wrapper code to load `Report` objects and call the renderer. No database access occurs inside the renderer.
+
+### When to use it
+
+| Workflow | Description |
+|----------|-------------|
+| **Precision testing** | Inspect a sample of pairs classified as duplicates to assess false-positive rate |
+| **Pipeline refinement** | Examine borderline pairs (low L_match, inconsistencies) to inform threshold tuning |
+| **Human annotation** | Generate review pages for human annotators |
+| **Ad hoc pair inspection** | Quickly review any pair by report ID |
+
+### Single pair
+
+```python
+from llm_dup_dev.review_html import render_pair_html
+from pathlib import Path
+
+# report_1, report_2: Report objects loaded by your SqlReportLoader
+path = render_pair_html(
+    report_1,
+    report_2,
+    pair_id="8047905-7215592",
+    output_dir=Path("outputs/review"),
+)
+# → outputs/review/8047905-7215592.html
+```
+
+Pass optional pipeline outputs to add evidence and classification sections:
+
+```python
+path = render_pair_html(
+    report_1,
+    report_2,
+    pair_id="8047905-7215592",
+    features=result.features,                  # PairFeatures from PipelineRunner
+    classification=result.classification,      # ClassificationResult
+    external_url=f"https://vigilyze.who-umc.org/?umcreportids={r1_id},{r2_id}",
+    external_url_label="View in Vigilyze",
+    output_dir=Path("outputs/review"),
+)
+```
+
+### Batch mode
+
+```python
+from llm_dup_dev.review_html import render_batch_html, PairRenderInput
+
+items = [
+    PairRenderInput(
+        report_1=loader.load_report(pair.report_1_id),
+        report_2=loader.load_report(pair.report_2_id),
+        pair_id=pair.pair_id,
+        features=results[pair.pair_id].features,
+        classification=results[pair.pair_id].classification,
+        external_url=f"https://vigilyze.who-umc.org/?umcreportids={pair.report_1_id},{pair.report_2_id}",
+        external_url_label="View in Vigilyze",
+    )
+    for pair in pairs
+]
+
+output_dir = render_batch_html(items, output_dir=Path("outputs/review"))
+# Writes one HTML per pair + an index.html linking to all of them
+```
+
+### CLI (from frozen JSON exports)
+
+If reports and pipeline outputs have already been serialised to JSON:
+
+```bash
+python -m llm_dup_dev.review_html \
+    --reports reports.json \
+    --pairs pairs.json \
+    --features features.json \
+    --classifications classifications.json \
+    --output-dir outputs/review/
+```
+
+**JSON formats:**
+
+| File | Format |
+|------|--------|
+| `reports.json` | `{ "<report_id>": { ...Report fields... }, ... }` |
+| `pairs.json` | `[ { "pair_id": "...", "report_1_id": "...", "report_2_id": "..." }, ... ]` |
+| `features.json` | `{ "<pair_id>": { ...PairFeatures fields... }, ... }` (optional) |
+| `classifications.json` | `{ "<pair_id>": { ...ClassificationResult fields... }, ... }` (optional) |
+
+Use `Report.model_dump()`, `PairFeatures.model_dump()`, and `ClassificationResult.model_dump()` to produce these from the pipeline outputs.
+
+### What the HTML shows
+
+Each page contains:
+
+- **Header** — pair ID, report IDs, optional external link (e.g. Vigilyze), optional classification badge
+- **Demographics** — sex, age, country, report date, height, weight; green for matches, red for mismatches; only fields present in at least one report are shown
+- **Drugs** — one row per substance in the union across both reports; start/end dates, role, form, strength shown inline; substance name is green (present in both), red (present in one only)
+- **Adverse events** — same union logic; onset date in `(YYYY-MM-DD)` format where available
+- **Narratives** — side-by-side free text (if present)
+- **Evidence summary** — L_match, anchor, reporting context, inconsistencies (if `features` supplied)
+- **Classification** — primary, relationship, final label, explanation (if `classification` supplied)
+
+---
+
 ## Reference files
 
 | File | Purpose |
@@ -482,6 +586,7 @@ Decisive inconsistencies (e.g. distinct patient IDs from the same study) always 
 | `docs/same_individual_assessment_spec.md` | Full method specification |
 | `docs/data_contracts.md` | Data layer design and contracts |
 | `docs/repository_roles.md` | Security controls between repos |
+| `src/llm_dup_dev/review_html/__init__.py` | `render_pair_html` / `render_batch_html` API docstrings |
 
 ---
 
@@ -494,7 +599,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-247 tests covering all modules.
+311 tests covering all modules.
 
 ### Quick smoke test (in the secure repo)
 

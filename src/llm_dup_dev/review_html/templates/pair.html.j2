@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pair Review: {{ vm.pair_id }}</title>
+<style>
+/* --- Base --- */
+*, *::before, *::after { box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #24292e;
+    background: #f6f8fa;
+    margin: 0;
+    padding: 20px;
+}
+h1 { font-size: 1.5rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 24px 0 8px; border-bottom: 1px solid #d1d5da; padding-bottom: 4px; }
+
+/* --- Header --- */
+.header {
+    background: #fff;
+    border: 1px solid #d1d5da;
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+}
+.header .pair-id { font-weight: 600; }
+.header .report-ids { color: #586069; font-size: 0.92em; }
+.header .external-link { font-size: 0.88em; margin-top: 4px; }
+.header .external-link a { color: #0366d6; text-decoration: none; }
+.header .external-link a:hover { text-decoration: underline; }
+
+/* --- Section cards --- */
+.section {
+    background: #fff;
+    border: 1px solid #d1d5da;
+    border-radius: 6px;
+    padding: 12px 20px 16px;
+    margin-bottom: 16px;
+}
+
+/* --- Tables --- */
+.table-scroll { overflow-x: auto; }
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+}
+th, td {
+    border: 1px solid #d1d5da;
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+thead th {
+    background: #f1f3f5;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+}
+
+/* --- Row-level comparison-status colours --- */
+tr.match td { background: #d4edda; }
+tr.partial_match td { background: #fff3cd; }
+tr.mismatch td { background: #f8d7da; }
+tr.missing_left td { background: #e8eaed; }
+tr.missing_right td { background: #e8eaed; }
+tr.informational td { background: #d1ecf1; }
+/* neutral: no background colour, just the status badge */
+tr.neutral td { background: inherit; }
+
+/* Status indicator column */
+th.status-col, td.status-col { width: 56px; text-align: center; white-space: nowrap; }
+.status-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+.status-label-match { background: #155724; color: #fff; }
+.status-label-partial_match { background: #856404; color: #fff; }
+.status-label-mismatch { background: #721c24; color: #fff; }
+.status-label-missing_left { background: #383d41; color: #fff; }
+.status-label-missing_right { background: #383d41; color: #fff; }
+.status-label-informational { background: #0c5460; color: #fff; }
+
+/* --- Drug / AE detail blocks inside cells --- */
+.detail-block {
+    padding: 2px 0;
+    font-size: 12px;
+    line-height: 1.6;
+}
+.detail-block + .detail-block {
+    border-top: 1px dashed #d1d5da;
+    margin-top: 4px;
+    padding-top: 4px;
+}
+.detail-label {
+    color: #586069;
+    font-size: 11px;
+}
+/* Sub-field inline coloring within drug cells */
+.sf-match { color: #155724; font-weight: 600; }
+.sf-mismatch { color: #721c24; font-weight: 600; }
+.sf-missing_left, .sf-missing_right { color: #6c757d; font-style: italic; }
+.sf-partial_match { color: #856404; }
+
+/* Drug / AE name coloring in key column */
+.name-match { color: #155724; font-weight: 700; }
+.name-partial_match { color: #24292e; font-weight: 700; }
+.name-mismatch { color: #721c24; font-weight: 700; }
+.name-missing_left { color: #721c24; font-weight: 700; }
+.name-missing_right { color: #721c24; font-weight: 700; }
+.name-neutral { color: #24292e; font-weight: 700; }
+
+/* --- Narrative side-by-side --- */
+.narrative-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.narrative-col {
+    background: #f6f8fa;
+    border: 1px solid #d1d5da;
+    border-radius: 4px;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    font-size: 13px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+.narrative-col-header {
+    font-weight: 600;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: #586069;
+}
+
+/* --- Evidence summary --- */
+.evidence-kv { display: grid; grid-template-columns: 180px 1fr; gap: 2px 12px; font-size: 13px; margin-bottom: 10px; }
+.evidence-kv dt { font-weight: 600; color: #586069; }
+.evidence-kv dd { margin: 0; }
+
+.severity-moderate { color: #856404; font-weight: 600; }
+.severity-strong { color: #721c24; font-weight: 600; }
+.severity-decisive { color: #fff; background: #721c24; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
+
+/* --- Classification badge --- */
+.label-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 13px;
+}
+.label-Duplicates { background: #d4edda; color: #155724; }
+.label-Otherwise_related { background: #fff3cd; color: #856404; }
+.label-Unrelated { background: #f8d7da; color: #721c24; }
+.label-Abstain { background: #e2e3e5; color: #383d41; }
+
+/* --- Print --- */
+@media print {
+    body { background: #fff; padding: 0; }
+    .section { break-inside: avoid; border: 1px solid #ccc; }
+}
+</style>
+</head>
+<body>
+
+{# ── Macro: status label badge ── #}
+{% macro status_badge(status) -%}
+<span class="status-label status-label-{{ status.value }}">{{ status_icon(status) }}</span>
+{%- endmacro %}
+
+{# ── Macro: sub-field value with inline coloring ── #}
+{% macro sf_value(value, sf_status) -%}
+{% if value %}
+{% if sf_status %}
+<span class="sf-{{ sf_status.value }}">{{ value }}</span>
+{% else %}
+{{ value }}
+{% endif %}
+{% endif %}
+{%- endmacro %}
+
+{# ── Macro: drug/AE date range as (start — end) / (start — ?) / (? — end) ── #}
+{# For drugs (both dates possible); pass sf_start / sf_end for coloring.      #}
+{# For AEs (start only); pass end=none.                                        #}
+{% macro date_range(start, end, sf_start=none, sf_end=none) -%}
+{%- if start or end -%}
+  {%- set s = start or '?' -%}
+  {%- set e = end or '?' -%}
+  {%- if start and end -%}
+    {%- set dstr = '(' + s + ' \u2014 ' + e + ')' -%}
+  {%- elif start and not end -%}
+    {%- set dstr = '(' + s + ' \u2014 ?)' -%}
+  {%- else -%}
+    {%- set dstr = '(? \u2014 ' + e + ')' -%}
+  {%- endif -%}
+  {# Derive CSS class from the more alarming date sub-field status #}
+  {%- set st_val = sf_start.value if sf_start else '' -%}
+  {%- set en_val = sf_end.value   if sf_end   else '' -%}
+  {%- if 'mismatch' in [st_val, en_val] -%}
+    {%- set dcss = 'sf-mismatch' -%}
+  {%- elif 'match' in [st_val, en_val] -%}
+    {%- set dcss = 'sf-match' -%}
+  {%- else -%}
+    {%- set dcss = '' -%}
+  {%- endif -%}
+  {%- if dcss %}<span class="{{ dcss }}">{{ dstr }}</span>{%- else %}{{ dstr }}{%- endif -%}
+{%- endif %}
+{%- endmacro %}
+
+{# ── Header ── #}
+<div class="header">
+    <h1 class="pair-id">Pair: {{ vm.pair_id }}</h1>
+    <div class="report-ids">
+        Report 1: <strong>{{ vm.report_1_id }}</strong>
+        &nbsp;|&nbsp;
+        Report 2: <strong>{{ vm.report_2_id }}</strong>
+    </div>
+    {% if vm.external_url %}
+    <div class="external-link">
+        <a href="{{ vm.external_url }}" target="_blank" rel="noopener">&#x1F517; {{ vm.external_url_label }}</a>
+    </div>
+    {% endif %}
+    {% if vm.classification_summary %}
+    <div style="margin-top: 6px;">
+        Classification:
+        <span class="label-badge label-{{ vm.classification_summary.final_label }}">
+            {{ vm.classification_summary.final_label }}
+        </span>
+        {% if vm.features_summary %}
+        &nbsp; L<sub>match</sub> = {{ "%.2f"|format(vm.features_summary.l_match) }}
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+{# ── Demographics comparison ── #}
+{% if vm.demographics %}
+<div class="section">
+    <h2>Demographics &amp; Report Metadata</h2>
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Field</th>
+                <th>Report 1: {{ vm.report_1_id }}</th>
+                <th>Report 2: {{ vm.report_2_id }}</th>
+                <th class="status-col"></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for f in vm.demographics %}
+            <tr class="{{ f.status.value }}"{% if f.tooltip %} title="{{ f.tooltip }}"{% endif %}>
+                <td>{{ f.label }}</td>
+                <td><span class="name-{{ f.status.value }}">{{ f.left_display }}</span></td>
+                <td><span class="name-{{ f.status.value }}">{{ f.right_display }}</span></td>
+                <td class="status-col">{{ status_badge(f.status) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Drugs comparison ── #}
+{% if vm.drugs %}
+<div class="section">
+    <h2>Drugs ({{ vm.drugs|length }})</h2>
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Substance</th>
+                <th>Report 1: {{ vm.report_1_id }}</th>
+                <th>Report 2: {{ vm.report_2_id }}</th>
+                <th class="status-col"></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for drug in vm.drugs %}
+            <tr class="{{ drug.status.value }}">
+                <td><strong class="name-{{ drug.status.value }}">{{ drug.substance }}</strong></td>
+                <td>
+                    {% for d in drug.left_details %}
+                    {%- set sf = d.subfield_status %}
+                    <div class="detail-block">
+                        <span class="name-{{ drug.status.value }}">{{ d.substance }}</span>
+                        {%- if d.start_date or d.end_date %}
+                        <br>{{ date_range(d.start_date, d.end_date,
+                                sf.start_date if sf else none,
+                                sf.end_date   if sf else none) }}
+                        {%- endif %}
+                        {%- if d.role %}<br>{{ sf_value(d.role, sf.role if sf else none) }}{% endif %}
+                        {%- if d.form %}<br>{{ sf_value(d.form, sf.form if sf else none) }}{% endif %}
+                        {%- if d.strength %}<br>{{ sf_value(d.strength, sf.strength if sf else none) }}{% endif %}
+                    </div>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% for d in drug.right_details %}
+                    {%- set sf = d.subfield_status %}
+                    <div class="detail-block">
+                        <span class="name-{{ drug.status.value }}">{{ d.substance }}</span>
+                        {%- if d.start_date or d.end_date %}
+                        <br>{{ date_range(d.start_date, d.end_date,
+                                sf.start_date if sf else none,
+                                sf.end_date   if sf else none) }}
+                        {%- endif %}
+                        {%- if d.role %}<br>{{ sf_value(d.role, sf.role if sf else none) }}{% endif %}
+                        {%- if d.form %}<br>{{ sf_value(d.form, sf.form if sf else none) }}{% endif %}
+                        {%- if d.strength %}<br>{{ sf_value(d.strength, sf.strength if sf else none) }}{% endif %}
+                    </div>
+                    {% endfor %}
+                </td>
+                <td class="status-col">{{ status_badge(drug.status) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Adverse events comparison ── #}
+{% if vm.adverse_events %}
+<div class="section">
+    <h2>Adverse Events ({{ vm.adverse_events|length }})</h2>
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Preferred Term</th>
+                <th>Report 1: {{ vm.report_1_id }}</th>
+                <th>Report 2: {{ vm.report_2_id }}</th>
+                <th class="status-col"></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for ae in vm.adverse_events %}
+            <tr class="{{ ae.status.value }}">
+                <td><strong class="name-{{ ae.status.value }}">{{ ae.pt_name }}</strong></td>
+                <td>
+                    {% for d in ae.left_details %}
+                    <div class="detail-block">
+                        <span class="name-{{ ae.status.value }}">{{ d.pt_name }}</span>
+                        {%- if d.start_date %} <span style="color:#586069;">({{ d.start_date }})</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                </td>
+                <td>
+                    {% for d in ae.right_details %}
+                    <div class="detail-block">
+                        <span class="name-{{ ae.status.value }}">{{ d.pt_name }}</span>
+                        {%- if d.start_date %} <span style="color:#586069;">({{ d.start_date }})</span>{% endif %}
+                    </div>
+                    {% endfor %}
+                </td>
+                <td class="status-col">{{ status_badge(ae.status) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endif %}
+
+{# ── Narratives ── #}
+{% if vm.narratives.left_text or vm.narratives.right_text %}
+<div class="section">
+    <h2>Narratives</h2>
+    <div class="narrative-grid">
+        <div>
+            <div class="narrative-col-header">Report 1: {{ vm.report_1_id }}</div>
+            <div class="narrative-col">{{ vm.narratives.left_text or '--' }}</div>
+        </div>
+        <div>
+            <div class="narrative-col-header">Report 2: {{ vm.report_2_id }}</div>
+            <div class="narrative-col">{{ vm.narratives.right_text or '--' }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Evidence summary (optional) ── #}
+{% if vm.features_summary %}
+<div class="section">
+    <h2>Evidence Summary</h2>
+    <dl class="evidence-kv">
+        <dt>L<sub>match</sub></dt>
+        <dd>{{ "%.4f"|format(vm.features_summary.l_match) }}</dd>
+        <dt>Expected collisions</dt>
+        <dd>{{ "%.4e"|format(vm.features_summary.expected_collisions) }}</dd>
+        <dt>Anchor</dt>
+        <dd>{{ vm.features_summary.anchor_type }} (N={{ vm.features_summary.anchor_n }})</dd>
+        <dt>Reporting context</dt>
+        <dd>{{ vm.features_summary.reporting_context }}</dd>
+        <dt>Narrative consistency</dt>
+        <dd>{{ vm.features_summary.narrative_consistency }}</dd>
+        <dt>Matching drugs</dt>
+        <dd>{{ vm.features_summary.matching_drugs|join(', ') or '--' }}</dd>
+        <dt>Matching AEs</dt>
+        <dd>{{ vm.features_summary.matching_aes|join(', ') or '--' }}</dd>
+    </dl>
+
+    {% if vm.features_summary.inconsistencies %}
+    <h3 style="font-size: 1rem; margin: 12px 0 6px;">Inconsistencies</h3>
+    <table>
+        <thead><tr><th>Feature</th><th>Severity</th><th>Description</th></tr></thead>
+        <tbody>
+        {% for inc in vm.features_summary.inconsistencies %}
+        <tr>
+            <td>{{ inc.feature }}</td>
+            <td><span class="severity-{{ inc.severity }}">{{ inc.severity }}</span></td>
+            <td>{{ inc.description }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Classification (optional) ── #}
+{% if vm.classification_summary %}
+<div class="section">
+    <h2>Classification</h2>
+    <dl class="evidence-kv">
+        <dt>Primary</dt>
+        <dd>{{ vm.classification_summary.primary }}</dd>
+        {% if vm.classification_summary.relationship %}
+        <dt>Relationship</dt>
+        <dd>{{ vm.classification_summary.relationship }}</dd>
+        {% endif %}
+        <dt>Final label</dt>
+        <dd>
+            <span class="label-badge label-{{ vm.classification_summary.final_label }}">
+                {{ vm.classification_summary.final_label }}
+            </span>
+        </dd>
+    </dl>
+    {% if vm.classification_summary.explanation %}
+    <p style="font-size: 13px; color: #586069; margin: 8px 0 0;">
+        {{ vm.classification_summary.explanation }}
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Placeholder for future annotation / reviewer notes ── #}
+{# Future: annotation metadata, reviewer notes, probability-anchor detail #}
+
+<footer style="text-align: center; color: #959da5; font-size: 11px; margin-top: 24px;">
+    Generated by llm_dup_dev.review_html
+</footer>
+
+</body>
+</html>
