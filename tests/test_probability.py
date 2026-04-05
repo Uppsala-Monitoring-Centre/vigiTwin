@@ -5,14 +5,19 @@ import math
 import pytest
 
 from llm_dup_dev.classifier.config import DomainSizeConfig
-from llm_dup_dev.feature_generation.matching import DemographicMatch, MatchResult
+from llm_dup_dev.feature_generation.matching import (
+    ClinicalDateMatch,
+    DemographicMatch,
+    MatchResult,
+)
 from llm_dup_dev.feature_generation.probability import (
     SMOOTHING_PSEUDOCOUNT,
     FrequencyStats,
+    _compute_date_span_days,
     compute_probability,
     leave_pair_out_probability,
 )
-from llm_dup_dev.models.enums import AnchorType
+from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
 from llm_dup_dev.models.pair_features import AnchorPopulation
 
 
@@ -135,7 +140,7 @@ class TestProbabilityComputation:
     def test_feature_contributions_include_expected_features(
         self, basic_match, anchor_drugs, stats, domain_config
     ):
-        """With DRUGS anchor: should see ae_set, patient_sex, patient_age, report_date."""
+        """With DRUGS anchor: should see ae_set, patient_sex, patient_age (not report_date)."""
         result = compute_probability(
             basic_match, anchor_drugs, stats, domain_config
         )
@@ -149,7 +154,8 @@ class TestProbabilityComputation:
         # Matched demographics
         assert "patient_sex" in feature_names
         assert "patient_age" in feature_names
-        assert "report_date" in feature_names
+        # Report date is excluded from probability computation
+        assert "report_date" not in feature_names
         # Unmatched demographics should not appear
         assert "patient_height" not in feature_names
         assert "patient_weight" not in feature_names
@@ -167,7 +173,7 @@ class TestProbabilityComputation:
             if fc.feature == "ae_set":
                 assert fc.method == "leave_pair_out"
                 assert fc.domain_size is None
-            elif fc.feature in ("patient_sex", "patient_age", "report_date"):
+            elif fc.feature in ("patient_sex", "patient_age"):
                 assert fc.method == "domain_size"
                 assert fc.domain_size is not None
                 assert fc.domain_size > 0
@@ -278,13 +284,6 @@ class TestProbabilityComputation:
                     values_r1=["f"],
                     values_r2=["f"],
                 ),
-                DemographicMatch(
-                    feature="report_date",
-                    matched=True,
-                    values_r1=["2020-06-12"],
-                    values_r2=["2020-06-12"],
-                    date_resolution="day",
-                ),
             ],
         )
         anchor = AnchorPopulation(
@@ -331,15 +330,21 @@ class TestProbabilityComputation:
         assert result.L_match > 10
 
     def test_date_resolution_affects_domain_size(self, domain_config):
-        """Month-resolution dates should use a smaller domain size."""
+        """Month-resolution dates should use a smaller domain size.
+
+        Uses a non-report_date feature since report_date is excluded
+        from probability computation.
+        """
         match_day = MatchResult(
             matching_drugs=[],
             matching_AEs=[],
             demographic_matches=[
                 DemographicMatch(
-                    feature="report_date",
+                    feature="drug_start_date",
                     matched=True,
                     date_resolution="day",
+                    values_r1=["2020-06-12"],
+                    values_r2=["2020-06-12"],
                 ),
             ],
         )
@@ -348,9 +353,11 @@ class TestProbabilityComputation:
             matching_AEs=[],
             demographic_matches=[
                 DemographicMatch(
-                    feature="report_date",
+                    feature="drug_start_date",
                     matched=True,
                     date_resolution="month",
+                    values_r1=["2020-06"],
+                    values_r2=["2020-06"],
                 ),
             ],
         )
@@ -374,6 +381,499 @@ class TestProbabilityComputation:
 
         # Day resolution has larger D_f → smaller p_f → higher L_match
         assert result_day.L_match > result_month.L_match
+
+    def test_report_date_excluded_from_probability(self, domain_config):
+        """Report date should NOT contribute to probability computation."""
+        match_with_date = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="patient_sex",
+                    matched=True,
+                    values_r1=["female"],
+                    values_r2=["female"],
+                ),
+                DemographicMatch(
+                    feature="report_date",
+                    matched=True,
+                    values_r1=["2020-06-12"],
+                    values_r2=["2020-06-12"],
+                    date_resolution="day",
+                ),
+            ],
+        )
+        match_without_date = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="patient_sex",
+                    matched=True,
+                    values_r1=["female"],
+                    values_r2=["female"],
+                ),
+            ],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
+        )
+
+        result_with = compute_probability(match_with_date, anchor, stats, domain_config)
+        result_without = compute_probability(match_without_date, anchor, stats, domain_config)
+
+        # report_date should have no effect on probability
+        assert result_with.p_joint == result_without.p_joint
+        assert result_with.L_match == result_without.L_match
+
+        # report_date should not appear in feature contributions
+        features = {fp.feature for fp in result_with.feature_probabilities}
+        assert "report_date" not in features
+
+
+class TestDateDomainSize:
+    """Tests for context-dependent date domain size and span extension."""
+
+    def test_country_year_default_365(self):
+        """Country-year context should use 365 days as default date domain."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="drug_start_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2020-06-12"],
+                    values_r2=["2020-06-12"],
+                ),
+            ],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, anchor, stats, config,
+            reporting_context_level=ReportingContextLevel.COUNTRY_YEAR,
+        )
+        date_feat = [fp for fp in result.feature_probabilities if fp.feature == "drug_start_date"]
+        assert len(date_feat) == 1
+        assert date_feat[0].domain_size == 365
+
+    def test_global_default_3650(self):
+        """Global context should use 3650 days as default date domain."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="drug_start_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2020-06-12"],
+                    values_r2=["2020-06-12"],
+                ),
+            ],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, anchor, stats, config,
+            reporting_context_level=ReportingContextLevel.GLOBAL,
+        )
+        date_feat = [fp for fp in result.feature_probabilities if fp.feature == "drug_start_date"]
+        assert len(date_feat) == 1
+        assert date_feat[0].domain_size == 3650
+
+    def test_span_extends_domain_beyond_default(self):
+        """Matching dates spanning >365 days should extend the country-year domain."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="drug_start_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2001-02-01"],
+                    values_r2=["2001-02-01"],
+                ),
+                DemographicMatch(
+                    feature="ae_onset_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2007-03-03"],
+                    values_r2=["2007-03-03"],
+                ),
+                DemographicMatch(
+                    feature="drug_stop_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2007-03-08"],
+                    values_r2=["2007-03-08"],
+                ),
+            ],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, anchor, stats, config,
+            reporting_context_level=ReportingContextLevel.COUNTRY_YEAR,
+        )
+        # Span from 2001-02-01 to 2007-03-08 = 2226 days
+        # This exceeds 365 default, so domain should be 2226
+        date_feat = [fp for fp in result.feature_probabilities if fp.feature == "drug_start_date"]
+        assert len(date_feat) == 1
+        assert date_feat[0].domain_size == 2226
+
+    def test_span_does_not_shrink_below_default(self):
+        """If span is smaller than the default, use the default."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="drug_start_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2020-06-12"],
+                    values_r2=["2020-06-12"],
+                ),
+                DemographicMatch(
+                    feature="drug_stop_date",
+                    matched=True,
+                    date_resolution="day",
+                    values_r1=["2020-07-12"],
+                    values_r2=["2020-07-12"],
+                ),
+            ],
+        )
+        anchor = AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, anchor, stats, config,
+            reporting_context_level=ReportingContextLevel.GLOBAL,
+        )
+        # Span is 30 days, but global default is 3650 — use 3650
+        date_feat = [fp for fp in result.feature_probabilities if fp.feature == "drug_start_date"]
+        assert len(date_feat) == 1
+        assert date_feat[0].domain_size == 3650
+
+
+class TestComputeDateSpanDays:
+    """Tests for _compute_date_span_days helper."""
+
+    def test_single_date_returns_zero(self):
+        matches = [
+            DemographicMatch(
+                feature="drug_start_date", matched=True, date_resolution="day",
+                values_r1=["2020-06-12"], values_r2=["2020-06-12"],
+            ),
+        ]
+        assert _compute_date_span_days(matches) == 0
+
+    def test_multiple_dates_computes_span(self):
+        matches = [
+            DemographicMatch(
+                feature="drug_start_date", matched=True, date_resolution="day",
+                values_r1=["2001-02-01"], values_r2=["2001-02-01"],
+            ),
+            DemographicMatch(
+                feature="ae_onset_date", matched=True, date_resolution="day",
+                values_r1=["2007-03-03"], values_r2=["2007-03-03"],
+            ),
+            DemographicMatch(
+                feature="drug_stop_date", matched=True, date_resolution="day",
+                values_r1=["2007-03-08"], values_r2=["2007-03-08"],
+            ),
+        ]
+        # 2001-02-01 to 2007-03-08 = 2226 days
+        assert _compute_date_span_days(matches) == 2226
+
+    def test_unmatched_dates_excluded(self):
+        matches = [
+            DemographicMatch(
+                feature="drug_start_date", matched=False, date_resolution="day",
+                values_r1=["2001-02-01"], values_r2=["2005-06-12"],
+            ),
+            DemographicMatch(
+                feature="ae_onset_date", matched=True, date_resolution="day",
+                values_r1=["2020-06-12"], values_r2=["2020-06-12"],
+            ),
+        ]
+        # Only one matched feature with identical dates → span = 0
+        assert _compute_date_span_days(matches) == 0
+
+    def test_report_date_included_in_span_computation(self):
+        """Report date values ARE used in span computation even though
+        report_date is excluded from probability features."""
+        matches = [
+            DemographicMatch(
+                feature="report_date", matched=True, date_resolution="day",
+                values_r1=["2001-01-01"], values_r2=["2001-01-01"],
+            ),
+            DemographicMatch(
+                feature="drug_start_date", matched=True, date_resolution="day",
+                values_r1=["2007-06-12"], values_r2=["2007-06-12"],
+            ),
+        ]
+        # 2001-01-01 to 2007-06-12 = 2353 days
+        assert _compute_date_span_days(matches) == 2353
+
+
+# ---------------------------------------------------------------------------
+# Clinical date probability integration
+# ---------------------------------------------------------------------------
+
+
+class TestClinicalDateProbability:
+    """Tests that matched clinical dates contribute to collision probability."""
+
+    @pytest.fixture
+    def simple_anchor(self):
+        return AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+
+    @pytest.fixture
+    def simple_stats(self):
+        return FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+        )
+
+    def test_clinical_dates_contribute_to_probability(
+        self, simple_anchor, simple_stats
+    ):
+        """Matched clinical dates should lower p_joint and raise L_match."""
+        match_no_dates = MatchResult(
+            matching_drugs=["aspirin"],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[],
+        )
+        match_with_dates = MatchResult(
+            matching_drugs=["aspirin"],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="1994-03-30", resolution="day"),
+                ClinicalDateMatch(matched_value="1994-05-12", resolution="day"),
+            ],
+        )
+        config = DomainSizeConfig()
+
+        result_no = compute_probability(
+            match_no_dates, simple_anchor, simple_stats, config
+        )
+        result_with = compute_probability(
+            match_with_dates, simple_anchor, simple_stats, config
+        )
+
+        # Clinical dates should lower p_joint
+        assert result_with.p_joint < result_no.p_joint
+        # And raise L_match
+        assert result_with.L_match > result_no.L_match
+
+    def test_clinical_date_feature_name_and_method(
+        self, simple_anchor, simple_stats
+    ):
+        """Clinical date features should use 'clinical_date' name and domain_size method."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="2020-06-01", resolution="day"),
+            ],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(match, simple_anchor, simple_stats, config)
+
+        clinical_feats = [
+            fp for fp in result.feature_probabilities
+            if fp.feature == "clinical_date"
+        ]
+        assert len(clinical_feats) == 1
+        assert clinical_feats[0].method == "domain_size"
+        assert clinical_feats[0].domain_size == 3650  # global default
+        assert "2020-06-01" in clinical_feats[0].description
+
+    def test_two_dates_contribute_independently(
+        self, simple_anchor, simple_stats
+    ):
+        """Two unique matched dates should produce two feature contributions."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="1994-03-30", resolution="day"),
+                ClinicalDateMatch(matched_value="1994-05-12", resolution="day"),
+            ],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(match, simple_anchor, simple_stats, config)
+
+        clinical_feats = [
+            fp for fp in result.feature_probabilities
+            if fp.feature == "clinical_date"
+        ]
+        assert len(clinical_feats) == 2
+        # p_joint should be (1/D_f)^2
+        expected_p_joint = (1.0 / 3650) ** 2
+        assert result.p_joint == pytest.approx(expected_p_joint)
+
+    def test_clinical_date_country_year_domain(
+        self, simple_anchor, simple_stats
+    ):
+        """Country-year context should use 365-day domain for clinical dates."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="2020-06-01", resolution="day"),
+            ],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, simple_anchor, simple_stats, config,
+            reporting_context_level=ReportingContextLevel.COUNTRY_YEAR,
+        )
+        clinical_feats = [
+            fp for fp in result.feature_probabilities
+            if fp.feature == "clinical_date"
+        ]
+        assert clinical_feats[0].domain_size == 365
+
+    def test_clinical_date_month_resolution_domain(
+        self, simple_anchor, simple_stats
+    ):
+        """Month-resolution clinical date should use month domain size."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="2020-06", resolution="month"),
+            ],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, simple_anchor, simple_stats, config,
+        )
+        clinical_feats = [
+            fp for fp in result.feature_probabilities
+            if fp.feature == "clinical_date"
+        ]
+        # Global default: 3650 days → ceiling(3650/30) = 122 months
+        assert clinical_feats[0].domain_size == 122
+
+    def test_clinical_dates_in_span_computation(self):
+        """Clinical dates should contribute to the date span calculation."""
+        clinical_dates = [
+            ClinicalDateMatch(matched_value="2001-02-01", resolution="day"),
+            ClinicalDateMatch(matched_value="2007-03-08", resolution="day"),
+        ]
+        span = _compute_date_span_days([], clinical_dates)
+        assert span == 2226
+
+    def test_clinical_dates_extend_domain_via_span(
+        self, simple_anchor, simple_stats
+    ):
+        """Clinical dates spanning > default should extend the domain size."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="2001-02-01", resolution="day"),
+                ClinicalDateMatch(matched_value="2007-03-08", resolution="day"),
+            ],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, simple_anchor, simple_stats, config,
+            reporting_context_level=ReportingContextLevel.COUNTRY_YEAR,
+        )
+        clinical_feats = [
+            fp for fp in result.feature_probabilities
+            if fp.feature == "clinical_date"
+        ]
+        # Span is 2226 days, exceeds 365 default → domain = 2226
+        assert all(fp.domain_size == 2226 for fp in clinical_feats)
+
+    def test_clinical_dates_product_in_p_joint(
+        self, simple_anchor, simple_stats
+    ):
+        """Product of all feature p_f values should equal p_joint."""
+        match = MatchResult(
+            matching_drugs=["aspirin"],
+            matching_AEs=["rash"],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="patient_sex", matched=True,
+                    values_r1=["female"], values_r2=["female"],
+                ),
+            ],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="2020-06-01", resolution="day"),
+            ],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(
+            match, simple_anchor, simple_stats, config,
+        )
+        product = 1.0
+        for fp in result.feature_probabilities:
+            product *= fp.p_f
+        assert abs(product - result.p_joint) < 1e-15
+
+    def test_empty_clinical_dates_no_contribution(
+        self, simple_anchor, simple_stats
+    ):
+        """Empty matched_clinical_dates should not add any feature contributions."""
+        match = MatchResult(
+            matching_drugs=[],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[],
+        )
+        config = DomainSizeConfig()
+        result = compute_probability(match, simple_anchor, simple_stats, config)
+        clinical_feats = [
+            fp for fp in result.feature_probabilities
+            if fp.feature == "clinical_date"
+        ]
+        assert len(clinical_feats) == 0
 
 
 # ---------------------------------------------------------------------------

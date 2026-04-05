@@ -94,6 +94,7 @@ def generate_pair_features(
         anchor=anchor,
         stats=stats,
         config=config.domain_sizes,
+        reporting_context_level=reporting_context.level,
         epsilon=config.epsilon,
         smoothing_pseudocount=config.anchor.smoothing_pseudocount,
     )

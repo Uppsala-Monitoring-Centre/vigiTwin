@@ -18,8 +18,12 @@ from dataclasses import dataclass, field as dc_field
 from pydantic import BaseModel
 
 from llm_dup_dev.classifier.config import DomainSizeConfig
-from llm_dup_dev.feature_generation.matching import MatchResult
-from llm_dup_dev.models.enums import AnchorType
+from llm_dup_dev.feature_generation.matching import (
+    ClinicalDateMatch,
+    DemographicMatch,
+    MatchResult,
+)
+from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
@@ -114,6 +118,7 @@ def compute_probability(
     anchor: AnchorPopulation,
     stats: FrequencyStats,
     config: DomainSizeConfig,
+    reporting_context_level: ReportingContextLevel = ReportingContextLevel.GLOBAL,
     epsilon: float = 1e-15,
     smoothing_pseudocount: int = SMOOTHING_PSEUDOCOUNT,
 ) -> ProbabilityResult:
@@ -129,6 +134,9 @@ def compute_probability(
     anchor (to avoid double-counting). When included, they are estimated
     using leave-pair-out Bayesian smoothing (see ``leave_pair_out_probability``).
 
+    Report date is excluded from the probability computation — it is
+    matched for evidence display purposes only.
+
     Parameters
     ----------
     match_result : MatchResult
@@ -139,6 +147,9 @@ def compute_probability(
         Pre-computed database statistics.
     config : DomainSizeConfig
         Domain size configuration.
+    reporting_context_level : ReportingContextLevel
+        Reporting context level, used to select the default date domain
+        size (365 days for country-year, 3650 days otherwise).
     epsilon : float
         Small constant for numerical stability.
     smoothing_pseudocount : int
@@ -152,6 +163,10 @@ def compute_probability(
         Full computation result including per-feature breakdown.
     """
     feature_probs: list[FeatureProbability] = []
+    is_country_year = reporting_context_level == ReportingContextLevel.COUNTRY_YEAR
+    date_span_days = _compute_date_span_days(
+        match_result.demographic_matches, match_result.matched_clinical_dates
+    )
 
     # Drug set probability — excluded if anchor uses drugs.
     # When the anchor is AEs, the drug set is an additional feature scored
@@ -215,12 +230,15 @@ def compute_probability(
                 )
             )
 
-    # Demographic feature probabilities (domain-size based)
+    # Demographic feature probabilities (domain-size based).
+    # Report date is excluded — it is matched for evidence display only.
     for dm in match_result.demographic_matches:
-        if not dm.matched:
+        if not dm.matched or dm.feature == "report_date":
             continue
 
-        domain_size = _get_domain_size(dm, config)
+        domain_size = _get_domain_size(
+            dm, config, is_country_year=is_country_year, span_days=date_span_days
+        )
         if domain_size is not None and domain_size > 0:
             p_f = 1.0 / domain_size
             feature_probs.append(
@@ -230,6 +248,29 @@ def compute_probability(
                     method="domain_size",
                     domain_size=domain_size,
                     description=f"{dm.feature}: D_f={domain_size}",
+                )
+            )
+
+    # Clinical date probabilities (drug start/end, AE onset).
+    # Each unique matched date contributes p_f = 1/D_f based on its
+    # resolution. Uses explicit date-field coincidence only — NOT
+    # interval overlap.
+    for cd in match_result.matched_clinical_dates:
+        domain_size = _get_clinical_date_domain_size(
+            cd, config, is_country_year=is_country_year, span_days=date_span_days
+        )
+        if domain_size is not None and domain_size > 0:
+            p_f = 1.0 / domain_size
+            feature_probs.append(
+                FeatureProbability(
+                    feature="clinical_date",
+                    p_f=p_f,
+                    method="domain_size",
+                    domain_size=domain_size,
+                    description=(
+                        f"clinical_date {cd.matched_value} "
+                        f"({cd.resolution}): D_f={domain_size}"
+                    ),
                 )
             )
 
@@ -339,24 +380,81 @@ def _empirical_frequency(count: int, total: int) -> float | None:
     return count / total
 
 
+def _parse_date_string(val: str) -> "date | None":
+    """Parse an ISO date string, padding partial dates to day resolution."""
+    from datetime import date as date_type
+
+    try:
+        parts = val.split("-")
+        year = int(parts[0])
+        month = int(parts[1]) if len(parts) > 1 else 1
+        day = int(parts[2]) if len(parts) > 2 else 1
+        return date_type(year, month, day)
+    except (ValueError, IndexError):
+        return None
+
+
+def _compute_date_span_days(
+    demographic_matches: list[DemographicMatch],
+    clinical_dates: list[ClinicalDateMatch] | None = None,
+) -> int:
+    """Compute the span in days across all matched date values.
+
+    Collects dates from matched demographic date features AND matched
+    clinical dates (drug start/end, AE onset), parses them, and returns
+    the span from earliest to latest.
+    Returns 0 if fewer than two distinct dates are found.
+    """
+    from datetime import date as date_type
+
+    all_dates: list[date_type] = []
+
+    # Dates from demographic matches (e.g. report_date)
+    for dm in demographic_matches:
+        if dm.date_resolution is None or not dm.matched:
+            continue
+        for val in list(dm.values_r1) + list(dm.values_r2):
+            if not isinstance(val, str):
+                continue
+            parsed = _parse_date_string(val)
+            if parsed is not None:
+                all_dates.append(parsed)
+
+    # Dates from clinical date matches (drug start/end, AE onset)
+    if clinical_dates:
+        for cd in clinical_dates:
+            parsed = _parse_date_string(cd.matched_value)
+            if parsed is not None:
+                all_dates.append(parsed)
+
+    if len(all_dates) < 2:
+        return 0
+
+    return (max(all_dates) - min(all_dates)).days
+
+
 def _get_domain_size(
-    dm: "MatchResult.__class__",  # DemographicMatch
+    dm: DemographicMatch,
     config: DomainSizeConfig,
+    *,
+    is_country_year: bool = False,
+    span_days: int = 0,
 ) -> float | None:
     """Look up the domain size D_f for a matched feature.
 
-    For date features, uses the matched resolution to select
-    the appropriate domain size.
+    For date features, uses the matched resolution and reporting context
+    to select the appropriate domain size. The domain may be extended
+    if the span of matching dates exceeds the default.
     """
-    if dm.feature == "report_date":
-        resolution = dm.date_resolution or "day"
+    if dm.date_resolution is not None:
+        resolution = dm.date_resolution
         if resolution == "day":
-            return config.date_exact
+            return config.date_exact(is_country_year, span_days)
         elif resolution == "month":
-            return config.date_month
+            return config.date_month(is_country_year, span_days)
         elif resolution == "year":
-            return config.date_year
-        return config.date_exact
+            return config.date_year(is_country_year, span_days)
+        return config.date_exact(is_country_year, span_days)
 
     domain_map: dict[str, float] = {
         "patient_sex": config.sex_categories,
@@ -365,3 +463,25 @@ def _get_domain_size(
         "patient_weight": config.weight_kg_range,
     }
     return domain_map.get(dm.feature)
+
+
+def _get_clinical_date_domain_size(
+    cd: ClinicalDateMatch,
+    config: DomainSizeConfig,
+    *,
+    is_country_year: bool = False,
+    span_days: int = 0,
+) -> float | None:
+    """Look up the domain size D_f for a matched clinical date.
+
+    Uses the same context-dependent and span-extended logic as demographic
+    date features.
+    """
+    resolution = cd.resolution
+    if resolution == "day":
+        return config.date_exact(is_country_year, span_days)
+    elif resolution == "month":
+        return config.date_month(is_country_year, span_days)
+    elif resolution == "year":
+        return config.date_year(is_country_year, span_days)
+    return config.date_exact(is_country_year, span_days)

@@ -6,11 +6,14 @@ from llm_dup_dev.models.report import (
     AdverseEvent,
     DateValue,
     Drug,
+    PartialDate,
     Report,
     SourcedValue,
 )
 from llm_dup_dev.feature_generation.matching import (
+    _compare_partial_dates,
     compute_matching_aes,
+    compute_matching_clinical_dates,
     compute_matching_drugs,
     compute_matches,
 )
@@ -197,3 +200,531 @@ class TestComputeMatches:
         assert result.matching_drugs == []
         assert result.matching_AEs == []
         assert not result.has_drug_overlap
+
+    def test_clinical_dates_populated_in_match_result(self):
+        """compute_matches should populate matched_clinical_dates."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(
+                    substance="aspirin",
+                    sources=["s"],
+                    start_date=PartialDate(value="2020-06-01", resolution="day"),
+                ),
+            ],
+            adverse_events=[],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(
+                    substance="aspirin",
+                    sources=["s"],
+                    start_date=PartialDate(value="2020-06-01", resolution="day"),
+                ),
+            ],
+            adverse_events=[],
+        )
+        result = compute_matches(r1, r2)
+        assert len(result.matched_clinical_dates) == 1
+        assert result.matched_clinical_dates[0].matched_value == "2020-06-01"
+        assert result.matched_clinical_dates[0].resolution == "day"
+
+
+# ---------------------------------------------------------------------------
+# Partial date comparison helper
+# ---------------------------------------------------------------------------
+
+
+class TestComparePartialDates:
+    def test_both_none(self):
+        assert _compare_partial_dates(None, None) is None
+
+    def test_one_none(self):
+        d = PartialDate(value="2020-06-12", resolution="day")
+        assert _compare_partial_dates(d, None) is None
+        assert _compare_partial_dates(None, d) is None
+
+    def test_same_day(self):
+        d1 = PartialDate(value="2020-06-12", resolution="day")
+        d2 = PartialDate(value="2020-06-12", resolution="day")
+        result = _compare_partial_dates(d1, d2)
+        assert result == ("2020-06-12", "day")
+
+    def test_different_days(self):
+        d1 = PartialDate(value="2020-06-12", resolution="day")
+        d2 = PartialDate(value="2020-06-15", resolution="day")
+        assert _compare_partial_dates(d1, d2) is None
+
+    def test_day_vs_month_match(self):
+        """Day vs month: should match at month resolution."""
+        d1 = PartialDate(value="2020-06-12", resolution="day")
+        d2 = PartialDate(value="2020-06", resolution="month")
+        result = _compare_partial_dates(d1, d2)
+        assert result == ("2020-06", "month")
+
+    def test_day_vs_month_no_match(self):
+        d1 = PartialDate(value="2020-06-12", resolution="day")
+        d2 = PartialDate(value="2020-07", resolution="month")
+        assert _compare_partial_dates(d1, d2) is None
+
+    def test_month_vs_year_match(self):
+        d1 = PartialDate(value="2020-06", resolution="month")
+        d2 = PartialDate(value="2020", resolution="year")
+        result = _compare_partial_dates(d1, d2)
+        assert result == ("2020", "year")
+
+    def test_day_vs_year_match(self):
+        d1 = PartialDate(value="2020-06-12", resolution="day")
+        d2 = PartialDate(value="2020", resolution="year")
+        result = _compare_partial_dates(d1, d2)
+        assert result == ("2020", "year")
+
+
+# ---------------------------------------------------------------------------
+# Clinical date matching
+# ---------------------------------------------------------------------------
+
+
+def _make_report(report_id, drugs=None, adverse_events=None):
+    """Helper to build minimal reports for clinical date tests."""
+    return Report(
+        report_id=report_id,
+        drugs=drugs or [],
+        adverse_events=adverse_events or [],
+    )
+
+
+class TestClinicalDateMatching:
+    """Tests for compute_matching_clinical_dates.
+
+    All tests verify explicit date-field coincidence logic — NOT
+    interval overlap.
+    """
+
+    # -- Same-drug start-date matches --
+
+    def test_same_drug_start_date_match(self):
+        """Matching drug with same start date should produce one match."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="1994-03-30", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="1994-03-30", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["aspirin"], [])
+        assert len(result) == 1
+        assert result[0].matched_value == "1994-03-30"
+        assert result[0].resolution == "day"
+
+    def test_same_drug_start_date_no_match(self):
+        """Different start dates should not match."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="1994-03-30", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["aspirin"], [])
+        assert len(result) == 0
+
+    def test_start_date_missing_on_one_side(self):
+        """Missing start date on one report → no match for that field."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="1994-03-30", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="aspirin", sources=["s"]),  # no start_date
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["aspirin"], [])
+        assert len(result) == 0
+
+    # -- Same-drug stop/end-date matches --
+
+    def test_same_drug_end_date_match(self):
+        """Matching drug with same end date should produce one match."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 end_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 end_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["aspirin"], [])
+        assert len(result) == 1
+        assert result[0].matched_value == "1994-05-12"
+        assert result[0].resolution == "day"
+
+    # -- Same-AE onset-date matches --
+
+    def test_same_ae_onset_date_match(self):
+        """Matching AE with same onset date should produce one match."""
+        r1 = _make_report("1", adverse_events=[
+            AdverseEvent(pt_name="arrhythmia", sources=["s"],
+                         start_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        r2 = _make_report("2", adverse_events=[
+            AdverseEvent(pt_name="arrhythmia", sources=["s"],
+                         start_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, [], ["arrhythmia"])
+        assert len(result) == 1
+        assert result[0].matched_value == "1994-05-12"
+        assert result[0].resolution == "day"
+
+    def test_ae_onset_missing_on_one_side(self):
+        r1 = _make_report("1", adverse_events=[
+            AdverseEvent(pt_name="arrhythmia", sources=["s"],
+                         start_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        r2 = _make_report("2", adverse_events=[
+            AdverseEvent(pt_name="arrhythmia", sources=["s"]),  # no onset
+        ])
+        result = compute_matching_clinical_dates(r1, r2, [], ["arrhythmia"])
+        assert len(result) == 0
+
+    # -- Cross-field non-matches (start vs stop must NOT count) --
+
+    def test_cross_field_start_vs_stop_not_counted(self):
+        """A drug's start date on one report matching its stop date on the
+        other should NOT count — only same-field comparisons are valid.
+
+        This is the mitoxantrone anti-example from the spec:
+          R1: start=1994-03-30, stop=1994-05-12
+          R2: start=1994-05-12, stop=missing
+        The start(R2)=stop(R1) coincidence must NOT be counted.
+        """
+        r1 = _make_report("1", drugs=[
+            Drug(substance="mitoxantrone", sources=["s"],
+                 start_date=PartialDate(value="1994-03-30", resolution="day"),
+                 end_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="mitoxantrone", sources=["s"],
+                 start_date=PartialDate(value="1994-05-12", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["mitoxantrone"], [])
+        # start↔start: 1994-03-30 ≠ 1994-05-12 → no match
+        # end↔end: end missing on R2 → no match
+        # start↔end cross-field: NOT compared
+        assert len(result) == 0
+
+    # -- Interval-overlap non-matches --
+
+    def test_interval_overlap_not_counted(self):
+        """Overlapping treatment intervals should NOT count as date matches.
+
+        Drug exposure periods are NOT expanded into sets of intermediate dates.
+        Only explicitly recorded start/end values are compared.
+        """
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-01-01", resolution="day"),
+                 end_date=PartialDate(value="2020-06-30", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-03-15", resolution="day"),
+                 end_date=PartialDate(value="2020-09-30", resolution="day")),
+        ])
+        # The treatment periods 2020-01-01..2020-06-30 and 2020-03-15..2020-09-30
+        # overlap, but no explicit field value matches:
+        #   start↔start: 2020-01-01 ≠ 2020-03-15
+        #   end↔end: 2020-06-30 ≠ 2020-09-30
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        assert len(result) == 0
+
+    # -- Deduplication --
+
+    def test_same_date_across_drug_and_ae_counted_once(self):
+        """If the same calendar date matches for a drug start AND an AE onset,
+        it should contribute only once to the unique matched dates."""
+        r1 = _make_report("1",
+            drugs=[
+                Drug(substance="aspirin", sources=["s"],
+                     start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+            adverse_events=[
+                AdverseEvent(pt_name="rash", sources=["s"],
+                             start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+        )
+        r2 = _make_report("2",
+            drugs=[
+                Drug(substance="aspirin", sources=["s"],
+                     start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+            adverse_events=[
+                AdverseEvent(pt_name="rash", sources=["s"],
+                             start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+        )
+        result = compute_matching_clinical_dates(
+            r1, r2, ["aspirin"], ["rash"]
+        )
+        assert len(result) == 1
+        assert result[0].matched_value == "1994-05-12"
+
+    def test_same_date_across_two_drugs_counted_once(self):
+        """Same start date for two different matched drugs → counted once."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-01-15", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2020-01-15", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-01-15", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2020-01-15", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(
+            r1, r2, ["drugA", "drugB"], []
+        )
+        assert len(result) == 1
+
+    def test_same_date_start_and_end_counted_once(self):
+        """Same date as drug start AND end for same drug → counted once."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-01-15", resolution="day"),
+                 end_date=PartialDate(value="2020-01-15", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-01-15", resolution="day"),
+                 end_date=PartialDate(value="2020-01-15", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        assert len(result) == 1
+
+    def test_dedup_keeps_finest_resolution(self):
+        """When same date matches at different resolutions, keep the finest."""
+        r1 = _make_report("1",
+            drugs=[
+                Drug(substance="drugA", sources=["s"],
+                     start_date=PartialDate(value="2020-06-15", resolution="day")),
+                Drug(substance="drugB", sources=["s"],
+                     start_date=PartialDate(value="2020-06", resolution="month")),
+            ],
+        )
+        r2 = _make_report("2",
+            drugs=[
+                Drug(substance="drugA", sources=["s"],
+                     start_date=PartialDate(value="2020-06-15", resolution="day")),
+                Drug(substance="drugB", sources=["s"],
+                     start_date=PartialDate(value="2020-06-15", resolution="day")),
+            ],
+        )
+        result = compute_matching_clinical_dates(
+            r1, r2, ["drugA", "drugB"], []
+        )
+        # drugA: start matches at day "2020-06-15"
+        # drugB: start matches at month "2020-06" (coarser of day/month)
+        # These are different matched_value strings, so 2 unique dates
+        assert len(result) == 2
+        day_matches = [r for r in result if r.resolution == "day"]
+        month_matches = [r for r in result if r.resolution == "month"]
+        assert len(day_matches) == 1
+        assert len(month_matches) == 1
+
+    # -- Partial-date behavior --
+
+    def test_partial_date_month_match(self):
+        """Month-resolution dates should match."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-06", resolution="month")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-06", resolution="month")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        assert len(result) == 1
+        assert result[0].matched_value == "2020-06"
+        assert result[0].resolution == "month"
+
+    def test_partial_date_day_vs_month_match(self):
+        """Day vs month resolution should match at month level."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-06-15", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020-06", resolution="month")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        assert len(result) == 1
+        assert result[0].matched_value == "2020-06"
+        assert result[0].resolution == "month"
+
+    def test_partial_date_year_match(self):
+        """Year-resolution dates should match."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020", resolution="year")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2020", resolution="year")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        assert len(result) == 1
+        assert result[0].matched_value == "2020"
+        assert result[0].resolution == "year"
+
+    # -- Unmatched entities excluded --
+
+    def test_unmatched_drug_dates_not_included(self):
+        """Dates from drugs NOT in matching_drugs should be ignored."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="2020-06-01", resolution="day")),
+            Drug(substance="ibuprofen", sources=["s"],
+                 start_date=PartialDate(value="2020-06-01", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="2020-06-01", resolution="day")),
+            Drug(substance="ibuprofen", sources=["s"],
+                 start_date=PartialDate(value="2020-06-01", resolution="day")),
+        ])
+        # Only aspirin is in matching_drugs — ibuprofen dates are ignored
+        result = compute_matching_clinical_dates(r1, r2, ["aspirin"], [])
+        assert len(result) == 1
+
+    def test_unmatched_ae_dates_not_included(self):
+        """Dates from AEs NOT in matching_AEs should be ignored."""
+        r1 = _make_report("1", adverse_events=[
+            AdverseEvent(pt_name="rash", sources=["s"],
+                         start_date=PartialDate(value="2020-06-01", resolution="day")),
+            AdverseEvent(pt_name="nausea", sources=["s"],
+                         start_date=PartialDate(value="2020-06-01", resolution="day")),
+        ])
+        r2 = _make_report("2", adverse_events=[
+            AdverseEvent(pt_name="rash", sources=["s"],
+                         start_date=PartialDate(value="2020-06-01", resolution="day")),
+            AdverseEvent(pt_name="nausea", sources=["s"],
+                         start_date=PartialDate(value="2020-06-01", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, [], ["rash"])
+        assert len(result) == 1
+
+    # -- Full example from the spec --
+
+    def test_full_spec_example(self):
+        """The concrete example from the specification.
+
+        Matched drugs: cyclophosphamide, mitoxantrone, vincristine
+        Matched AE: arrhythmia
+
+        cyclophosphamide: R1 start=1994-03-30, R2 start=1994-03-30 → MATCH
+        mitoxantrone:     R1 start=1994-03-30 stop=1994-05-12,
+                          R2 start=1994-05-12 → start≠start, end missing → no match
+        vincristine:      R1 start=1994-03-30 stop=1994-05-12,
+                          R2 start=1994-05-12 → start≠start, end missing → no match
+        arrhythmia:       R1 onset=1994-05-12, R2 onset=1994-05-12 → MATCH
+
+        Expected unique matched dates: {1994-03-30, 1994-05-12}
+        """
+        r1 = _make_report("1",
+            drugs=[
+                Drug(substance="cyclophosphamide", sources=["s"],
+                     start_date=PartialDate(value="1994-03-30", resolution="day")),
+                Drug(substance="mitoxantrone", sources=["s"],
+                     start_date=PartialDate(value="1994-03-30", resolution="day"),
+                     end_date=PartialDate(value="1994-05-12", resolution="day")),
+                Drug(substance="vincristine", sources=["s"],
+                     start_date=PartialDate(value="1994-03-30", resolution="day"),
+                     end_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+            adverse_events=[
+                AdverseEvent(pt_name="arrhythmia", sources=["s"],
+                             start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+        )
+        r2 = _make_report("2",
+            drugs=[
+                Drug(substance="cyclophosphamide", sources=["s"],
+                     start_date=PartialDate(value="1994-03-30", resolution="day")),
+                Drug(substance="mitoxantrone", sources=["s"],
+                     start_date=PartialDate(value="1994-05-12", resolution="day")),
+                Drug(substance="vincristine", sources=["s"],
+                     start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+            adverse_events=[
+                AdverseEvent(pt_name="arrhythmia", sources=["s"],
+                             start_date=PartialDate(value="1994-05-12", resolution="day")),
+            ],
+        )
+
+        matching_drugs = ["cyclophosphamide", "mitoxantrone", "vincristine"]
+        matching_aes = ["arrhythmia"]
+
+        result = compute_matching_clinical_dates(
+            r1, r2, matching_drugs, matching_aes
+        )
+
+        matched_values = {cd.matched_value for cd in result}
+        assert matched_values == {"1994-03-30", "1994-05-12"}
+        assert len(result) == 2
+
+    def test_case_insensitive_entity_lookup(self):
+        """Drug/AE names in matching lists may differ in case from Report."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="Aspirin", sources=["s"],
+                 start_date=PartialDate(value="2020-01-01", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="ASPIRIN", sources=["s"],
+                 start_date=PartialDate(value="2020-01-01", resolution="day")),
+        ])
+        # matching_drugs uses the casing from r1 (per compute_matching_drugs)
+        result = compute_matching_clinical_dates(r1, r2, ["Aspirin"], [])
+        assert len(result) == 1
+
+    def test_no_matching_entities_returns_empty(self):
+        r1 = _make_report("1", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="2020-01-01", resolution="day")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="aspirin", sources=["s"],
+                 start_date=PartialDate(value="2020-01-01", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, [], [])
+        assert len(result) == 0
+
+    def test_results_sorted_by_date(self):
+        """Matched clinical dates should be sorted by matched_value."""
+        r1 = _make_report("1",
+            drugs=[
+                Drug(substance="drugA", sources=["s"],
+                     start_date=PartialDate(value="2020-09-01", resolution="day")),
+                Drug(substance="drugB", sources=["s"],
+                     start_date=PartialDate(value="2020-01-15", resolution="day")),
+            ],
+        )
+        r2 = _make_report("2",
+            drugs=[
+                Drug(substance="drugA", sources=["s"],
+                     start_date=PartialDate(value="2020-09-01", resolution="day")),
+                Drug(substance="drugB", sources=["s"],
+                     start_date=PartialDate(value="2020-01-15", resolution="day")),
+            ],
+        )
+        result = compute_matching_clinical_dates(
+            r1, r2, ["drugA", "drugB"], []
+        )
+        assert len(result) == 2
+        assert result[0].matched_value == "2020-01-15"
+        assert result[1].matched_value == "2020-09-01"
