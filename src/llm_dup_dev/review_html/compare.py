@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+from llm_dup_dev.data.offline import FrozenPairBundle
 from llm_dup_dev.feature_generation.matching import (
     _coarser_resolution,
     _truncate_to_resolution,
@@ -49,6 +50,8 @@ from .models import (
     DrugRow,
     FeaturesSummaryVM,
     FieldComparison,
+    FreqScopeVM,
+    FreqStatsVM,
     InconsistencyVM,
     NarrativeComparison,
     PairViewModel,
@@ -582,6 +585,40 @@ def _build_classification_summary(
 
 
 # ===================================================================
+# Frequency statistics view-model builder
+# ===================================================================
+
+
+def _build_freq_stats_vm(bundle: FrozenPairBundle | None) -> FreqStatsVM | None:
+    """Map a FrozenPairBundle to the frequency statistics view model.
+
+    Returns None when no bundle is provided.  Omits country / country_year
+    scopes when they are absent in the bundle (they are optional).
+    """
+    if bundle is None:
+        return None
+
+    scopes: list[FreqScopeVM] = []
+
+    def _scope(label: str, s: object) -> FreqScopeVM:
+        return FreqScopeVM(
+            label=label,
+            N_total=s.N_total,  # type: ignore[union-attr]
+            N_drugs=s.N_drugs,
+            N_AEs=s.N_AEs,
+            N_drugs_AEs=s.N_drugs_AEs,
+        )
+
+    scopes.append(_scope("Global", bundle.global_stats))
+    if bundle.country_stats is not None:
+        scopes.append(_scope("Country", bundle.country_stats))
+    if bundle.country_year_stats is not None:
+        scopes.append(_scope("Country-year", bundle.country_year_stats))
+
+    return FreqStatsVM(scopes=scopes)
+
+
+# ===================================================================
 # Public API
 # ===================================================================
 
@@ -594,6 +631,7 @@ def build_pair_view_model(
     classification: ClassificationResult | None = None,
     external_url: str | None = None,
     external_url_label: str = "External link",
+    frozen_bundle: FrozenPairBundle | None = None,
 ) -> PairViewModel:
     """Build a complete comparison view model from two Reports.
 
@@ -611,6 +649,9 @@ def build_pair_view_model(
         URL to render as a header link (e.g. a Vigilyze link).
     external_url_label : str
         Human-readable label for the external URL link.
+    frozen_bundle : FrozenPairBundle, optional
+        Frozen per-pair frequency statistics artifact.  When provided, the
+        rendered report includes a Frequency Statistics section.
 
     Returns
     -------
@@ -680,6 +721,7 @@ def build_pair_view_model(
         if classification
         else None
     )
+    freq_stats = _build_freq_stats_vm(frozen_bundle)
 
     return PairViewModel(
         pair_id=pair_id,
@@ -693,6 +735,7 @@ def build_pair_view_model(
         narratives=narratives,
         features_summary=features_summary,
         classification_summary=classification_summary,
+        freq_stats=freq_stats,
     )
 
 
