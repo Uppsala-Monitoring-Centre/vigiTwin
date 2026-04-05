@@ -162,6 +162,31 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 .label-Unrelated { background: #f8d7da; color: #721c24; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
+/* --- Decision summary panel --- */
+.decision-summary {
+    background: #f1f3f5;
+    border: 2px solid #d1d5da;
+    border-radius: 6px;
+    padding: 12px 20px;
+    margin-bottom: 16px;
+}
+.decision-summary h2 { margin-top: 0; border-bottom: none; }
+.decision-kv { display: grid; grid-template-columns: 160px 1fr; gap: 2px 12px; font-size: 13px; }
+.decision-kv dt { font-weight: 600; color: #586069; }
+.decision-kv dd { margin: 0; }
+
+/* --- Collapsible debug sections --- */
+details.debug-section { margin-top: 8px; }
+details.debug-section summary {
+    cursor: pointer; font-size: 13px; color: #586069; font-weight: 600;
+    padding: 4px 0;
+}
+details.debug-section pre {
+    background: #f6f8fa; border: 1px solid #d1d5da; border-radius: 4px;
+    padding: 10px 12px; font-size: 12px; overflow-x: auto;
+    max-height: 500px; overflow-y: auto;
+}
+
 /* --- Print --- */
 @media print {
     body { background: #fff; padding: 0; }
@@ -252,6 +277,40 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
     </div>
     {% endif %}
 </div>
+
+{# ── Decision summary (prediction/evaluation mode) ── #}
+{% if vm.decision_summary %}
+<div class="decision-summary">
+    <h2>Decision Summary</h2>
+    <dl class="decision-kv">
+        <dt>Final label</dt>
+        <dd>
+            <span class="label-badge label-{{ vm.decision_summary.final_label }}">
+                {{ vm.decision_summary.final_label }}
+            </span>
+        </dd>
+        {% if vm.decision_summary.relationship %}
+        <dt>Relationship</dt>
+        <dd>{{ vm.decision_summary.relationship }}</dd>
+        {% endif %}
+        {% if vm.decision_summary.l_match is not none %}
+        <dt>L<sub>match</sub></dt>
+        <dd>{{ "%.4f"|format(vm.decision_summary.l_match) }}</dd>
+        {% endif %}
+        {% if vm.decision_summary.inconsistency_counts %}
+        {%- set ic = vm.decision_summary.inconsistency_counts %}
+        <dt>Inconsistencies</dt>
+        <dd>{{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive</dd>
+        {% endif %}
+        {% if vm.decision_summary.narrative_consistency %}
+        <dt>Narrative</dt>
+        <dd>{{ vm.decision_summary.narrative_consistency }}</dd>
+        {% endif %}
+        <dt>Explanation</dt>
+        <dd>{{ vm.decision_summary.explanation }}</dd>
+    </dl>
+</div>
+{% endif %}
 
 {# ── Demographics comparison ── #}
 {% if vm.demographics %}
@@ -422,8 +481,63 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
         <dd>{{ vm.features_summary.matching_aes|join(', ') or '--' }}</dd>
     </dl>
 
+    {# ── Anchor details (extended) ── #}
+    {% if vm.features_summary.anchor_n_drugs is not none %}
+    <h3 style="font-size: 1rem; margin: 12px 0 6px;">Anchor Details</h3>
+    <dl class="evidence-kv">
+        <dt>Anchor type</dt>
+        <dd>{{ vm.features_summary.anchor_type }}</dd>
+        <dt>N<sub>anchor</sub></dt>
+        <dd>{{ vm.features_summary.anchor_n }}</dd>
+        <dt>N<sub>drugs</sub></dt>
+        <dd>{{ vm.features_summary.anchor_n_drugs }}</dd>
+        <dt>N<sub>AEs</sub></dt>
+        <dd>{{ vm.features_summary.anchor_n_aes }}</dd>
+        <dt>N<sub>drugs&times;AEs</sub></dt>
+        <dd>{{ vm.features_summary.anchor_n_drugs_aes }}</dd>
+    </dl>
+    {% endif %}
+
+    {# ── Probability details (extended) ── #}
+    {% if vm.features_summary.p_joint is not none %}
+    <h3 style="font-size: 1rem; margin: 12px 0 6px;">Probability Details</h3>
+    <dl class="evidence-kv">
+        <dt>p<sub>joint</sub></dt>
+        <dd>{{ "%.4e"|format(vm.features_summary.p_joint) }}</dd>
+        <dt>Expected collisions</dt>
+        <dd>{{ "%.4e"|format(vm.features_summary.expected_collisions) }}</dd>
+        <dt>L<sub>match</sub></dt>
+        <dd>{{ "%.4f"|format(vm.features_summary.l_match) }}</dd>
+    </dl>
+    {% if vm.features_summary.feature_contributions %}
+    <h4 style="font-size: 0.9rem; margin: 8px 0 4px; color: #586069;">Feature Contributions</h4>
+    <table>
+        <thead><tr><th>Feature</th><th>p<sub>f</sub></th><th>Method</th><th>Domain size</th><th>Description</th></tr></thead>
+        <tbody>
+        {% for fc in vm.features_summary.feature_contributions %}
+        <tr>
+            <td>{{ fc.feature }}</td>
+            <td>{{ "%.4e"|format(fc.p_f) }}</td>
+            <td>{{ fc.method }}</td>
+            <td>{{ "%.0f"|format(fc.domain_size) if fc.domain_size is not none else '--' }}</td>
+            <td>{{ fc.description }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    {% endif %}
+
+    {# ── Inconsistencies ── #}
     {% if vm.features_summary.inconsistencies %}
     <h3 style="font-size: 1rem; margin: 12px 0 6px;">Inconsistencies</h3>
+    {% if vm.features_summary.inconsistency_counts %}
+    {%- set ic = vm.features_summary.inconsistency_counts %}
+    <p style="font-size: 13px; color: #586069; margin: 0 0 6px;">
+        Summary: {{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive
+        ({{ ic.total }} total)
+    </p>
+    {% endif %}
     <table>
         <thead><tr><th>Feature</th><th>Severity</th><th>Description</th></tr></thead>
         <tbody>
@@ -501,8 +615,16 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 </div>
 {% endif %}
 
-{# ── Placeholder for future annotation / reviewer notes ── #}
-{# Future: annotation metadata, reviewer notes, probability-anchor detail #}
+{# ── Debug / raw data (collapsible) ── #}
+{% if vm.debug_json %}
+<div class="section">
+    <h2>Debug / Raw Data</h2>
+    <details class="debug-section">
+        <summary>Show raw PairFeatures &amp; ClassificationResult JSON</summary>
+        <pre>{{ vm.debug_json }}</pre>
+    </details>
+</div>
+{% endif %}
 
 <footer style="text-align: center; color: #959da5; font-size: 11px; margin-top: 24px;">
     Generated by llm_dup_dev.review_html

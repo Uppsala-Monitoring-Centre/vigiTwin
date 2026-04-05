@@ -46,11 +46,13 @@ from llm_dup_dev.data.offline import FrozenPairBundle
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
+from llm_dup_dev.pipeline.runner import PairResult
 
 from .compare import build_pair_view_model
 from .models import (
     BatchIndexItem,
     ComparisonStatus,
+    DecisionSummaryVM,
     PairViewModel,
 )
 from .render import DEFAULT_OUTPUT_DIR, write_batch_html, write_pair_html
@@ -83,6 +85,7 @@ def render_pair_html(
     external_url: str | None = None,
     external_url_label: str = "External link",
     frozen_bundle: FrozenPairBundle | None = None,
+    include_debug: bool = False,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render a single pair to a standalone HTML file.
@@ -104,6 +107,9 @@ def render_pair_html(
     frozen_bundle : FrozenPairBundle, optional
         Frozen per-pair frequency statistics.  When provided, a
         Frequency Statistics section is rendered in the HTML report.
+    include_debug : bool
+        When True, includes collapsible raw JSON sections for
+        PairFeatures and ClassificationResult.
     output_dir : Path
         Directory to write into (created if absent).
 
@@ -121,6 +127,7 @@ def render_pair_html(
         external_url=external_url,
         external_url_label=external_url_label,
         frozen_bundle=frozen_bundle,
+        include_debug=include_debug,
     )
     return write_pair_html(vm, output_dir)
 
@@ -166,12 +173,136 @@ def render_batch_html(
     )
 
 
+# -------------------------------------------------------------------
+# Prediction/evaluation rendering (PairResult-based)
+# -------------------------------------------------------------------
+
+
+@dataclass
+class ResultRenderInput:
+    """Bundle of inputs for rendering one evaluated pipeline result.
+
+    Requires both the pipeline result and the original reports so
+    that the side-by-side comparison can be rendered alongside the
+    prediction/evaluation sections.
+    """
+
+    result: PairResult
+    report_1: Report
+    report_2: Report
+    external_url: str | None = None
+    external_url_label: str = "External link"
+    frozen_bundle: FrozenPairBundle | None = None
+    include_debug: bool = False
+
+
+def render_result_html(
+    result: PairResult,
+    report_1: Report,
+    report_2: Report,
+    *,
+    external_url: str | None = None,
+    external_url_label: str = "External link",
+    frozen_bundle: FrozenPairBundle | None = None,
+    include_debug: bool = False,
+    output_dir: Path = DEFAULT_OUTPUT_DIR,
+) -> Path:
+    """Render an evaluated pipeline result to a standalone HTML file.
+
+    This reuses the same side-by-side comparison layout as
+    ``render_pair_html`` but adds prediction/evaluation sections:
+    decision summary, detailed evidence panels, and an optional
+    collapsible debug section.
+
+    Parameters
+    ----------
+    result : PairResult
+        Pipeline result containing features and classification.
+    report_1, report_2 : Report
+        The two reports to compare.
+    external_url : str, optional
+        URL to render as a header link.
+    external_url_label : str
+        Human-readable label for the external URL link.
+    frozen_bundle : FrozenPairBundle, optional
+        Frozen per-pair frequency statistics.
+    include_debug : bool
+        When True, includes collapsible raw JSON sections for
+        PairFeatures and ClassificationResult.
+    output_dir : Path
+        Directory to write into (created if absent).
+
+    Returns
+    -------
+    Path
+        Path to the written HTML file.
+    """
+    vm = build_pair_view_model(
+        report_1=report_1,
+        report_2=report_2,
+        pair_id=result.pair_id,
+        features=result.features,
+        classification=result.classification,
+        external_url=external_url,
+        external_url_label=external_url_label,
+        frozen_bundle=frozen_bundle,
+        include_debug=include_debug,
+    )
+    return write_pair_html(vm, output_dir)
+
+
+def render_results_html(
+    items: Sequence[ResultRenderInput],
+    output_dir: Path = DEFAULT_OUTPUT_DIR,
+    *,
+    write_index: bool = True,
+) -> Path:
+    """Render a batch of evaluated pipeline results to HTML files.
+
+    Parameters
+    ----------
+    items : Sequence[ResultRenderInput]
+        One entry per evaluated pair.
+    output_dir : Path
+        Directory to write into (created if absent).
+    write_index : bool
+        Whether to generate an ``index.html`` linking to all pairs.
+
+    Returns
+    -------
+    Path
+        The output directory.
+    """
+    view_models = [
+        build_pair_view_model(
+            report_1=item.report_1,
+            report_2=item.report_2,
+            pair_id=item.result.pair_id,
+            features=item.result.features,
+            classification=item.result.classification,
+            external_url=item.external_url,
+            external_url_label=item.external_url_label,
+            frozen_bundle=item.frozen_bundle,
+            include_debug=item.include_debug,
+        )
+        for item in items
+    ]
+    return write_batch_html(
+        view_models, output_dir, write_index=write_index
+    )
+
+
 __all__ = [
     "BatchIndexItem",
     "ComparisonStatus",
+    "DecisionSummaryVM",
     "FrozenPairBundle",
     "PairRenderInput",
+    "PairResult",
     "PairViewModel",
+    "ResultRenderInput",
     "render_batch_html",
     "render_pair_html",
+    "render_result_html",
+    "render_results_html",
 ]

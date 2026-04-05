@@ -539,6 +539,45 @@ output_dir = render_batch_html(items, output_dir=Path("outputs/review"))
 # Writes one HTML per pair + an index.html linking to all of them
 ```
 
+### Rendering evaluated pipeline results
+
+When you have `PairResult` objects from the pipeline, use `render_result_html` / `render_results_html` to render pages with the full prediction/evaluation view (decision summary, detailed evidence, classification):
+
+```python
+from llm_dup_dev.review_html import render_result_html, render_results_html, ResultRenderInput
+
+# Single result
+path = render_result_html(
+    result,                                # PairResult from PipelineRunner
+    report_1,
+    report_2,
+    include_debug=True,                    # optional: collapsible raw JSON sections
+    output_dir=Path("outputs/evaluated"),
+)
+
+# Batch of results
+items = [
+    ResultRenderInput(
+        result=results[pair.pair_id],
+        report_1=loader.load_report(pair.report_1_id),
+        report_2=loader.load_report(pair.report_2_id),
+        include_debug=True,
+    )
+    for pair in pairs
+]
+output_dir = render_results_html(items, output_dir=Path("outputs/evaluated"))
+```
+
+The evaluated-pair pages reuse the same side-by-side comparison layout and add:
+
+- **Decision summary** — final label, L_match, inconsistency counts, explanation
+- **Extended evidence** — anchor population details, probability breakdown, feature contributions, inconsistency counts
+- **Debug section** (optional) — collapsible raw JSON for PairFeatures and ClassificationResult
+
+### Default output location
+
+All rendering functions default to `outputs/review_html/`. Override with the `output_dir` parameter.
+
 ### CLI (from frozen JSON exports)
 
 If reports and pipeline outputs have already been serialised to JSON:

@@ -3,14 +3,40 @@
 from pathlib import Path
 
 from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
+from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.enums import (
+    AnchorType,
+    InconsistencySeverity,
+    NarrativeConsistency,
+    PrimaryClassification,
+    RelationshipClassification,
+    ReportingContextLevel,
+)
+from llm_dup_dev.models.pair_features import (
+    AnchorPopulation,
+    InconsistencyCounts,
+    Inconsistency,
+    PairFeatures,
+    ProbabilityEstimate,
+    ReportingContext,
+)
 from llm_dup_dev.models.report import Report
+from llm_dup_dev.pipeline.runner import PairResult
+from llm_dup_dev.review_html import (
+    render_pair_html,
+    render_result_html,
+    render_results_html,
+    ResultRenderInput,
+)
 from llm_dup_dev.review_html.compare import build_pair_view_model
 from llm_dup_dev.review_html.models import (
     BatchIndexItem,
     ComparisonStatus,
+    DecisionSummaryVM,
     FieldComparison,
     FreqScopeVM,
     FreqStatsVM,
+    InconsistencyCountsVM,
     NarrativeComparison,
     PairViewModel,
 )
@@ -356,3 +382,344 @@ class TestWriteBatchHtml:
         out = write_batch_html([vm], tmp_path, write_index=False)
         assert (out / "R001__R002.html").exists()
         assert not (out / "index.html").exists()
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures for prediction/evaluation tests
+# ---------------------------------------------------------------------------
+
+
+def _make_features(pair_id: str = "R001__R002") -> PairFeatures:
+    """Build a minimal PairFeatures for testing."""
+    return PairFeatures(
+        pair_id=pair_id,
+        reporting_context=ReportingContext(
+            level=ReportingContextLevel.COUNTRY, country="US", year=2020
+        ),
+        matching_drugs=["pregabalin"],
+        matching_AEs=["somnolence"],
+        anchor=AnchorPopulation(
+            N_drugs=200, N_AEs=300, N_drugs_AEs=40,
+            type=AnchorType.DRUGS_AES, N_anchor=40,
+        ),
+        probability=ProbabilityEstimate(
+            p_joint=1.5e-5, expected_collisions=0.075,
+        ),
+        L_match=3.8,
+        inconsistencies=[
+            Inconsistency(
+                feature="weight",
+                severity=InconsistencySeverity.MODERATE,
+                difference=2.0, units="kg",
+                description="Weight differs by 2.0 kg",
+            ),
+        ],
+        inconsistency_counts=InconsistencyCounts(moderate=1, strong=0, decisive=0),
+        narrative_consistency=NarrativeConsistency.CONSISTENT,
+    )
+
+
+def _make_classification(pair_id: str = "R001__R002") -> ClassificationResult:
+    """Build a minimal ClassificationResult for testing."""
+    return ClassificationResult(
+        pair_id=pair_id,
+        primary=PrimaryClassification.SAME_INDIVIDUAL,
+        explanation="High L_match with minor inconsistencies.",
+    )
+
+
+def _make_pair_result(pair_id: str = "R001__R002") -> PairResult:
+    """Build a PairResult for testing."""
+    return PairResult(
+        pair_id=pair_id,
+        features=_make_features(pair_id),
+        classification=_make_classification(pair_id),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Comparison-only rendering (no prediction data)
+# ---------------------------------------------------------------------------
+
+
+class TestComparisonOnlyRendering:
+    """Tests for rendering created report pairs without pipeline data."""
+
+    def test_renders_without_features_or_classification(self, report_a, report_b):
+        """Comparison-only mode renders valid HTML without prediction sections."""
+        vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        html = render_pair(vm)
+        assert "<!DOCTYPE html>" in html
+        assert "R001__R002" in html
+        assert "Demographics" in html
+        assert "Drugs" in html
+        # Should NOT contain prediction-specific sections
+        assert "Decision Summary" not in html
+        assert "Debug" not in html
+
+    def test_comparison_only_file_write(self, tmp_path, report_a, report_b):
+        """render_pair_html works without features/classification."""
+        path = render_pair_html(
+            report_a, report_b, pair_id="R001__R002",
+            output_dir=tmp_path,
+        )
+        assert path.exists()
+        content = path.read_text(encoding="utf-8")
+        assert "Demographics" in content
+        assert "Decision Summary" not in content
+
+    def test_comparison_only_batch_index(self, tmp_path, report_a, report_b):
+        """Batch index renders cleanly with comparison-only pairs."""
+        vm1 = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        vm2 = build_pair_view_model(report_a, report_b, pair_id="R001__R003")
+        out = write_batch_html([vm1, vm2], tmp_path)
+        index_html = (out / "index.html").read_text(encoding="utf-8")
+        assert "R001__R002" in index_html
+        assert "R001__R003" in index_html
+        # No label/L_match columns when all are None
+        assert "Label" not in index_html
+
+
+# ---------------------------------------------------------------------------
+# Prediction/evaluation rendering
+# ---------------------------------------------------------------------------
+
+
+class TestPredictionRendering:
+    """Tests for rendering evaluated pipeline outputs (PairResult)."""
+
+    def test_decision_summary_rendered(self, report_a, report_b):
+        """Decision summary panel appears when classification is present."""
+        features = _make_features()
+        classification = _make_classification()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        html = render_pair(vm)
+        assert "Decision Summary" in html
+        assert "Duplicates" in html
+        assert "High L_match" in html
+        assert "1 moderate" in html
+
+    def test_decision_summary_absent_without_classification(self, report_a, report_b):
+        """Decision summary is absent when only features are provided."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(),
+        )
+        assert vm.decision_summary is None
+        html = render_pair(vm)
+        assert "Decision Summary" not in html
+
+    def test_anchor_details_rendered(self, report_a, report_b):
+        """Extended anchor details appear in the evidence section."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(),
+        )
+        html = render_pair(vm)
+        assert "Anchor Details" in html
+        assert "200" in html   # N_drugs
+        assert "300" in html   # N_AEs
+
+    def test_probability_details_rendered(self, report_a, report_b):
+        """p_joint and probability details appear."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(),
+        )
+        html = render_pair(vm)
+        assert "Probability Details" in html
+        assert "1.5000e-05" in html  # p_joint
+
+    def test_inconsistency_counts_rendered(self, report_a, report_b):
+        """Inconsistency counts summary appears."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(),
+        )
+        html = render_pair(vm)
+        assert "1 moderate" in html
+        assert "0 strong" in html
+        assert "1 total" in html
+
+    def test_render_result_html(self, tmp_path, report_a, report_b):
+        """render_result_html creates a file with prediction sections."""
+        result = _make_pair_result()
+        path = render_result_html(
+            result, report_a, report_b,
+            output_dir=tmp_path,
+        )
+        assert path.exists()
+        content = path.read_text(encoding="utf-8")
+        assert "Decision Summary" in content
+        assert "Evidence Summary" in content
+        assert "Duplicates" in content
+
+    def test_render_result_html_with_debug(self, tmp_path, report_a, report_b):
+        """Debug sections appear when include_debug=True."""
+        result = _make_pair_result()
+        path = render_result_html(
+            result, report_a, report_b,
+            include_debug=True,
+            output_dir=tmp_path,
+        )
+        content = path.read_text(encoding="utf-8")
+        assert "Debug" in content
+        assert "PairFeatures" in content
+        assert "ClassificationResult" in content
+
+    def test_render_result_html_no_debug_by_default(self, tmp_path, report_a, report_b):
+        """Debug sections are absent by default."""
+        result = _make_pair_result()
+        path = render_result_html(
+            result, report_a, report_b,
+            output_dir=tmp_path,
+        )
+        content = path.read_text(encoding="utf-8")
+        assert "Debug / Raw Data" not in content
+
+    def test_render_results_html_batch(self, tmp_path, report_a, report_b):
+        """render_results_html writes files and an index."""
+        items = [
+            ResultRenderInput(
+                result=_make_pair_result("R001__R002"),
+                report_1=report_a, report_2=report_b,
+            ),
+            ResultRenderInput(
+                result=_make_pair_result("R001__R003"),
+                report_1=report_a, report_2=report_b,
+            ),
+        ]
+        out = render_results_html(items, output_dir=tmp_path)
+        assert (out / "R001__R002.html").exists()
+        assert (out / "R001__R003.html").exists()
+        assert (out / "index.html").exists()
+
+    def test_batch_index_shows_evaluation_columns(self, report_a, report_b):
+        """Batch index includes label, L_match, inconsistencies, and narrative."""
+        features = _make_features()
+        classification = _make_classification()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+        assert item.final_label == "Duplicates"
+        assert item.l_match == 3.8
+        assert item.inconsistency_summary == "1M / 0S / 0D"
+        assert item.narrative_consistency == "consistent"
+
+    def test_batch_index_renders_evaluation_columns(self, report_a, report_b):
+        """Rendered index HTML includes evaluation columns."""
+        features = _make_features()
+        classification = _make_classification()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+        html = render_index([item])
+        assert "Duplicates" in html
+        assert "3.80" in html
+        assert "1M / 0S / 0D" in html
+        assert "consistent" in html
+
+    def test_relationship_label_in_decision_summary(self, report_a, report_b):
+        """Relationship label appears when classification is Different/Related."""
+        classification = ClassificationResult(
+            pair_id="R001__R002",
+            primary=PrimaryClassification.DIFFERENT_INDIVIDUALS,
+            relationship=RelationshipClassification.RELATED,
+            explanation="Related but different.",
+        )
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(), classification=classification,
+        )
+        html = render_pair(vm)
+        assert "Otherwise_related" in html
+        assert "Related" in html
+
+
+# ---------------------------------------------------------------------------
+# Graceful handling of missing optional fields
+# ---------------------------------------------------------------------------
+
+
+class TestMissingOptionalFields:
+    """Verify the renderer handles missing/None fields gracefully."""
+
+    def test_empty_reports_render(self):
+        """Two empty reports render without error."""
+        r1 = Report(report_id="EMPTY1")
+        r2 = Report(report_id="EMPTY2")
+        vm = build_pair_view_model(r1, r2, pair_id="EMPTY")
+        html = render_pair(vm)
+        assert "<!DOCTYPE html>" in html
+        assert "EMPTY" in html
+
+    def test_features_without_classification(self, report_a, report_b):
+        """Features alone render evidence but no classification/decision."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(),
+        )
+        html = render_pair(vm)
+        assert "Evidence Summary" in html
+        assert "<h2>Classification</h2>" not in html
+        assert "Decision Summary" not in html
+
+    def test_classification_without_features(self, report_a, report_b):
+        """Classification alone renders decision summary without evidence."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+        )
+        html = render_pair(vm)
+        assert "Decision Summary" in html
+        assert "Evidence Summary" not in html
+        # Decision summary should show label but no L_match
+        assert "Duplicates" in html
+
+    def test_decision_summary_no_l_match_without_features(self, report_a, report_b):
+        """Decision summary omits L_match when features are absent."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+        )
+        assert vm.decision_summary is not None
+        assert vm.decision_summary.l_match is None
+
+    def test_batch_index_mixed_modes(self, report_a, report_b):
+        """Index handles a mix of comparison-only and evaluated pairs."""
+        vm_plain = build_pair_view_model(
+            report_a, report_b, pair_id="PLAIN",
+        )
+        vm_eval = build_pair_view_model(
+            report_a, report_b, pair_id="EVAL",
+            features=_make_features("EVAL"),
+            classification=_make_classification("EVAL"),
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        items = [
+            build_batch_index_item(vm_plain, "PLAIN.html"),
+            build_batch_index_item(vm_eval, "EVAL.html"),
+        ]
+        html = render_index(items)
+        assert "PLAIN" in html
+        assert "EVAL" in html
+        assert "Duplicates" in html
+        assert "--" in html  # plain pair's missing label
+
+    def test_index_no_extra_columns_when_all_none(self, report_a, report_b):
+        """Index omits evaluation columns when no pair has them."""
+        vm = build_pair_view_model(report_a, report_b, pair_id="PLAIN")
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        items = [build_batch_index_item(vm, "PLAIN.html")]
+        html = render_index(items)
+        assert "Inconsistencies" not in html
+        assert "Narrative" not in html
