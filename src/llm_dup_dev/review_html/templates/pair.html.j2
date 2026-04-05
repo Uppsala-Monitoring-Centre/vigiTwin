@@ -428,6 +428,39 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 </div>
 {% endif %}
 
+{# ── Frequency statistics ── #}
+<div class="section">
+    <h2>Frequency Statistics</h2>
+    {% if vm.freq_stats and vm.freq_stats.scopes %}
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Scope</th>
+                <th>N_total</th>
+                <th>N_drugs</th>
+                <th>N_AEs</th>
+                <th>N_drugs_AEs</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for scope in vm.freq_stats.scopes %}
+            <tr>
+                <td><strong>{{ scope.label }}</strong></td>
+                <td>{{ scope.N_total }}</td>
+                <td>{{ scope.N_drugs }}</td>
+                <td>{{ scope.N_AEs }}</td>
+                <td>{{ scope.N_drugs_AEs }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color: #586069; font-size: 13px; margin: 4px 0;">Frequency statistics not available.</p>
+    {% endif %}
+</div>
+
 {# ── Classification (optional) ── #}
 {% if vm.classification_summary %}
 <div class="section">

@@ -160,6 +160,31 @@ class ClassificationSummaryVM(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Frequency statistics section
+# ---------------------------------------------------------------------------
+
+
+class FreqScopeVM(BaseModel):
+    """View model for one reporting-scope's frequency counts."""
+
+    label: str  # "Global", "Country", or "Country-year"
+    N_total: int
+    N_drugs: int
+    N_AEs: int
+    N_drugs_AEs: int
+
+
+class FreqStatsVM(BaseModel):
+    """View model for the frequency statistics section.
+
+    Contains one entry per available reporting scope (global is always
+    present when this object exists; country and country_year are optional).
+    """
+
+    scopes: list[FreqScopeVM] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Top-level page view model
 # ---------------------------------------------------------------------------
 
@@ -188,6 +213,7 @@ class PairViewModel(BaseModel):
 
     features_summary: FeaturesSummaryVM | None = None
     classification_summary: ClassificationSummaryVM | None = None
+    freq_stats: FreqStatsVM | None = None
 
 
 # ---------------------------------------------------------------------------

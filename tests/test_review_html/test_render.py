@@ -2,12 +2,15 @@
 
 from pathlib import Path
 
+from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.review_html.compare import build_pair_view_model
 from llm_dup_dev.review_html.models import (
     BatchIndexItem,
     ComparisonStatus,
     FieldComparison,
+    FreqScopeVM,
+    FreqStatsVM,
     NarrativeComparison,
     PairViewModel,
 )
@@ -155,6 +158,117 @@ class TestWritePairHtml:
         assert path.name == "R001__R002.html"
         content = path.read_text(encoding="utf-8")
         assert "<!DOCTYPE html>" in content
+
+
+# ---------------------------------------------------------------------------
+# Frequency statistics section
+# ---------------------------------------------------------------------------
+
+
+_GLOBAL_STATS = FrozenScopeStats(N_total=5000, N_drugs=200, N_AEs=300, N_drugs_AEs=40)
+_COUNTRY_STATS = FrozenScopeStats(N_total=1200, N_drugs=50, N_AEs=80, N_drugs_AEs=12)
+_COUNTRY_YEAR_STATS = FrozenScopeStats(N_total=300, N_drugs=15, N_AEs=22, N_drugs_AEs=4)
+
+
+class TestFreqStatsRendering:
+    def _bundle(
+        self,
+        *,
+        country: bool = True,
+        country_year: bool = True,
+    ) -> FrozenPairBundle:
+        return FrozenPairBundle(
+            pair_id="R001__R002",
+            matching_drugs=["pregabalin"],
+            matching_AEs=["somnolence"],
+            global_stats=_GLOBAL_STATS,
+            country_stats=_COUNTRY_STATS if country else None,
+            country_year_stats=_COUNTRY_YEAR_STATS if country_year else None,
+        )
+
+    def test_fallback_when_no_bundle(self, report_a, report_b):
+        """When no frozen_bundle is passed the fallback message is rendered."""
+        vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        html = render_pair(vm)
+        assert "Frequency statistics not available" in html
+
+    def test_section_heading_always_present(self, report_a, report_b):
+        """The Frequency Statistics heading appears regardless of bundle presence."""
+        vm_no_bundle = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        vm_with_bundle = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        for vm in (vm_no_bundle, vm_with_bundle):
+            assert "Frequency Statistics" in render_pair(vm)
+
+    def test_all_three_scopes_rendered(self, report_a, report_b):
+        """All three scope labels appear when the full bundle is provided."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        html = render_pair(vm)
+        assert "Global" in html
+        assert "Country" in html
+        assert "Country-year" in html
+
+    def test_counts_rendered(self, report_a, report_b):
+        """N_total and N_drugs_AEs values appear in the output."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        html = render_pair(vm)
+        assert "5000" in html   # global N_total
+        assert "40" in html     # global N_drugs_AEs
+
+    def test_partial_scopes_only_global(self, report_a, report_b):
+        """When only global stats are in the bundle, Country rows are absent."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(country=False, country_year=False),
+        )
+        html = render_pair(vm)
+        assert "Global" in html
+        assert "Country-year" not in html
+        # "Country" may still appear in demographics; check freq_stats scopes count
+        assert vm.freq_stats is not None
+        assert len(vm.freq_stats.scopes) == 1
+
+    def test_global_and_country_only(self, report_a, report_b):
+        """country_year absent → two scopes in freq_stats."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(country_year=False),
+        )
+        assert vm.freq_stats is not None
+        assert len(vm.freq_stats.scopes) == 2
+        assert vm.freq_stats.scopes[0].label == "Global"
+        assert vm.freq_stats.scopes[1].label == "Country"
+
+    def test_no_fallback_message_when_bundle_present(self, report_a, report_b):
+        """Fallback message must not appear when valid stats are provided."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        html = render_pair(vm)
+        assert "Frequency statistics not available" not in html
+
+    def test_freq_stats_vm_direct_injection(self):
+        """FreqStatsVM can be set directly on PairViewModel (no bundle needed)."""
+        vm = PairViewModel(
+            pair_id="X",
+            report_1_id="A",
+            report_2_id="B",
+            freq_stats=FreqStatsVM(
+                scopes=[FreqScopeVM(label="Global", N_total=100, N_drugs=10, N_AEs=20, N_drugs_AEs=5)]
+            ),
+        )
+        html = render_pair(vm)
+        assert "Global" in html
+        assert "100" in html
 
 
 class TestWriteBatchHtml:
