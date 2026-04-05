@@ -66,8 +66,17 @@ a:hover { text-decoration: underline; }
                 {% if has_labels %}
                 <th>Label</th>
                 {% endif %}
+                {% if has_relationship %}
+                <th>Relationship</th>
+                {% endif %}
                 {% if has_l_match %}
                 <th>L<sub>match</sub></th>
+                {% endif %}
+                {% if has_inconsistencies %}
+                <th>Inconsistencies</th>
+                {% endif %}
+                {% if has_narrative %}
+                <th>Narrative</th>
                 {% endif %}
             </tr>
         </thead>
@@ -87,8 +96,17 @@ a:hover { text-decoration: underline; }
                     {% endif %}
                 </td>
                 {% endif %}
+                {% if has_relationship %}
+                <td>{{ item.relationship or '--' }}</td>
+                {% endif %}
                 {% if has_l_match %}
                 <td>{{ "%.2f"|format(item.l_match) if item.l_match is not none else '--' }}</td>
+                {% endif %}
+                {% if has_inconsistencies %}
+                <td>{{ item.inconsistency_summary or '--' }}</td>
+                {% endif %}
+                {% if has_narrative %}
+                <td>{{ item.narrative_consistency or '--' }}</td>
                 {% endif %}
             </tr>
         {% endfor %}

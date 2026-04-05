@@ -46,12 +46,15 @@ from .models import (
     BatchIndexItem,
     ClassificationSummaryVM,
     ComparisonStatus,
+    DecisionSummaryVM,
     DrugDetail,
     DrugRow,
+    FeatureContributionVM,
     FeaturesSummaryVM,
     FieldComparison,
     FreqScopeVM,
     FreqStatsVM,
+    InconsistencyCountsVM,
     InconsistencyVM,
     NarrativeComparison,
     PairViewModel,
@@ -566,6 +569,26 @@ def _build_features_summary(
             )
             for inc in features.inconsistencies
         ],
+        # Extended prediction/evaluation fields
+        p_joint=features.probability.p_joint,
+        anchor_n_drugs=features.anchor.N_drugs,
+        anchor_n_aes=features.anchor.N_AEs,
+        anchor_n_drugs_aes=features.anchor.N_drugs_AEs,
+        feature_contributions=[
+            FeatureContributionVM(
+                feature=fc.feature,
+                p_f=fc.p_f,
+                method=fc.method,
+                domain_size=fc.domain_size,
+                description=fc.description,
+            )
+            for fc in features.probability.feature_contributions
+        ],
+        inconsistency_counts=InconsistencyCountsVM(
+            moderate=features.inconsistency_counts.moderate,
+            strong=features.inconsistency_counts.strong,
+            decisive=features.inconsistency_counts.decisive,
+        ),
     )
 
 
@@ -581,6 +604,37 @@ def _build_classification_summary(
         ),
         final_label=classification.final_label,
         explanation=classification.explanation,
+    )
+
+
+def _build_decision_summary(
+    features: PairFeatures | None,
+    classification: ClassificationResult | None,
+) -> DecisionSummaryVM | None:
+    """Build a compact decision summary from features and classification."""
+    if classification is None:
+        return None
+    return DecisionSummaryVM(
+        final_label=classification.final_label,
+        explanation=classification.explanation,
+        l_match=features.L_match if features else None,
+        inconsistency_counts=(
+            InconsistencyCountsVM(
+                moderate=features.inconsistency_counts.moderate,
+                strong=features.inconsistency_counts.strong,
+                decisive=features.inconsistency_counts.decisive,
+            )
+            if features
+            else None
+        ),
+        narrative_consistency=(
+            features.narrative_consistency.value if features else None
+        ),
+        relationship=(
+            classification.relationship.value
+            if classification.relationship
+            else None
+        ),
     )
 
 
@@ -676,6 +730,7 @@ def build_pair_view_model(
     external_url: str | None = None,
     external_url_label: str = "External link",
     frozen_bundle: FrozenPairBundle | None = None,
+    include_debug: bool = False,
 ) -> PairViewModel:
     """Build a complete comparison view model from two Reports.
 
@@ -696,6 +751,9 @@ def build_pair_view_model(
     frozen_bundle : FrozenPairBundle, optional
         Frozen per-pair frequency statistics artifact.  When provided, the
         rendered report includes a Frequency Statistics section.
+    include_debug : bool
+        When True, serialises PairFeatures and ClassificationResult as
+        JSON into the view model for collapsible debug sections.
 
     Returns
     -------
@@ -782,6 +840,22 @@ def build_pair_view_model(
         frozen_bundle, country=_freq_country, year=_freq_year
     )
 
+    decision_summary = _build_decision_summary(features, classification)
+
+    # Optional debug JSON for collapsible raw-data sections
+    debug_json: str | None = None
+    if include_debug and (features or classification):
+        import json
+
+        debug_parts: dict = {}
+        if features:
+            debug_parts["PairFeatures"] = features.model_dump(mode="json")
+        if classification:
+            debug_parts["ClassificationResult"] = classification.model_dump(
+                mode="json"
+            )
+        debug_json = json.dumps(debug_parts, indent=2, default=str)
+
     return PairViewModel(
         pair_id=pair_id,
         report_1_id=report_1.report_id,
@@ -795,6 +869,8 @@ def build_pair_view_model(
         features_summary=features_summary,
         classification_summary=classification_summary,
         freq_stats=freq_stats,
+        decision_summary=decision_summary,
+        debug_json=debug_json,
     )
 
 
@@ -803,6 +879,15 @@ def build_batch_index_item(
     filename: str,
 ) -> BatchIndexItem:
     """Build an index entry from a rendered pair view model."""
+    # Inconsistency summary: "2M / 1S / 0D" style
+    inc_summary: str | None = None
+    if (
+        vm.features_summary
+        and vm.features_summary.inconsistency_counts
+    ):
+        ic = vm.features_summary.inconsistency_counts
+        inc_summary = f"{ic.moderate}M / {ic.strong}S / {ic.decisive}D"
+
     return BatchIndexItem(
         pair_id=vm.pair_id,
         report_1_id=vm.report_1_id,
@@ -815,6 +900,17 @@ def build_batch_index_item(
         ),
         l_match=(
             vm.features_summary.l_match
+            if vm.features_summary
+            else None
+        ),
+        relationship=(
+            vm.classification_summary.relationship
+            if vm.classification_summary
+            else None
+        ),
+        inconsistency_summary=inc_summary,
+        narrative_consistency=(
+            vm.features_summary.narrative_consistency
             if vm.features_summary
             else None
         ),

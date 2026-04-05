@@ -70,6 +70,15 @@ def render_index(items: list[BatchIndexItem]) -> str:
         ),
         has_labels=any(item.final_label is not None for item in items),
         has_l_match=any(item.l_match is not None for item in items),
+        has_relationship=any(
+            item.relationship is not None for item in items
+        ),
+        has_inconsistencies=any(
+            item.inconsistency_summary is not None for item in items
+        ),
+        has_narrative=any(
+            item.narrative_consistency is not None for item in items
+        ),
     )
 
 

@@ -136,6 +136,28 @@ class InconsistencyVM(BaseModel):
     description: str
 
 
+class FeatureContributionVM(BaseModel):
+    """View model for a single feature's probability contribution."""
+
+    feature: str
+    p_f: float
+    method: str
+    domain_size: float | None = None
+    description: str = ""
+
+
+class InconsistencyCountsVM(BaseModel):
+    """View model for inconsistency count summary."""
+
+    moderate: int = 0
+    strong: int = 0
+    decisive: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.moderate + self.strong + self.decisive
+
+
 class FeaturesSummaryVM(BaseModel):
     """View model for the optional PairFeatures evidence section."""
 
@@ -148,6 +170,16 @@ class FeaturesSummaryVM(BaseModel):
     matching_drugs: list[str] = Field(default_factory=list)
     matching_aes: list[str] = Field(default_factory=list)
     inconsistencies: list[InconsistencyVM] = Field(default_factory=list)
+
+    # Extended fields for prediction/evaluation mode
+    p_joint: float | None = None
+    anchor_n_drugs: int | None = None
+    anchor_n_aes: int | None = None
+    anchor_n_drugs_aes: int | None = None
+    feature_contributions: list[FeatureContributionVM] = Field(
+        default_factory=list
+    )
+    inconsistency_counts: InconsistencyCountsVM | None = None
 
 
 class ClassificationSummaryVM(BaseModel):
@@ -191,6 +223,26 @@ class FreqStatsVM(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Decision summary (compact panel for prediction/evaluation mode)
+# ---------------------------------------------------------------------------
+
+
+class DecisionSummaryVM(BaseModel):
+    """Compact decision summary for prediction/evaluation pages.
+
+    Combines the final classification with the key quantities that
+    drove the decision, for at-a-glance review.
+    """
+
+    final_label: str
+    explanation: str
+    l_match: float | None = None
+    inconsistency_counts: InconsistencyCountsVM | None = None
+    narrative_consistency: str | None = None
+    relationship: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Top-level page view model
 # ---------------------------------------------------------------------------
 
@@ -220,6 +272,8 @@ class PairViewModel(BaseModel):
     features_summary: FeaturesSummaryVM | None = None
     classification_summary: ClassificationSummaryVM | None = None
     freq_stats: FreqStatsVM | None = None
+    decision_summary: DecisionSummaryVM | None = None
+    debug_json: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -236,3 +290,6 @@ class BatchIndexItem(BaseModel):
     filename: str
     final_label: str | None = None
     l_match: float | None = None
+    relationship: str | None = None
+    inconsistency_summary: str | None = None
+    narrative_consistency: str | None = None
