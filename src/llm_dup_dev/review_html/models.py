@@ -191,6 +191,20 @@ class ClassificationSummaryVM(BaseModel):
     explanation: str
 
 
+class AnnotationVM(BaseModel):
+    """View model for a human annotation from the validation set.
+
+    Carries both the raw annotation vocabulary value (e.g.
+    ``"otherwise_related"``) and a normalised form that uses the same
+    title-case vocabulary as the pipeline (e.g. ``"Otherwise_related"``),
+    so the template can apply the same label badge CSS classes to both.
+    """
+
+    raw_label: str           # value as supplied: "duplicates" / "otherwise_related" / etc.
+    normalised_label: str    # canonical form: "Duplicates" / "Otherwise_related" / "Unrelated" / "Abstain"
+    agrees_with_pipeline: bool | None = None  # True/False when a pipeline label is available
+
+
 # ---------------------------------------------------------------------------
 # Frequency statistics section
 # ---------------------------------------------------------------------------
@@ -273,6 +287,7 @@ class PairViewModel(BaseModel):
     classification_summary: ClassificationSummaryVM | None = None
     freq_stats: FreqStatsVM | None = None
     decision_summary: DecisionSummaryVM | None = None
+    annotation: AnnotationVM | None = None
     debug_json: str | None = None
 
 
@@ -293,3 +308,5 @@ class BatchIndexItem(BaseModel):
     relationship: str | None = None
     inconsistency_summary: str | None = None
     narrative_consistency: str | None = None
+    annotation_label: str | None = None          # normalised human annotation
+    annotation_agrees: bool | None = None        # True/False/None (no pipeline label)

@@ -78,6 +78,9 @@ a:hover { text-decoration: underline; }
                 {% if has_narrative %}
                 <th>Narrative</th>
                 {% endif %}
+                {% if has_annotations %}
+                <th>Human annotation</th>
+                {% endif %}
             </tr>
         </thead>
         <tbody>
@@ -107,6 +110,22 @@ a:hover { text-decoration: underline; }
                 {% endif %}
                 {% if has_narrative %}
                 <td>{{ item.narrative_consistency or '--' }}</td>
+                {% endif %}
+                {% if has_annotations %}
+                <td>
+                    {% if item.annotation_label %}
+                    <span class="label-badge label-{{ item.annotation_label }}">{{ item.annotation_label }}</span>
+                    {% if item.annotation_agrees is not none %}
+                    {% if item.annotation_agrees %}
+                    <span style="color:#155724;font-weight:700;">&#10003;</span>
+                    {% else %}
+                    <span style="color:#721c24;font-weight:700;">&#10007;</span>
+                    {% endif %}
+                    {% endif %}
+                    {% else %}
+                    --
+                    {% endif %}
+                </td>
                 {% endif %}
             </tr>
         {% endfor %}

@@ -162,6 +162,11 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 .label-Unrelated { background: #f8d7da; color: #721c24; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
+/* --- Annotation badge --- */
+.annotation-agree { color: #155724; font-weight: 700; font-size: 13px; }
+.annotation-disagree { color: #721c24; font-weight: 700; font-size: 13px; }
+.annotation-no-pipeline { color: #586069; font-size: 13px; }
+
 /* --- Decision summary panel --- */
 .decision-summary {
     background: #f1f3f5;
@@ -267,13 +272,30 @@ details.debug-section pre {
     {% endif %}
     {% if vm.classification_summary %}
     <div style="margin-top: 6px;">
-        Classification:
+        Pipeline:
         <span class="label-badge label-{{ vm.classification_summary.final_label }}">
             {{ vm.classification_summary.final_label }}
         </span>
         {% if vm.features_summary %}
         &nbsp; L<sub>match</sub> = {{ "%.2f"|format(vm.features_summary.l_match) }}
         {% endif %}
+        {% if vm.annotation %}
+        &nbsp;&nbsp;
+        Human:
+        <span class="label-badge label-{{ vm.annotation.normalised_label }}">{{ vm.annotation.normalised_label }}</span>
+        {% if vm.annotation.agrees_with_pipeline is not none %}
+        {% if vm.annotation.agrees_with_pipeline %}
+        <span class="annotation-agree">&#10003; agree</span>
+        {% else %}
+        <span class="annotation-disagree">&#10007; disagree</span>
+        {% endif %}
+        {% endif %}
+        {% endif %}
+    </div>
+    {% elif vm.annotation %}
+    <div style="margin-top: 6px;">
+        Human annotation:
+        <span class="label-badge label-{{ vm.annotation.normalised_label }}">{{ vm.annotation.normalised_label }}</span>
     </div>
     {% endif %}
 </div>
@@ -600,18 +622,47 @@ details.debug-section pre {
         <dt>Relationship</dt>
         <dd>{{ vm.classification_summary.relationship }}</dd>
         {% endif %}
-        <dt>Final label</dt>
+        <dt>Pipeline label</dt>
         <dd>
             <span class="label-badge label-{{ vm.classification_summary.final_label }}">
                 {{ vm.classification_summary.final_label }}
             </span>
         </dd>
+        {% if vm.annotation %}
+        <dt>Human annotation</dt>
+        <dd>
+            <span class="label-badge label-{{ vm.annotation.normalised_label }}">
+                {{ vm.annotation.normalised_label }}
+            </span>
+            {% if vm.annotation.agrees_with_pipeline is not none %}
+            &nbsp;
+            {% if vm.annotation.agrees_with_pipeline %}
+            <span class="annotation-agree">&#10003; agree</span>
+            {% else %}
+            <span class="annotation-disagree">&#10007; disagree</span>
+            {% endif %}
+            {% endif %}
+        </dd>
+        {% endif %}
     </dl>
     {% if vm.classification_summary.explanation %}
     <p style="font-size: 13px; color: #586069; margin: 8px 0 0;">
         {{ vm.classification_summary.explanation }}
     </p>
     {% endif %}
+</div>
+{% elif vm.annotation %}
+{# ── Annotation-only section (no pipeline classification) ── #}
+<div class="section">
+    <h2>Human Annotation</h2>
+    <dl class="evidence-kv">
+        <dt>Label</dt>
+        <dd>
+            <span class="label-badge label-{{ vm.annotation.normalised_label }}">
+                {{ vm.annotation.normalised_label }}
+            </span>
+        </dd>
+    </dl>
 </div>
 {% endif %}
 
