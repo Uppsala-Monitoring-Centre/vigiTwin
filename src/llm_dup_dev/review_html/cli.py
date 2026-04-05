@@ -9,13 +9,14 @@ Render all pairs from frozen JSON artifacts::
         --pairs pairs.json \\
         --output-dir outputs/review_html/
 
-Optionally include features and classifications::
+Optionally include features, classifications, and frozen frequency statistics::
 
     python -m llm_dup_dev.review_html \\
         --reports reports.json \\
         --pairs pairs.json \\
         --features features.json \\
         --classifications classifications.json \\
+        --bundles bundles.json \\
         --output-dir outputs/review_html/
 
 Expected JSON formats
@@ -24,6 +25,7 @@ Expected JSON formats
 - ``pairs.json``: ``[ { "pair_id": "...", "report_1_id": "...", "report_2_id": "..." }, ... ]``
 - ``features.json`` (optional): ``{ "<pair_id>": { ...PairFeatures fields... }, ... }``
 - ``classifications.json`` (optional): ``{ "<pair_id>": { ...ClassificationResult fields... }, ... }``
+- ``bundles.json`` (optional): ``{ "<pair_id>": { ...FrozenPairBundle fields... }, ... }``
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from llm_dup_dev.data.offline import FrozenPairBundle
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
@@ -77,6 +80,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Path to classifications JSON (dict keyed by pair_id). Optional.",
+    )
+    parser.add_argument(
+        "--bundles",
+        type=Path,
+        default=None,
+        help=(
+            "Path to frozen pair bundles JSON (dict keyed by pair_id). "
+            "When provided, each pair report includes a Frequency Statistics "
+            "section. Optional."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -127,6 +140,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             for pid, cdata in raw_cls.items()
         }
 
+    # Load optional frozen pair bundles
+    bundles: dict[str, FrozenPairBundle] = {}
+    if args.bundles:
+        raw_bundles = _load_json(args.bundles)
+        bundles = {
+            pid: FrozenPairBundle.model_validate(bdata)
+            for pid, bdata in raw_bundles.items()
+        }
+
     # Build view models
     view_models: list[PairViewModel] = []
     errors: list[str] = []
@@ -150,6 +172,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             pair_id=pair.pair_id,
             features=features.get(pair.pair_id),
             classification=classifications.get(pair.pair_id),
+            frozen_bundle=bundles.get(pair.pair_id),
         )
         view_models.append(vm)
 

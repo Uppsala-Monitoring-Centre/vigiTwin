@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
+from llm_dup_dev.data.offline import FrozenPairBundle
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
@@ -69,6 +70,7 @@ class PairRenderInput:
     classification: ClassificationResult | None = None
     external_url: str | None = None
     external_url_label: str = "External link"
+    frozen_bundle: FrozenPairBundle | None = None
 
 
 def render_pair_html(
@@ -80,6 +82,7 @@ def render_pair_html(
     classification: ClassificationResult | None = None,
     external_url: str | None = None,
     external_url_label: str = "External link",
+    frozen_bundle: FrozenPairBundle | None = None,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render a single pair to a standalone HTML file.
@@ -98,6 +101,9 @@ def render_pair_html(
         URL to render as a header link (e.g. a Vigilyze link).
     external_url_label : str
         Human-readable label for the external URL link.
+    frozen_bundle : FrozenPairBundle, optional
+        Frozen per-pair frequency statistics.  When provided, a
+        Frequency Statistics section is rendered in the HTML report.
     output_dir : Path
         Directory to write into (created if absent).
 
@@ -114,6 +120,7 @@ def render_pair_html(
         classification=classification,
         external_url=external_url,
         external_url_label=external_url_label,
+        frozen_bundle=frozen_bundle,
     )
     return write_pair_html(vm, output_dir)
 
@@ -129,7 +136,8 @@ def render_batch_html(
     Parameters
     ----------
     items : Sequence[PairRenderInput]
-        One entry per pair.
+        One entry per pair.  Set ``item.frozen_bundle`` to include
+        frequency statistics in the rendered page for that pair.
     output_dir : Path
         Directory to write into (created if absent).
     write_index : bool
@@ -149,6 +157,7 @@ def render_batch_html(
             classification=item.classification,
             external_url=item.external_url,
             external_url_label=item.external_url_label,
+            frozen_bundle=item.frozen_bundle,
         )
         for item in items
     ]
@@ -160,6 +169,7 @@ def render_batch_html(
 __all__ = [
     "BatchIndexItem",
     "ComparisonStatus",
+    "FrozenPairBundle",
     "PairRenderInput",
     "PairViewModel",
     "render_batch_html",
