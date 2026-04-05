@@ -208,7 +208,7 @@ month
 year
 ```
 
-These may later be used when estimating domain sizes in probability calculations.
+Report dates are matched for evidence display but are excluded from the collision-probability computation. Drug and AE dates (start/end/onset) are used instead — see the method specification § Clinical Dates.
 
 ------
 

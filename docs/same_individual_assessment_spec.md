@@ -4,7 +4,7 @@
 
 The probabilistic framework evaluates how surprising the observed combination of matched features would be if the two reports originated from different individuals within the anchor population.
 
-Intuitively, if many reports exist within the anchor population that share similar drugs and adverse events, then additional matches (such as dates or patient characteristics) may occur by chance. Conversely, if the probability of observing the full set of matched features is extremely small, the reports are unlikely to describe different individuals.
+Intuitively, if many reports exist within the anchor population that share similar drugs and adverse events, then additional matches (such as clinical dates or patient characteristics) may occur by chance. Conversely, if the probability of observing the full set of matched features is extremely small, the reports are unlikely to describe different individuals.
 
 #### Reporting Context and Anchor Population
 
@@ -114,6 +114,15 @@ Conversely, large anchor populations imply that many similar reports exist, requ
 
 After identifying matching features between the two reports, the evidential strength of the match is evaluated by estimating how likely the **combined pattern of matched features** would be to occur by chance within the anchor population.
 
+The features that contribute to the composite matching probability are:
+
+- **Drug set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed frequency)
+- **AE set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed frequency)
+- **Patient demographics** — age, sex, height, weight (domain-size based)
+- **Clinical dates** — unique dates matching across drug start/end and AE onset fields (domain-size based)
+
+Note: **report date is excluded** from the probability computation. It is matched for evidence display purposes only, as it primarily reflects administrative timing rather than patient-identifying clinical information.
+
 The framework proceeds in three steps:
 
 1. Determine a feature-level probability \(p_f\) for each matched feature.
@@ -200,21 +209,24 @@ The domain size depends on:
 
 ##### Dates
 
-For date features, domain size depends on both the recorded resolution and the plausible temporal window.
+For date features, domain size depends on the recorded resolution, the reporting context, and the temporal span of matching dates across the report pair.
 
-| Date format | Domain size                              |
-| ----------- | ---------------------------------------- |
-| Exact date  | \(365 \times\) number of plausible years |
-| Month–year  | \(12 \times\) number of plausible years  |
-| Year only   | number of plausible years                |
+###### Context-dependent defaults
 
-Example:
+The default temporal window depends on the reporting context. When the reporting context is **country-year**, a narrower 1-year window is used because most reports in a given country-year are temporally concentrated. For broader contexts (country or global), a 10-year window is used — although the database spans nearly 50 years, exponential growth means most reports have been submitted in the most recent decade.
 
-If treatment histories span approximately ten years:
+| Reporting context | Default window | Exact date \(D_f\) | Month–year \(D_f\) | Year only \(D_f\) |
+| ----------------- | -------------- | ------------------- | ------------------- | ------------------ |
+| Country-year      | 1 year         | 365                 | 12                  | 1                  |
+| Country or global | 10 years       | 3650                | 122                 | 10                 |
 
-- exact date: \(D_f \approx 3650\)
-- month–year: \(D_f \approx 120\)
-- year only: \(D_f \approx 10\)
+###### Span-based extension
+
+If the matching dates across the two reports span a period longer than the default window, the domain size is extended to cover the actual span. This prevents underestimating the domain when reports contain dates spread across a wide temporal range.
+
+For example, if matched drug start dates include 2001-02-01 and matched AE onset dates include 2007-03-03, the span is approximately 6 years. In a country-year context (default 365 days), the domain would be extended to the actual span (~2,226 days).
+
+The span is computed from all matched date values (including clinical dates and report dates) and applies uniformly to all date-type features in the probability computation.
 
 ---
 
@@ -342,6 +354,50 @@ $$
 $$
 
 This logic applies symmetrically: if the anchor is the drug set and the additional feature is the AE set, the same formula is used with the AE set's marginal prevalence as \(p_0\).
+
+---
+
+##### Clinical Dates (Drug Start/End, AE Onset)
+
+Matching dates from drug and adverse event records provide additional evidence for the collision probability. This uses **explicit date-field coincidence** only — treatment intervals are NOT expanded into sets of intermediate dates.
+
+###### Which dates are compared
+
+For each matched drug (shared between the two reports), the following date fields are compared:
+
+- **start date** ↔ **start date**
+- **end date** ↔ **end date**
+
+For each matched adverse event, the following field is compared:
+
+- **onset date** ↔ **onset date**
+
+Only same-field-type comparisons count. A drug's start date on one report must NOT match against the same drug's end date on the other report. Dates from unmatched drugs or unmatched AEs are not considered.
+
+Standard partial-date matching rules apply: month-only and year-only values match at their coarser resolution.
+
+###### Deduplication to unique dates
+
+The result is collapsed to a set of **unique matched dates**. If the same calendar date matches for multiple drugs, multiple AEs, or multiple field types, it contributes only once (at the finest matched resolution).
+
+Each unique matched date contributes \(p_f = 1/D_f\) to the composite probability, where \(D_f\) is the context-dependent date domain size.
+
+###### Example
+
+Matched drugs: cyclophosphamide, mitoxantrone, vincristine. Matched AE: arrhythmia.
+
+| Entity             | Field | Report 1   | Report 2   | Match?                               |
+| ------------------ | ----- | ---------- | ---------- | ------------------------------------ |
+| cyclophosphamide   | start | 1994-03-30 | 1994-03-30 | **Yes** — same start date            |
+| mitoxantrone       | start | 1994-03-30 | 1994-05-12 | No — different start dates           |
+| mitoxantrone       | end   | 1994-05-12 | (missing)  | No — end date missing on one side    |
+| vincristine        | start | 1994-03-30 | 1994-05-12 | No — different start dates           |
+| vincristine        | end   | 1994-05-12 | (missing)  | No — end date missing on one side    |
+| arrhythmia         | onset | 1994-05-12 | 1994-05-12 | **Yes** — same onset date            |
+
+Unique matched dates: **{1994-03-30, 1994-05-12}** — count = 2.
+
+Note that for mitoxantrone, Report 1's end date (1994-05-12) equals Report 2's start date (1994-05-12), but this cross-field coincidence is NOT counted. The date 1994-05-12 enters the matched set only through the arrhythmia onset match.
 
 ---
 

@@ -31,23 +31,41 @@ class DomainSizeConfig(BaseModel):
     # Weight (adult defaults, kg)
     weight_kg_range: int = 100  # ~40–140 kg
 
-    # Dates — base value for temporal span
-    date_plausible_years: int = 10  # treatment history span
+    # Dates — default domain sizes depend on reporting context.
+    # Country-year context: 1 year (most reports in a country-year are recent).
+    # Broader contexts (country, global): 10 years (database spans ~50 years
+    # but exponential growth means most reports are from the last decade).
+    date_plausible_days_country_year: int = 365
+    date_plausible_days_broad: int = 3650  # ~10 years
 
-    @property
-    def date_exact(self) -> int:
-        """Domain size for exact date (day resolution)."""
-        return 365 * self.date_plausible_years
+    def date_exact(self, is_country_year: bool = False, span_days: int = 0) -> int:
+        """Domain size for exact date (day resolution).
 
-    @property
-    def date_month(self) -> int:
+        Parameters
+        ----------
+        is_country_year : bool
+            Whether the reporting context is country-year.
+        span_days : int
+            Span in days of all matching dates across features. If this
+            exceeds the default, the domain is extended to this value.
+        """
+        default = (
+            self.date_plausible_days_country_year
+            if is_country_year
+            else self.date_plausible_days_broad
+        )
+        return max(default, span_days)
+
+    def date_month(self, is_country_year: bool = False, span_days: int = 0) -> int:
         """Domain size for month-year resolution."""
-        return 12 * self.date_plausible_years
+        exact = self.date_exact(is_country_year, span_days)
+        # Convert days to months (integer ceiling)
+        return max(1, -(-exact // 30))  # ceiling division
 
-    @property
-    def date_year(self) -> int:
+    def date_year(self, is_country_year: bool = False, span_days: int = 0) -> int:
         """Domain size for year-only resolution."""
-        return self.date_plausible_years
+        exact = self.date_exact(is_country_year, span_days)
+        return max(1, -(-exact // 365))  # ceiling division
 
 
 class InconsistencyThresholds(BaseModel):
