@@ -43,6 +43,7 @@ from llm_dup_dev.models.report import (
 from .models import (
     AEDetail,
     AERow,
+    AnnotationVM,
     BatchIndexItem,
     ClassificationSummaryVM,
     ComparisonStatus,
@@ -717,6 +718,58 @@ def _build_freq_stats_vm(
 
 
 # ===================================================================
+# Annotation view-model builder
+# ===================================================================
+
+
+def _build_annotation_vm(
+    annotation: dict | None,
+    pipeline_label: str | None,
+) -> AnnotationVM | None:
+    """Build an AnnotationVM from a raw eval-set annotation dict.
+
+    Parameters
+    ----------
+    annotation : dict, optional
+        A human annotation dict with at least a ``"duplicates_assessment"``
+        key (e.g. ``{"pair_id": "...", "duplicates_assessment": "duplicates"}``).
+    pipeline_label : str, optional
+        The pipeline's normalised final label (e.g. ``"Duplicates"``).
+        Used to compute the agreement flag when present.
+
+    Returns
+    -------
+    AnnotationVM or None
+    """
+    if annotation is None:
+        return None
+
+    raw = annotation.get("duplicates_assessment", "")
+    if not raw:
+        return None
+
+    from llm_dup_dev.eval.labels import is_abstain, normalise_label
+
+    if is_abstain(raw):
+        normalised = "Abstain"
+    else:
+        try:
+            normalised = normalise_label(raw)
+        except ValueError:
+            normalised = raw  # preserve as-is for unknown values
+
+    agrees: bool | None = None
+    if pipeline_label is not None and normalised != "Abstain":
+        agrees = normalised == pipeline_label
+
+    return AnnotationVM(
+        raw_label=raw,
+        normalised_label=normalised,
+        agrees_with_pipeline=agrees,
+    )
+
+
+# ===================================================================
 # Public API
 # ===================================================================
 
@@ -731,6 +784,7 @@ def build_pair_view_model(
     external_url_label: str = "External link",
     frozen_bundle: FrozenPairBundle | None = None,
     include_debug: bool = False,
+    annotation: dict | None = None,
 ) -> PairViewModel:
     """Build a complete comparison view model from two Reports.
 
@@ -754,6 +808,11 @@ def build_pair_view_model(
     include_debug : bool
         When True, serialises PairFeatures and ClassificationResult as
         JSON into the view model for collapsible debug sections.
+    annotation : dict, optional
+        A human annotation dict from the validation set with at least a
+        ``"duplicates_assessment"`` key.  When provided, a human
+        annotation panel is added to the page showing the label and
+        whether it agrees with the pipeline classification.
 
     Returns
     -------
@@ -842,6 +901,13 @@ def build_pair_view_model(
 
     decision_summary = _build_decision_summary(features, classification)
 
+    annotation_vm = _build_annotation_vm(
+        annotation,
+        pipeline_label=(
+            classification.final_label if classification else None
+        ),
+    )
+
     # Optional debug JSON for collapsible raw-data sections
     debug_json: str | None = None
     if include_debug and (features or classification):
@@ -870,6 +936,7 @@ def build_pair_view_model(
         classification_summary=classification_summary,
         freq_stats=freq_stats,
         decision_summary=decision_summary,
+        annotation=annotation_vm,
         debug_json=debug_json,
     )
 
@@ -913,5 +980,11 @@ def build_batch_index_item(
             vm.features_summary.narrative_consistency
             if vm.features_summary
             else None
+        ),
+        annotation_label=(
+            vm.annotation.normalised_label if vm.annotation else None
+        ),
+        annotation_agrees=(
+            vm.annotation.agrees_with_pipeline if vm.annotation else None
         ),
     )

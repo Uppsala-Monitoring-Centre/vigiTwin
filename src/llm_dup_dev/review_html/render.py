@@ -79,6 +79,9 @@ def render_index(items: list[BatchIndexItem]) -> str:
         has_narrative=any(
             item.narrative_consistency is not None for item in items
         ),
+        has_annotations=any(
+            item.annotation_label is not None for item in items
+        ),
     )
 
 

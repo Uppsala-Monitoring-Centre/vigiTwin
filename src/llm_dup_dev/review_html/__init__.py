@@ -50,6 +50,7 @@ from llm_dup_dev.pipeline.runner import PairResult
 
 from .compare import build_pair_view_model
 from .models import (
+    AnnotationVM,
     BatchIndexItem,
     ComparisonStatus,
     DecisionSummaryVM,
@@ -73,6 +74,7 @@ class PairRenderInput:
     external_url: str | None = None
     external_url_label: str = "External link"
     frozen_bundle: FrozenPairBundle | None = None
+    annotation: dict | None = None
 
 
 def render_pair_html(
@@ -86,6 +88,7 @@ def render_pair_html(
     external_url_label: str = "External link",
     frozen_bundle: FrozenPairBundle | None = None,
     include_debug: bool = False,
+    annotation: dict | None = None,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render a single pair to a standalone HTML file.
@@ -110,6 +113,10 @@ def render_pair_html(
     include_debug : bool
         When True, includes collapsible raw JSON sections for
         PairFeatures and ClassificationResult.
+    annotation : dict, optional
+        A human annotation dict with at least a
+        ``"duplicates_assessment"`` key.  Shows the human label
+        alongside the pipeline classification.
     output_dir : Path
         Directory to write into (created if absent).
 
@@ -128,6 +135,7 @@ def render_pair_html(
         external_url_label=external_url_label,
         frozen_bundle=frozen_bundle,
         include_debug=include_debug,
+        annotation=annotation,
     )
     return write_pair_html(vm, output_dir)
 
@@ -165,6 +173,7 @@ def render_batch_html(
             external_url=item.external_url,
             external_url_label=item.external_url_label,
             frozen_bundle=item.frozen_bundle,
+            annotation=item.annotation,
         )
         for item in items
     ]
@@ -194,6 +203,7 @@ class ResultRenderInput:
     external_url_label: str = "External link"
     frozen_bundle: FrozenPairBundle | None = None
     include_debug: bool = False
+    annotation: dict | None = None
 
 
 def render_result_html(
@@ -205,6 +215,7 @@ def render_result_html(
     external_url_label: str = "External link",
     frozen_bundle: FrozenPairBundle | None = None,
     include_debug: bool = False,
+    annotation: dict | None = None,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render an evaluated pipeline result to a standalone HTML file.
@@ -247,6 +258,7 @@ def render_result_html(
         external_url_label=external_url_label,
         frozen_bundle=frozen_bundle,
         include_debug=include_debug,
+        annotation=annotation,
     )
     return write_pair_html(vm, output_dir)
 
@@ -284,6 +296,7 @@ def render_results_html(
             external_url_label=item.external_url_label,
             frozen_bundle=item.frozen_bundle,
             include_debug=item.include_debug,
+            annotation=item.annotation,
         )
         for item in items
     ]
@@ -293,6 +306,7 @@ def render_results_html(
 
 
 __all__ = [
+    "AnnotationVM",
     "BatchIndexItem",
     "ComparisonStatus",
     "DecisionSummaryVM",

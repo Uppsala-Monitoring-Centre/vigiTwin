@@ -723,3 +723,167 @@ class TestMissingOptionalFields:
         html = render_index(items)
         assert "Inconsistencies" not in html
         assert "Narrative" not in html
+
+
+# ---------------------------------------------------------------------------
+# Human annotation rendering
+# ---------------------------------------------------------------------------
+
+
+def _make_annotation(pair_id: str, assessment: str) -> dict:
+    return {"pair_id": pair_id, "duplicates_assessment": assessment}
+
+
+class TestAnnotationRendering:
+    """Tests for human annotation display in pair pages and batch index."""
+
+    # -- AnnotationVM construction --
+
+    def test_annotation_vm_agrees(self, report_a, report_b):
+        """Agreement flag is True when pipeline and annotation match."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+            annotation=_make_annotation("R001__R002", "duplicates"),
+        )
+        assert vm.annotation is not None
+        assert vm.annotation.normalised_label == "Duplicates"
+        assert vm.annotation.agrees_with_pipeline is True
+
+    def test_annotation_vm_disagrees(self, report_a, report_b):
+        """Agreement flag is False when pipeline and annotation differ."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),  # Duplicates
+            annotation=_make_annotation("R001__R002", "unrelated"),
+        )
+        assert vm.annotation is not None
+        assert vm.annotation.normalised_label == "Unrelated"
+        assert vm.annotation.agrees_with_pipeline is False
+
+    def test_annotation_vm_no_pipeline(self, report_a, report_b):
+        """Agreement flag is None when no pipeline classification exists."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            annotation=_make_annotation("R001__R002", "otherwise_related"),
+        )
+        assert vm.annotation is not None
+        assert vm.annotation.normalised_label == "Otherwise_related"
+        assert vm.annotation.agrees_with_pipeline is None
+
+    def test_annotation_vm_abstain(self, report_a, report_b):
+        """Abstain annotation is normalised to 'Abstain'; agreement is None."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+            annotation=_make_annotation("R001__R002", "abstain"),
+        )
+        assert vm.annotation is not None
+        assert vm.annotation.normalised_label == "Abstain"
+        assert vm.annotation.agrees_with_pipeline is None
+
+    def test_no_annotation_vm_without_annotation(self, report_a, report_b):
+        """annotation is None on the view model when no annotation supplied."""
+        vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        assert vm.annotation is None
+
+    # -- Pair HTML rendering --
+
+    def test_annotation_shown_in_header_with_classification(self, report_a, report_b):
+        """Annotation badge appears in the header when classification is present."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+            annotation=_make_annotation("R001__R002", "duplicates"),
+        )
+        html = render_pair(vm)
+        assert "Human:" in html
+        assert "✓ agree" in html or "&#10003;" in html
+
+    def test_annotation_shown_in_classification_section(self, report_a, report_b):
+        """Annotation row appears inside the Classification section."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+            annotation=_make_annotation("R001__R002", "duplicates"),
+        )
+        html = render_pair(vm)
+        assert "Human annotation" in html
+
+    def test_annotation_disagree_shows_cross(self, report_a, report_b):
+        """Disagreement indicator is rendered when labels differ."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),   # Duplicates
+            annotation=_make_annotation("R001__R002", "unrelated"),
+        )
+        html = render_pair(vm)
+        assert "&#10007;" in html   # ✗ disagree mark
+
+    def test_annotation_standalone_section_without_classification(self, report_a, report_b):
+        """A standalone Human Annotation section is rendered when there is no classification."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            annotation=_make_annotation("R001__R002", "otherwise_related"),
+        )
+        html = render_pair(vm)
+        assert "Human Annotation" in html
+        assert "Otherwise_related" in html
+        # No agreement indicator when there is no pipeline label
+        assert "&#10003;" not in html   # no ✓ agree mark
+        assert "&#10007;" not in html   # no ✗ disagree mark
+
+    def test_no_annotation_section_when_absent(self, report_a, report_b):
+        """No annotation markup is rendered when annotation is not supplied."""
+        vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        html = render_pair(vm)
+        assert "Human Annotation" not in html
+        assert "Human annotation" not in html
+
+    # -- Batch index --
+
+    def test_batch_index_item_carries_annotation(self, report_a, report_b):
+        """BatchIndexItem captures annotation label and agreement."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+            annotation=_make_annotation("R001__R002", "duplicates"),
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+        assert item.annotation_label == "Duplicates"
+        assert item.annotation_agrees is True
+
+    def test_batch_index_renders_annotation_column(self, report_a, report_b):
+        """Rendered index includes the Human annotation column when data is present."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            classification=_make_classification(),
+            annotation=_make_annotation("R001__R002", "duplicates"),
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+        html = render_index([item])
+        assert "Human annotation" in html
+        assert "Duplicates" in html
+        assert "&#10003;" in html   # agree checkmark
+
+    def test_batch_index_no_annotation_column_when_absent(self, report_a, report_b):
+        """Annotation column is omitted from the index when no items have one."""
+        vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+        html = render_index([item])
+        assert "Human annotation" not in html
+
+    def test_render_result_html_with_annotation(self, tmp_path, report_a, report_b):
+        """render_result_html accepts and renders annotation."""
+        result = _make_pair_result()
+        path = render_result_html(
+            result, report_a, report_b,
+            annotation=_make_annotation("R001__R002", "duplicates"),
+            output_dir=tmp_path,
+        )
+        content = path.read_text(encoding="utf-8")
+        assert "Human annotation" in content
+        assert "&#10003;" in content
