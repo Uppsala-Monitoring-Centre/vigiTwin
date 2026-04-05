@@ -171,6 +171,18 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 </head>
 <body>
 
+{# ── Macro: join a list of strings as "A", "A and B", "A, B, and C" ── #}
+{% macro join_and(items) -%}
+  {%- if not items -%}
+  {%- elif items|length == 1 -%}
+    {{- items[0] -}}
+  {%- elif items|length == 2 -%}
+    {{- items[0] }} and {{ items[1] -}}
+  {%- else -%}
+    {{- items[:-1]|join(', ') }}, and {{ items[-1] -}}
+  {%- endif -%}
+{%- endmacro %}
+
 {# ── Macro: status label badge ── #}
 {% macro status_badge(status) -%}
 <span class="status-label status-label-{{ status.value }}">{{ status_icon(status) }}</span>
@@ -432,15 +444,17 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 <div class="section">
     <h2>Frequency Statistics</h2>
     {% if vm.freq_stats and vm.freq_stats.scopes %}
+    {%- set drugs_label = join_and(vm.freq_stats.matching_drugs) %}
+    {%- set aes_label   = join_and(vm.freq_stats.matching_aes) %}
     <div class="table-scroll">
     <table>
         <thead>
             <tr>
                 <th>Scope</th>
-                <th>N_total</th>
-                <th>N_drugs</th>
-                <th>N_AEs</th>
-                <th>N_drugs_AEs</th>
+                <th>Total # reports</th>
+                <th># reports on {{ drugs_label }}</th>
+                <th># reports with {{ aes_label }}</th>
+                <th># reports on {{ drugs_label }} with {{ aes_label }}</th>
             </tr>
         </thead>
         <tbody>

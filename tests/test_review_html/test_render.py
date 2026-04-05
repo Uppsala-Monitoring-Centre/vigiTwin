@@ -203,15 +203,19 @@ class TestFreqStatsRendering:
             assert "Frequency Statistics" in render_pair(vm)
 
     def test_all_three_scopes_rendered(self, report_a, report_b):
-        """All three scope labels appear when the full bundle is provided."""
+        """All three scope rows appear when the full bundle is provided.
+
+        report_a/b share country "US" and report year 2020, so the rendered
+        labels are "US" and "US, 2020" rather than the generic fallbacks.
+        """
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002",
             frozen_bundle=self._bundle(),
         )
         html = render_pair(vm)
         assert "Global" in html
-        assert "Country" in html
-        assert "Country-year" in html
+        assert "US" in html          # country scope label
+        assert "US, 2020" in html    # country-year scope label
 
     def test_counts_rendered(self, report_a, report_b):
         """N_total and N_drugs_AEs values appear in the output."""
@@ -224,20 +228,19 @@ class TestFreqStatsRendering:
         assert "40" in html     # global N_drugs_AEs
 
     def test_partial_scopes_only_global(self, report_a, report_b):
-        """When only global stats are in the bundle, Country rows are absent."""
+        """When only global stats are in the bundle, country rows are absent."""
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002",
             frozen_bundle=self._bundle(country=False, country_year=False),
         )
         html = render_pair(vm)
         assert "Global" in html
-        assert "Country-year" not in html
-        # "Country" may still appear in demographics; check freq_stats scopes count
+        assert "US, 2020" not in html
         assert vm.freq_stats is not None
         assert len(vm.freq_stats.scopes) == 1
 
     def test_global_and_country_only(self, report_a, report_b):
-        """country_year absent → two scopes in freq_stats."""
+        """country_year absent → two scopes in freq_stats, country label is 'US'."""
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002",
             frozen_bundle=self._bundle(country_year=False),
@@ -245,7 +248,71 @@ class TestFreqStatsRendering:
         assert vm.freq_stats is not None
         assert len(vm.freq_stats.scopes) == 2
         assert vm.freq_stats.scopes[0].label == "Global"
+        assert vm.freq_stats.scopes[1].label == "US"
+
+    def test_scope_label_falls_back_when_no_country(self):
+        """Generic 'Country' / 'Country-year' fallbacks used when reports lack country."""
+        r1 = Report(report_id="X1")  # no country_of_origin_values
+        r2 = Report(report_id="X2")
+        bundle = FrozenPairBundle(
+            pair_id="X1__X2",
+            matching_drugs=["metformin"],
+            matching_AEs=["rash"],
+            global_stats=_GLOBAL_STATS,
+            country_stats=_COUNTRY_STATS,
+            country_year_stats=_COUNTRY_YEAR_STATS,
+        )
+        vm = build_pair_view_model(r1, r2, pair_id="X1__X2", frozen_bundle=bundle)
+        assert vm.freq_stats is not None
         assert vm.freq_stats.scopes[1].label == "Country"
+        assert vm.freq_stats.scopes[2].label == "Country-year"
+
+    def test_column_headers_contain_drug_names(self, report_a, report_b):
+        """Column headers reference the matching drug names from the bundle."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        html = render_pair(vm)
+        # The bundle fixture uses matching_drugs=["pregabalin"]
+        assert "# reports on pregabalin" in html
+
+    def test_column_headers_contain_ae_names(self, report_a, report_b):
+        """Column headers reference the matching AE names from the bundle."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        html = render_pair(vm)
+        # The bundle fixture uses matching_AEs=["somnolence"]
+        assert "# reports with somnolence" in html
+        assert "# reports on pregabalin with somnolence" in html
+
+    def test_column_header_multi_item_list(self, report_a, report_b):
+        """Two drugs are joined as 'A and B'; three use Oxford-comma form."""
+        bundle_two = FrozenPairBundle(
+            pair_id="R001__R002",
+            matching_drugs=["pregabalin", "sertraline"],
+            matching_AEs=["somnolence", "nausea", "dizziness"],
+            global_stats=_GLOBAL_STATS,
+        )
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=bundle_two,
+        )
+        html = render_pair(vm)
+        assert "pregabalin and sertraline" in html
+        assert "somnolence, nausea, and dizziness" in html
+
+    def test_matching_lists_stored_on_vm(self, report_a, report_b):
+        """matching_drugs and matching_aes are accessible on the view model."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            frozen_bundle=self._bundle(),
+        )
+        assert vm.freq_stats is not None
+        assert vm.freq_stats.matching_drugs == ["pregabalin"]
+        assert vm.freq_stats.matching_aes == ["somnolence"]
 
     def test_no_fallback_message_when_bundle_present(self, report_a, report_b):
         """Fallback message must not appear when valid stats are provided."""

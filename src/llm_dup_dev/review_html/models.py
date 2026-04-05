@@ -179,9 +179,15 @@ class FreqStatsVM(BaseModel):
 
     Contains one entry per available reporting scope (global is always
     present when this object exists; country and country_year are optional).
+
+    ``matching_drugs`` and ``matching_aes`` carry the canonical drug /
+    adverse-event lists used to compute the counts; the template uses them
+    to render descriptive column headers.
     """
 
     scopes: list[FreqScopeVM] = Field(default_factory=list)
+    matching_drugs: list[str] = Field(default_factory=list)
+    matching_aes: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

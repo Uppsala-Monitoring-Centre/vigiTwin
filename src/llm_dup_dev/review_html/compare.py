@@ -589,11 +589,42 @@ def _build_classification_summary(
 # ===================================================================
 
 
-def _build_freq_stats_vm(bundle: FrozenPairBundle | None) -> FreqStatsVM | None:
+def _join_and(items: list[str]) -> str:
+    """Join a list of strings in natural-language 'A, B, and C' style.
+
+    Returns an empty string when the list is empty.
+    """
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def _build_freq_stats_vm(
+    bundle: FrozenPairBundle | None,
+    *,
+    country: str | None = None,
+    year: int | None = None,
+) -> FreqStatsVM | None:
     """Map a FrozenPairBundle to the frequency statistics view model.
 
     Returns None when no bundle is provided.  Omits country / country_year
     scopes when they are absent in the bundle (they are optional).
+
+    Parameters
+    ----------
+    bundle : FrozenPairBundle, optional
+        The frozen frequency artifact for this pair.
+    country : str, optional
+        The shared country of the pair's reports (e.g. ``"SE"``).
+        Used as the row label for the country scope instead of the
+        generic ``"Country"`` fallback.
+    year : int, optional
+        The shared report year (e.g. ``2022``).  Combined with
+        ``country`` to form the country-year row label.
     """
     if bundle is None:
         return None
@@ -610,12 +641,25 @@ def _build_freq_stats_vm(bundle: FrozenPairBundle | None) -> FreqStatsVM | None:
         )
 
     scopes.append(_scope("Global", bundle.global_stats))
-    if bundle.country_stats is not None:
-        scopes.append(_scope("Country", bundle.country_stats))
-    if bundle.country_year_stats is not None:
-        scopes.append(_scope("Country-year", bundle.country_year_stats))
 
-    return FreqStatsVM(scopes=scopes)
+    if bundle.country_stats is not None:
+        country_label = country if country else "Country"
+        scopes.append(_scope(country_label, bundle.country_stats))
+
+    if bundle.country_year_stats is not None:
+        if country and year:
+            cy_label = f"{country}, {year}"
+        elif country:
+            cy_label = country
+        else:
+            cy_label = "Country-year"
+        scopes.append(_scope(cy_label, bundle.country_year_stats))
+
+    return FreqStatsVM(
+        scopes=scopes,
+        matching_drugs=list(bundle.matching_drugs),
+        matching_aes=list(bundle.matching_AEs),
+    )
 
 
 # ===================================================================
@@ -721,7 +765,22 @@ def build_pair_view_model(
         if classification
         else None
     )
-    freq_stats = _build_freq_stats_vm(frozen_bundle)
+    # Derive country and year from the reports for descriptive scope labels.
+    # country_stats is present only when both reports share a country, so
+    # either report is a reliable source; we prefer report_1.
+    _freq_country: str | None = None
+    _freq_year: int | None = None
+    if frozen_bundle is not None:
+        if report_1.country_of_origin_values:
+            _freq_country = report_1.country_of_origin_values[0].value
+        if report_1.report_date_values:
+            # DateValue.value is an ISO-8601 string; the first four characters
+            # are always the year regardless of resolution.
+            _freq_year = int(report_1.report_date_values[0].value[:4])
+
+    freq_stats = _build_freq_stats_vm(
+        frozen_bundle, country=_freq_country, year=_freq_year
+    )
 
     return PairViewModel(
         pair_id=pair_id,
