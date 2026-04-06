@@ -234,11 +234,11 @@ The span is computed from all matched date values (including clinical dates and 
 
 Age domain size depends on the resolution of the recorded age.
 
-| Representation    | Example  | Domain size                                           |
-| ----------------- | -------- | ----------------------------------------------------- |
-| Age in years      | 54       | number of plausible ages (e.g. 0–100 → \(D_f = 101\)) |
-| Age in months     | 7 months | plausible months within infancy                       |
-| Age with decimals | 54.2     | span of ages × decimal resolution                     |
+| Representation    | Example  | Domain size                                                   |
+| ----------------- | -------- | ------------------------------------------------------------- |
+| Age in years      | 54       | plausible ages 0–80 → \(D_f = 80\)                           |
+| Age in months     | 7 months | plausible infant months → \(D_f = 100\)                      |
+| Age with decimals | 54.2     | \(D_f = 80 / \text{resolution}\) (e.g. 0.1 years → \(D_f = 800\)) |
 
 ---
 
@@ -260,17 +260,16 @@ $$
 
 ##### Height
 
-For height, the domain size depends on the plausible height span for the patient’s age group and the measurement resolution.
+For height, the domain size depends on the patient’s age group and the measurement resolution. Children are defined as patients aged ≤15 years.
 
-Examples:
+| Age group         | Resolution | Domain size      |
+| ----------------- | ---------- | ---------------- |
+| Child (≤15 years) | 1 cm       | \(D_f = 20\)     |
+| Adult (>15 years) | 1 cm       | \(D_f = 40\)     |
+| Child (≤15 years) | 0.1 cm     | \(D_f = 200\)    |
+| Adult (>15 years) | 0.1 cm     | \(D_f = 400\)    |
 
-| Context | Span       | Resolution | Domain size         |
-| ------- | ---------- | ---------- | ------------------- |
-| Adult   | 150–200 cm | 1 cm       | \(D_f \approx 50\)  |
-| Child   | 80–100 cm  | 1 cm       | \(D_f \approx 20\)  |
-| Adult   | 150–200 cm | 0.1 cm     | \(D_f \approx 500\) |
-
-Larger plausible spans produce smaller random-match probabilities and therefore stronger evidence for exact matches.
+Higher measurement precision increases domain size and therefore increases the evidential value of an exact match.
 
 ---
 
@@ -278,13 +277,12 @@ Larger plausible spans produce smaller random-match probabilities and therefore 
 
 Weight is handled analogously to height.
 
-Examples:
-
-| Context | Span      | Resolution | Domain size         |
-| ------- | --------- | ---------- | ------------------- |
-| Adult   | 40–140 kg | 1 kg       | \(D_f \approx 100\) |
-| Child   | 5–25 kg   | 1 kg       | \(D_f \approx 20\)  |
-| Child   | 5–25 kg   | 0.1 kg     | \(D_f \approx 200\) |
+| Age group         | Resolution | Domain size      |
+| ----------------- | ---------- | ---------------- |
+| Child (≤15 years) | 1 kg       | \(D_f = 20\)     |
+| Adult (>15 years) | 1 kg       | \(D_f = 40\)     |
+| Child (≤15 years) | 0.1 kg     | \(D_f = 200\)    |
+| Adult (>15 years) | 0.1 kg     | \(D_f = 400\)    |
 
 Higher measurement precision increases domain size and therefore increases the evidential value of an exact match.
 
@@ -524,10 +522,11 @@ Decisive inconsistencies are expected to originate from narrative analysis (e.g.
 
 Age differences are evaluated using the absolute difference in years.
 
-| Difference | Classification         |
-| ---------- | ---------------------- |
-| ≥ 3 years  | moderate inconsistency |
-| ≥ 10 years | strong inconsistency   |
+| Difference | Classification        |
+| ---------- | --------------------- |
+| > 0 years  | minor inconsistency   |
+| ≥ 2 years  | moderate inconsistency |
+| ≥ 5 years  | strong inconsistency  |
 
 ------
 
@@ -535,10 +534,11 @@ Age differences are evaluated using the absolute difference in years.
 
 Height differences are evaluated in centimetres.
 
-| Difference | Classification         |
-| ---------- | ---------------------- |
-| ≥ 5 cm     | moderate inconsistency |
-| ≥ 10 cm    | strong inconsistency   |
+| Difference | Classification        |
+| ---------- | --------------------- |
+| > 0 cm     | minor inconsistency   |
+| ≥ 3 cm     | moderate inconsistency |
+| ≥ 6 cm     | strong inconsistency  |
 
 ------
 
@@ -546,10 +546,11 @@ Height differences are evaluated in centimetres.
 
 Weight differences are evaluated in kilograms.
 
-| Difference | Classification         |
-| ---------- | ---------------------- |
-| ≥ 5 kg     | moderate inconsistency |
-| ≥ 15 kg    | strong inconsistency   |
+| Difference | Classification        |
+| ---------- | --------------------- |
+| > 0 kg     | minor inconsistency   |
+| ≥ 3 kg     | moderate inconsistency |
+| ≥ 10 kg    | strong inconsistency  |
 
 ------
 
@@ -719,10 +720,10 @@ which quantifies how unlikely the observed combination of matched features would
 **Weighted inconsistency score**
 
 $$
-w_{\text{tot}} = w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
+w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
 $$
 
-which combines moderate and strong inconsistencies into a single score. The weights \(w_m\) and \(w_s\) are configurable (defaults: \(w_m = 1\), \(w_s = 3\)).
+which combines minor, moderate, and strong inconsistencies into a single score. The weights \(w_{mi}\), \(w_m\), and \(w_s\) are configurable (defaults: \(w_{mi} = 0.3\), \(w_m = 1\), \(w_s = 3\)).
 
 **Decisive inconsistency count**
 
@@ -741,13 +742,13 @@ One of:
 
 ### Weighted inconsistency score
 
-Moderate and strong inconsistencies are combined into a single weighted score:
+Minor, moderate, and strong inconsistencies are combined into a single weighted score:
 
 $$
-w_{\text{tot}} = w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
+w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
 $$
 
-where \(w_m\) and \(w_s\) are configurable weights. With the current defaults (\(w_m = 1\), \(w_s = 3\)), a single strong inconsistency contributes three times as much as a moderate one.
+where \(w_{mi}\), \(w_m\), and \(w_s\) are configurable weights. With the current defaults (\(w_{mi} = 0.3\), \(w_m = 1\), \(w_s = 3\)), a single strong inconsistency contributes ten times as much as a minor one.
 
 ---
 
@@ -808,6 +809,7 @@ The following parameters define the decision behaviour and are configurable:
 | `lmatch_strong` | 3.0 | L\_match boundary for the strong evidence zone |
 | `lmatch_med` | 2.0 | L\_match boundary for the moderate evidence zone |
 | `lmatch_weak` | 1.0 | L\_match boundary for the weak evidence zone |
+| `w_minor` | 0.3 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
 | `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
 | `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
 | `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for Same in the strong zone |

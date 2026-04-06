@@ -65,6 +65,7 @@ class DemographicMatch:
     values_r2: list = field(default_factory=list)
     matched_value: object = None
     date_resolution: str | None = None  # for date features: "day"/"month"/"year"
+    age_unit: str | None = None  # for patient_age: "years" or "months"
 
 
 @dataclass
@@ -185,16 +186,30 @@ def _match_sex(r1: Report, r2: Report) -> DemographicMatch:
 
 
 def _match_age(r1: Report, r2: Report) -> DemographicMatch:
-    """Check if patient age values overlap (exact numeric match)."""
-    vals_1 = {v.value for v in r1.patient_age_values}
-    vals_2 = {v.value for v in r2.patient_age_values}
-    overlap = vals_1 & vals_2
+    """Check if patient age values overlap (exact numeric match).
+
+    Records the unit of the matched value for domain-size computation.
+    When both reports record the same numeric value in the same unit, that
+    unit is preserved; otherwise defaults to "years".
+    """
+    units_1: dict[float, str] = {v.value: v.unit for v in r1.patient_age_values}
+    units_2: dict[float, str] = {v.value: v.unit for v in r2.patient_age_values}
+    overlap = set(units_1) & set(units_2)
+    matched_value = next(iter(overlap), None)
+
+    matched_unit: str | None = None
+    if matched_value is not None:
+        u1 = units_1[matched_value]
+        u2 = units_2[matched_value]
+        matched_unit = u1 if u1 == u2 else "years"
+
     return DemographicMatch(
         feature="patient_age",
         matched=bool(overlap),
         values_r1=[v.value for v in r1.patient_age_values],
         values_r2=[v.value for v in r2.patient_age_values],
-        matched_value=next(iter(overlap), None),
+        matched_value=matched_value,
+        age_unit=matched_unit,
     )
 
 
