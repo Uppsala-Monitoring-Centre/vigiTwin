@@ -193,12 +193,13 @@
       "type": "string"
     },
     "NarrativeConsistency": {
-      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Narrative Consistency Assessment",
+      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Narrative Consistency Assessment\n\nValues\n------\nSTRONGLY_CONSISTENT : narratives clearly describe the same patient\nCONSISTENT : probable but not certain match\nNEUTRAL : narratives too sparse to judge\nINCONSISTENT : narratives clearly describe different patients\nNOT_AVAILABLE : LLM assessment was not performed or failed",
       "enum": [
         "strongly_consistent",
         "consistent",
         "neutral",
-        "inconsistent"
+        "inconsistent",
+        "not_available"
       ],
       "title": "NarrativeConsistency",
       "type": "string"

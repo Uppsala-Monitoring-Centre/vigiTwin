@@ -11,12 +11,21 @@ class NarrativeConsistency(str, Enum):
     """Narrative consistency categories from LLM assessment.
 
     See: docs/same_individual_assessment_spec.md § Narrative Consistency Assessment
+
+    Values
+    ------
+    STRONGLY_CONSISTENT : narratives clearly describe the same patient
+    CONSISTENT : probable but not certain match
+    NEUTRAL : narratives too sparse to judge
+    INCONSISTENT : narratives clearly describe different patients
+    NOT_AVAILABLE : LLM assessment was not performed or failed
     """
 
     STRONGLY_CONSISTENT = "strongly_consistent"
     CONSISTENT = "consistent"
     NEUTRAL = "neutral"
     INCONSISTENT = "inconsistent"
+    NOT_AVAILABLE = "not_available"
 
 
 class InconsistencySeverity(str, Enum):
