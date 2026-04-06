@@ -5,6 +5,8 @@ import pytest
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
 from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.llm.fake import FakeLLMClient
+from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
 from llm_dup_dev.models.enums import (
     NarrativeConsistency,
     PrimaryClassification,
@@ -113,11 +115,11 @@ class TestRunPair:
             == NarrativeConsistency.STRONGLY_CONSISTENT
         )
 
-    def test_default_narrative_is_neutral(self, runner, pair_ab):
+    def test_default_narrative_is_not_available(self, runner, pair_ab):
         result = runner.run_pair(pair_ab)
         assert (
             result.features.narrative_consistency
-            == NarrativeConsistency.NEUTRAL
+            == NarrativeConsistency.NOT_AVAILABLE
         )
 
 
@@ -225,10 +227,143 @@ class TestCustomConfig:
 
 class TestNeutralNarrativeProvider:
 
-    def test_always_returns_neutral(self):
+    def test_always_returns_not_available(self):
         result = neutral_narrative_provider("pair1", "text1", "text2")
-        assert result == NarrativeConsistency.NEUTRAL
+        assert result == NarrativeConsistency.NOT_AVAILABLE
 
     def test_handles_none_narratives(self):
         result = neutral_narrative_provider("pair1", None, None)
-        assert result == NarrativeConsistency.NEUTRAL
+        assert result == NarrativeConsistency.NOT_AVAILABLE
+
+
+# ===================================================================
+# LLM-based narrative integration
+# ===================================================================
+
+class TestLLMNarrativeIntegration:
+
+    def test_batch_uses_llm_client_for_narratives(
+        self, loader, stats_provider, pair_ab
+    ):
+        """When llm_client is provided, batch uses it for narrative assessment."""
+        fake = FakeLLMClient()
+        verdict = NarrativeVerdict(
+            consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
+            evidence=["Both describe same patient"],
+        )
+        fake.seed_response(verdict)
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        result = runner.run_batch([pair_ab])
+
+        assert result.n_processed == 1
+        assert (
+            result.results[0].features.narrative_consistency
+            == NarrativeConsistency.STRONGLY_CONSISTENT
+        )
+        assert result.results[0].narrative_verdict == verdict
+        assert len(fake.requests) == 1
+
+    def test_narrative_provider_takes_precedence_over_llm(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Explicit narrative_provider overrides llm_client."""
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
+        ))
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+
+        def always_inconsistent(pair_id, n1, n2):
+            return NarrativeConsistency.INCONSISTENT
+
+        result = runner.run_batch([pair_ab], narrative_provider=always_inconsistent)
+
+        assert (
+            result.results[0].features.narrative_consistency
+            == NarrativeConsistency.INCONSISTENT
+        )
+        # LLM should NOT have been called
+        assert len(fake.requests) == 0
+        # No verdict when using callback
+        assert result.results[0].narrative_verdict is None
+
+    def test_llm_failure_falls_back_to_not_available(
+        self, loader, stats_provider, pair_ab
+    ):
+        """When LLM call fails, narrative is NOT_AVAILABLE and pair still processes."""
+        fake = FakeLLMClient()
+        fake.seed_error(ConnectionError("LLM unavailable"))
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        result = runner.run_batch([pair_ab])
+
+        assert result.n_processed == 1
+        assert result.n_errors == 0  # LLM failure is not a pair error
+        assert (
+            result.results[0].features.narrative_consistency
+            == NarrativeConsistency.NOT_AVAILABLE
+        )
+        assert result.results[0].narrative_verdict is None
+
+    def test_no_llm_client_defaults_to_not_available(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Without llm_client or narrative_provider, defaults to NOT_AVAILABLE."""
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+        )
+        result = runner.run_batch([pair_ab])
+
+        assert (
+            result.results[0].features.narrative_consistency
+            == NarrativeConsistency.NOT_AVAILABLE
+        )
+
+    def test_run_pair_with_verdict(self, runner, pair_ab):
+        """run_pair accepts a pre-computed NarrativeVerdict."""
+        verdict = NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+            evidence=["Age matches"],
+        )
+        result = runner.run_pair(pair_ab, narrative_verdict=verdict)
+
+        assert (
+            result.features.narrative_consistency
+            == NarrativeConsistency.CONSISTENT
+        )
+        assert result.narrative_verdict == verdict
+
+    def test_run_pair_verdict_overrides_consistency(self, runner, pair_ab):
+        """When both narrative_consistency and verdict are given, verdict wins."""
+        verdict = NarrativeVerdict(
+            consistency=NarrativeConsistency.INCONSISTENT,
+        )
+        result = runner.run_pair(
+            pair_ab,
+            narrative_consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
+            narrative_verdict=verdict,
+        )
+        assert (
+            result.features.narrative_consistency
+            == NarrativeConsistency.INCONSISTENT
+        )
+
+    def test_pair_result_has_no_verdict_by_default(self, runner, pair_ab):
+        """Without LLM, PairResult.narrative_verdict is None."""
+        result = runner.run_pair(pair_ab)
+        assert result.narrative_verdict is None
