@@ -149,13 +149,14 @@ class FeatureContributionVM(BaseModel):
 class InconsistencyCountsVM(BaseModel):
     """View model for inconsistency count summary."""
 
+    minor: int = 0
     moderate: int = 0
     strong: int = 0
     decisive: int = 0
 
     @property
     def total(self) -> int:
-        return self.moderate + self.strong + self.decisive
+        return self.minor + self.moderate + self.strong + self.decisive
 
 
 class FeaturesSummaryVM(BaseModel):

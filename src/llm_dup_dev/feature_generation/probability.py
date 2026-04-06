@@ -212,12 +212,27 @@ def compute_probability(
 
     # Demographic feature probabilities (domain-size based).
     # Report date is excluded — it is matched for evidence display only.
+
+    # Pre-extract matched age in years for height/weight child/adult selection.
+    matched_age_years: float | None = None
+    for dm in match_result.demographic_matches:
+        if dm.feature == "patient_age" and dm.matched and dm.matched_value is not None:
+            if dm.age_unit == "months":
+                matched_age_years = float(dm.matched_value) / 12.0
+            else:
+                matched_age_years = float(dm.matched_value)
+            break
+
     for dm in match_result.demographic_matches:
         if not dm.matched or dm.feature == "report_date":
             continue
 
         domain_size = _get_domain_size(
-            dm, config, is_country_year=is_country_year, span_days=date_span_days
+            dm,
+            config,
+            is_country_year=is_country_year,
+            span_days=date_span_days,
+            matched_age_years=matched_age_years,
         )
         if domain_size is not None and domain_size > 0:
             p_f = 1.0 / domain_size
@@ -432,18 +447,33 @@ def _compute_date_span_days(
     return (max(all_dates) - min(all_dates)).days
 
 
+def _age_decimal_resolution(value: float) -> float:
+    """Return the decimal resolution of an age value (e.g. 54.2 → 0.1, 54 → 1.0)."""
+    s = str(value)
+    if "." in s:
+        decimal_places = len(s.split(".")[1].rstrip("0"))
+        if decimal_places > 0:
+            return 10.0 ** (-decimal_places)
+    return 1.0
+
+
 def _get_domain_size(
     dm: DemographicMatch,
     config: DomainSizeConfig,
     *,
     is_country_year: bool = False,
     span_days: int = 0,
+    matched_age_years: float | None = None,
 ) -> float | None:
     """Look up the domain size D_f for a matched feature.
 
     For date features, uses the matched resolution and reporting context
     to select the appropriate domain size. The domain may be extended
     if the span of matching dates exceeds the default.
+
+    For patient_age, uses the recorded unit and decimal precision.
+    For patient_height and patient_weight, uses matched_age_years to
+    select the child (<= child_age_threshold_years) or adult domain size.
     """
     if dm.date_resolution is not None:
         resolution = dm.date_resolution
@@ -455,11 +485,28 @@ def _get_domain_size(
             return config.date_year(is_country_year, span_days)
         return config.date_exact(is_country_year, span_days)
 
+    if dm.feature == "patient_age":
+        if dm.age_unit == "months":
+            return config.age_months_range
+        # Years (integer or decimal)
+        resolution = (
+            _age_decimal_resolution(float(dm.matched_value))
+            if dm.matched_value is not None
+            else 1.0
+        )
+        return config.age_years_range / resolution
+
+    if dm.feature in ("patient_height", "patient_weight"):
+        is_child = (
+            matched_age_years is not None
+            and matched_age_years <= config.child_age_threshold_years
+        )
+        if dm.feature == "patient_height":
+            return config.height_cm(is_child)
+        return config.weight_kg(is_child)
+
     domain_map: dict[str, float] = {
         "patient_sex": config.sex_categories,
-        "patient_age": config.age_years_range,
-        "patient_height": config.height_cm_range,
-        "patient_weight": config.weight_kg_range,
     }
     return domain_map.get(dm.feature)
 

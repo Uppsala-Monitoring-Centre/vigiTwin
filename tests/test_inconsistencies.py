@@ -25,7 +25,8 @@ def thresholds():
 
 
 class TestAgeInconsistency:
-    def test_no_inconsistency_small_diff(self, thresholds):
+    def test_minor_inconsistency_small_diff(self, thresholds):
+        """Difference below the moderate threshold (< 2 years) → minor."""
         r1 = Report(
             report_id="1",
             patient_age_values=[
@@ -39,7 +40,9 @@ class TestAgeInconsistency:
             ],
         )
         result = detect_inconsistencies(r1, r2, thresholds)
-        assert len(result) == 0
+        age_incs = [i for i in result if i.feature == "patient_age"]
+        assert len(age_incs) == 1
+        assert age_incs[0].severity == InconsistencySeverity.MINOR
 
     def test_moderate_age_diff(self, thresholds):
         r1 = Report(
@@ -93,10 +96,11 @@ class TestAgeInconsistency:
                 AgeValue(value=54, unit="years", sources=["structured"])
             ],
         )
-        # Minimum diff is |55-54| = 1, below moderate threshold
+        # Minimum diff is |55-54| = 1, below moderate threshold → minor
         result = detect_inconsistencies(r1, r2, thresholds)
         age_incs = [i for i in result if i.feature == "patient_age"]
-        assert len(age_incs) == 0
+        assert len(age_incs) == 1
+        assert age_incs[0].severity == InconsistencySeverity.MINOR
 
     def test_missing_age_no_inconsistency(self, thresholds):
         r1 = Report(
@@ -131,7 +135,7 @@ class TestAgeInconsistency:
         assert age_incs[0].severity == InconsistencySeverity.MODERATE
 
     def test_exact_boundary_moderate(self, thresholds):
-        """Exactly at the moderate threshold (3 years) → moderate."""
+        """Exactly at the moderate threshold (2 years) → moderate."""
         r1 = Report(
             report_id="1",
             patient_age_values=[
@@ -257,7 +261,7 @@ class TestHeightInconsistency:
         r2 = Report(
             report_id="2",
             patient_height_values=[
-                MeasurementValue(value=177, unit="cm", sources=["structured"])
+                MeasurementValue(value=174, unit="cm", sources=["structured"])
             ],
         )
         result = detect_inconsistencies(r1, r2, thresholds)

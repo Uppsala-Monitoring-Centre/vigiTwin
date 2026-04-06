@@ -58,6 +58,7 @@
     }
   ],
   "inconsistency_counts": {
+    "minor": 0,
     "moderate": 1,
     "strong": 0,
     "decisive": 0

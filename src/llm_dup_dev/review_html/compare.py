@@ -586,6 +586,7 @@ def _build_features_summary(
             for fc in features.probability.feature_contributions
         ],
         inconsistency_counts=InconsistencyCountsVM(
+            minor=features.inconsistency_counts.minor,
             moderate=features.inconsistency_counts.moderate,
             strong=features.inconsistency_counts.strong,
             decisive=features.inconsistency_counts.decisive,
@@ -621,6 +622,7 @@ def _build_decision_summary(
         l_match=features.L_match if features else None,
         inconsistency_counts=(
             InconsistencyCountsVM(
+                minor=features.inconsistency_counts.minor,
                 moderate=features.inconsistency_counts.moderate,
                 strong=features.inconsistency_counts.strong,
                 decisive=features.inconsistency_counts.decisive,

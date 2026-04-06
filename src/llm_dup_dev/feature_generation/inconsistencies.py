@@ -49,8 +49,9 @@ def detect_inconsistencies(
     severity_order = {
         InconsistencySeverity.STRONG: 0,
         InconsistencySeverity.MODERATE: 1,
+        InconsistencySeverity.MINOR: 2,
     }
-    inconsistencies.sort(key=lambda x: severity_order.get(x.severity, 2))
+    inconsistencies.sort(key=lambda x: severity_order.get(x.severity, 3))
 
     return inconsistencies
 
@@ -213,7 +214,11 @@ def _classify_numeric_difference(
     moderate_threshold: float,
     strong_threshold: float,
 ) -> list[Inconsistency]:
-    """Classify a numeric difference into severity levels."""
+    """Classify a numeric difference into severity levels.
+
+    Any non-zero difference below the moderate threshold is counted as
+    a minor inconsistency.
+    """
     if min_diff >= strong_threshold:
         return [
             Inconsistency(
@@ -228,6 +233,15 @@ def _classify_numeric_difference(
             Inconsistency(
                 feature=feature,
                 severity=InconsistencySeverity.MODERATE,
+                difference=min_diff,
+                units=units,
+            )
+        ]
+    if min_diff > 0:
+        return [
+            Inconsistency(
+                feature=feature,
+                severity=InconsistencySeverity.MINOR,
                 difference=min_diff,
                 units=units,
             )

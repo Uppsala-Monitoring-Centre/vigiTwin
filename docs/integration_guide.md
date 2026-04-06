@@ -419,11 +419,14 @@ from llm_dup_dev.classifier.config import (
 # All parameters have sensible defaults — only override what you need
 config = PipelineConfig(
     domain_sizes=DomainSizeConfig(
-        age_years_range=101,     # 0–100 years
+        age_years_range=80,          # plausible ages 0–80 years
+        age_months_range=100,        # plausible infant months
         sex_categories=2,
-        height_cm_range=50,      # ~150–200 cm
-        weight_kg_range=100,     # ~40–140 kg
-        date_plausible_years=10, # treatment history span
+        child_age_threshold_years=15,
+        height_cm_range_child=20,
+        height_cm_range_adult=40,
+        weight_kg_range_child=20,
+        weight_kg_range_adult=40,
     ),
     inconsistency_thresholds=InconsistencyThresholds(
         age_moderate=3.0,   age_strong=10.0,

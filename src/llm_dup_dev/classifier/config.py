@@ -19,17 +19,20 @@ class DomainSizeConfig(BaseModel):
     """
 
     # Age
-    age_years_range: int = 101  # 0–100 years
-    age_months_range: int = 24  # plausible infant months
+    age_years_range: int = 80  # plausible ages 0–80 years (very high ages are rare)
+    age_months_range: int = 100  # plausible ages in months (0–100; only recorded for young children)
 
     # Sex
     sex_categories: int = 2
 
-    # Height (adult defaults, cm)
-    height_cm_range: int = 50  # ~150–200 cm
+    # Height — effective domain span conditional on age (cm, at 1 cm resolution)
+    child_age_threshold_years: int = 15  # patients ≤ this age are treated as children
+    height_cm_range_child: int = 20
+    height_cm_range_adult: int = 40
 
-    # Weight (adult defaults, kg)
-    weight_kg_range: int = 100  # ~40–140 kg
+    # Weight — effective domain span conditional on age (kg, at 1 kg resolution)
+    weight_kg_range_child: int = 20
+    weight_kg_range_adult: int = 40
 
     # Dates — default domain sizes depend on reporting context.
     # Country-year context: 1 year (most reports in a country-year are recent).
@@ -37,6 +40,14 @@ class DomainSizeConfig(BaseModel):
     # but exponential growth means most reports are from the last decade).
     date_plausible_days_country_year: int = 365
     date_plausible_days_broad: int = 3650  # ~10 years
+
+    def height_cm(self, is_child: bool) -> int:
+        """Domain size for height, conditional on age group."""
+        return self.height_cm_range_child if is_child else self.height_cm_range_adult
+
+    def weight_kg(self, is_child: bool) -> int:
+        """Domain size for weight, conditional on age group."""
+        return self.weight_kg_range_child if is_child else self.weight_kg_range_adult
 
     def date_exact(self, is_country_year: bool = False, span_days: int = 0) -> int:
         """Domain size for exact date (day resolution).
@@ -78,16 +89,16 @@ class InconsistencyThresholds(BaseModel):
     """
 
     # Age (years)
-    age_moderate: float = 3.0
-    age_strong: float = 10.0
+    age_moderate: float = 2.0
+    age_strong: float = 5.0
 
     # Height (cm)
-    height_moderate: float = 5.0
-    height_strong: float = 10.0
+    height_moderate: float = 3.0
+    height_strong: float = 6.0
 
     # Weight (kg)
-    weight_moderate: float = 5.0
-    weight_strong: float = 15.0
+    weight_moderate: float = 3.0
+    weight_strong: float = 10.0
 
     # Sex: any mismatch is a strong inconsistency (no threshold needed)
 
@@ -131,7 +142,7 @@ class DecisionThresholds(BaseModel):
 
     The decision uses a weighted inconsistency score:
 
-        w_tot = w_moderate × moderate + w_strong × strong
+        w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
 
     Three L_match zones define progressively stricter tolerance for w_tot:
 
@@ -151,6 +162,7 @@ class DecisionThresholds(BaseModel):
     lmatch_weak: float = 1.0
 
     # Inconsistency weights
+    w_minor: float = 0.3
     w_moderate: float = 1.0
     w_strong: float = 3.0
 

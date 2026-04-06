@@ -105,6 +105,11 @@ def generate_pair_features(
     )
 
     inconsistency_counts = InconsistencyCounts(
+        minor=sum(
+            1
+            for i in inconsistencies
+            if i.severity == InconsistencySeverity.MINOR
+        ),
         moderate=sum(
             1
             for i in inconsistencies

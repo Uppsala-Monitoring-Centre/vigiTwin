@@ -34,12 +34,14 @@ class InconsistencySeverity(str, Enum):
     See: docs/same_individual_assessment_spec.md § Severity Levels
 
     Levels:
-        moderate  – weakens the duplicate hypothesis
+        minor     – small difference, weakly suggests different individuals
+        moderate  – meaningful difference, weakens the duplicate hypothesis
         strong    – strongly suggests different individuals
         decisive  – forces Different classification (e.g. distinct
                     patient IDs from the same study in the narratives)
     """
 
+    MINOR = "minor"
     MODERATE = "moderate"
     STRONG = "strong"
     DECISIVE = "decisive"
