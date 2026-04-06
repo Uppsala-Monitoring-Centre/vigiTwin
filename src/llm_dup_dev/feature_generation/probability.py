@@ -169,63 +169,43 @@ def compute_probability(
     )
 
     # Drug set probability — excluded if anchor uses drugs.
-    # When the anchor is AEs, the drug set is an additional feature scored
-    # with leave-pair-out Bayesian smoothing:
-    #   n_anchor = N_AEs, k_anchor_and_feature = N_drugs_AEs,
-    #   p0 = N_drugs / N_total  (drug prevalence without AE conditioning)
+    # When the anchor is AEs, the drug set is an additional feature whose
+    # probability is the marginal prevalence in the context with
+    # leave-pair-out: (N_drugs - 2) / (N_total - 2).
     if (
         anchor.type not in (AnchorType.DRUGS, AnchorType.DRUGS_AES)
         and match_result.matching_drugs
     ):
-        p_drugs = leave_pair_out_probability(
-            n_anchor=anchor.N_anchor,
-            k_anchor_and_feature=stats.N_drugs_AEs,
-            n_feature_in_context=stats.N_drugs,
-            n_total_in_context=stats.N_total,
-            smoothing_pseudocount=smoothing_pseudocount,
-        )
+        p_drugs = _leave_pair_out_marginal(stats.N_drugs, stats.N_total)
         if p_drugs is not None and p_drugs > 0:
-            n_other = max(0, anchor.N_anchor - 2)
-            k_other = max(0, stats.N_drugs_AEs - 2)
             feature_probs.append(
                 FeatureProbability(
                     feature="drug_set",
                     p_f=p_drugs,
                     method="leave_pair_out",
                     description=(
-                        f"Drug set: k_other={k_other}/{n_other} "
-                        f"smoothed with p0={stats.N_drugs}/{stats.N_total}"
+                        f"Drug set: ({stats.N_drugs}-2)/({stats.N_total}-2)"
                     ),
                 )
             )
 
     # AE set probability — excluded if anchor uses AEs.
-    # When the anchor is drugs, the AE set is an additional feature scored
-    # with leave-pair-out Bayesian smoothing:
-    #   n_anchor = N_drugs, k_anchor_and_feature = N_drugs_AEs,
-    #   p0 = N_AEs / N_total  (AE prevalence without drug conditioning)
+    # When the anchor is drugs, the AE set is an additional feature whose
+    # probability is the marginal prevalence in the context with
+    # leave-pair-out: (N_AEs - 2) / (N_total - 2).
     if (
         anchor.type not in (AnchorType.AES, AnchorType.DRUGS_AES)
         and match_result.matching_AEs
     ):
-        p_aes = leave_pair_out_probability(
-            n_anchor=anchor.N_anchor,
-            k_anchor_and_feature=stats.N_drugs_AEs,
-            n_feature_in_context=stats.N_AEs,
-            n_total_in_context=stats.N_total,
-            smoothing_pseudocount=smoothing_pseudocount,
-        )
+        p_aes = _leave_pair_out_marginal(stats.N_AEs, stats.N_total)
         if p_aes is not None and p_aes > 0:
-            n_other = max(0, anchor.N_anchor - 2)
-            k_other = max(0, stats.N_drugs_AEs - 2)
             feature_probs.append(
                 FeatureProbability(
                     feature="ae_set",
                     p_f=p_aes,
                     method="leave_pair_out",
                     description=(
-                        f"AE set: k_other={k_other}/{n_other} "
-                        f"smoothed with p0={stats.N_AEs}/{stats.N_total}"
+                        f"AE set: ({stats.N_AEs}-2)/({stats.N_total}-2)"
                     ),
                 )
             )
@@ -300,6 +280,25 @@ def compute_probability(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _leave_pair_out_marginal(
+    n_feature_in_context: int,
+    n_total_in_context: int,
+) -> float | None:
+    """Leave-pair-out marginal prevalence of a feature in the context.
+
+    Computes (N_feature - 2) / (N_total - 2), removing the two focal
+    reports from both numerator and denominator.
+
+    Returns None if n_total_in_context <= 2 (cannot compute a meaningful
+    frequency).
+    """
+    denom = n_total_in_context - 2
+    if denom <= 0:
+        return None
+    numer = max(0, n_feature_in_context - 2)
+    return numer / denom
 
 
 def leave_pair_out_probability(

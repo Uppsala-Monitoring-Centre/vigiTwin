@@ -1086,10 +1086,8 @@ class TestLeavePairOutIntegration:
         assert len(ae_feats) == 1
         assert ae_feats[0].method == "leave_pair_out"
 
-        # Verify the actual value: (1 + 10*0.2) / (23 + 10) = 3.0/33
-        m = SMOOTHING_PSEUDOCOUNT
-        p0 = 200 / 1000
-        expected = (1 + m * p0) / (23 + m)
+        # Verify the actual value: marginal leave-pair-out = (200-2)/(1000-2) = 198/998
+        expected = (200 - 2) / (1000 - 2)
         assert ae_feats[0].p_f == pytest.approx(expected)
 
     def test_drug_feature_uses_leave_pair_out_when_anchor_aes(self):
@@ -1112,14 +1110,12 @@ class TestLeavePairOutIntegration:
         assert len(drug_feats) == 1
         assert drug_feats[0].method == "leave_pair_out"
 
-        # Verify the actual value: (1 + 10*(200/1000)) / (23 + 10) = 3.0/33
-        m = SMOOTHING_PSEUDOCOUNT
-        p0 = 200 / 1000
-        expected = (1 + m * p0) / (23 + m)
+        # Verify the actual value: marginal leave-pair-out = (200-2)/(1000-2) = 198/998
+        expected = (200 - 2) / (1000 - 2)
         assert drug_feats[0].p_f == pytest.approx(expected)
 
     def test_description_shows_leave_pair_out_counts(self):
-        """Description should show k_other/n_other and p0 numerator/denominator."""
+        """Description should show marginal leave-pair-out formula."""
         match = MatchResult(
             matching_drugs=["drug_a"],
             matching_AEs=["ae_a"],
@@ -1135,5 +1131,4 @@ class TestLeavePairOutIntegration:
         result = compute_probability(match, anchor, stats, config)
         ae_feat = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"][0]
 
-        assert "k_other=1/23" in ae_feat.description
-        assert "p0=200/1000" in ae_feat.description
+        assert "(200-2)/(1000-2)" in ae_feat.description
