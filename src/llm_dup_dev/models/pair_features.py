@@ -98,6 +98,7 @@ class InconsistencyCounts(BaseModel):
     evidence and force a Different individuals classification.
     """
 
+    minor: int = 0
     moderate: int = 0
     strong: int = 0
     decisive: int = 0

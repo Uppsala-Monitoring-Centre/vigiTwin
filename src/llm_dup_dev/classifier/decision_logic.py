@@ -6,7 +6,7 @@ optional Related / Unrelated sub-classification.
 
 Inconsistencies are combined into a single weighted score:
 
-    w_tot = w_moderate × moderate + w_strong × strong
+    w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
 
 The decision space is divided into four zones by L_match thresholds.
 Each zone has its own tolerance for w_tot:
@@ -154,10 +154,11 @@ def _weighted_inconsistency(
 ) -> float:
     """Compute the weighted inconsistency score.
 
-    w_tot = w_moderate × moderate + w_strong × strong
+    w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
     """
     return (
-        thresholds.w_moderate * counts.moderate
+        thresholds.w_minor * counts.minor
+        + thresholds.w_moderate * counts.moderate
         + thresholds.w_strong * counts.strong
     )
 
