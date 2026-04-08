@@ -2,6 +2,9 @@
 
 import pytest
 
+from llm_dup_dev.feature_generation.pipeline import generate_pair_features
+from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.models.enums import NarrativeConsistency
 from llm_dup_dev.models.report import (
     AdverseEvent,
     AgeValue,
@@ -363,3 +366,77 @@ class TestBuildPairViewModel:
 
         country_field = next(f for f in vm.demographics if f.label == "Country")
         assert country_field.status == ComparisonStatus.MISMATCH
+
+
+# ===================================================================
+# Clinical date counts in view models
+# ===================================================================
+
+
+class TestClinicalDateCountsInViewModels:
+    """Verify clinical_date_counts is propagated into FeaturesSummaryVM
+    and DecisionSummaryVM when PairFeatures are supplied."""
+
+    @pytest.fixture
+    def features_ab(self, report_a, report_b):
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=48, N_AEs=200, N_drugs_AEs=12
+        )
+        return generate_pair_features(
+            r1=report_a,
+            r2=report_b,
+            stats=stats,
+            narrative_consistency=NarrativeConsistency.NEUTRAL,
+        )
+
+    def test_features_summary_has_clinical_date_counts(
+        self, report_a, report_b, features_ab
+    ):
+        """features_summary.clinical_date_counts must be populated."""
+        from llm_dup_dev.models.classification import ClassificationResult
+        from llm_dup_dev.models.enums import PrimaryClassification
+
+        classification = ClassificationResult(
+            pair_id="R001__R002",
+            primary=PrimaryClassification.SAME_INDIVIDUAL,
+            explanation="test",
+        )
+        vm = build_pair_view_model(
+            report_a, report_b,
+            pair_id="R001__R002",
+            features=features_ab,
+            classification=classification,
+        )
+
+        assert vm.features_summary is not None
+        cdc = vm.features_summary.clinical_date_counts
+        assert cdc is not None
+        assert isinstance(cdc.n_minor, int)
+        assert isinstance(cdc.n_moderate, int)
+        assert isinstance(cdc.n_strong, int)
+        assert isinstance(cdc.n_decisive, int)
+
+    def test_decision_summary_has_clinical_date_counts(
+        self, report_a, report_b, features_ab
+    ):
+        """decision_summary.clinical_date_counts must be populated."""
+        from llm_dup_dev.models.classification import ClassificationResult
+        from llm_dup_dev.models.enums import PrimaryClassification
+
+        classification = ClassificationResult(
+            pair_id="R001__R002",
+            primary=PrimaryClassification.SAME_INDIVIDUAL,
+            explanation="test",
+        )
+        vm = build_pair_view_model(
+            report_a, report_b,
+            pair_id="R001__R002",
+            features=features_ab,
+            classification=classification,
+        )
+
+        assert vm.decision_summary is not None
+        cdc = vm.decision_summary.clinical_date_counts
+        assert cdc is not None
+        assert isinstance(cdc.n_minor, int)
+        assert isinstance(cdc.n_decisive, int)

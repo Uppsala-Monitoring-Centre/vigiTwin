@@ -159,6 +159,19 @@ class InconsistencyCountsVM(BaseModel):
         return self.minor + self.moderate + self.strong + self.decisive
 
 
+class ClinicalDateCountsVM(BaseModel):
+    """View model for clinical-date inconsistency counts."""
+
+    n_minor: int = 0
+    n_moderate: int = 0
+    n_strong: int = 0
+    n_decisive: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.n_minor + self.n_moderate + self.n_strong + self.n_decisive
+
+
 class FeaturesSummaryVM(BaseModel):
     """View model for the optional PairFeatures evidence section."""
 
@@ -181,6 +194,7 @@ class FeaturesSummaryVM(BaseModel):
         default_factory=list
     )
     inconsistency_counts: InconsistencyCountsVM | None = None
+    clinical_date_counts: ClinicalDateCountsVM | None = None
 
 
 class ClassificationSummaryVM(BaseModel):
@@ -253,6 +267,7 @@ class DecisionSummaryVM(BaseModel):
     explanation: str
     l_match: float | None = None
     inconsistency_counts: InconsistencyCountsVM | None = None
+    clinical_date_counts: ClinicalDateCountsVM | None = None
     narrative_consistency: str | None = None
     relationship: str | None = None
 

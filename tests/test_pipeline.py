@@ -136,6 +136,28 @@ class TestGeneratePairFeatures:
         )
         assert total_from_list == total_from_counts
 
+    def test_clinical_date_inconsistency_counts_present(
+        self, report_a, report_b, stats_similar, default_config
+    ):
+        """clinical_date_inconsistency_counts must be present with integer fields."""
+        features = generate_pair_features(
+            r1=report_a,
+            r2=report_b,
+            stats=stats_similar,
+            narrative_consistency=NarrativeConsistency.NEUTRAL,
+            config=default_config,
+        )
+        cdc = features.clinical_date_inconsistency_counts
+        assert cdc is not None
+        assert isinstance(cdc.n_minor, int)
+        assert isinstance(cdc.n_moderate, int)
+        assert isinstance(cdc.n_strong, int)
+        assert isinstance(cdc.n_decisive, int)
+        assert cdc.n_minor >= 0
+        assert cdc.n_moderate >= 0
+        assert cdc.n_strong >= 0
+        assert cdc.n_decisive >= 0
+
     def test_evidence_summary_present(
         self, report_a, report_b, stats_similar, default_config
     ):

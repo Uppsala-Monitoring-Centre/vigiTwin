@@ -324,6 +324,11 @@ details.debug-section pre {
         <dt>Inconsistencies</dt>
         <dd>{{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive</dd>
         {% endif %}
+        {% if vm.decision_summary.clinical_date_counts %}
+        {%- set cdc = vm.decision_summary.clinical_date_counts %}
+        <dt>Clinical dates</dt>
+        <dd>{{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive</dd>
+        {% endif %}
         {% if vm.decision_summary.narrative_consistency %}
         <dt>Narrative</dt>
         <dd>{{ vm.decision_summary.narrative_consistency }}</dd>
@@ -558,6 +563,13 @@ details.debug-section pre {
     <p style="font-size: 13px; color: #586069; margin: 0 0 6px;">
         Summary: {{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive
         ({{ ic.total }} total)
+    </p>
+    {% endif %}
+    {% if vm.features_summary.clinical_date_counts and vm.features_summary.clinical_date_counts.total > 0 %}
+    {%- set cdc = vm.features_summary.clinical_date_counts %}
+    <p style="font-size: 13px; color: #586069; margin: 0 0 6px;">
+        Clinical dates: {{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive
+        ({{ cdc.total }} total)
     </p>
     {% endif %}
     <table>

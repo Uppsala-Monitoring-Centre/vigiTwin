@@ -594,54 +594,73 @@ This yields 0, 1, or 2 moderate inconsistencies per pair.
 - Drug name matching is **case-insensitive**.
 - A drug present in both reports with **different roles** is not inconsistent — role differences do not indicate different individuals.
 - Reports with **no key drugs** (all concomitant or role unknown) produce no drug-set inconsistencies.
-- Only drug **presence** is evaluated; differences in dosage, form, or dates are not considered here — date differences are handled by the Drug Dates check below.
+- Only drug **presence** is evaluated; differences in dosage, form, or dates are not considered here — date differences are handled by the Clinical Date Inconsistencies module below.
 
 -------
 
-##### Drug Dates
+##### Clinical Date Inconsistencies
 
-Drug date inconsistencies detect timing mismatches for drugs that appear in **both** reports. Only shared drugs are evaluated.
+Clinical-date inconsistencies are detected by a dedicated rule-based module (`feature_generation/clinical_date_inconsistencies.py`). This replaces the earlier combined drug-date score with fine-grained, severity-bucketed counts.
 
-**Partial date intervals**
+**Compared entities**
 
-Each `PartialDate` is converted to a date interval based on its resolution:
+- **Overall AE onset date** (derived, one per report — highest priority)
+- **Drug start dates** (matched by normalized substance name)
+- **AE onset dates** (matched by normalized PT name)
+- **Drug end dates** — downgrade-only evidence, never primary inconsistency sources
 
-| Resolution | Interval |
+**Overall AE onset date derivation**
+
+For each report:
+1. If suspected-drug start dates exist: the earliest AE onset date ≥ max(suspected start dates).
+2. If no suspected-drug start dates: the earliest AE onset date.
+3. If no qualifying AE onset date exists: missing (not compared).
+
+**Severity thresholds**
+
+Overall AE onset date (tighter):
+
+| Difference | Severity |
 | ---------- | -------- |
-| day | [date, date] |
-| month | [YYYY-MM-01, last day of month] |
-| year | [YYYY-01-01, YYYY-12-31] |
+| 0 days | none |
+| 1–7 days | minor |
+| 8–30 days | moderate |
+| > 30 days | strong |
 
-**Interval distance**
+Drug start dates and AE onset dates (more lenient):
 
-The minimum distance between two intervals is:
-```
-if overlap: diff_days = 0
-else:       diff_days = min(|start1 − end2|, |start2 − end1|)
-```
+| Difference | Severity |
+| ---------- | -------- |
+| 0 days | none |
+| 1–14 days | minor |
+| 15–60 days | moderate |
+| > 60 days | strong |
 
-**Weighting**
+**Incomplete dates**
 
-| Difference | Weight |
-| ---------- | ------ |
-| 0 days (exact / overlapping) | 0.0 |
-| 1–7 days | 0.5 |
-| 8–30 days | 1.0 |
-| > 30 days | 3.0 |
+Partial dates are converted to intervals (`[earliest, latest]` plausible date). The *minimum possible* day difference between two intervals is used. A severity is only assigned when the category is guaranteed even under the most generous interpretation — this avoids false positives at the cost of occasionally missing a discrepancy when resolution is too coarse.
 
-If the substance is concomitant in **both** reports, the weight is multiplied by 0.5 (lower reliability of timing for concomitant drugs).
+**Downgrade rules**
 
-**Per-drug score**
+1. *Cross-entity downgrade*: if the source date exactly matches any clinically relevant date (drug start, AE onset, overall AE onset, or drug end date) on the other report, the severity is reduced by one step (strong → moderate, moderate → minor, minor stays minor).
 
-For each shared drug, start and stop dates are compared independently (if both reports have at least one value for that date type). Multiple dates per report are handled by taking the minimum pairwise interval distance. The per-drug contribution is capped at 3.0.
+2. *Concomitant drug downgrade*: for concomitant-drug start date mismatches, severity is reduced by two steps (strong → minor, moderate → ignored, minor → ignored).
 
-**Classification**
+**One inconsistency per source date**
 
-| Total score | Result |
-| ----------- | ------ |
-| ≥ 3.0 | strong inconsistency |
-| ≥ 1.0 | moderate inconsistency |
-| < 1.0 | no inconsistency |
+Each unique source date on a report contributes at most one counted inconsistency. When multiple entities share the same date, priority determines which is counted: overall AE onset > suspected-drug start > AE onset > concomitant-drug start. If the highest-priority entity has no inconsistency, a lower-priority entity may contribute.
+
+**Decisive impossibility**
+
+If a report date on one report is strictly before the earliest plausible overall AE onset on the other report, a decisive inconsistency is counted. This applies even with incomplete dates — e.g. report date `1999-02-10` vs onset year `2005` is decisive because the report predates even the earliest plausible onset.
+
+**Symmetry**
+
+The comparison is evaluated from both directions (report 1 → report 2 and report 2 → report 1), with source-date bucketing applied independently per report.
+
+**Output**
+
+The module produces `ClinicalDateInconsistencyCounts` with `n_minor`, `n_moderate`, `n_strong`, `n_decisive`, exposed on `PairFeatures.clinical_date_inconsistency_counts`.
 
 ------
 

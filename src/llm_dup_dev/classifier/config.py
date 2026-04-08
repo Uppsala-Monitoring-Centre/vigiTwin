@@ -102,16 +102,10 @@ class InconsistencyThresholds(BaseModel):
 
     # Sex: any mismatch is a strong inconsistency (no threshold needed)
 
-    # Drug dates (days)
-    drug_date_small_days: float = 7.0
-    drug_date_moderate_days: float = 30.0
-    drug_date_small_weight: float = 0.5
-    drug_date_moderate_weight: float = 1.0
-    drug_date_large_weight: float = 3.0
-    drug_date_concomitant_factor: float = 0.5
-    drug_date_cap_per_drug: float = 3.0
-    drug_date_score_moderate: float = 1.0
-    drug_date_score_strong: float = 3.0
+    # Drug-date thresholds are no longer used here.  Clinical-date
+    # inconsistencies (drug starts, AE onsets, report dates) are
+    # handled by the dedicated rule-based module in
+    # feature_generation/clinical_date_inconsistencies.py.
 
 
 class AnchorConfig(BaseModel):
