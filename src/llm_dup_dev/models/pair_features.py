@@ -104,6 +104,18 @@ class InconsistencyCounts(BaseModel):
     decisive: int = 0
 
 
+class ClinicalDateInconsistencyCounts(BaseModel):
+    """Severity-bucketed counts from the clinical-date inconsistency module.
+
+    See: feature_generation/clinical_date_inconsistencies.py
+    """
+
+    n_minor: int = 0
+    n_moderate: int = 0
+    n_strong: int = 0
+    n_decisive: int = 0
+
+
 class EvidenceSummary(BaseModel):
     """Diagnostic summary of shared and report-specific evidence.
 
@@ -144,6 +156,11 @@ class PairFeatures(BaseModel):
     inconsistencies: list[Inconsistency] = Field(default_factory=list)
     inconsistency_counts: InconsistencyCounts = Field(
         default_factory=InconsistencyCounts
+    )
+
+    # Clinical-date inconsistencies (rule-based module)
+    clinical_date_inconsistency_counts: ClinicalDateInconsistencyCounts = Field(
+        default_factory=ClinicalDateInconsistencyCounts
     )
 
     # Narrative assessment

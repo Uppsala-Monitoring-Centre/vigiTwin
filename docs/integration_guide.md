@@ -573,8 +573,8 @@ output_dir = render_results_html(items, output_dir=Path("outputs/evaluated"))
 
 The evaluated-pair pages reuse the same side-by-side comparison layout and add:
 
-- **Decision summary** — final label, L_match, inconsistency counts, explanation
-- **Extended evidence** — anchor population details, probability breakdown, feature contributions, inconsistency counts
+- **Decision summary** — final label, L_match, inconsistency counts, clinical-date inconsistency counts, explanation
+- **Extended evidence** — anchor population details, probability breakdown, feature contributions, inconsistency counts, clinical-date inconsistency counts
 - **Debug section** (optional) — collapsible raw JSON for PairFeatures and ClassificationResult
 
 ### Default output location

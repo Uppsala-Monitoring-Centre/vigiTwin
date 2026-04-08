@@ -389,6 +389,10 @@ Example structure:
   "inconsistencies": [...],
   "inconsistency_counts": {...},
 
+  "clinical_date_inconsistency_counts": {
+    "n_minor": 0, "n_moderate": 1, "n_strong": 0, "n_decisive": 0
+  },
+
   "narrative_consistency": "consistent",
 
   "evidence_summary": {...}
@@ -475,8 +479,21 @@ Summary counts:
 
 ```
 inconsistency_counts: {
+  "minor": 0,
   "moderate": 1,
-  "strong": 0
+  "strong": 0,
+  "decisive": 0
+}
+```
+
+Clinical-date inconsistency counts (from the dedicated rule-based module — see method specification § Clinical Date Inconsistencies):
+
+```
+clinical_date_inconsistency_counts: {
+  "n_minor": 0,
+  "n_moderate": 1,
+  "n_strong": 0,
+  "n_decisive": 0
 }
 ```
 

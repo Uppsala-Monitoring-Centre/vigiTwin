@@ -11,6 +11,9 @@ from __future__ import annotations
 
 from llm_dup_dev.classifier.config import PipelineConfig
 from llm_dup_dev.feature_generation.anchor import select_anchor
+from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
+    compute_clinical_date_inconsistencies,
+)
 from llm_dup_dev.feature_generation.inconsistencies import detect_inconsistencies
 from llm_dup_dev.feature_generation.matching import MatchResult, compute_matches
 from llm_dup_dev.feature_generation.probability import (
@@ -22,6 +25,7 @@ from llm_dup_dev.feature_generation.reporting_context import (
 )
 from llm_dup_dev.models.enums import InconsistencySeverity, NarrativeConsistency
 from llm_dup_dev.models.pair_features import (
+    ClinicalDateInconsistencyCounts,
     EvidenceSummary,
     InconsistencyCounts,
     PairFeatures,
@@ -104,6 +108,15 @@ def generate_pair_features(
         r1, r2, config.inconsistency_thresholds
     )
 
+    # Step 5b: Clinical-date inconsistencies (rule-based module)
+    cdi_result = compute_clinical_date_inconsistencies(r1, r2)
+    clinical_date_counts = ClinicalDateInconsistencyCounts(
+        n_minor=cdi_result.n_minor,
+        n_moderate=cdi_result.n_moderate,
+        n_strong=cdi_result.n_strong,
+        n_decisive=cdi_result.n_decisive,
+    )
+
     inconsistency_counts = InconsistencyCounts(
         minor=sum(
             1
@@ -141,6 +154,7 @@ def generate_pair_features(
         L_match=prob_result.L_match,
         inconsistencies=inconsistencies,
         inconsistency_counts=inconsistency_counts,
+        clinical_date_inconsistency_counts=clinical_date_counts,
         narrative_consistency=narrative_consistency,
         evidence_summary=evidence_summary,
     )

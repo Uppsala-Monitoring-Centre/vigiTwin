@@ -43,6 +43,33 @@
       "title": "AnchorType",
       "type": "string"
     },
+    "ClinicalDateInconsistencyCounts": {
+      "description": "Severity-bucketed counts from the clinical-date inconsistency module.\n\nSee: feature_generation/clinical_date_inconsistencies.py",
+      "properties": {
+        "n_minor": {
+          "default": 0,
+          "title": "N Minor",
+          "type": "integer"
+        },
+        "n_moderate": {
+          "default": 0,
+          "title": "N Moderate",
+          "type": "integer"
+        },
+        "n_strong": {
+          "default": 0,
+          "title": "N Strong",
+          "type": "integer"
+        },
+        "n_decisive": {
+          "default": 0,
+          "title": "N Decisive",
+          "type": "integer"
+        }
+      },
+      "title": "ClinicalDateInconsistencyCounts",
+      "type": "object"
+    },
     "EvidenceSummary": {
       "description": "Diagnostic summary of shared and report-specific evidence.\n\nOptional field for debugging and interpretability.\nDoes not affect the decision logic.",
       "properties": {
@@ -331,6 +358,9 @@
     },
     "inconsistency_counts": {
       "$ref": "#/$defs/InconsistencyCounts"
+    },
+    "clinical_date_inconsistency_counts": {
+      "$ref": "#/$defs/ClinicalDateInconsistencyCounts"
     },
     "narrative_consistency": {
       "$ref": "#/$defs/NarrativeConsistency"

@@ -46,6 +46,7 @@ from .models import (
     AnnotationVM,
     BatchIndexItem,
     ClassificationSummaryVM,
+    ClinicalDateCountsVM,
     ComparisonStatus,
     DecisionSummaryVM,
     DrugDetail,
@@ -591,6 +592,12 @@ def _build_features_summary(
             strong=features.inconsistency_counts.strong,
             decisive=features.inconsistency_counts.decisive,
         ),
+        clinical_date_counts=ClinicalDateCountsVM(
+            n_minor=features.clinical_date_inconsistency_counts.n_minor,
+            n_moderate=features.clinical_date_inconsistency_counts.n_moderate,
+            n_strong=features.clinical_date_inconsistency_counts.n_strong,
+            n_decisive=features.clinical_date_inconsistency_counts.n_decisive,
+        ),
     )
 
 
@@ -626,6 +633,16 @@ def _build_decision_summary(
                 moderate=features.inconsistency_counts.moderate,
                 strong=features.inconsistency_counts.strong,
                 decisive=features.inconsistency_counts.decisive,
+            )
+            if features
+            else None
+        ),
+        clinical_date_counts=(
+            ClinicalDateCountsVM(
+                n_minor=features.clinical_date_inconsistency_counts.n_minor,
+                n_moderate=features.clinical_date_inconsistency_counts.n_moderate,
+                n_strong=features.clinical_date_inconsistency_counts.n_strong,
+                n_decisive=features.clinical_date_inconsistency_counts.n_decisive,
             )
             if features
             else None
@@ -956,6 +973,9 @@ def build_batch_index_item(
     ):
         ic = vm.features_summary.inconsistency_counts
         inc_summary = f"{ic.moderate}M / {ic.strong}S / {ic.decisive}D"
+        cdc = vm.features_summary.clinical_date_counts
+        if cdc and cdc.total > 0:
+            inc_summary += f" | dates: {cdc.n_moderate}M / {cdc.n_strong}S / {cdc.n_decisive}D"
 
     return BatchIndexItem(
         pair_id=vm.pair_id,
