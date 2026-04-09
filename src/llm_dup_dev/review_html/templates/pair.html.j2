@@ -145,6 +145,7 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 .evidence-kv dt { font-weight: 600; color: #586069; }
 .evidence-kv dd { margin: 0; }
 
+.severity-minor { color: #0c5460; font-weight: 600; }
 .severity-moderate { color: #856404; font-weight: 600; }
 .severity-strong { color: #721c24; font-weight: 600; }
 .severity-decisive { color: #fff; background: #721c24; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
@@ -322,12 +323,12 @@ details.debug-section pre {
         {% if vm.decision_summary.inconsistency_counts %}
         {%- set ic = vm.decision_summary.inconsistency_counts %}
         <dt>Inconsistencies</dt>
-        <dd>{{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive</dd>
+        <dd>{{ ic.minor }} minor, {{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive</dd>
         {% endif %}
-        {% if vm.decision_summary.clinical_date_counts %}
+        {% if vm.decision_summary.clinical_date_counts and vm.decision_summary.clinical_date_counts.total > 0 %}
         {%- set cdc = vm.decision_summary.clinical_date_counts %}
-        <dt>Clinical dates</dt>
-        <dd>{{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive</dd>
+        <dt style="font-size: 0.85em; padding-left: 8px;">of which clinical dates</dt>
+        <dd style="font-size: 0.85em;">{{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive</dd>
         {% endif %}
         {% if vm.decision_summary.narrative_consistency %}
         <dt>Narrative</dt>
@@ -555,21 +556,14 @@ details.debug-section pre {
     {% endif %}
     {% endif %}
 
-    {# ── Inconsistencies ── #}
-    {% if vm.features_summary.inconsistencies %}
-    <h3 style="font-size: 1rem; margin: 12px 0 6px;">Inconsistencies</h3>
+    {# ── Discrepancies (all inconsistencies factored into the decision) ── #}
+    {% if vm.features_summary.inconsistencies or vm.features_summary.clinical_date_findings %}
+    <h3 style="font-size: 1rem; margin: 12px 0 6px;">Discrepancies</h3>
     {% if vm.features_summary.inconsistency_counts %}
     {%- set ic = vm.features_summary.inconsistency_counts %}
     <p style="font-size: 13px; color: #586069; margin: 0 0 6px;">
-        Summary: {{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive
+        Combined: {{ ic.minor }} minor, {{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive
         ({{ ic.total }} total)
-    </p>
-    {% endif %}
-    {% if vm.features_summary.clinical_date_counts and vm.features_summary.clinical_date_counts.total > 0 %}
-    {%- set cdc = vm.features_summary.clinical_date_counts %}
-    <p style="font-size: 13px; color: #586069; margin: 0 0 6px;">
-        Clinical dates: {{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive
-        ({{ cdc.total }} total)
     </p>
     {% endif %}
     <table>
@@ -580,6 +574,13 @@ details.debug-section pre {
             <td>{{ inc.feature }}</td>
             <td><span class="severity-{{ inc.severity }}">{{ inc.severity }}</span></td>
             <td>{{ inc.description }}</td>
+        </tr>
+        {% endfor %}
+        {% for cdf in vm.features_summary.clinical_date_findings %}
+        <tr>
+            <td>{{ cdf.entity_label }}</td>
+            <td><span class="severity-{{ cdf.severity }}">{{ cdf.severity }}</span></td>
+            <td>{{ cdf.source_date }} vs {{ cdf.matched_date }}{% if cdf.diff_days is not none %}, diff={{ cdf.diff_days }}d{% endif %}{% if cdf.downgrades %} ({{ cdf.downgrades | join('; ') }}){% endif %}</td>
         </tr>
         {% endfor %}
         </tbody>

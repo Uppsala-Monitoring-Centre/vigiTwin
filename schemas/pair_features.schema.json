@@ -43,6 +43,53 @@
       "title": "AnchorType",
       "type": "string"
     },
+    "ClinicalDateFindingSummary": {
+      "description": "Serializable summary of a single selected clinical-date finding.\n\nCaptures the key information needed for human review without\nexposing internal implementation details.",
+      "properties": {
+        "entity_label": {
+          "title": "Entity Label",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/InconsistencySeverity"
+        },
+        "source_date": {
+          "title": "Source Date",
+          "type": "string"
+        },
+        "matched_date": {
+          "title": "Matched Date",
+          "type": "string"
+        },
+        "diff_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diff Days"
+        },
+        "downgrades": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Downgrades",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entity_label",
+        "severity",
+        "source_date",
+        "matched_date"
+      ],
+      "title": "ClinicalDateFindingSummary",
+      "type": "object"
+    },
     "ClinicalDateInconsistencyCounts": {
       "description": "Severity-bucketed counts from the clinical-date inconsistency module.\n\nSee: feature_generation/clinical_date_inconsistencies.py",
       "properties": {
@@ -188,7 +235,7 @@
       "type": "object"
     },
     "InconsistencyCounts": {
-      "description": "Summary counts of inconsistencies by severity level.\n\nDecisive inconsistencies (e.g. distinct patient IDs from the\nsame study identified in the narratives) override all other\nevidence and force a Different individuals classification.",
+      "description": "Summary counts of inconsistencies by severity level.\n\nThese counts are merged across all inconsistency sources:\ndemographic (age, weight, height, sex), drug-set, clinical-date,\nand narrative-derived inconsistencies.  They feed directly into\nthe weighted inconsistency score w_tot in the decision logic.\n\nDecisive inconsistencies (e.g. distinct patient IDs from the\nsame study, or clinical-date impossibilities) override all other\nevidence and force a Different individuals classification.",
       "properties": {
         "minor": {
           "default": 0,
@@ -361,6 +408,13 @@
     },
     "clinical_date_inconsistency_counts": {
       "$ref": "#/$defs/ClinicalDateInconsistencyCounts"
+    },
+    "clinical_date_findings": {
+      "items": {
+        "$ref": "#/$defs/ClinicalDateFindingSummary"
+      },
+      "title": "Clinical Date Findings",
+      "type": "array"
     },
     "narrative_consistency": {
       "$ref": "#/$defs/NarrativeConsistency"

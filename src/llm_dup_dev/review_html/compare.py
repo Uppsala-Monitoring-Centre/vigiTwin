@@ -47,6 +47,7 @@ from .models import (
     BatchIndexItem,
     ClassificationSummaryVM,
     ClinicalDateCountsVM,
+    ClinicalDateFindingVM,
     ComparisonStatus,
     DecisionSummaryVM,
     DrugDetail,
@@ -598,6 +599,17 @@ def _build_features_summary(
             n_strong=features.clinical_date_inconsistency_counts.n_strong,
             n_decisive=features.clinical_date_inconsistency_counts.n_decisive,
         ),
+        clinical_date_findings=[
+            ClinicalDateFindingVM(
+                entity_label=f.entity_label,
+                severity=f.severity.value,
+                source_date=f.source_date,
+                matched_date=f.matched_date,
+                diff_days=f.diff_days,
+                downgrades=f.downgrades,
+            )
+            for f in features.clinical_date_findings
+        ],
     )
 
 
@@ -975,7 +987,7 @@ def build_batch_index_item(
         inc_summary = f"{ic.moderate}M / {ic.strong}S / {ic.decisive}D"
         cdc = vm.features_summary.clinical_date_counts
         if cdc and cdc.total > 0:
-            inc_summary += f" | dates: {cdc.n_moderate}M / {cdc.n_strong}S / {cdc.n_decisive}D"
+            inc_summary += f" (dates: {cdc.n_moderate}M / {cdc.n_strong}S / {cdc.n_decisive}D)"
 
     return BatchIndexItem(
         pair_id=vm.pair_id,

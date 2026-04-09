@@ -136,6 +136,17 @@ class InconsistencyVM(BaseModel):
     description: str
 
 
+class ClinicalDateFindingVM(BaseModel):
+    """View model for a single clinical-date discrepancy finding."""
+
+    entity_label: str  # e.g. "drug_start:aspirin"
+    severity: str  # e.g. "strong"
+    source_date: str
+    matched_date: str
+    diff_days: int | None = None
+    downgrades: list[str] = Field(default_factory=list)
+
+
 class FeatureContributionVM(BaseModel):
     """View model for a single feature's probability contribution."""
 
@@ -195,6 +206,9 @@ class FeaturesSummaryVM(BaseModel):
     )
     inconsistency_counts: InconsistencyCountsVM | None = None
     clinical_date_counts: ClinicalDateCountsVM | None = None
+    clinical_date_findings: list[ClinicalDateFindingVM] = Field(
+        default_factory=list
+    )
 
 
 class ClassificationSummaryVM(BaseModel):

@@ -40,7 +40,17 @@ def select_anchor(
     AnchorPopulation
         Selected anchor with type and size.
     """
-    if N_drugs <= threshold or N_AEs <= threshold:
+    # When one set is empty (no overlap), skip it entirely and use the other.
+    if N_AEs == 0 and N_drugs == 0:
+        anchor_type = AnchorType.DRUGS
+        N_anchor = 0
+    elif N_AEs == 0:
+        anchor_type = AnchorType.DRUGS
+        N_anchor = N_drugs
+    elif N_drugs == 0:
+        anchor_type = AnchorType.AES
+        N_anchor = N_AEs
+    elif N_drugs <= threshold or N_AEs <= threshold:
         # At least one candidate is small — use the smaller
         if N_drugs <= N_AEs:
             anchor_type = AnchorType.DRUGS

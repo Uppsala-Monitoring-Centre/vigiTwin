@@ -84,6 +84,8 @@ Let \(T\) denote a configurable threshold (e.g. \(T = 50\)).
 
 The anchor is selected as follows:
 
+0. If either \(N_{\text{drugs}}\) or \(N_{\text{AEs}}\) is zero (no overlap for that set), that candidate is skipped and the other is used. If both are zero the anchor is zero (degenerate case).
+
 1. If either \(N_{\text{drugs}}\) or \(N_{\text{AEs}}\) is less than or equal to \(T\), select the smaller of the two.
 
 2. Otherwise, use the intersection:
@@ -654,13 +656,17 @@ Each unique source date on a report contributes at most one counted inconsistenc
 
 If a report date on one report is strictly before the earliest plausible overall AE onset on the other report, a decisive inconsistency is counted. This applies even with incomplete dates — e.g. report date `1999-02-10` vs onset year `2005` is decisive because the report predates even the earliest plausible onset.
 
-**Symmetry**
+**Symmetry and cross-direction deduplication**
 
-The comparison is evaluated from both directions (report 1 → report 2 and report 2 → report 1), with source-date bucketing applied independently per report.
+The comparison is evaluated from both directions (report 1 → report 2 and report 2 → report 1), with source-date bucketing applied independently per report. After bucketing, a cross-direction deduplication step ensures that each entity (e.g. the same drug on both reports) produces at most one counted inconsistency. When both directions yield a finding for the same entity, the one with the lower final severity is kept — this honours direction-specific downgrades conservatively.
+
+**Integration with the decision logic**
+
+Clinical-date inconsistency counts are merged into the main `inconsistency_counts` on `PairFeatures` and thus contribute to the weighted inconsistency score $w_{\text{tot}}$ used by the decision logic. The separate `clinical_date_inconsistency_counts` field is retained for auditability and detailed reporting.
 
 **Output**
 
-The module produces `ClinicalDateInconsistencyCounts` with `n_minor`, `n_moderate`, `n_strong`, `n_decisive`, exposed on `PairFeatures.clinical_date_inconsistency_counts`.
+The module produces `ClinicalDateInconsistencyCounts` with `n_minor`, `n_moderate`, `n_strong`, `n_decisive`, exposed on `PairFeatures.clinical_date_inconsistency_counts`. Individual selected findings are exposed on `PairFeatures.clinical_date_findings` for human review.
 
 ------
 
@@ -742,11 +748,11 @@ $$
 w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
 $$
 
-which combines minor, moderate, and strong inconsistencies into a single score. The weights \(w_{mi}\), \(w_m\), and \(w_s\) are configurable (defaults: \(w_{mi} = 0.3\), \(w_m = 1\), \(w_s = 3\)).
+which combines minor, moderate, and strong inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, weight, height, sex), drug-set inconsistencies, clinical-date inconsistencies, and narrative-derived inconsistencies. The weights \(w_{mi}\), \(w_m\), and \(w_s\) are configurable (defaults: \(w_{mi} = 0.3\), \(w_m = 1\), \(w_s = 3\)).
 
 **Decisive inconsistency count**
 
-The number of decisive inconsistencies detected (typically from narrative analysis). Any non-zero count overrides the zone-based logic.
+The number of decisive inconsistencies detected (from narrative analysis, clinical-date impossibilities, etc.). Any non-zero count overrides the zone-based logic.
 
 **Narrative consistency category**
 

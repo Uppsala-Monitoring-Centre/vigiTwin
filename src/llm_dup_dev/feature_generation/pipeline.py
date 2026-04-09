@@ -25,6 +25,7 @@ from llm_dup_dev.feature_generation.reporting_context import (
 )
 from llm_dup_dev.models.enums import InconsistencySeverity, NarrativeConsistency
 from llm_dup_dev.models.pair_features import (
+    ClinicalDateFindingSummary,
     ClinicalDateInconsistencyCounts,
     EvidenceSummary,
     InconsistencyCounts,
@@ -122,23 +123,37 @@ def generate_pair_features(
             1
             for i in inconsistencies
             if i.severity == InconsistencySeverity.MINOR
-        ),
+        ) + clinical_date_counts.n_minor,
         moderate=sum(
             1
             for i in inconsistencies
             if i.severity == InconsistencySeverity.MODERATE
-        ),
+        ) + clinical_date_counts.n_moderate,
         strong=sum(
             1
             for i in inconsistencies
             if i.severity == InconsistencySeverity.STRONG
-        ),
+        ) + clinical_date_counts.n_strong,
         decisive=sum(
             1
             for i in inconsistencies
             if i.severity == InconsistencySeverity.DECISIVE
-        ),
+        ) + clinical_date_counts.n_decisive,
     )
+
+    # Step 5c: Build serializable clinical-date finding summaries
+    clinical_date_findings = [
+        ClinicalDateFindingSummary(
+            entity_label=f.entity_label,
+            severity=f.final_severity.to_inconsistency_severity(),
+            source_date=f.source_date.value,
+            matched_date=f.matched_date.value if f.matched_date else "",
+            diff_days=f.raw_diff_days,
+            downgrades=f.downgrades,
+        )
+        for f in cdi_result.findings
+        if f.selected and f.final_severity.to_inconsistency_severity() is not None
+    ]
 
     # Step 6: Build evidence summary
     evidence_summary = _build_evidence_summary(match_result)
@@ -155,6 +170,7 @@ def generate_pair_features(
         inconsistencies=inconsistencies,
         inconsistency_counts=inconsistency_counts,
         clinical_date_inconsistency_counts=clinical_date_counts,
+        clinical_date_findings=clinical_date_findings,
         narrative_consistency=narrative_consistency,
         evidence_summary=evidence_summary,
     )

@@ -64,3 +64,26 @@ class TestAnchorSelection:
         )
         assert result.type == AnchorType.DRUGS
         assert result.N_anchor == 1
+
+    def test_zero_aes_uses_drugs(self):
+        """When N_AEs=0 (no AE overlap), anchor should be drugs, not zero."""
+        result = select_anchor(
+            N_drugs=25, N_AEs=0, N_drugs_AEs=0, threshold=50
+        )
+        assert result.type == AnchorType.DRUGS
+        assert result.N_anchor == 25
+
+    def test_zero_drugs_uses_aes(self):
+        """When N_drugs=0 (no drug overlap), anchor should be AEs."""
+        result = select_anchor(
+            N_drugs=0, N_AEs=40, N_drugs_AEs=0, threshold=50
+        )
+        assert result.type == AnchorType.AES
+        assert result.N_anchor == 40
+
+    def test_both_zero(self):
+        """Degenerate case: no overlap at all."""
+        result = select_anchor(
+            N_drugs=0, N_AEs=0, N_drugs_AEs=0, threshold=50
+        )
+        assert result.N_anchor == 0

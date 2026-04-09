@@ -93,8 +93,13 @@ class Inconsistency(BaseModel):
 class InconsistencyCounts(BaseModel):
     """Summary counts of inconsistencies by severity level.
 
+    These counts are merged across all inconsistency sources:
+    demographic (age, weight, height, sex), drug-set, clinical-date,
+    and narrative-derived inconsistencies.  They feed directly into
+    the weighted inconsistency score w_tot in the decision logic.
+
     Decisive inconsistencies (e.g. distinct patient IDs from the
-    same study identified in the narratives) override all other
+    same study, or clinical-date impossibilities) override all other
     evidence and force a Different individuals classification.
     """
 
@@ -114,6 +119,21 @@ class ClinicalDateInconsistencyCounts(BaseModel):
     n_moderate: int = 0
     n_strong: int = 0
     n_decisive: int = 0
+
+
+class ClinicalDateFindingSummary(BaseModel):
+    """Serializable summary of a single selected clinical-date finding.
+
+    Captures the key information needed for human review without
+    exposing internal implementation details.
+    """
+
+    entity_label: str  # e.g. "drug_start:aspirin", "ae_onset:headache"
+    severity: InconsistencySeverity
+    source_date: str  # date value on the source report
+    matched_date: str  # date value on the other report
+    diff_days: int | None = None  # minimum day difference (None for decisive)
+    downgrades: list[str] = Field(default_factory=list)
 
 
 class EvidenceSummary(BaseModel):
@@ -152,15 +172,19 @@ class PairFeatures(BaseModel):
     probability: ProbabilityEstimate
     L_match: float
 
-    # Inconsistencies
+    # Inconsistencies (structured: age, weight, height, sex, drug-set)
     inconsistencies: list[Inconsistency] = Field(default_factory=list)
+    # Merged counts across all sources (incl. clinical-date) — used by decision logic
     inconsistency_counts: InconsistencyCounts = Field(
         default_factory=InconsistencyCounts
     )
 
-    # Clinical-date inconsistencies (rule-based module)
+    # Clinical-date inconsistencies (rule-based module) — separate for auditability
     clinical_date_inconsistency_counts: ClinicalDateInconsistencyCounts = Field(
         default_factory=ClinicalDateInconsistencyCounts
+    )
+    clinical_date_findings: list[ClinicalDateFindingSummary] = Field(
+        default_factory=list
     )
 
     # Narrative assessment

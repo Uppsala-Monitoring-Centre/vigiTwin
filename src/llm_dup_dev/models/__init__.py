@@ -30,6 +30,8 @@ from .report import (
 from .report_pair import ReportPair
 from .pair_features import (
     AnchorPopulation,
+    ClinicalDateFindingSummary,
+    ClinicalDateInconsistencyCounts,
     EvidenceSummary,
     Inconsistency,
     InconsistencyCounts,
@@ -61,6 +63,8 @@ __all__ = [
     "ReportPair",
     # PairFeatures layer
     "AnchorPopulation",
+    "ClinicalDateFindingSummary",
+    "ClinicalDateInconsistencyCounts",
     "EvidenceSummary",
     "Inconsistency",
     "InconsistencyCounts",
