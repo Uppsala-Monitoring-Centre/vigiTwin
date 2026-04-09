@@ -692,8 +692,8 @@ class TestDecisiveImpossibility:
 
 
 class TestSymmetry:
-    def test_both_reports_contribute(self):
-        """Each report can contribute its own bucket inconsistencies."""
+    def test_single_entity_counted_once_after_dedup(self):
+        """A single drug mismatch counted once, not once per direction."""
         r1 = _report(
             "R1",
             drugs=[_drug("A", start="2020-01-01")],
@@ -703,11 +703,9 @@ class TestSymmetry:
             drugs=[_drug("A", start="2020-04-01")],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        r1_selected = [f for f in result.findings if f.selected and f.source_report == "R1"]
-        r2_selected = [f for f in result.findings if f.selected and f.source_report == "R2"]
-        # Both should have findings
-        assert len(r1_selected) >= 1
-        assert len(r2_selected) >= 1
+        selected = [f for f in result.findings if f.selected and "drug_start:a" in f.entity_label]
+        # Cross-direction dedup keeps exactly one
+        assert len(selected) == 1
 
     def test_decisive_not_double_counted(self):
         """Same directional impossibility not counted twice."""
@@ -730,13 +728,53 @@ class TestSymmetry:
         # (R1 has no onset).
         assert result.n_decisive <= 2
 
-    def test_symmetric_counts_for_identical_mismatch(self):
-        """For a simple two-drug mismatch, both directions should count."""
+    def test_single_count_for_identical_mismatch(self):
+        """A single drug mismatch should produce exactly one counted inconsistency.
+
+        Both directions produce a finding, but cross-direction dedup keeps
+        only one (the lower severity — here they are equal, so one is kept).
+        """
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
         r2 = _report("R2", drugs=[_drug("A", start="2020-04-01")])
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # Both R1 and R2 contribute one finding for drug_start:a
-        assert result.n_strong >= 2  # 90 days → strong from each side
+        # 90 days → strong, but only one count after dedup
+        assert result.n_strong == 1
+
+    def test_dedup_keeps_lower_severity_across_directions(self):
+        """When cross-entity downgrade applies in one direction only,
+        the dedup should keep the lower (downgraded) severity.
+
+        R1 has drug A starting 2020-01-01 and an AE onset also on 2020-01-01.
+        R2 has drug A starting 2020-04-01 (no AE onset at that date).
+        Direction R2→R1: source_date 2020-04-01, not found in R1's dates
+            → no cross-entity downgrade → strong.
+        Direction R1→R2: source_date 2020-01-01, which IS an AE onset date
+            on R1, but downgrade checks against *other* report dates.
+            AE onset on R2 is NOT on 2020-01-01, so no downgrade → strong too.
+
+        To get asymmetric downgrades, put an AE onset on R2 at the same
+        date as R1's drug start:
+        R2 AE onset = 2020-01-01 → R1→R2 direction: source_date 2020-01-01
+            is in R2's downgrade dates → downgrade strong→moderate.
+        R2→R1 direction: source_date 2020-04-01, not in R1's downgrade dates
+            → stays strong.
+        Dedup should keep the moderate (lower).
+        """
+        r1 = _report(
+            "R1",
+            drugs=[_drug("A", start="2020-01-01")],
+            aes=[_ae("headache", onset="2020-06-01")],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-04-01")],
+            aes=[_ae("headache", onset="2020-01-01")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+
+        selected = [f for f in result.findings if f.selected and "drug_start:a" in f.entity_label]
+        assert len(selected) == 1
+        assert selected[0].final_severity == Severity.MODERATE
 
 
 # ===================================================================

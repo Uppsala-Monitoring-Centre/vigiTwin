@@ -468,6 +468,39 @@ def _bucket_and_select(
 
 
 # ---------------------------------------------------------------------------
+# Cross-direction deduplication
+# ---------------------------------------------------------------------------
+
+
+def _dedup_across_directions(
+    findings: list[ClinicalDateFinding],
+) -> None:
+    """Deduplicate selected findings produced by the bidirectional analysis.
+
+    The bidirectional loop generates findings from both R1→R2 and R2→R1.
+    For a single entity mismatch (e.g. the same drug on both reports with
+    different dates) this produces two selected findings.  We keep only
+    the one with the *lower* final severity (conservative: if one
+    direction downgrades the finding, we honour that).
+
+    Mutates findings in-place by clearing ``selected`` on the duplicate.
+    """
+    # Group selected findings by entity_label (direction-independent key)
+    groups: dict[str, list[ClinicalDateFinding]] = defaultdict(list)
+    for f in findings:
+        if f.selected:
+            groups[f.entity_label].append(f)
+
+    for group in groups.values():
+        if len(group) <= 1:
+            continue
+        # Keep the finding with the lowest severity; deselect the rest
+        group.sort(key=lambda f: _SEVERITY_RANK.get(f.final_severity, -1))
+        for f in group[1:]:
+            f.selected = False
+
+
+# ---------------------------------------------------------------------------
 # Decisive impossibility check
 # ---------------------------------------------------------------------------
 
@@ -618,6 +651,9 @@ def compute_clinical_date_inconsistencies(
 
     # --- Source-date bucketing for non-decisive findings ---
     _bucket_and_select(findings)
+
+    # --- Cross-direction dedup (keep lower severity per entity) ---
+    _dedup_across_directions(findings)
 
     # Combine
     all_findings = findings + decisive_findings

@@ -475,7 +475,7 @@ inconsistencies: [
 ]
 ```
 
-Summary counts:
+Summary counts (includes all sources — demographic, drug-set, clinical-date, and narrative-derived inconsistencies):
 
 ```
 inconsistency_counts: {
@@ -486,7 +486,9 @@ inconsistency_counts: {
 }
 ```
 
-Clinical-date inconsistency counts (from the dedicated rule-based module — see method specification § Clinical Date Inconsistencies):
+These merged counts are used directly by the decision logic to compute \(w_{\text{tot}}\).
+
+Clinical-date inconsistency counts are also exposed separately for auditability (from the dedicated rule-based module — see method specification § Clinical Date Inconsistencies):
 
 ```
 clinical_date_inconsistency_counts: {
@@ -495,6 +497,23 @@ clinical_date_inconsistency_counts: {
   "n_strong": 0,
   "n_decisive": 0
 }
+```
+
+Note: The clinical-date counts above are already included in `inconsistency_counts`. The separate field is retained for detailed reporting and human review.
+
+Individual selected clinical-date findings are also available:
+
+```
+clinical_date_findings: [
+  {
+    "entity_label": "drug_start:aspirin",
+    "severity": "moderate",
+    "source_date": "2020-01-15",
+    "matched_date": "2020-03-01",
+    "diff_days": 46,
+    "downgrades": []
+  }
+]
 ```
 
 ------
