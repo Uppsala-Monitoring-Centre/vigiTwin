@@ -150,9 +150,13 @@ def _severity_gt(a: Severity, b: Severity) -> bool:
 _AE_ONSET_MINOR_DAYS = 7
 _AE_ONSET_MODERATE_DAYS = 30
 
-# Drug start / AE onset thresholds (more lenient)
-_ENTITY_MINOR_DAYS = 14
-_ENTITY_MODERATE_DAYS = 60
+# Drug start / AE onset thresholds (more lenient).
+# Per-entity drug start and AE onset discrepancies cap at MODERATE: a single
+# entity-level mismatch is never strong evidence on its own (the overall AE
+# onset date covers the case-level signal). Differences <= 7 days are treated
+# as no inconsistency to absorb minor data-entry / regimen-rounding noise.
+_ENTITY_NONE_DAYS = 7
+_ENTITY_MODERATE_DAYS = 70
 
 
 def _classify_overall_ae_onset(diff_days: int) -> Severity:
@@ -166,13 +170,16 @@ def _classify_overall_ae_onset(diff_days: int) -> Severity:
 
 
 def _classify_entity(diff_days: int) -> Severity:
-    if diff_days == 0:
+    """Classify a per-entity drug start / AE onset date difference.
+
+    Caps at MODERATE: single-entity mismatches are never STRONG.
+    Differences within :data:`_ENTITY_NONE_DAYS` are treated as NONE.
+    """
+    if diff_days <= _ENTITY_NONE_DAYS:
         return Severity.NONE
-    if diff_days <= _ENTITY_MINOR_DAYS:
+    if diff_days < _ENTITY_MODERATE_DAYS:
         return Severity.MINOR
-    if diff_days <= _ENTITY_MODERATE_DAYS:
-        return Severity.MODERATE
-    return Severity.STRONG
+    return Severity.MODERATE
 
 
 # ---------------------------------------------------------------------------
@@ -550,12 +557,18 @@ def _apply_cross_entity_downgrade(
 def _apply_concomitant_downgrade(
     severity: Severity,
 ) -> tuple[Severity, str]:
-    """Downgrade concomitant drug start dates by two steps."""
-    reason = "concomitant drug downgrade (-2 steps)"
+    """Downgrade concomitant drug start dates by one step.
+
+    Per-entity drug start severity is capped at MODERATE, so a two-step
+    downgrade would always wipe concomitant findings out entirely. With a
+    single-step downgrade, a moderate concomitant mismatch still
+    contributes as a minor inconsistency.
+    """
+    reason = "concomitant drug downgrade (-1 step)"
     if severity == Severity.STRONG:
-        return Severity.MINOR, reason
+        return Severity.MODERATE, reason
     if severity == Severity.MODERATE:
-        return Severity.IGNORED, reason
+        return Severity.MINOR, reason
     if severity == Severity.MINOR:
         return Severity.IGNORED, reason
     return severity, reason

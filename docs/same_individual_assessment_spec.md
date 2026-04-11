@@ -655,14 +655,15 @@ Overall AE onset date (tighter):
 | 8–30 days | moderate |
 | > 30 days | strong |
 
-Drug start dates and AE onset dates (more lenient):
+Drug start dates and AE onset dates (capped at moderate):
 
 | Difference | Severity |
 | ---------- | -------- |
-| 0 days | none |
-| 1–14 days | minor |
-| 15–60 days | moderate |
-| > 60 days | strong |
+| 0–7 days | none |
+| 8–69 days | minor |
+| ≥ 70 days | moderate |
+
+Per-entity drug start and AE onset mismatches never escalate to *strong*: a single regimen or PT-level disagreement is too noisy on its own to constitute strong evidence. Case-level temporal disagreement is captured by the overall AE onset date thresholds above.
 
 **Incomplete dates**
 
@@ -672,7 +673,7 @@ Partial dates are converted to intervals (`[earliest, latest]` plausible date). 
 
 1. *Cross-entity downgrade*: if the source date exactly matches any clinically relevant date (drug start, AE onset, overall AE onset, or drug end date) on the other report, the severity is reduced by one step (strong → moderate, moderate → minor, minor stays minor).
 
-2. *Concomitant drug downgrade*: for concomitant-drug start date mismatches, severity is reduced by two steps (strong → minor, moderate → ignored, minor → ignored).
+2. *Concomitant drug downgrade*: for concomitant-drug start date mismatches, severity is reduced by one step (moderate → minor, minor → ignored). Because per-entity drug start severity is capped at moderate, a two-step downgrade would always wipe concomitant findings out entirely; a single-step downgrade keeps concomitant moderates contributing as minor inconsistencies.
 
 **One inconsistency per source date**
 
