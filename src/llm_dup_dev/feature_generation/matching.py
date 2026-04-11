@@ -328,43 +328,65 @@ def compute_matching_clinical_dates(
     list[ClinicalDateMatch]
         Unique matching dates, sorted by matched value.
     """
-    # Build lookup maps: substance/pt_name (lowercase) → entity
-    drugs_r1 = {d.substance.lower(): d for d in r1.drugs}
-    drugs_r2 = {d.substance.lower(): d for d in r2.drugs}
-    aes_r1 = {ae.pt_name.lower(): ae for ae in r1.adverse_events}
-    aes_r2 = {ae.pt_name.lower(): ae for ae in r2.adverse_events}
+    # Build lookup maps: substance/pt_name (lowercase) → list of entities.
+    # A substance (or AE PT name) may legitimately appear more than once per
+    # report — e.g. the same drug recorded with different roles (suspected vs
+    # concomitant) or split across structured/narrative entries where only a
+    # subset carry date information. All entries must participate in
+    # comparison, otherwise a dateful entry can be silently shadowed by a
+    # dateless duplicate and a genuine date coincidence is missed.
+    drugs_r1: dict[str, list] = {}
+    for d in r1.drugs:
+        drugs_r1.setdefault(d.substance.lower(), []).append(d)
+    drugs_r2: dict[str, list] = {}
+    for d in r2.drugs:
+        drugs_r2.setdefault(d.substance.lower(), []).append(d)
+    aes_r1: dict[str, list] = {}
+    for ae in r1.adverse_events:
+        aes_r1.setdefault(ae.pt_name.lower(), []).append(ae)
+    aes_r2: dict[str, list] = {}
+    for ae in r2.adverse_events:
+        aes_r2.setdefault(ae.pt_name.lower(), []).append(ae)
 
     # Collect unique matches: matched_value → finest resolution
     unique: dict[str, str] = {}
 
     for drug_name in matching_drugs:
         key = drug_name.lower()
-        d1 = drugs_r1.get(key)
-        d2 = drugs_r2.get(key)
-        if d1 is None or d2 is None:
+        entries_1 = drugs_r1.get(key, [])
+        entries_2 = drugs_r2.get(key, [])
+        if not entries_1 or not entries_2:
             continue
 
-        # Compare start dates (start ↔ start only)
-        result = _compare_partial_dates(d1.start_date, d2.start_date)
-        if result is not None:
-            _update_unique_dates(unique, result[0], result[1])
+        # Compare every pair of same-substance entries across reports.
+        # Role does not affect matching here — if any pairing of the same
+        # substance yields a date coincidence, it counts.
+        for d1 in entries_1:
+            for d2 in entries_2:
+                # Compare start dates (start ↔ start only)
+                result = _compare_partial_dates(d1.start_date, d2.start_date)
+                if result is not None:
+                    _update_unique_dates(unique, result[0], result[1])
 
-        # Compare end dates (end ↔ end only)
-        result = _compare_partial_dates(d1.end_date, d2.end_date)
-        if result is not None:
-            _update_unique_dates(unique, result[0], result[1])
+                # Compare end dates (end ↔ end only)
+                result = _compare_partial_dates(d1.end_date, d2.end_date)
+                if result is not None:
+                    _update_unique_dates(unique, result[0], result[1])
 
     for ae_name in matching_AEs:
         key = ae_name.lower()
-        ae1 = aes_r1.get(key)
-        ae2 = aes_r2.get(key)
-        if ae1 is None or ae2 is None:
+        ae_entries_1 = aes_r1.get(key, [])
+        ae_entries_2 = aes_r2.get(key, [])
+        if not ae_entries_1 or not ae_entries_2:
             continue
 
-        # Compare onset dates (onset ↔ onset only)
-        result = _compare_partial_dates(ae1.start_date, ae2.start_date)
-        if result is not None:
-            _update_unique_dates(unique, result[0], result[1])
+        # Compare onset dates (onset ↔ onset only) across every pair of
+        # same-PT AE entries — same rationale as for drug duplicates.
+        for ae1 in ae_entries_1:
+            for ae2 in ae_entries_2:
+                result = _compare_partial_dates(ae1.start_date, ae2.start_date)
+                if result is not None:
+                    _update_unique_dates(unique, result[0], result[1])
 
     return [
         ClinicalDateMatch(matched_value=val, resolution=res)
