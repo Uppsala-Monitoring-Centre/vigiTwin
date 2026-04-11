@@ -43,7 +43,7 @@ from itertools import permutations
 from typing import Callable
 
 from llm_dup_dev.models.enums import DrugRole, InconsistencySeverity
-from llm_dup_dev.models.report import DateValue, PartialDate, Report
+from llm_dup_dev.models.report import DateValue, Drug, PartialDate, Report
 
 
 # ---------------------------------------------------------------------------
@@ -228,19 +228,45 @@ def derive_overall_ae_onset_date(report: Report) -> PartialDate | None:
     for the canonical accessor that prefers the explicit value.
 
     Primary rule:
-        If at least one suspected-drug start date exists, pick the
-        earliest AE onset date >= max(suspected_start_dates).
+        Pick the **earliest** AE onset date. Only refrain from picking
+        an AE onset when there is *clear evidence* it is incompatible
+        with a suspected drug — i.e. the AE onset interval is
+        unambiguously before every regimen of that drug.
 
     Fallback:
-        If no suspected-drug start dates, pick the earliest AE onset
-        date.
+        If no suspected-drug start dates exist, pick the earliest AE
+        onset date unconditionally.
 
-    Comparisons use the *latest plausible* value for suspected-drug
-    starts (conservative: we want AE onsets definitely after) and the
-    *earliest plausible* value for AE onset dates.
+    Compatibility is defined to err on the side of accepting early AE
+    onsets. Specifically, we group suspected drug start dates by
+    normalized substance name (so re-challenges of the same drug with
+    multiple regimens are treated jointly). An AE onset ``ae`` is
+    compatible with a substance when **any** of its regimens
+    ``r`` satisfies::
+
+        earliest_plausible(r) <= latest_plausible(ae)
+
+    i.e. it is plausible that the drug had already been started by the
+    time the AE occurred. An AE is retained only when it is compatible
+    with *every* suspected substance.
+
+    Consequences:
+
+    * A month-resolution suspected drug start (e.g. ``1968-11``) does
+      **not** disqualify a same-month day-resolution AE onset (e.g.
+      ``1968-11-12``) — the drug could plausibly have started on
+      ``1968-11-01``.
+    * For a re-challenge with two regimens of the same drug — one
+      before and one after the AE onset — the earlier regimen alone
+      is enough to keep the AE in the candidate set.
+
+    If no AE onset is compatible with every suspected substance, the
+    derivation returns ``None`` (the pharmacologically unlikely case
+    where every recorded onset is strictly before every suspected
+    drug's earliest plausible start).
     """
-    suspected_starts: list[PartialDate] = [
-        d.start_date
+    suspected_with_start: list[Drug] = [
+        d
         for d in report.drugs
         if d.role == DrugRole.SUSPECTED and d.start_date is not None
     ]
@@ -253,22 +279,35 @@ def derive_overall_ae_onset_date(report: Report) -> PartialDate | None:
     if not ae_onsets:
         return None
 
-    if suspected_starts:
-        # max suspected start: use latest plausible date for comparison
-        max_suspected = max(suspected_starts, key=latest_plausible_date)
-        max_suspected_latest = latest_plausible_date(max_suspected)
+    if not suspected_with_start:
+        # No suspected-drug start dates constrain the derivation.
+        return min(ae_onsets, key=earliest_plausible_date)
 
-        # Filter AE onsets whose earliest plausible date >= max suspected latest
-        qualifying = [
-            ao for ao in ae_onsets
-            if earliest_plausible_date(ao) >= max_suspected_latest
-        ]
-        if not qualifying:
-            return None
-        return min(qualifying, key=earliest_plausible_date)
+    # Group suspected drug start dates by normalized substance name so
+    # that multi-regimen re-challenges of the same drug are treated
+    # jointly: a single compatible regimen suffices per substance.
+    regimens_by_substance: dict[str, list[PartialDate]] = defaultdict(list)
+    for drug in suspected_with_start:
+        assert drug.start_date is not None  # filtered above
+        regimens_by_substance[_normalize_entity_key(drug.substance)].append(
+            drug.start_date
+        )
 
-    # Fallback: earliest AE onset
-    return min(ae_onsets, key=earliest_plausible_date)
+    def _ae_compatible(ae: PartialDate) -> bool:
+        ae_latest = latest_plausible_date(ae)
+        for regimens in regimens_by_substance.values():
+            if not any(
+                earliest_plausible_date(r) <= ae_latest for r in regimens
+            ):
+                return False
+        return True
+
+    # Iterate earliest-first and pick the earliest compatible AE onset.
+    for ae in sorted(ae_onsets, key=earliest_plausible_date):
+        if _ae_compatible(ae):
+            return ae
+
+    return None
 
 
 def effective_overall_ae_onset_date(report: Report) -> PartialDate | None:
