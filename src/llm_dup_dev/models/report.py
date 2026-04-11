@@ -139,5 +139,13 @@ class Report(BaseModel):
     drugs: list[Drug] = Field(default_factory=list)
     adverse_events: list[AdverseEvent] = Field(default_factory=list)
 
+    # Explicit case-level adverse-event onset date as reported on the source
+    # report (e.g. extracted from a "CASE EVENT DATE: YYYYMMDD" narrative
+    # pattern on US reports). When present this takes precedence over the
+    # dev-side derived overall AE onset date — see
+    # ``feature_generation.clinical_date_inconsistencies
+    # .effective_overall_ae_onset_date``.
+    reported_overall_ae_onset_date: PartialDate | None = None
+
     # Narrative text (used for LLM-based consistency assessment)
     narrative: str | None = None

@@ -15,6 +15,20 @@ Incomplete-date strategy (option 2 from the spec):
     the threshold.  This avoids false positives at the cost of
     occasionally missing a discrepancy when resolution is too coarse.
 
+Multiple entries per entity:
+    The same normalized drug substance may appear on a report with
+    multiple distinct start dates (e.g. re-challenge regimens), and
+    the same MedDRA PT may appear with multiple onset dates.  For
+    each matched entity (drug substance or PT) across the two
+    reports, we compute the **minimum-cost one-to-one alignment**
+    between the two reports' date sets (using the same interval-aware
+    minimum possible day difference), deduplicate exact duplicate
+    date values within a report first, and emit candidate findings
+    only from the aligned pairs — leftover unmatched dates do not by
+    themselves create extra inconsistencies.  Drug role is **ignored**
+    for counterpart selection; it is retained only for downstream
+    rules (source-date priority, concomitant-drug downgrade).
+
 See: docs/same_individual_assessment_spec.md § Clinical Date Inconsistencies
 """
 
@@ -25,7 +39,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum, IntEnum
-from typing import Literal
+from itertools import permutations
+from typing import Callable
 
 from llm_dup_dev.models.enums import DrugRole, InconsistencySeverity
 from llm_dup_dev.models.report import DateValue, PartialDate, Report
@@ -198,7 +213,12 @@ class ClinicalDateResult:
 
 
 def derive_overall_ae_onset_date(report: Report) -> PartialDate | None:
-    """Derive the overall AE onset date for a single report.
+    """Derive the overall AE onset date for a single report from drug/AE dates.
+
+    This is the dev-side fallback computation. It is used when the
+    report does not carry an explicit ``reported_overall_ae_onset_date``
+    extracted upstream — see :func:`effective_overall_ae_onset_date`
+    for the canonical accessor that prefers the explicit value.
 
     Primary rule:
         If at least one suspected-drug start date exists, pick the
@@ -244,59 +264,28 @@ def derive_overall_ae_onset_date(report: Report) -> PartialDate | None:
     return min(ae_onsets, key=earliest_plausible_date)
 
 
-# ---------------------------------------------------------------------------
-# Collect all dated entities from a report
-# ---------------------------------------------------------------------------
+def effective_overall_ae_onset_date(report: Report) -> PartialDate | None:
+    """Return the canonical overall AE onset date used by the pipeline.
 
+    Resolution order:
 
-@dataclass
-class _DatedEntity:
-    entity_type: EntityType
-    label: str
-    partial_date: PartialDate
-    drug_name: str | None = None  # for drug-based entities
+    1. ``report.reported_overall_ae_onset_date`` — an explicitly
+       extracted, report-level AE onset date supplied by the loader
+       (e.g. from a "CASE EVENT DATE: YYYYMMDD" pattern on US reports).
+       Trusted as-is; the supplied :class:`PartialDate` is consumed
+       directly without re-parsing or re-bucketing of resolution.
+    2. :func:`derive_overall_ae_onset_date` fallback — the dev-side
+       rule that combines suspected-drug start dates and AE onset
+       dates.
 
-
-def _collect_entities(
-    report: Report,
-    overall_ae_onset: PartialDate | None,
-) -> list[_DatedEntity]:
-    """Collect all primary dated entities from a report."""
-    entities: list[_DatedEntity] = []
-
-    if overall_ae_onset is not None:
-        entities.append(_DatedEntity(
-            entity_type=EntityType.OVERALL_AE_ONSET,
-            label="overall_ae_onset",
-            partial_date=overall_ae_onset,
-        ))
-
-    for drug in report.drugs:
-        if drug.start_date is None:
-            continue
-        is_concomitant = drug.role == DrugRole.CONCOMITANT
-        etype = (
-            EntityType.CONCOMITANT_DRUG_START
-            if is_concomitant
-            else EntityType.SUSPECTED_DRUG_START
-        )
-        entities.append(_DatedEntity(
-            entity_type=etype,
-            label=f"drug_start:{drug.substance.lower()}",
-            partial_date=drug.start_date,
-            drug_name=drug.substance.lower(),
-        ))
-
-    for ae in report.adverse_events:
-        if ae.start_date is None:
-            continue
-        entities.append(_DatedEntity(
-            entity_type=EntityType.AE_ONSET,
-            label=f"ae_onset:{ae.pt_name.lower()}",
-            partial_date=ae.start_date,
-        ))
-
-    return entities
+    All downstream clinical-date logic should call this helper rather
+    than ``derive_overall_ae_onset_date`` directly so that explicit
+    extractions are honoured consistently.
+    """
+    explicit = report.reported_overall_ae_onset_date
+    if explicit is not None:
+        return explicit
+    return derive_overall_ae_onset_date(report)
 
 
 # ---------------------------------------------------------------------------
@@ -332,54 +321,208 @@ def _collect_all_dates_for_downgrade(
 
 
 # ---------------------------------------------------------------------------
-# Match entities across reports
+# Per-entity date collectors (for multi-regimen alignment)
 # ---------------------------------------------------------------------------
 
 
-def _find_match_on_other(
-    entity: _DatedEntity,
-    other_entities: list[_DatedEntity],
-) -> PartialDate | None:
-    """Find the best matching entity on the other report.
+@dataclass
+class _DrugDateEntry:
+    """A single dated drug entry preserving role metadata.
 
-    Drug starts match by normalized drug name (closest date if multiple).
-    AE onsets match by normalized pt_name (closest date if multiple).
-    Overall AE onset matches if the other report also has one.
-
-    Returns the matched PartialDate or None.
+    Role is retained so downstream concomitant-drug downgrade logic can
+    still apply on the source side after role-agnostic counterpart
+    selection.
     """
-    if entity.entity_type == EntityType.OVERALL_AE_ONSET:
-        candidates = [
-            e for e in other_entities
-            if e.entity_type == EntityType.OVERALL_AE_ONSET
-        ]
-    elif entity.entity_type in (
-        EntityType.SUSPECTED_DRUG_START,
-        EntityType.CONCOMITANT_DRUG_START,
-    ):
-        candidates = [
-            e for e in other_entities
-            if e.entity_type in (
-                EntityType.SUSPECTED_DRUG_START,
-                EntityType.CONCOMITANT_DRUG_START,
-            )
-            and e.drug_name == entity.drug_name
-        ]
-    else:  # AE_ONSET
-        candidates = [
-            e for e in other_entities
-            if e.entity_type == EntityType.AE_ONSET
-            and e.label == entity.label
-        ]
 
-    if not candidates:
-        return None
+    partial_date: PartialDate
+    role: DrugRole | None
 
-    # Pick candidate with minimum day difference (generous: closest match)
-    return min(
-        (c.partial_date for c in candidates),
-        key=lambda pd: _min_day_difference(entity.partial_date, pd),
-    )
+
+def _normalize_entity_key(name: str) -> str:
+    """Case-fold a substance or PT name for use as a matching key.
+
+    Mirrors the behaviour of ``review_html.normalize.normalize_drug_key``
+    / ``normalize_ae_key`` without introducing a cross-layer import.
+    """
+    return name.strip().lower()
+
+
+def _collect_drug_date_groups(
+    report: Report,
+) -> dict[str, list[_DrugDateEntry]]:
+    """Group drug start dates by normalized substance name.
+
+    Drugs without a start date are omitted (nothing to compare).
+    """
+    groups: dict[str, list[_DrugDateEntry]] = defaultdict(list)
+    for drug in report.drugs:
+        if drug.start_date is None:
+            continue
+        groups[_normalize_entity_key(drug.substance)].append(
+            _DrugDateEntry(partial_date=drug.start_date, role=drug.role)
+        )
+    return groups
+
+
+def _collect_ae_date_groups(report: Report) -> dict[str, list[PartialDate]]:
+    """Group AE onset dates by normalized PT name."""
+    groups: dict[str, list[PartialDate]] = defaultdict(list)
+    for ae in report.adverse_events:
+        if ae.start_date is None:
+            continue
+        groups[_normalize_entity_key(ae.pt_name)].append(ae.start_date)
+    return groups
+
+
+def _dedup_drug_date_entries(
+    entries: list[_DrugDateEntry],
+) -> list[_DrugDateEntry]:
+    """Deduplicate drug date entries by exact date value within a report.
+
+    When two entries share the same date ``value`` but differ in role,
+    a non-concomitant role dominates over a concomitant one for that
+    slot. The rationale is that if the same substance appears twice at
+    the same date — once characterised as suspected/interacting and
+    once as concomitant — it should not be treated as purely
+    background medication and therefore should not be subject to the
+    concomitant-drug downgrade for this slot.
+
+    Deterministic order: the first occurrence of each date value keeps
+    its position; later duplicates that win the non-concomitant
+    tiebreak overwrite that slot's role but not its position.
+    """
+    order: list[str] = []
+    seen: dict[str, _DrugDateEntry] = {}
+    for entry in entries:
+        key = entry.partial_date.value
+        if key not in seen:
+            seen[key] = entry
+            order.append(key)
+        else:
+            existing = seen[key]
+            if (
+                existing.role == DrugRole.CONCOMITANT
+                and entry.role != DrugRole.CONCOMITANT
+            ):
+                seen[key] = entry
+    return [seen[k] for k in order]
+
+
+def _dedup_partial_dates(dates: list[PartialDate]) -> list[PartialDate]:
+    """Deduplicate partial dates by their raw ``value``, preserving order."""
+    order: list[str] = []
+    seen: dict[str, PartialDate] = {}
+    for d in dates:
+        if d.value not in seen:
+            seen[d.value] = d
+            order.append(d.value)
+    return [seen[k] for k in order]
+
+
+# ---------------------------------------------------------------------------
+# Interval-aware minimum-cost 1:1 alignment
+# ---------------------------------------------------------------------------
+
+# Brute-force assignment enumeration. Reports in this domain almost
+# never carry more than a handful of regimen rows per normalized drug
+# (k ≤ 5 in practice); k! ≤ 40320 at k=8 stays well under a millisecond.
+# The limit applies to max(n, m) because we enumerate permutations of
+# the larger side, taken k = min(n, m) at a time.
+_ALIGNMENT_BRUTE_FORCE_LIMIT = 8
+
+
+def _min_cost_matching(
+    cost_matrix: list[list[int]],
+) -> list[tuple[int, int]]:
+    """Return a minimum-cost one-to-one bipartite assignment.
+
+    Given a rectangular cost matrix ``cost[i][j]``, finds an assignment
+    of distinct row indices to distinct column indices of size
+    ``min(n_rows, n_cols)`` that minimises the total cost.
+
+    Ties are broken deterministically by preferring the
+    lexicographically smallest sorted ``[(row, col), ...]`` assignment,
+    so results are reproducible regardless of input iteration order.
+
+    Raises :class:`RuntimeError` when ``max(n, m)`` exceeds
+    :data:`_ALIGNMENT_BRUTE_FORCE_LIMIT`. If this is ever hit on real
+    data, replace this implementation with
+    ``scipy.optimize.linear_sum_assignment`` — the brute-force bound
+    exists to fail loudly rather than silently approximating.
+    """
+    n = len(cost_matrix)
+    if n == 0:
+        return []
+    m = len(cost_matrix[0])
+    if m == 0:
+        return []
+
+    if max(n, m) > _ALIGNMENT_BRUTE_FORCE_LIMIT:
+        raise RuntimeError(
+            f"_min_cost_matching: input {n}x{m} exceeds brute-force "
+            f"limit of {_ALIGNMENT_BRUTE_FORCE_LIMIT}. Replace with "
+            f"scipy.optimize.linear_sum_assignment for larger inputs."
+        )
+
+    best_cost: int | None = None
+    best_assignment: list[tuple[int, int]] = []
+
+    if n <= m:
+        # Assign every row to a distinct column: enumerate length-n
+        # permutations of the m columns.
+        for col_perm in permutations(range(m), n):
+            total = sum(cost_matrix[i][col_perm[i]] for i in range(n))
+            candidate = sorted(zip(range(n), col_perm))
+            if best_cost is None or total < best_cost or (
+                total == best_cost and candidate < best_assignment
+            ):
+                best_cost = total
+                best_assignment = candidate
+    else:
+        # Assign every column to a distinct row: enumerate length-m
+        # permutations of the n rows.
+        for row_perm in permutations(range(n), m):
+            total = sum(cost_matrix[row_perm[j]][j] for j in range(m))
+            candidate = sorted(zip(row_perm, range(m)))
+            if best_cost is None or total < best_cost or (
+                total == best_cost and candidate < best_assignment
+            ):
+                best_cost = total
+                best_assignment = candidate
+
+    return best_assignment
+
+
+def _align_drug_date_entries(
+    entries_1: list[_DrugDateEntry],
+    entries_2: list[_DrugDateEntry],
+) -> list[tuple[_DrugDateEntry, _DrugDateEntry]]:
+    """Role-agnostic 1:1 alignment between two drug-date entry lists.
+
+    The alignment cost is the interval-aware minimum possible day
+    difference used elsewhere for severity assignment. Leftovers on
+    the larger side are discarded — they do not generate findings.
+    """
+    if not entries_1 or not entries_2:
+        return []
+    cost_matrix = [
+        [_min_day_difference(a.partial_date, b.partial_date) for b in entries_2]
+        for a in entries_1
+    ]
+    return [(entries_1[i], entries_2[j]) for i, j in _min_cost_matching(cost_matrix)]
+
+
+def _align_partial_date_lists(
+    dates_1: list[PartialDate],
+    dates_2: list[PartialDate],
+) -> list[tuple[PartialDate, PartialDate]]:
+    """1:1 alignment between two lists of partial dates (e.g. AE onsets)."""
+    if not dates_1 or not dates_2:
+        return []
+    cost_matrix = [
+        [_min_day_difference(a, b) for b in dates_2] for a in dates_1
+    ]
+    return [(dates_1[i], dates_2[j]) for i, j in _min_cost_matching(cost_matrix)]
 
 
 # ---------------------------------------------------------------------------
@@ -479,17 +622,27 @@ def _dedup_across_directions(
 
     The bidirectional loop generates findings from both R1→R2 and R2→R1.
     For a single entity mismatch (e.g. the same drug on both reports with
-    different dates) this produces two selected findings.  We keep only
-    the one with the *lower* final severity (conservative: if one
-    direction downgrades the finding, we honour that).
+    different dates) this produces two selected findings per aligned
+    pair.  We keep only the one with the *lower* final severity
+    (conservative: if one direction downgrades the finding, we honour
+    that).
+
+    The grouping key is direction-independent at the **aligned-pair**
+    level: ``(entity_label, frozenset({source_date, matched_date}))``.
+    This ensures that when the same entity yields multiple distinct
+    aligned pairs (e.g. two different regimen start-date pairs for the
+    same drug), each pair is deduplicated independently rather than
+    collapsing them all into one.
 
     Mutates findings in-place by clearing ``selected`` on the duplicate.
     """
-    # Group selected findings by entity_label (direction-independent key)
-    groups: dict[str, list[ClinicalDateFinding]] = defaultdict(list)
+    groups: dict[
+        tuple[str, frozenset[str]], list[ClinicalDateFinding]
+    ] = defaultdict(list)
     for f in findings:
-        if f.selected:
-            groups[f.entity_label].append(f)
+        if not f.selected:
+            continue
+        groups[_finding_pair_key(f)].append(f)
 
     for group in groups.values():
         if len(group) <= 1:
@@ -538,6 +691,95 @@ def _check_decisive_impossibility(
 
 
 # ---------------------------------------------------------------------------
+# Entity labels
+# ---------------------------------------------------------------------------
+
+OVERALL_AE_ONSET_LABEL = "overall_ae_onset"
+
+
+def _drug_start_label(substance_key: str) -> str:
+    return f"drug_start:{substance_key}"
+
+
+def _ae_onset_label(pt_key: str) -> str:
+    return f"ae_onset:{pt_key}"
+
+
+def _drug_entity_type(role: DrugRole | None) -> EntityType:
+    if role == DrugRole.CONCOMITANT:
+        return EntityType.CONCOMITANT_DRUG_START
+    return EntityType.SUSPECTED_DRUG_START
+
+
+# ---------------------------------------------------------------------------
+# Per-pair finding builder
+# ---------------------------------------------------------------------------
+
+
+def _build_finding(
+    source_date: PartialDate,
+    matched_date: PartialDate,
+    source_report_id: str,
+    entity_type: EntityType,
+    entity_label: str,
+    classify: Callable[[int], Severity],
+    other_downgrade_dates: set[str],
+) -> ClinicalDateFinding:
+    """Build a single non-decisive finding for one (source, matched) pair.
+
+    Centralises the raw-severity classification, concomitant-drug
+    downgrade (keyed off ``entity_type``), and cross-entity downgrade
+    flow so the three entity families (overall AE onset, drug start,
+    AE onset) share one implementation.
+    """
+    diff = _min_day_difference(source_date, matched_date)
+    raw_sev = classify(diff)
+    current_sev = raw_sev
+    downgrades: list[str] = []
+
+    if raw_sev != Severity.NONE:
+        if entity_type == EntityType.CONCOMITANT_DRUG_START:
+            current_sev, reason = _apply_concomitant_downgrade(current_sev)
+            downgrades.append(reason)
+
+        if current_sev not in (Severity.NONE, Severity.IGNORED):
+            current_sev, reason = _apply_cross_entity_downgrade(
+                current_sev, source_date, other_downgrade_dates,
+            )
+            if reason:
+                downgrades.append(reason)
+
+    return ClinicalDateFinding(
+        source_report=source_report_id,
+        entity_type=entity_type,
+        entity_label=entity_label,
+        source_date=source_date,
+        matched_date=matched_date,
+        raw_diff_days=diff,
+        raw_severity=raw_sev,
+        downgrades=downgrades,
+        final_severity=current_sev,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cross-direction dedup key (shared with tests for single source of truth)
+# ---------------------------------------------------------------------------
+
+
+def _finding_pair_key(
+    finding: ClinicalDateFinding,
+) -> tuple[str, frozenset[str]]:
+    """Direction-independent key identifying an aligned-pair finding."""
+    if finding.matched_date is not None:
+        return (
+            finding.entity_label,
+            frozenset({finding.source_date.value, finding.matched_date.value}),
+        )
+    return (finding.entity_label, frozenset({finding.source_date.value}))
+
+
+# ---------------------------------------------------------------------------
 # Main comparison function
 # ---------------------------------------------------------------------------
 
@@ -551,13 +793,12 @@ def compute_clinical_date_inconsistencies(
     Returns a :class:`ClinicalDateResult` with severity counts and a
     full audit trail of findings.
     """
-    # Derive overall AE onset dates
-    onset1 = derive_overall_ae_onset_date(r1)
-    onset2 = derive_overall_ae_onset_date(r2)
-
-    # Collect entities
-    entities1 = _collect_entities(r1, onset1)
-    entities2 = _collect_entities(r2, onset2)
+    # Resolve the canonical overall AE onset date for each report.
+    # Prefers an explicit ``reported_overall_ae_onset_date`` (extracted
+    # upstream by the loader) and falls back to the dev-side derivation
+    # rule otherwise.
+    onset1 = effective_overall_ae_onset_date(r1)
+    onset2 = effective_overall_ae_onset_date(r2)
 
     # Collect all dates for downgrade checks
     downgrade_dates1 = _collect_all_dates_for_downgrade(r1, onset1)
@@ -565,66 +806,56 @@ def compute_clinical_date_inconsistencies(
 
     findings: list[ClinicalDateFinding] = []
 
-    # --- Standard discrepancy findings (both directions) ---
-    for source_entities, other_entities, source_report, other_downgrade_dates in [
-        (entities1, entities2, r1.report_id, downgrade_dates2),
-        (entities2, entities1, r2.report_id, downgrade_dates1),
-    ]:
-        for entity in source_entities:
-            matched_date = _find_match_on_other(entity, other_entities)
-            if matched_date is None:
-                # No match → no inconsistency (missing data rule)
-                continue
+    # Overall AE onset: singleton pair (both directions).
+    if onset1 is not None and onset2 is not None:
+        findings.append(_build_finding(
+            onset1, onset2, r1.report_id,
+            EntityType.OVERALL_AE_ONSET, OVERALL_AE_ONSET_LABEL,
+            _classify_overall_ae_onset, downgrade_dates2,
+        ))
+        findings.append(_build_finding(
+            onset2, onset1, r2.report_id,
+            EntityType.OVERALL_AE_ONSET, OVERALL_AE_ONSET_LABEL,
+            _classify_overall_ae_onset, downgrade_dates1,
+        ))
 
-            diff = _min_day_difference(entity.partial_date, matched_date)
+    # Drugs: per matched normalized substance, align and emit pairs.
+    # Source-side role picks entity_type (concomitant → downgrade applies).
+    drug_groups_1 = _collect_drug_date_groups(r1)
+    drug_groups_2 = _collect_drug_date_groups(r2)
+    for substance in sorted(set(drug_groups_1) & set(drug_groups_2)):
+        entries_1 = _dedup_drug_date_entries(drug_groups_1[substance])
+        entries_2 = _dedup_drug_date_entries(drug_groups_2[substance])
+        label = _drug_start_label(substance)
+        for e1, e2 in _align_drug_date_entries(entries_1, entries_2):
+            findings.append(_build_finding(
+                e1.partial_date, e2.partial_date, r1.report_id,
+                _drug_entity_type(e1.role), label,
+                _classify_entity, downgrade_dates2,
+            ))
+            findings.append(_build_finding(
+                e2.partial_date, e1.partial_date, r2.report_id,
+                _drug_entity_type(e2.role), label,
+                _classify_entity, downgrade_dates1,
+            ))
 
-            # Classify based on entity type
-            if entity.entity_type == EntityType.OVERALL_AE_ONSET:
-                raw_sev = _classify_overall_ae_onset(diff)
-            else:
-                raw_sev = _classify_entity(diff)
-
-            if raw_sev == Severity.NONE:
-                findings.append(ClinicalDateFinding(
-                    source_report=source_report,
-                    entity_type=entity.entity_type,
-                    entity_label=entity.label,
-                    source_date=entity.partial_date,
-                    matched_date=matched_date,
-                    raw_diff_days=diff,
-                    raw_severity=Severity.NONE,
-                    final_severity=Severity.NONE,
-                ))
-                continue
-
-            current_sev = raw_sev
-            downgrades: list[str] = []
-
-            # Concomitant drug downgrade (apply first — strongest downgrade)
-            if entity.entity_type == EntityType.CONCOMITANT_DRUG_START:
-                current_sev, reason = _apply_concomitant_downgrade(current_sev)
-                downgrades.append(reason)
-
-            # Cross-entity downgrade (only if still countable)
-            if current_sev not in (Severity.NONE, Severity.IGNORED):
-                current_sev, reason = _apply_cross_entity_downgrade(
-                    current_sev,
-                    entity.partial_date,
-                    other_downgrade_dates,
-                )
-                if reason:
-                    downgrades.append(reason)
-
-            findings.append(ClinicalDateFinding(
-                source_report=source_report,
-                entity_type=entity.entity_type,
-                entity_label=entity.label,
-                source_date=entity.partial_date,
-                matched_date=matched_date,
-                raw_diff_days=diff,
-                raw_severity=raw_sev,
-                downgrades=downgrades,
-                final_severity=current_sev,
+    # AEs: per matched normalized PT, align and emit pairs.
+    ae_groups_1 = _collect_ae_date_groups(r1)
+    ae_groups_2 = _collect_ae_date_groups(r2)
+    for pt in sorted(set(ae_groups_1) & set(ae_groups_2)):
+        dates_1 = _dedup_partial_dates(ae_groups_1[pt])
+        dates_2 = _dedup_partial_dates(ae_groups_2[pt])
+        label = _ae_onset_label(pt)
+        for d1, d2 in _align_partial_date_lists(dates_1, dates_2):
+            findings.append(_build_finding(
+                d1, d2, r1.report_id,
+                EntityType.AE_ONSET, label,
+                _classify_entity, downgrade_dates2,
+            ))
+            findings.append(_build_finding(
+                d2, d1, r2.report_id,
+                EntityType.AE_ONSET, label,
+                _classify_entity, downgrade_dates1,
             ))
 
     # --- Decisive impossibility findings ---

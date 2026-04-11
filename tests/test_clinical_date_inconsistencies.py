@@ -12,9 +12,11 @@ from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
     ClinicalDateResult,
     EntityType,
     Severity,
+    _finding_pair_key,
     compute_clinical_date_inconsistencies,
     derive_overall_ae_onset_date,
     earliest_plausible_date,
+    effective_overall_ae_onset_date,
     latest_plausible_date,
 )
 from llm_dup_dev.models.enums import DrugRole
@@ -164,6 +166,133 @@ class TestDeriveOverallAeOnsetDate:
         onset = derive_overall_ae_onset_date(report)
         assert onset is not None
         assert onset.value == "2020-05-01"
+
+
+class TestEffectiveOverallAeOnsetDate:
+    """Tests for the explicit-vs-derived resolver."""
+
+    def test_explicit_overrides_derivation(self):
+        """When ``reported_overall_ae_onset_date`` is set it wins over the fallback."""
+        report = _report(
+            drugs=[_drug("A", start="2020-01-10")],
+            aes=[_ae("headache", onset="2020-01-15")],
+        )
+        explicit = PartialDate(value="2020-02-20", resolution="day")
+        report = report.model_copy(update={"reported_overall_ae_onset_date": explicit})
+
+        # Sanity check: derived would be different
+        derived = derive_overall_ae_onset_date(report)
+        assert derived is not None and derived.value == "2020-01-15"
+
+        effective = effective_overall_ae_onset_date(report)
+        assert effective == explicit
+
+    def test_falls_back_to_derived_when_explicit_absent(self):
+        """No explicit value → effective accessor returns the derived value."""
+        report = _report(
+            drugs=[_drug("A", start="2020-01-10")],
+            aes=[_ae("headache", onset="2020-01-15")],
+        )
+        assert report.reported_overall_ae_onset_date is None
+        assert effective_overall_ae_onset_date(report) == derive_overall_ae_onset_date(
+            report
+        )
+
+    def test_explicit_used_even_when_derived_returns_none(self):
+        """Explicit field is honoured when no AE/drug dates are available."""
+        report = _report()  # no drugs, no AEs
+        explicit = PartialDate(value="2021-07", resolution="month")
+        report = report.model_copy(update={"reported_overall_ae_onset_date": explicit})
+        assert derive_overall_ae_onset_date(report) is None
+        assert effective_overall_ae_onset_date(report) == explicit
+
+    def test_effective_returns_none_without_any_source(self):
+        report = _report()
+        assert effective_overall_ae_onset_date(report) is None
+
+
+class TestExplicitOverrideInPipeline:
+    """End-to-end checks that ``compute_clinical_date_inconsistencies``
+    honours the explicit field."""
+
+    def test_explicit_overrides_in_pair_comparison(self):
+        """Explicit value on one side changes the inconsistency outcome."""
+        # Both reports have identical drug/AE dates → derivation gives the
+        # same overall onset and would produce 0 inconsistencies.
+        r1 = _report(
+            "R1",
+            drugs=[_drug("A", start="2020-01-01")],
+            aes=[_ae("headache", onset="2020-01-01")],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-01-01")],
+            aes=[_ae("headache", onset="2020-01-01")],
+        )
+
+        # Without explicit: no overall AE onset inconsistency
+        baseline = compute_clinical_date_inconsistencies(r1, r2)
+        baseline_total = (
+            baseline.n_minor + baseline.n_moderate + baseline.n_strong
+        )
+
+        # Override R1 with an explicit case-event date 60 days later → strong
+        r1_override = r1.model_copy(
+            update={
+                "reported_overall_ae_onset_date": PartialDate(
+                    value="2020-03-01", resolution="day"
+                ),
+            }
+        )
+        result = compute_clinical_date_inconsistencies(r1_override, r2)
+        assert (
+            result.n_minor + result.n_moderate + result.n_strong
+            > baseline_total
+        )
+        # Find the selected overall_ae_onset finding
+        selected_overall = [
+            f
+            for f in result.findings
+            if f.selected and f.entity_type == EntityType.OVERALL_AE_ONSET
+        ]
+        assert selected_overall, "expected an overall_ae_onset finding"
+        # The explicit value must appear as either the source or matched
+        # date of the selected finding (which side is kept depends on
+        # cross-direction dedup, which favours the lower severity).
+        assert any(
+            f.source_date.value == "2020-03-01"
+            or (f.matched_date is not None and f.matched_date.value == "2020-03-01")
+            for f in selected_overall
+        )
+
+    def test_no_explicit_preserves_existing_behavior(self):
+        """Behavior with no explicit fields equals the legacy code path."""
+        r1 = _report(
+            "R1",
+            drugs=[_drug("A", start="2020-01-01")],
+            aes=[_ae("headache", onset="2020-02-15")],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-01-01")],
+            aes=[_ae("headache", onset="2020-02-15")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_minor == 0
+        assert result.n_moderate == 0
+        assert result.n_strong == 0
+
+    def test_explicit_partial_year_resolution_used_as_is(self):
+        """Year-resolution explicit dates are consumed without re-bucketing."""
+        explicit = PartialDate(value="2020", resolution="year")
+        r1 = _report(
+            "R1",
+            drugs=[_drug("A", start="2020-06-01")],
+            aes=[_ae("headache", onset="2020-06-15")],
+        )
+        r1 = r1.model_copy(update={"reported_overall_ae_onset_date": explicit})
+
+        assert effective_overall_ae_onset_date(r1) == explicit
 
 
 # ===================================================================
@@ -966,8 +1095,250 @@ class TestMultipleDrugEntries:
 
 
 # ===================================================================
-# 13. Earliest / latest plausible date helpers
+# 12b. Alignment behaviour for multi-regimen / multi-onset
 # ===================================================================
+
+
+class TestAlignmentBehaviour:
+    """Cases A–G covering the alignment-based counterpart selection."""
+
+    def test_A_two_to_two_alignment_picks_closest_pairs(self):
+        """R1=[Jan1, Jun1], R2=[Jan3, Jun5] → two minor pairs, zero strong."""
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01"),
+                _drug("A", start="2020-06-01"),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[
+                _drug("A", start="2020-01-03"),
+                _drug("A", start="2020-06-05"),
+            ],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        # With alignment, both regimens line up with their nearest
+        # counterpart. Neither gap is large enough to be strong.
+        assert result.n_strong == 0
+        assert result.n_moderate == 0
+        # After cross-direction dedup, we expect one selected finding per
+        # aligned pair (i.e. two distinct pair keys).
+        drug_selected = [
+            f for f in _selected_findings(result)
+            if f.entity_label == "drug_start:a"
+            and f.final_severity not in (Severity.NONE, Severity.IGNORED)
+        ]
+        pair_keys = {_finding_pair_key(f) for f in drug_selected}
+        assert len(pair_keys) == 2
+        # Both pairs should be minor — ~2 and ~4 days.
+        for f in drug_selected:
+            assert f.final_severity == Severity.MINOR
+        assert result.n_minor == 2
+
+    def test_B_leftover_unmatched_dates_create_no_findings(self):
+        """R1 has extra dates that find no counterpart — they must be silent."""
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01"),
+                _drug("A", start="2020-03-01"),
+                _drug("A", start="2020-06-01"),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-01-03")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        # Alignment selects (2020-01-01, 2020-01-03) → 2 days, minor.
+        # The leftover dates 2020-03-01 and 2020-06-01 must not produce
+        # any moderate or strong findings.
+        assert result.n_moderate == 0
+        assert result.n_strong == 0
+        # The only selected drug-start findings reference 2020-01-01 and
+        # 2020-01-03 — not the leftovers.
+        drug_selected = [
+            f for f in _selected_findings(result)
+            if f.entity_label == "drug_start:a"
+            and f.final_severity not in (Severity.NONE, Severity.IGNORED)
+        ]
+        involved_values: set[str] = set()
+        for f in drug_selected:
+            involved_values.add(f.source_date.value)
+            if f.matched_date is not None:
+                involved_values.add(f.matched_date.value)
+        assert "2020-03-01" not in involved_values
+        assert "2020-06-01" not in involved_values
+
+    def test_C_exact_duplicate_dates_deduplicated_within_report(self):
+        """Two rows of the same drug with identical start date collapse."""
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01"),
+                _drug("A", start="2020-01-01"),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-04-01")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        # After dedup, R1 has a single start-date entry for A, so only
+        # one aligned pair is produced. Across both directions we expect
+        # at most two findings for this pair; after cross-direction
+        # dedup only one survives per pair-key.
+        drug_selected = [
+            f for f in _selected_findings(result)
+            if f.entity_label == "drug_start:a"
+            and f.final_severity not in (Severity.NONE, Severity.IGNORED)
+        ]
+        pair_keys = {_finding_pair_key(f) for f in drug_selected}
+        assert len(pair_keys) == 1
+
+    def test_D_dedup_tiebreak_prefers_non_concomitant_role(self):
+        """Same substance / same date with both roles → non-concomitant wins."""
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01", role=DrugRole.CONCOMITANT),
+                _drug("A", start="2020-01-01", role=DrugRole.SUSPECTED),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-02-01", role=DrugRole.SUSPECTED)],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        # Diff is 31 days → raw moderate. If the R1 side had been treated
+        # as concomitant, the moderate would be downgraded to IGNORED.
+        # Because dedup prefers the suspected row, the finding is kept.
+        selected = [
+            f for f in _selected_findings(result)
+            if f.entity_label == "drug_start:a"
+            and f.source_report == "R1"
+            and f.final_severity not in (Severity.NONE, Severity.IGNORED)
+        ]
+        assert len(selected) == 1
+        assert selected[0].final_severity == Severity.MODERATE
+        # Ensure no concomitant downgrade string was recorded on the R1
+        # side (the suspected row won the dedup tiebreak).
+        assert not any(
+            "concomitant" in d for d in selected[0].downgrades
+        )
+
+    def test_E_multi_ae_onset_alignment(self):
+        """Same PT on both reports with multiple onsets → pairwise alignment."""
+        # A suspected drug dated far in the future forces the derived
+        # overall-AE-onset to None (no AE onset qualifies), so the
+        # source-date bucketing does not let a higher-priority
+        # overall-AE-onset finding pre-empt the AE-onset findings.
+        r1 = _report(
+            "R1",
+            drugs=[_drug("X", start="2099-01-01")],
+            aes=[
+                _ae("headache", onset="2020-01-01"),
+                _ae("headache", onset="2020-06-01"),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("X", start="2099-01-01")],
+            aes=[
+                _ae("headache", onset="2020-01-03"),
+                _ae("headache", onset="2020-06-02"),
+            ],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        ae_selected = [
+            f for f in _selected_findings(result)
+            if f.entity_label == "ae_onset:headache"
+            and f.final_severity not in (Severity.NONE, Severity.IGNORED)
+        ]
+        pair_keys = {_finding_pair_key(f) for f in ae_selected}
+        assert len(pair_keys) == 2
+        # Both pairs are within the minor threshold (≤7 days).
+        for f in ae_selected:
+            assert f.final_severity == Severity.MINOR
+
+    def test_F_role_agnostic_counterpart_selection(self):
+        """Alignment cost ignores role; concomitant downgrade still applies."""
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01", role=DrugRole.CONCOMITANT),
+                _drug("A", start="2020-06-01", role=DrugRole.SUSPECTED),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2020-01-05", role=DrugRole.SUSPECTED)],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        # Cheapest pairing is (2020-01-01 concomitant, 2020-01-05
+        # suspected): ~4 days → raw minor.  On the R1 side the
+        # concomitant downgrade takes that minor → ignored.  On the R2
+        # side the source is suspected, so no concomitant downgrade.
+        drug_findings = [
+            f for f in result.findings
+            if f.entity_label == "drug_start:a"
+            and "2020-01-01" in {
+                f.source_date.value,
+                (f.matched_date.value if f.matched_date else ""),
+            }
+        ]
+        # R1 side: concomitant source, should be IGNORED
+        r1_side = [f for f in drug_findings if f.source_report == "R1"]
+        assert len(r1_side) == 1
+        assert r1_side[0].final_severity == Severity.IGNORED
+        # R2 side: suspected source, not downgraded (stays minor)
+        r2_side = [f for f in drug_findings if f.source_report == "R2"]
+        assert len(r2_side) == 1
+        assert r2_side[0].final_severity == Severity.MINOR
+        # And 2020-06-01 (leftover) must not show up in any selected
+        # finding.
+        for f in _selected_findings(result):
+            vals = {f.source_date.value}
+            if f.matched_date is not None:
+                vals.add(f.matched_date.value)
+            assert "2020-06-01" not in vals
+
+    def test_G_cross_direction_dedup_is_per_pair(self):
+        """Two aligned pairs survive dedup independently (not collapsed)."""
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01"),
+                _drug("A", start="2020-06-01"),
+            ],
+            aes=[_ae("headache", onset="2019-12-01")],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[
+                _drug("A", start="2020-02-15"),   # 45 days from Jan1
+                _drug("A", start="2020-07-15"),   # 44 days from Jun1
+            ],
+            aes=[_ae("headache", onset="2019-12-02")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        drug_selected = [
+            f for f in _selected_findings(result)
+            if f.entity_label == "drug_start:a"
+            and f.final_severity not in (Severity.NONE, Severity.IGNORED)
+        ]
+        pair_keys = {_finding_pair_key(f) for f in drug_selected}
+        # Two distinct aligned pairs must survive per-pair dedup.
+        assert len(pair_keys) == 2
+        # Each pair contributes exactly one selected finding.
+        assert len(drug_selected) == 2
+        # Both aligned pairs are 44–45 days → moderate, not strong.
+        for f in drug_selected:
+            assert f.final_severity == Severity.MODERATE
+        assert result.n_moderate == 2
+        assert result.n_strong == 0
 
 
 class TestPlausibleDateHelpers:

@@ -323,6 +323,17 @@
       "title": "Adverse Events",
       "type": "array"
     },
+    "reported_overall_ae_onset_date": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PartialDate"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "narrative": {
       "anyOf": [
         {

@@ -10,6 +10,7 @@ from llm_dup_dev.models import (
     RelationshipClassification,
     Report,
 )
+from llm_dup_dev.models.report import PartialDate
 
 
 class TestReportSerialization:
@@ -40,6 +41,63 @@ class TestReportSerialization:
         schema = Report.model_json_schema()
         assert "properties" in schema
         assert "report_id" in schema["properties"]
+
+
+class TestReportedOverallAeOnsetDate:
+    """Tests for the explicit ``reported_overall_ae_onset_date`` field."""
+
+    def test_default_is_none(self):
+        """Field defaults to None when not provided (backwards compatible)."""
+        r = Report(report_id="R1")
+        assert r.reported_overall_ae_onset_date is None
+
+    def test_accepts_partial_date(self):
+        """Report accepts a PartialDate for the new field."""
+        pd = PartialDate(value="2020-05-15", resolution="day")
+        r = Report(report_id="R1", reported_overall_ae_onset_date=pd)
+        assert r.reported_overall_ae_onset_date == pd
+
+    @pytest.mark.parametrize(
+        "value,resolution",
+        [
+            ("2020", "year"),
+            ("2020-05", "month"),
+            ("2020-05-15", "day"),
+        ],
+    )
+    def test_partial_date_resolutions_preserved(self, value, resolution):
+        """Year/month/day resolutions round-trip through the model."""
+        pd = PartialDate(value=value, resolution=resolution)
+        r = Report(report_id="R1", reported_overall_ae_onset_date=pd)
+        restored = Report.model_validate_json(r.model_dump_json())
+        assert restored.reported_overall_ae_onset_date is not None
+        assert restored.reported_overall_ae_onset_date.value == value
+        assert restored.reported_overall_ae_onset_date.resolution == resolution
+
+    def test_json_roundtrip_preserves_field(self):
+        """JSON serialization round-trips the explicit field."""
+        pd = PartialDate(value="2020-05-15", resolution="day")
+        r = Report(report_id="R1", reported_overall_ae_onset_date=pd)
+        restored = Report.model_validate_json(r.model_dump_json())
+        assert restored.reported_overall_ae_onset_date == pd
+
+    def test_dict_roundtrip_preserves_field(self):
+        """model_dump / model_validate round-trips the explicit field."""
+        pd = PartialDate(value="2020-05", resolution="month")
+        r = Report(report_id="R1", reported_overall_ae_onset_date=pd)
+        restored = Report.model_validate(r.model_dump())
+        assert restored == r
+
+    def test_legacy_json_without_field_loads(self):
+        """Older serialized reports without the new field still load."""
+        legacy_payload = {
+            "report_id": "LEGACY",
+            "patient_sex_values": [],
+            "drugs": [],
+            "adverse_events": [],
+        }
+        r = Report.model_validate(legacy_payload)
+        assert r.reported_overall_ae_onset_date is None
 
 
 class TestClassificationResult:
