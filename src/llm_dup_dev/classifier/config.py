@@ -156,7 +156,7 @@ class DecisionThresholds(BaseModel):
     lmatch_weak: float = 1.0
 
     # Inconsistency weights
-    w_minor: float = 0.3
+    w_minor: float = 0.4
     w_moderate: float = 1.0
     w_strong: float = 3.0
 

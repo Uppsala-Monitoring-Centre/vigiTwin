@@ -807,7 +807,7 @@ $$
 w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
 $$
 
-which combines minor, moderate, and strong inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, weight, height, sex), drug-set inconsistencies, clinical-date inconsistencies, and narrative-derived inconsistencies. The weights \(w_{mi}\), \(w_m\), and \(w_s\) are configurable (defaults: \(w_{mi} = 0.3\), \(w_m = 1\), \(w_s = 3\)).
+which combines minor, moderate, and strong inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, weight, height, sex), drug-set inconsistencies, clinical-date inconsistencies, and narrative-derived inconsistencies. The weights \(w_{mi}\), \(w_m\), and \(w_s\) are configurable (defaults: \(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\)).
 
 **Decisive inconsistency count**
 
@@ -832,7 +832,7 @@ $$
 w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
 $$
 
-where \(w_{mi}\), \(w_m\), and \(w_s\) are configurable weights. With the current defaults (\(w_{mi} = 0.3\), \(w_m = 1\), \(w_s = 3\)), a single strong inconsistency contributes ten times as much as a minor one.
+where \(w_{mi}\), \(w_m\), and \(w_s\) are configurable weights. With the current defaults (\(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\)), a single strong inconsistency contributes 7.5 times as much as a minor one.
 
 ---
 
@@ -893,7 +893,7 @@ The following parameters define the decision behaviour and are configurable:
 | `lmatch_strong` | 3.0 | L\_match boundary for the strong evidence zone |
 | `lmatch_med` | 2.0 | L\_match boundary for the moderate evidence zone |
 | `lmatch_weak` | 1.0 | L\_match boundary for the weak evidence zone |
-| `w_minor` | 0.3 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
+| `w_minor` | 0.4 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
 | `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
 | `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
 | `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for Same in the strong zone |
