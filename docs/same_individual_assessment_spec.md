@@ -606,12 +606,36 @@ Clinical-date inconsistencies are detected by a dedicated rule-based module (`fe
 
 **Compared entities**
 
-- **Overall AE onset date** (derived, one per report — highest priority)
+- **Overall AE onset date** (one per report — highest priority; either an explicitly reported case-level date or, when absent, a derived value)
 - **Drug start dates** (matched by normalized substance name)
 - **AE onset dates** (matched by normalized PT name)
 - **Drug end dates** — downgrade-only evidence, never primary inconsistency sources
 
-**Overall AE onset date derivation**
+**Counterpart selection — alignment across repeated entries**
+
+The same normalized drug substance may appear on a single report with multiple distinct start dates (for example, re-challenge regimens or different dosing periods), and the same MedDRA PT may appear with several distinct onset dates. Comparing all cross-pairs would produce spurious "strong" findings whenever the reports disagree on which regimen is primary.
+
+Instead, for each matched entity (one normalized drug substance or one PT appearing on both reports), counterpart dates are chosen as follows:
+
+1. **Group by normalized entity.** All drug start dates for one substance on one report form a group; likewise for AE onsets on one PT.
+2. **Deduplicate exact-duplicate date values within a report.** Two rows for the same substance with the same start date collapse into one slot. When two rows share a date value but differ in drug role, a non-concomitant role dominates over a concomitant one for that slot — so a drug that is both suspected and concomitant at the same date is not penalised with the concomitant-drug downgrade.
+3. **Compute a minimum-cost one-to-one alignment** between the two reports' date lists for that entity. The alignment cost is the interval-aware minimum possible day difference used by the severity thresholds. Ties are broken deterministically.
+4. **Emit candidate findings only from aligned pairs.** Leftover unmatched dates (on the larger side) do **not** generate additional findings — they are simply absent from the comparison, consistent with the missing-data rule.
+
+Drug **role is ignored** when choosing counterparts: alignment minimises date distance only. The source-side role is retained, however, so the concomitant-drug downgrade still applies per direction when the source entry is concomitant.
+
+After alignment, the downstream pipeline (classification, downgrades, source-date bucketing, cross-direction deduplication) is unchanged. Cross-direction deduplication uses a **pair-aware** key — `(entity_label, {source_date, matched_date})` — so that when an entity produces several aligned pairs (for example, two regimen start-date pairs for the same drug), each pair is deduplicated independently instead of collapsing all pairs into one.
+
+**Overall AE onset date — explicit vs. derived**
+
+The pipeline uses a single canonical "effective" overall AE onset date per report, resolved as follows:
+
+1. If `Report.reported_overall_ae_onset_date` is present (an explicit case-level date supplied by the loader, e.g. extracted from a `CASE EVENT DATE: YYYYMMDD` narrative pattern on US reports), it is used as-is — its `PartialDate` resolution is trusted.
+2. Otherwise, the derivation rule below produces a fallback value.
+
+This logic is encapsulated in `effective_overall_ae_onset_date(report)` in `feature_generation/clinical_date_inconsistencies.py`; downstream consumers should call it rather than the derivation directly.
+
+**Overall AE onset date derivation (fallback)**
 
 For each report:
 1. If suspected-drug start dates exist: the earliest AE onset date ≥ max(suspected start dates).

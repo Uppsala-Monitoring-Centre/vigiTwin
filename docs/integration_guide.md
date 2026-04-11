@@ -194,6 +194,17 @@ class SqlReportLoader:
         - adverse_events        (list of AdverseEvent, keyed by MedDRA PT)
         - narrative             (str or None)
 
+        May also populate:
+        - reported_overall_ae_onset_date (PartialDate or None) — the
+          explicit case-level adverse-event onset date as reported on
+          the source report. For US reports this is typically extracted
+          from the narrative pattern "CASE EVENT DATE: YYYYMMDD". When
+          present, this overrides the dev-side derived overall AE onset
+          date used by the clinical-date inconsistency module; when
+          omitted (None), the dev-side fallback derivation is applied.
+          Use the standard PartialDate resolution convention (year /
+          month / day).
+
         Use empty lists for missing/unknown attributes.
         Do NOT store uncertainty values (e.g. "unknown") as valid values.
         """
@@ -221,6 +232,7 @@ class SqlReportLoader:
 | `drugs[].role` | Drug characterisation in the report | `"suspected"`, `"interacting"`, `"concomitant"`, or `null` (unknown). Used by drug-set inconsistency check. |
 | `adverse_events[].pt_name` | MedDRA Preferred Term | Case-insensitive matching is handled downstream |
 | `report_date_values` | Structured | Set `resolution` to "day", "month", or "year" based on available precision |
+| `reported_overall_ae_onset_date` | Narrative extraction (e.g. `CASE EVENT DATE: YYYYMMDD` on US reports) | Optional `PartialDate`. When supplied it overrides the derived overall AE onset date in clinical-date inconsistency detection. Leave as `None` to fall back to dev-side derivation. |
 | `narrative` | Free-text narrative from the report | Used by narrative analysis (future); set to `None` if unavailable |
 
 See `schemas/report.schema.json` for the full JSON schema and `examples/report_example.json` for a concrete example.

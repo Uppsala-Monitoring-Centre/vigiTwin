@@ -131,7 +131,9 @@ Example structure:
   "report_date_values": [...],
 
   "drugs": [...],
-  "adverse_events": [...]
+  "adverse_events": [...],
+
+  "reported_overall_ae_onset_date": {...}
 }
 ```
 
@@ -265,6 +267,29 @@ adverse_events: [
   }
 ]
 ```
+
+------
+
+### Reported overall adverse-event onset date (optional)
+
+```
+reported_overall_ae_onset_date: {
+  "value": "2020-05-15",
+  "resolution": "day"
+}
+```
+
+An **explicit case-level adverse-event onset date** as reported on the
+source report. The loader populates this when an explicit case-event
+date is available — for example from a `CASE EVENT DATE: YYYYMMDD`
+narrative pattern on US reports — using the standard `PartialDate`
+resolution convention (`year`, `month`, `day`).
+
+This field is **optional** (defaults to `null`). When present, it
+overrides the dev-side derived overall AE onset date used by the
+clinical-date inconsistency module; when absent, the derived fallback
+applies. See the method specification § Clinical Date Inconsistencies
+for the resolution rule.
 
 ------
 
