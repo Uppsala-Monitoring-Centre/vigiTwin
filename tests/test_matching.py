@@ -344,6 +344,48 @@ class TestClinicalDateMatching:
         result = compute_matching_clinical_dates(r1, r2, ["aspirin"], [])
         assert len(result) == 0
 
+    def test_duplicate_substance_across_roles_matches_dates(self):
+        """Same substance listed under multiple roles must still match dates.
+
+        Regression: the lookup used to be a dict keyed by substance, so when
+        a report listed the same drug twice (e.g. once as ``concomitant``
+        with dates and once as ``suspected`` without dates), the dateless
+        entry could shadow the dateful one and suppress a genuine match.
+        The drug set intersection should be role-agnostic, and so should
+        the date coincidence check.
+        """
+        r1 = _make_report("1", drugs=[
+            # Concomitant entry carries the dates.
+            Drug(
+                substance="casirivimab;imdevimab",
+                sources=["structured"],
+                role="concomitant",
+                start_date=PartialDate(value="2021-09-24", resolution="day"),
+                end_date=PartialDate(value="2021-09-24", resolution="day"),
+            ),
+            # Suspected entry has no dates — must not mask the above.
+            Drug(
+                substance="casirivimab;imdevimab",
+                sources=["structured"],
+                role="suspected",
+            ),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(
+                substance="casirivimab;imdevimab",
+                sources=["structured"],
+                role="suspected",
+                start_date=PartialDate(value="2021-09-24", resolution="day"),
+                end_date=PartialDate(value="2021-09-24", resolution="day"),
+            ),
+        ])
+        result = compute_matching_clinical_dates(
+            r1, r2, ["casirivimab;imdevimab"], []
+        )
+        assert len(result) == 1
+        assert result[0].matched_value == "2021-09-24"
+        assert result[0].resolution == "day"
+
     # -- Same-drug stop/end-date matches --
 
     def test_same_drug_end_date_match(self):

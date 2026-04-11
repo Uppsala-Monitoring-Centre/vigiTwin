@@ -374,6 +374,8 @@ For each matched adverse event, the following field is compared:
 
 Only same-field-type comparisons count. A drug's start date on one report must NOT match against the same drug's end date on the other report. Dates from unmatched drugs or unmatched AEs are not considered.
 
+Matching is **role-agnostic**: a drug recorded as `suspected` in one report and `concomitant` in the other is still compared, since the drug set intersection itself is role-agnostic. If the same substance appears more than once within a single report (e.g. listed under different roles, or split across structured and narrative entries), every pair of same-substance entries is compared — a dateless duplicate does not shadow a dateful one.
+
 Standard partial-date matching rules apply: month-only and year-only values match at their coarser resolution.
 
 ###### Deduplication to unique dates
