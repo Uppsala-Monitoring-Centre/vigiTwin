@@ -977,17 +977,23 @@ def build_batch_index_item(
     filename: str,
 ) -> BatchIndexItem:
     """Build an index entry from a rendered pair view model."""
-    # Inconsistency summary: "2M / 1S / 0D" style
+    # Inconsistency summary: "1m / 2M / 1S / 0D" style — lowercase m for minor
+    # to distinguish from uppercase M (moderate).
     inc_summary: str | None = None
     if (
         vm.features_summary
         and vm.features_summary.inconsistency_counts
     ):
         ic = vm.features_summary.inconsistency_counts
-        inc_summary = f"{ic.moderate}M / {ic.strong}S / {ic.decisive}D"
+        inc_summary = (
+            f"{ic.minor}m / {ic.moderate}M / {ic.strong}S / {ic.decisive}D"
+        )
         cdc = vm.features_summary.clinical_date_counts
         if cdc and cdc.total > 0:
-            inc_summary += f" (dates: {cdc.n_moderate}M / {cdc.n_strong}S / {cdc.n_decisive}D)"
+            inc_summary += (
+                f" (dates: {cdc.n_minor}m / {cdc.n_moderate}M /"
+                f" {cdc.n_strong}S / {cdc.n_decisive}D)"
+            )
 
     return BatchIndexItem(
         pair_id=vm.pair_id,
@@ -1015,6 +1021,9 @@ def build_batch_index_item(
             if vm.features_summary
             else None
         ),
+        anchor_label=_format_anchor_label(vm),
+        context_label=_format_context_label(vm),
+        matching_features=_format_matching_features(vm),
         annotation_label=(
             vm.annotation.normalised_label if vm.annotation else None
         ),
@@ -1022,3 +1031,95 @@ def build_batch_index_item(
             vm.annotation.agrees_with_pipeline if vm.annotation else None
         ),
     )
+
+
+# ===================================================================
+# Index-row formatting helpers
+# ===================================================================
+
+
+def _format_anchor_label(vm: PairViewModel) -> str | None:
+    """Format the anchor population descriptor for the index row.
+
+    Examples:
+        DRUGS_AES anchor: "ranitidine + rash: 820 reports"
+        DRUGS anchor:     "ranitidine, aspirin: 820 reports"
+        AES anchor:       "rash, fever: 820 reports"
+    """
+    fs = vm.features_summary
+    if fs is None:
+        return None
+
+    drugs = ", ".join(fs.matching_drugs)
+    aes = ", ".join(fs.matching_aes)
+
+    if fs.anchor_type == "drugs_AEs" and drugs and aes:
+        body = f"{drugs} + {aes}"
+    elif fs.anchor_type == "drugs" and drugs:
+        body = drugs
+    elif fs.anchor_type == "AEs" and aes:
+        body = aes
+    else:
+        # Fallback: include whatever is present
+        body = " + ".join(p for p in (drugs, aes) if p) or fs.anchor_type
+
+    return f"{body}: {fs.anchor_n} reports"
+
+
+def _format_context_label(vm: PairViewModel) -> str | None:
+    """Format a short reporting-context label.
+
+    Examples: "Global", "SE", "SE 2020".
+    """
+    fs = vm.features_summary
+    if fs is None:
+        return None
+    # FeaturesSummaryVM.reporting_context is built as e.g.
+    # "global", "country (SE)", or "country (SE, 2022)".
+    raw = fs.reporting_context
+    if raw.startswith("global"):
+        return "Global"
+    # Extract the country / year from the parenthesised tail.
+    if "(" in raw and raw.endswith(")"):
+        inner = raw[raw.index("(") + 1 : -1]
+        parts = [p.strip() for p in inner.split(",")]
+        return " ".join(parts)
+    return raw
+
+
+# Map demographic FieldComparison labels to short feature names.
+_DEMO_FEATURE_NAMES: dict[str, str] = {
+    "Sex": "sex",
+    "Age": "age",
+    "Country": "country",
+    "Height": "height",
+    "Weight": "weight",
+}
+
+
+def _format_matching_features(vm: PairViewModel) -> str | None:
+    """Build a compact summary of features contributing to the match.
+
+    Includes matching demographic fields (from ``vm.demographics``) and
+    matching drugs / AEs (from ``vm.features_summary``). Example:
+    ``"sex=male, age=25 years, AEs=headache, myocardial infarction"``.
+    """
+    parts: list[str] = []
+
+    # Matching demographic fields
+    for fc in vm.demographics:
+        name = _DEMO_FEATURE_NAMES.get(fc.label)
+        if name is None:
+            continue
+        if fc.status == ComparisonStatus.MATCH:
+            parts.append(f"{name}={fc.left_display}")
+
+    # Matching drugs / AEs
+    fs = vm.features_summary
+    if fs is not None:
+        if fs.matching_drugs:
+            parts.append("drugs=" + ", ".join(fs.matching_drugs))
+        if fs.matching_aes:
+            parts.append("AEs=" + ", ".join(fs.matching_aes))
+
+    return "; ".join(parts) if parts else None

@@ -338,5 +338,8 @@ class BatchIndexItem(BaseModel):
     relationship: str | None = None
     inconsistency_summary: str | None = None
     narrative_consistency: str | None = None
+    anchor_label: str | None = None              # e.g. "ranitidine + rash: 820 reports"
+    context_label: str | None = None             # e.g. "SE 2025" / "Global"
+    matching_features: str | None = None         # e.g. "sex=male, age=25 years, AEs=headache"
     annotation_label: str | None = None          # normalised human annotation
     annotation_agrees: bool | None = None        # True/False/None (no pipeline label)

@@ -350,7 +350,20 @@ class TestOverallAeOnsetThresholds:
 
 
 class TestDrugStartAndAeOnsetThresholds:
-    """Drug start / AE onset: 1-14d minor, 15-60d moderate, >60d strong."""
+    """Drug start / AE onset: 0-7d none, 8-69d minor, ≥70d moderate.
+
+    Per-entity discrepancies are capped at moderate; only the overall AE
+    onset date can produce strong evidence on its own.
+    """
+
+    def test_drug_start_within_7_days_no_inconsistency(self):
+        """Differences ≤ 7 days are absorbed as noise."""
+        r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
+        r2 = _report("R2", drugs=[_drug("A", start="2020-01-08")])
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_minor == 0
+        assert result.n_moderate == 0
+        assert result.n_strong == 0
 
     def test_drug_start_10_days_minor(self):
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
@@ -363,28 +376,28 @@ class TestDrugStartAndAeOnsetThresholds:
         ]
         assert any(f.final_severity == Severity.MINOR for f in drug_findings)
 
-    def test_drug_start_14_days_still_minor(self):
+    def test_drug_start_69_days_still_minor(self):
+        """Just under the moderate threshold stays minor."""
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
-        r2 = _report("R2", drugs=[_drug("A", start="2020-01-15")])
+        r2 = _report("R2", drugs=[_drug("A", start="2020-03-10")])  # 69 days
         result = compute_clinical_date_inconsistencies(r1, r2)
-        selected = _selected_findings(result)
-        drug_findings = [
-            f for f in selected
-            if "drug_start" in f.entity_label
-        ]
-        assert any(f.final_severity == Severity.MINOR for f in drug_findings)
+        assert result.n_minor >= 1
+        assert result.n_moderate == 0
 
-    def test_drug_start_15_days_moderate(self):
+    def test_drug_start_70_days_moderate(self):
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
-        r2 = _report("R2", drugs=[_drug("A", start="2020-01-16")])
+        r2 = _report("R2", drugs=[_drug("A", start="2020-03-11")])  # 70 days
         result = compute_clinical_date_inconsistencies(r1, r2)
         assert result.n_moderate >= 1
+        assert result.n_strong == 0
 
-    def test_drug_start_61_days_strong(self):
+    def test_drug_start_never_strong(self):
+        """A per-entity drug start mismatch is capped at moderate."""
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
-        r2 = _report("R2", drugs=[_drug("A", start="2020-03-03")])
+        r2 = _report("R2", drugs=[_drug("A", start="2021-01-01")])  # 366 days
         result = compute_clinical_date_inconsistencies(r1, r2)
-        assert result.n_strong >= 1
+        assert result.n_strong == 0
+        assert result.n_moderate >= 1
 
     def test_ae_onset_match_10_days(self):
         """10 days apart with only AE onsets — overall AE onset is derived
@@ -395,7 +408,7 @@ class TestDrugStartAndAeOnsetThresholds:
         result = compute_clinical_date_inconsistencies(r1, r2)
         # Overall AE onset uses tighter thresholds: 10d → moderate
         assert result.n_moderate >= 1
-        # The raw AE onset entity is minor (10d < 14d) but loses to
+        # The raw AE onset entity is minor (10d > 7d) but loses to
         # the higher-priority overall AE onset in the same bucket
         ae_only = [
             f for f in result.findings
@@ -461,9 +474,9 @@ class TestMissingData:
 
 
 class TestCrossEntityDowngrade:
-    def test_downgrade_strong_to_moderate_via_drug_start(self):
+    def test_downgrade_moderate_to_minor_via_drug_start(self):
         """Source date matches another drug start on other report → downgrade."""
-        # Drug A: 90 days apart (strong) but date "2020-01-01" matches
+        # Drug A: 91 days apart (moderate) but date "2020-01-01" matches
         # drug B's start on R2
         r1 = _report(
             "R1",
@@ -475,21 +488,21 @@ class TestCrossEntityDowngrade:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-04-01"),
+                _drug("A", start="2020-04-01"),  # 91 days → moderate
                 _drug("B", start="2020-01-01"),  # exact match for R1's drug A date
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # From R1's perspective: drug A start "2020-01-01" raw strong,
-        # but 2020-01-01 matches a date on R2 → downgrade to moderate
+        # From R1's perspective: drug A start "2020-01-01" raw moderate,
+        # but 2020-01-01 matches a date on R2 → downgrade to minor
         r1_findings = [
             f for f in result.findings
             if f.source_report == "R1"
             and "drug_start:a" in f.entity_label
-            and f.raw_severity == Severity.STRONG
+            and f.raw_severity == Severity.MODERATE
         ]
         assert len(r1_findings) >= 1
-        assert r1_findings[0].final_severity == Severity.MODERATE
+        assert r1_findings[0].final_severity == Severity.MINOR
         assert any("exact match" in d for d in r1_findings[0].downgrades)
 
     def test_downgrade_via_ae_onset(self):
@@ -523,7 +536,7 @@ class TestCrossEntityDowngrade:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-04-01", end="2020-01-01"),
+                _drug("A", start="2020-04-01", end="2020-01-01"),  # 91d, moderate
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
@@ -531,10 +544,10 @@ class TestCrossEntityDowngrade:
             f for f in result.findings
             if f.source_report == "R1"
             and "drug_start:a" in f.entity_label
-            and f.raw_severity == Severity.STRONG
+            and f.raw_severity == Severity.MODERATE
         ]
         assert len(r1_findings) >= 1
-        assert r1_findings[0].final_severity == Severity.MODERATE
+        assert r1_findings[0].final_severity == Severity.MINOR
         assert any("exact match" in d for d in r1_findings[0].downgrades)
 
     def test_downgrade_moderate_to_minor(self):
@@ -546,7 +559,7 @@ class TestCrossEntityDowngrade:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-01-20"),  # 19 days → moderate
+                _drug("A", start="2020-04-01"),  # 91 days → moderate
                 _drug("B", start="2020-01-01"),  # exact match
             ],
         )
@@ -589,23 +602,11 @@ class TestCrossEntityDowngrade:
 
 
 class TestConcomitantDrugDowngrade:
-    def test_strong_becomes_minor(self):
-        """Concomitant drug: strong → minor (-2 steps)."""
+    def test_moderate_becomes_minor(self):
+        """Concomitant drug: moderate → minor (-1 step)."""
+        # 91 days → raw moderate; concomitant -1 step → minor
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01", role=DrugRole.CONCOMITANT)])
         r2 = _report("R2", drugs=[_drug("A", start="2020-04-01", role=DrugRole.CONCOMITANT)])
-        result = compute_clinical_date_inconsistencies(r1, r2)
-        concom_findings = [
-            f for f in result.findings
-            if f.entity_type == EntityType.CONCOMITANT_DRUG_START
-            and f.raw_severity == Severity.STRONG
-        ]
-        assert len(concom_findings) >= 1
-        assert all(f.final_severity == Severity.MINOR for f in concom_findings)
-
-    def test_moderate_becomes_ignored(self):
-        """Concomitant drug: moderate → ignored."""
-        r1 = _report("R1", drugs=[_drug("A", start="2020-01-01", role=DrugRole.CONCOMITANT)])
-        r2 = _report("R2", drugs=[_drug("A", start="2020-01-20", role=DrugRole.CONCOMITANT)])
         result = compute_clinical_date_inconsistencies(r1, r2)
         concom_findings = [
             f for f in result.findings
@@ -613,12 +614,14 @@ class TestConcomitantDrugDowngrade:
             and f.raw_severity == Severity.MODERATE
         ]
         assert len(concom_findings) >= 1
-        assert all(f.final_severity == Severity.IGNORED for f in concom_findings)
-        # Should not count
+        assert all(f.final_severity == Severity.MINOR for f in concom_findings)
+        # The downgraded finding contributes as a minor inconsistency
+        assert result.n_minor >= 1
         assert result.n_moderate == 0
 
     def test_minor_becomes_ignored(self):
         """Concomitant drug: minor → ignored."""
+        # 9 days → raw minor; concomitant -1 step → ignored
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01", role=DrugRole.CONCOMITANT)])
         r2 = _report("R2", drugs=[_drug("A", start="2020-01-10", role=DrugRole.CONCOMITANT)])
         result = compute_clinical_date_inconsistencies(r1, r2)
@@ -633,16 +636,17 @@ class TestConcomitantDrugDowngrade:
 
     def test_suspected_drug_not_downgraded(self):
         """Suspected drug is NOT subject to concomitant downgrade."""
+        # 91 days → raw moderate; suspected role keeps it at moderate
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01", role=DrugRole.SUSPECTED)])
         r2 = _report("R2", drugs=[_drug("A", start="2020-04-01", role=DrugRole.SUSPECTED)])
         result = compute_clinical_date_inconsistencies(r1, r2)
         drug_findings = [
             f for f in result.findings
             if f.entity_type == EntityType.SUSPECTED_DRUG_START
-            and f.raw_severity == Severity.STRONG
+            and f.raw_severity == Severity.MODERATE
         ]
         assert len(drug_findings) >= 1
-        assert all(f.final_severity == Severity.STRONG for f in drug_findings)
+        assert all(f.final_severity == Severity.MODERATE for f in drug_findings)
 
 
 # ===================================================================
@@ -866,28 +870,22 @@ class TestSymmetry:
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
         r2 = _report("R2", drugs=[_drug("A", start="2020-04-01")])
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # 90 days → strong, but only one count after dedup
-        assert result.n_strong == 1
+        # 91 days → moderate (per-entity findings cap at moderate),
+        # but only one count after dedup
+        assert result.n_moderate == 1
+        assert result.n_strong == 0
 
     def test_dedup_keeps_lower_severity_across_directions(self):
         """When cross-entity downgrade applies in one direction only,
         the dedup should keep the lower (downgraded) severity.
 
-        R1 has drug A starting 2020-01-01 and an AE onset also on 2020-01-01.
-        R2 has drug A starting 2020-04-01 (no AE onset at that date).
-        Direction R2→R1: source_date 2020-04-01, not found in R1's dates
-            → no cross-entity downgrade → strong.
-        Direction R1→R2: source_date 2020-01-01, which IS an AE onset date
-            on R1, but downgrade checks against *other* report dates.
-            AE onset on R2 is NOT on 2020-01-01, so no downgrade → strong too.
-
-        To get asymmetric downgrades, put an AE onset on R2 at the same
-        date as R1's drug start:
-        R2 AE onset = 2020-01-01 → R1→R2 direction: source_date 2020-01-01
-            is in R2's downgrade dates → downgrade strong→moderate.
-        R2→R1 direction: source_date 2020-04-01, not in R1's downgrade dates
-            → stays strong.
-        Dedup should keep the moderate (lower).
+        R1 has drug A starting 2020-01-01 and an AE onset on 2020-06-01.
+        R2 has drug A starting 2020-04-01 with an AE onset on 2020-01-01.
+        Direction R1→R2: source_date 2020-01-01 IS in R2's downgrade
+            dates (R2's AE onset) → downgrade moderate → minor.
+        Direction R2→R1: source_date 2020-04-01 is NOT in R1's downgrade
+            dates → stays moderate.
+        Dedup should keep the minor (lower).
         """
         r1 = _report(
             "R1",
@@ -896,14 +894,14 @@ class TestSymmetry:
         )
         r2 = _report(
             "R2",
-            drugs=[_drug("A", start="2020-04-01")],
+            drugs=[_drug("A", start="2020-04-01")],  # 91 days → moderate
             aes=[_ae("headache", onset="2020-01-01")],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
 
         selected = [f for f in result.findings if f.selected and "drug_start:a" in f.entity_label]
         assert len(selected) == 1
-        assert selected[0].final_severity == Severity.MODERATE
+        assert selected[0].final_severity == Severity.MINOR
 
 
 # ===================================================================
@@ -995,8 +993,12 @@ class TestIncompleteDates:
             for f in drug_findings
         ) or len(drug_findings) == 0
 
-    def test_year_vs_day_different_years_strong(self):
-        """Year '2020' vs day '2022-06-01' → min diff = 1 day → minor at least."""
+    def test_year_vs_day_different_years_moderate(self):
+        """Year '2020' vs day '2022-06-01' → min diff 518 days → moderate.
+
+        Per-entity drug start mismatches cap at moderate, so even a
+        ~17-month gap counts as a single moderate inconsistency.
+        """
         r1 = _report(
             "R1",
             drugs=[
@@ -1013,8 +1015,9 @@ class TestIncompleteDates:
             drugs=[_drug("A", start="2022-06-01")],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # Min diff: 2020-12-31 to 2022-06-01 = 518 days → strong
-        assert result.n_strong >= 1
+        # Min diff: 2020-12-31 to 2022-06-01 = 518 days → moderate (capped)
+        assert result.n_moderate >= 1
+        assert result.n_strong == 0
 
     def test_conservative_no_false_positive(self):
         """Year '2020' vs day '2020-06-15' → overlap → no inconsistency."""
@@ -1103,7 +1106,7 @@ class TestAlignmentBehaviour:
     """Cases A–G covering the alignment-based counterpart selection."""
 
     def test_A_two_to_two_alignment_picks_closest_pairs(self):
-        """R1=[Jan1, Jun1], R2=[Jan3, Jun5] → two minor pairs, zero strong."""
+        """R1=[Jan1, Jun1], R2=[Jan20, Jun22] → two minor pairs, zero moderate."""
         r1 = _report(
             "R1",
             drugs=[
@@ -1114,13 +1117,14 @@ class TestAlignmentBehaviour:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-01-03"),
-                _drug("A", start="2020-06-05"),
+                _drug("A", start="2020-01-20"),  # 19 days
+                _drug("A", start="2020-06-22"),  # 21 days
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
         # With alignment, both regimens line up with their nearest
-        # counterpart. Neither gap is large enough to be strong.
+        # counterpart. Both gaps are above the 7d noise floor but below
+        # the 70d moderate threshold → minor.
         assert result.n_strong == 0
         assert result.n_moderate == 0
         # After cross-direction dedup, we expect one selected finding per
@@ -1132,7 +1136,6 @@ class TestAlignmentBehaviour:
         ]
         pair_keys = {_finding_pair_key(f) for f in drug_selected}
         assert len(pair_keys) == 2
-        # Both pairs should be minor — ~2 and ~4 days.
         for f in drug_selected:
             assert f.final_severity == Severity.MINOR
         assert result.n_minor == 2
@@ -1209,12 +1212,13 @@ class TestAlignmentBehaviour:
         )
         r2 = _report(
             "R2",
-            drugs=[_drug("A", start="2020-02-01", role=DrugRole.SUSPECTED)],
+            drugs=[_drug("A", start="2020-04-01", role=DrugRole.SUSPECTED)],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # Diff is 31 days → raw moderate. If the R1 side had been treated
-        # as concomitant, the moderate would be downgraded to IGNORED.
-        # Because dedup prefers the suspected row, the finding is kept.
+        # Diff is 91 days → raw moderate. If the R1 side had been treated
+        # as concomitant, the moderate would be downgraded to MINOR.
+        # Because dedup prefers the suspected row, the finding stays
+        # MODERATE without any concomitant downgrade.
         selected = [
             f for f in _selected_findings(result)
             if f.entity_label == "drug_start:a"
@@ -1247,8 +1251,8 @@ class TestAlignmentBehaviour:
             "R2",
             drugs=[_drug("X", start="2099-01-01")],
             aes=[
-                _ae("headache", onset="2020-01-03"),
-                _ae("headache", onset="2020-06-02"),
+                _ae("headache", onset="2020-01-20"),  # 19 days
+                _ae("headache", onset="2020-06-22"),  # 21 days
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
@@ -1259,7 +1263,8 @@ class TestAlignmentBehaviour:
         ]
         pair_keys = {_finding_pair_key(f) for f in ae_selected}
         assert len(pair_keys) == 2
-        # Both pairs are within the minor threshold (≤7 days).
+        # Both pairs are above the 7d noise floor but below the 70d
+        # moderate threshold → minor.
         for f in ae_selected:
             assert f.final_severity == Severity.MINOR
 
@@ -1274,11 +1279,11 @@ class TestAlignmentBehaviour:
         )
         r2 = _report(
             "R2",
-            drugs=[_drug("A", start="2020-01-05", role=DrugRole.SUSPECTED)],
+            drugs=[_drug("A", start="2020-01-20", role=DrugRole.SUSPECTED)],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # Cheapest pairing is (2020-01-01 concomitant, 2020-01-05
-        # suspected): ~4 days → raw minor.  On the R1 side the
+        # Cheapest pairing is (2020-01-01 concomitant, 2020-01-20
+        # suspected): ~19 days → raw minor.  On the R1 side the
         # concomitant downgrade takes that minor → ignored.  On the R2
         # side the source is suspected, so no concomitant downgrade.
         drug_findings = [
@@ -1318,8 +1323,8 @@ class TestAlignmentBehaviour:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-02-15"),   # 45 days from Jan1
-                _drug("A", start="2020-07-15"),   # 44 days from Jun1
+                _drug("A", start="2020-04-01"),   # 91 days from Jan1
+                _drug("A", start="2020-08-30"),   # 90 days from Jun1
             ],
             aes=[_ae("headache", onset="2019-12-02")],
         )
@@ -1334,7 +1339,7 @@ class TestAlignmentBehaviour:
         assert len(pair_keys) == 2
         # Each pair contributes exactly one selected finding.
         assert len(drug_selected) == 2
-        # Both aligned pairs are 44–45 days → moderate, not strong.
+        # Both aligned pairs are 90–91 days → moderate (≥70 day cutoff).
         for f in drug_selected:
             assert f.final_severity == Severity.MODERATE
         assert result.n_moderate == 2
