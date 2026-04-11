@@ -639,10 +639,42 @@ This logic is encapsulated in `effective_overall_ae_onset_date(report)` in `feat
 
 **Overall AE onset date derivation (fallback)**
 
+The goal is to pick the earliest AE onset date and only refrain from
+doing so when there is *clear evidence* that an early onset is
+incompatible with the suspected drugs. The rule deliberately errs on
+the side of keeping early AE onsets — coarse-resolution drug start
+dates or re-challenge regimens should not cause a plausibly valid AE
+onset to be rejected.
+
 For each report:
-1. If suspected-drug start dates exist: the earliest AE onset date ≥ max(suspected start dates).
-2. If no suspected-drug start dates: the earliest AE onset date.
-3. If no qualifying AE onset date exists: missing (not compared).
+
+1. If no AE onset dates exist: missing (not compared).
+2. If no suspected-drug start dates exist: the earliest AE onset date
+   (unconditional fallback).
+3. Otherwise, group suspected-drug start dates by normalized substance
+   name and iterate AE onsets in earliest-first order. Pick the
+   first AE onset that is **compatible** with every suspected
+   substance.
+
+An AE onset `ae` is **compatible** with a substance when *any* of
+that substance's regimen start dates `r` satisfies
+`earliest_plausible(r) ≤ latest_plausible(ae)` — that is, it is
+plausible the drug had already been started by the time the AE
+occurred. Grouping by substance ensures that a re-challenge (two
+regimens of the same drug, one before and one after the AE) keeps
+the AE in the candidate set via the earlier regimen.
+
+Consequences:
+
+* A month-resolution suspected drug start such as `1968-11` does
+  **not** disqualify a day-resolution AE onset `1968-11-12` — the
+  drug could plausibly have started on `1968-11-01`.
+* A day-resolution drug start of `2020-02-01` does disqualify an AE
+  onset of `2020-01-15`, because the AE is unambiguously before the
+  drug's earliest plausible start.
+
+If no AE onset is compatible with every suspected substance, the
+derivation returns missing.
 
 **Severity thresholds**
 

@@ -167,6 +167,88 @@ class TestDeriveOverallAeOnsetDate:
         assert onset is not None
         assert onset.value == "2020-05-01"
 
+    def test_month_resolution_drug_start_allows_same_month_day_ae(self):
+        """Month-resolution suspected drug start must not reject a
+        day-resolution AE onset in the same month — the drug could
+        plausibly have started on day 1."""
+        report = _report(
+            drugs=[
+                _drug(
+                    "quinine",
+                    start="1968-11",
+                    start_res="month",
+                    end="1968-11-11",
+                ),
+            ],
+            aes=[_ae("pyrexia", onset="1968-11-12")],
+        )
+        onset = derive_overall_ae_onset_date(report)
+        assert onset is not None
+        assert onset.value == "1968-11-12"
+
+    def test_month_resolution_drug_start_rejects_prior_month_ae(self):
+        """A day-level AE clearly before the earliest plausible start
+        of a month-resolution suspected drug is still rejected."""
+        report = _report(
+            drugs=[_drug("A", start="2020-06", start_res="month")],
+            aes=[
+                _ae("headache", onset="2020-05-15"),
+                _ae("nausea", onset="2020-06-10"),
+            ],
+        )
+        onset = derive_overall_ae_onset_date(report)
+        # 2020-05-15 is strictly before 2020-06-01 (earliest plausible
+        # of the month-resolution drug start) → rejected.
+        # 2020-06-10 is compatible and is the earliest remaining AE.
+        assert onset is not None
+        assert onset.value == "2020-06-10"
+
+    def test_multi_regimen_same_substance_allows_earlier_ae(self):
+        """When the same suspected drug has two regimens — one before
+        and one after the AE onset — the earlier regimen alone makes
+        the AE compatible, so the earliest AE is kept."""
+        report = _report(
+            drugs=[
+                _drug("A", start="2020-01-05"),
+                _drug("A", start="2020-03-01"),  # re-challenge
+            ],
+            aes=[
+                _ae("headache", onset="2020-01-15"),
+                _ae("nausea", onset="2020-03-10"),
+            ],
+        )
+        onset = derive_overall_ae_onset_date(report)
+        assert onset is not None
+        assert onset.value == "2020-01-15"
+
+    def test_multi_substance_requires_all_compatible(self):
+        """With multiple distinct suspected substances, the chosen AE
+        must be compatible with every substance (not just one)."""
+        report = _report(
+            drugs=[
+                _drug("A", start="2020-01-10"),
+                _drug("B", start="2020-01-20"),
+            ],
+            aes=[
+                _ae("headache", onset="2020-01-15"),  # before B start
+                _ae("nausea", onset="2020-01-25"),
+            ],
+        )
+        onset = derive_overall_ae_onset_date(report)
+        assert onset is not None
+        assert onset.value == "2020-01-25"
+
+    def test_year_resolution_drug_start_allows_any_day_in_year(self):
+        """Year-resolution drug start accepts any AE onset within
+        that year or later."""
+        report = _report(
+            drugs=[_drug("A", start="2020", start_res="year")],
+            aes=[_ae("headache", onset="2020-03-15")],
+        )
+        onset = derive_overall_ae_onset_date(report)
+        assert onset is not None
+        assert onset.value == "2020-03-15"
+
 
 class TestEffectiveOverallAeOnsetDate:
     """Tests for the explicit-vs-derived resolver."""
