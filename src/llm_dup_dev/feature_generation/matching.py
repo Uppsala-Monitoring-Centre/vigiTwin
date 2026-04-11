@@ -7,7 +7,7 @@ Matching rule for multi-valued attributes: v1 ∩ v2 ≠ ∅
 (at least one candidate value must match between the two reports).
 
 See: docs/data_contracts.md § Set semantics and Matching rules
-See: docs/same_individual_assessment_spec.md § Matching Clinical Feature Sets
+See: docs/duplicate_adjudication_spec.md § Matching Clinical Feature Sets
 """
 
 from __future__ import annotations

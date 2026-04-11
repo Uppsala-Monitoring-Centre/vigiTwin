@@ -1,10 +1,11 @@
-"""Configurable parameters for the same-individual assessment pipeline.
+"""Configurable parameters for the duplicate adjudication pipeline.
 
 Thresholds define the decision boundaries and probability estimation
-parameters. These are meant to be tuned during method development
-using annotated report pairs.
+parameters used by the report-pair classification logic. These are
+meant to be tuned during method development using annotated report
+pairs.
 
-See: docs/same_individual_assessment_spec.md
+See: docs/duplicate_adjudication_spec.md
 """
 
 from pydantic import BaseModel, Field
@@ -15,7 +16,7 @@ class DomainSizeConfig(BaseModel):
 
     Used when computing p_f = 1/D_f for matched features.
 
-    See: docs/same_individual_assessment_spec.md § Determining Domain Size
+    See: docs/duplicate_adjudication_spec.md § Determining Domain Size
     """
 
     # Age
@@ -85,7 +86,7 @@ class InconsistencyThresholds(BaseModel):
     These are starting values from the specification and may need
     refinement based on evaluation results.
 
-    See: docs/same_individual_assessment_spec.md § Structured Data Inconsistencies
+    See: docs/duplicate_adjudication_spec.md § Structured Data Inconsistencies
     """
 
     # Age (years)
@@ -111,7 +112,7 @@ class InconsistencyThresholds(BaseModel):
 class AnchorConfig(BaseModel):
     """Parameters for anchor population selection.
 
-    See: docs/same_individual_assessment_spec.md § Anchor Selection
+    See: docs/duplicate_adjudication_spec.md § Anchor Selection
     """
 
     threshold: int = Field(
@@ -147,7 +148,7 @@ class DecisionThresholds(BaseModel):
 
     Decisive inconsistencies override all zones → Different.
 
-    See: docs/same_individual_assessment_spec.md § Decision logic
+    See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
     # L_match zone boundaries

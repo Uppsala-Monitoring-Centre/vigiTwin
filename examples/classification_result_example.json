@@ -1,6 +1,6 @@
 {
   "pair_id": "R001__R002",
-  "primary": "Same individual",
-  "relationship": null,
-  "explanation": "Strong matching evidence (L_match=4.64 > 3.0); inconsistencies within tolerance (strong=0, moderate=1)."
+  "independence_assessment": "Non-independent",
+  "duplicate_relationship": "Duplicates",
+  "explanation": "Strong matching evidence (L_match=4.64 > 3.0); w_tot=1.0 < 4.0."
 }

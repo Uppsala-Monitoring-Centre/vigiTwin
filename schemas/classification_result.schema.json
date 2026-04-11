@@ -1,39 +1,39 @@
 {
   "$defs": {
-    "PrimaryClassification": {
-      "description": "Primary classification outcome for a report pair.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Decision logic",
+    "DuplicateRelationship": {
+      "description": "Sub-classification used when independence has been rejected.\n\nDistinguishes a likely-duplicate report pair from one where the\npair is linked by something other than being the same individual\ncase (e.g. same reporter, same study, two patients on the same\nunusual regimen). The decision logic chooses between these based\non the weighted inconsistency score ``w_tot``.\n\nMirrors the user-facing label vocabulary (``Duplicates`` /\n``Otherwise_related`` / ``Abstain``).\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Decision logic",
       "enum": [
-        "Same individual",
-        "Different individuals",
+        "Duplicates",
+        "Otherwise_related",
         "Abstain"
       ],
-      "title": "PrimaryClassification",
+      "title": "DuplicateRelationship",
       "type": "string"
     },
-    "RelationshipClassification": {
-      "description": "Sub-classification when primary is 'Different individuals'.\n\nDetermines whether non-duplicate reports are clinically related.\nSee: docs/same_individual_assessment_spec.md \u00a7 Decision logic",
+    "IndependenceAssessment": {
+      "description": "Internal independence assessment produced by the decision logic.\n\nCaptures whether the rarity-based matching evidence is strong\nenough to reject the null hypothesis that the two reports are\nindependent draws from the comparison population. A\n``NON_INDEPENDENT`` verdict means the matched features are too\nunlikely to have arisen by chance under that null; the duplicate\nvs otherwise-related distinction is then made by the\n``DuplicateRelationship`` sub-label using inconsistency signals.\n\nThe user-facing label is derived from this enum (plus\n``DuplicateRelationship``) by ``ClassificationResult.final_label``;\ndownstream consumers should depend on the final label rather than\non this raw enum.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Decision logic",
       "enum": [
-        "Related",
-        "Unrelated",
+        "Non-independent",
+        "Independent",
         "Abstain"
       ],
-      "title": "RelationshipClassification",
+      "title": "IndependenceAssessment",
       "type": "string"
     }
   },
-  "description": "Full classification output for a report pair.\n\nThe primary classification determines whether the reports describe\nthe same individual. When primary is 'Different individuals', the\nrelationship sub-classification assesses clinical relatedness.",
+  "description": "Full duplicate-adjudication output for a report pair.\n\nTwo layered internal labels are produced by the decision logic:\n\n* ``independence_assessment`` \u2014 whether the rarity-based matching\n  evidence is strong enough to reject the null hypothesis that the\n  two reports are independent draws from the comparison population.\n* ``duplicate_relationship`` \u2014 when independence has been rejected,\n  a sub-label that uses inconsistency signals to distinguish a\n  likely-duplicate case from one that is linked by something other\n  than being the same individual case (e.g. same reporter, same\n  study).\n\nUse ``final_label`` for the user-facing label\n(``Duplicates`` / ``Otherwise_related`` / ``Unrelated`` / ``Abstain``);\ndownstream consumers should depend on this rather than on the raw\ninternal fields.",
   "properties": {
     "pair_id": {
       "title": "Pair Id",
       "type": "string"
     },
-    "primary": {
-      "$ref": "#/$defs/PrimaryClassification"
+    "independence_assessment": {
+      "$ref": "#/$defs/IndependenceAssessment"
     },
-    "relationship": {
+    "duplicate_relationship": {
       "anyOf": [
         {
-          "$ref": "#/$defs/RelationshipClassification"
+          "$ref": "#/$defs/DuplicateRelationship"
         },
         {
           "type": "null"
@@ -49,7 +49,7 @@
   },
   "required": [
     "pair_id",
-    "primary"
+    "independence_assessment"
   ],
   "title": "ClassificationResult",
   "type": "object"

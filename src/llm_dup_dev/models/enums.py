@@ -1,7 +1,40 @@
-"""Enumeration types for the same-individual assessment pipeline.
+"""Enumeration types for the duplicate adjudication pipeline.
 
 Defines the controlled vocabularies used throughout the pipeline
 for classification outcomes, severity levels, and context types.
+
+Internal independence assessment vs. user-facing labels
+-------------------------------------------------------
+The pipeline produces two layered outputs:
+
+* an **independence assessment** (``IndependenceAssessment``) that
+  captures whether the rarity-based matching evidence is strong enough
+  to reject the null hypothesis of independence between the two
+  reports — i.e. whether the matched features are too unlikely to
+  have arisen if the reports were independent draws from the
+  comparison population;
+* when the independence null is rejected, a **duplicate relationship**
+  sub-label (``DuplicateRelationship``) that uses the inconsistency
+  signals to distinguish a likely-duplicate case (``Duplicates``) from
+  one where the reports are linked by something other than being the
+  same individual case (``Otherwise_related``).
+
+These two are combined by ``ClassificationResult.final_label`` into the
+user-facing labels ``Duplicates`` / ``Otherwise_related`` / ``Unrelated``
+/ ``Abstain``. Downstream consumers (eval framework, review HTML,
+secure repo) should depend on ``final_label`` rather than on the raw
+internal enums.
+
+The "independence assessment" framing replaces an earlier
+"same-individual assessment" framing. The shift is deliberate: a low
+collision probability is evidence *against independence* but not
+specifically *for same individual* — same reporter, same study, copies
+of the same report through different channels, or unusual shared
+context can all produce a small expected-collision count without the
+two reports describing the same patient. Calling the intermediate
+assessment "independence" makes that explicit, and the duplicate /
+otherwise-related distinction is then handled by the inconsistency
+component.
 """
 
 from enum import Enum
@@ -10,7 +43,7 @@ from enum import Enum
 class NarrativeConsistency(str, Enum):
     """Narrative consistency categories from LLM assessment.
 
-    See: docs/same_individual_assessment_spec.md § Narrative Consistency Assessment
+    See: docs/duplicate_adjudication_spec.md § Narrative Consistency Assessment
 
     Values
     ------
@@ -31,7 +64,7 @@ class NarrativeConsistency(str, Enum):
 class InconsistencySeverity(str, Enum):
     """Severity levels for detected inconsistencies between reports.
 
-    See: docs/same_individual_assessment_spec.md § Severity Levels
+    See: docs/duplicate_adjudication_spec.md § Severity Levels
 
     Levels:
         minor     – small difference, weakly suggests different individuals
@@ -64,7 +97,7 @@ class DrugRole(str, Enum):
 class ReportingContextLevel(str, Enum):
     """Granularity of the reporting context used for probability estimation.
 
-    See: docs/same_individual_assessment_spec.md § Reporting Context
+    See: docs/duplicate_adjudication_spec.md § Reporting Context
     """
 
     COUNTRY_YEAR = "country_year"
@@ -75,7 +108,7 @@ class ReportingContextLevel(str, Enum):
 class AnchorType(str, Enum):
     """Type of anchor population selected for probability estimation.
 
-    See: docs/same_individual_assessment_spec.md § Anchor Selection
+    See: docs/duplicate_adjudication_spec.md § Anchor Selection
     """
 
     DRUGS = "drugs"
@@ -83,24 +116,45 @@ class AnchorType(str, Enum):
     DRUGS_AES = "drugs_AEs"
 
 
-class PrimaryClassification(str, Enum):
-    """Primary classification outcome for a report pair.
+class IndependenceAssessment(str, Enum):
+    """Internal independence assessment produced by the decision logic.
 
-    See: docs/same_individual_assessment_spec.md § Decision logic
+    Captures whether the rarity-based matching evidence is strong
+    enough to reject the null hypothesis that the two reports are
+    independent draws from the comparison population. A
+    ``NON_INDEPENDENT`` verdict means the matched features are too
+    unlikely to have arisen by chance under that null; the duplicate
+    vs otherwise-related distinction is then made by the
+    ``DuplicateRelationship`` sub-label using inconsistency signals.
+
+    The user-facing label is derived from this enum (plus
+    ``DuplicateRelationship``) by ``ClassificationResult.final_label``;
+    downstream consumers should depend on the final label rather than
+    on this raw enum.
+
+    See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
-    SAME_INDIVIDUAL = "Same individual"
-    DIFFERENT_INDIVIDUALS = "Different individuals"
+    NON_INDEPENDENT = "Non-independent"
+    INDEPENDENT = "Independent"
     ABSTAIN = "Abstain"
 
 
-class RelationshipClassification(str, Enum):
-    """Sub-classification when primary is 'Different individuals'.
+class DuplicateRelationship(str, Enum):
+    """Sub-classification used when independence has been rejected.
 
-    Determines whether non-duplicate reports are clinically related.
-    See: docs/same_individual_assessment_spec.md § Decision logic
+    Distinguishes a likely-duplicate report pair from one where the
+    pair is linked by something other than being the same individual
+    case (e.g. same reporter, same study, two patients on the same
+    unusual regimen). The decision logic chooses between these based
+    on the weighted inconsistency score ``w_tot``.
+
+    Mirrors the user-facing label vocabulary (``Duplicates`` /
+    ``Otherwise_related`` / ``Abstain``).
+
+    See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
-    RELATED = "Related"
-    UNRELATED = "Unrelated"
+    DUPLICATES = "Duplicates"
+    OTHERWISE_RELATED = "Otherwise_related"
     ABSTAIN = "Abstain"

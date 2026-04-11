@@ -29,7 +29,7 @@ Multiple entries per entity:
     for counterpart selection; it is retained only for downstream
     rules (source-date priority, concomitant-drug downgrade).
 
-See: docs/same_individual_assessment_spec.md § Clinical Date Inconsistencies
+See: docs/duplicate_adjudication_spec.md § Clinical Date Inconsistencies
 """
 
 from __future__ import annotations

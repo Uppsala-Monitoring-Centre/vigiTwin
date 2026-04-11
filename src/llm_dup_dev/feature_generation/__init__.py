@@ -1,7 +1,8 @@
-"""Feature generation for the same-individual assessment pipeline.
+"""Feature generation for the duplicate adjudication pipeline.
 
 Computes PairFeatures from two Report objects and pre-computed
-frequency statistics.
+frequency statistics. The resulting features are consumed by the
+report-pair classification decision logic in ``llm_dup_dev.classifier``.
 
 Modules:
     matching            — Drug/AE set intersection, demographic comparison

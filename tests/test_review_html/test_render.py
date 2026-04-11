@@ -6,10 +6,10 @@ from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AnchorType,
+    DuplicateRelationship,
+    IndependenceAssessment,
     InconsistencySeverity,
     NarrativeConsistency,
-    PrimaryClassification,
-    RelationshipClassification,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.pair_features import (
@@ -423,7 +423,8 @@ def _make_classification(pair_id: str = "R001__R002") -> ClassificationResult:
     """Build a minimal ClassificationResult for testing."""
     return ClassificationResult(
         pair_id=pair_id,
-        primary=PrimaryClassification.SAME_INDIVIDUAL,
+        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+        duplicate_relationship=DuplicateRelationship.DUPLICATES,
         explanation="High L_match with minor inconsistencies.",
     )
 
@@ -647,12 +648,12 @@ class TestPredictionRendering:
         assert "<th>Narrative</th>" not in html
 
     def test_relationship_label_in_decision_summary(self, report_a, report_b):
-        """Relationship label appears when classification is Different/Related."""
+        """Relationship label appears when classification is Otherwise_related."""
         classification = ClassificationResult(
             pair_id="R001__R002",
-            primary=PrimaryClassification.DIFFERENT_INDIVIDUALS,
-            relationship=RelationshipClassification.RELATED,
-            explanation="Related but different.",
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+            explanation="Related but not the same case.",
         )
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002",
@@ -660,7 +661,6 @@ class TestPredictionRendering:
         )
         html = render_pair(vm)
         assert "Otherwise_related" in html
-        assert "Related" in html
 
 
 # ---------------------------------------------------------------------------

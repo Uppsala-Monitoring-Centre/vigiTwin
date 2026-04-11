@@ -5,7 +5,7 @@ collision probabilities are evaluated. A smaller anchor means the
 shared clinical context is rarer, so additional matches carry more
 evidential weight.
 
-See: docs/same_individual_assessment_spec.md § Anchor Selection
+See: docs/duplicate_adjudication_spec.md § Anchor Selection
 """
 
 from llm_dup_dev.models.enums import AnchorType

@@ -1,14 +1,12 @@
 """Tests for the eval bridge between new pipeline output and eval framework."""
 
-import pytest
-
 from llm_dup_dev.eval.bridge import evaluate_batch, evaluate_results, to_eval_dict
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AnchorType,
+    DuplicateRelationship,
+    IndependenceAssessment,
     NarrativeConsistency,
-    PrimaryClassification,
-    RelationshipClassification,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.pair_features import (
@@ -27,8 +25,8 @@ from llm_dup_dev.pipeline.runner import BatchResult, PairResult
 
 def _make_pair_result(
     pair_id: str,
-    primary: PrimaryClassification,
-    relationship: RelationshipClassification | None = None,
+    independence_assessment: IndependenceAssessment,
+    duplicate_relationship: DuplicateRelationship | None = None,
 ) -> PairResult:
     """Build a minimal PairResult for eval bridge testing."""
     features = PairFeatures(
@@ -45,8 +43,8 @@ def _make_pair_result(
     )
     classification = ClassificationResult(
         pair_id=pair_id,
-        primary=primary,
-        relationship=relationship,
+        independence_assessment=independence_assessment,
+        duplicate_relationship=duplicate_relationship,
         explanation="test",
     )
     return PairResult(
@@ -54,6 +52,30 @@ def _make_pair_result(
         features=features,
         classification=classification,
     )
+
+
+def _make_duplicates(pair_id: str) -> PairResult:
+    return _make_pair_result(
+        pair_id,
+        IndependenceAssessment.NON_INDEPENDENT,
+        DuplicateRelationship.DUPLICATES,
+    )
+
+
+def _make_otherwise_related(pair_id: str) -> PairResult:
+    return _make_pair_result(
+        pair_id,
+        IndependenceAssessment.NON_INDEPENDENT,
+        DuplicateRelationship.OTHERWISE_RELATED,
+    )
+
+
+def _make_independent(pair_id: str) -> PairResult:
+    return _make_pair_result(pair_id, IndependenceAssessment.INDEPENDENT)
+
+
+def _make_abstain(pair_id: str) -> PairResult:
+    return _make_pair_result(pair_id, IndependenceAssessment.ABSTAIN)
 
 
 def _make_annotation(
@@ -72,38 +94,30 @@ def _make_annotation(
 
 class TestToEvalDict:
 
-    def test_same_individual(self):
-        r = _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)
+    def test_duplicates(self):
+        r = _make_duplicates("p1")
         d = to_eval_dict(r)
         assert d["pair_id"] == "p1"
         assert d["final_label"] == "Duplicates"
 
-    def test_different_related(self):
-        r = _make_pair_result(
-            "p2",
-            PrimaryClassification.DIFFERENT_INDIVIDUALS,
-            RelationshipClassification.RELATED,
-        )
+    def test_otherwise_related(self):
+        r = _make_otherwise_related("p2")
         d = to_eval_dict(r)
         assert d["final_label"] == "Otherwise_related"
 
-    def test_different_unrelated(self):
-        r = _make_pair_result(
-            "p3",
-            PrimaryClassification.DIFFERENT_INDIVIDUALS,
-            RelationshipClassification.UNRELATED,
-        )
+    def test_independent(self):
+        r = _make_independent("p3")
         d = to_eval_dict(r)
         assert d["final_label"] == "Unrelated"
 
     def test_abstain(self):
-        r = _make_pair_result("p4", PrimaryClassification.ABSTAIN)
+        r = _make_abstain("p4")
         d = to_eval_dict(r)
         assert d["final_label"] == "Abstain"
 
     def test_dict_is_minimal(self):
         """to_eval_dict should only contain pair_id and final_label."""
-        r = _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)
+        r = _make_duplicates("p1")
         d = to_eval_dict(r)
         assert set(d.keys()) == {"pair_id", "final_label"}
 
@@ -116,12 +130,8 @@ class TestEvaluateResults:
 
     def test_basic_evaluation(self):
         results = [
-            _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
-            _make_pair_result(
-                "p2",
-                PrimaryClassification.DIFFERENT_INDIVIDUALS,
-                RelationshipClassification.UNRELATED,
-            ),
+            _make_duplicates("p1"),
+            _make_independent("p2"),
         ]
         annotations = [
             _make_annotation("p1", "duplicates"),
@@ -133,19 +143,15 @@ class TestEvaluateResults:
         assert summary.final_accuracy == 1.0  # both correct
 
     def test_incorrect_prediction(self):
-        results = [
-            _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
-        ]
-        annotations = [
-            _make_annotation("p1", "unrelated"),
-        ]
+        results = [_make_duplicates("p1")]
+        annotations = [_make_annotation("p1", "unrelated")]
         summary = evaluate_results(results, annotations)
         assert summary.final_accuracy == 0.0
 
     def test_abstain_annotations_excluded(self):
         results = [
-            _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
-            _make_pair_result("p2", PrimaryClassification.SAME_INDIVIDUAL),
+            _make_duplicates("p1"),
+            _make_duplicates("p2"),
         ]
         annotations = [
             _make_annotation("p1", "duplicates"),
@@ -157,21 +163,13 @@ class TestEvaluateResults:
 
     def test_otherwise_related_label_normalisation(self):
         """Pipeline uses 'Otherwise_related', annotation uses 'otherwise_related'."""
-        results = [
-            _make_pair_result(
-                "p1",
-                PrimaryClassification.DIFFERENT_INDIVIDUALS,
-                RelationshipClassification.RELATED,
-            ),
-        ]
-        annotations = [
-            _make_annotation("p1", "otherwise_related"),
-        ]
+        results = [_make_otherwise_related("p1")]
+        annotations = [_make_annotation("p1", "otherwise_related")]
         summary = evaluate_results(results, annotations)
         assert summary.final_accuracy == 1.0
 
     def test_config_snapshot_preserved(self):
-        results = [_make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)]
+        results = [_make_duplicates("p1")]
         annotations = [_make_annotation("p1", "duplicates")]
         config = {"model": "v2", "thresholds": {"strong": 3.0}}
         summary = evaluate_results(
@@ -181,7 +179,7 @@ class TestEvaluateResults:
 
     def test_no_per_field_accuracies(self):
         """EvalSummary should not have per-field accuracy attributes."""
-        results = [_make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL)]
+        results = [_make_duplicates("p1")]
         annotations = [_make_annotation("p1", "duplicates")]
         summary = evaluate_results(results, annotations)
         assert not hasattr(summary, "same_patient_accuracy")
@@ -199,12 +197,8 @@ class TestEvaluateBatch:
     def test_batch_evaluation(self):
         batch = BatchResult(
             results=[
-                _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
-                _make_pair_result(
-                    "p2",
-                    PrimaryClassification.DIFFERENT_INDIVIDUALS,
-                    RelationshipClassification.UNRELATED,
-                ),
+                _make_duplicates("p1"),
+                _make_independent("p2"),
             ]
         )
         annotations = [
@@ -217,9 +211,7 @@ class TestEvaluateBatch:
 
     def test_batch_with_errors_only_evaluates_successes(self):
         batch = BatchResult(
-            results=[
-                _make_pair_result("p1", PrimaryClassification.SAME_INDIVIDUAL),
-            ],
+            results=[_make_duplicates("p1")],
             errors=[("p_bad", KeyError("missing"))],
         )
         annotations = [

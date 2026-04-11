@@ -1,48 +1,62 @@
-"""Classification result models.
+"""Classification result models for the duplicate adjudication pipeline.
 
-Maps the pipeline's internal terminology to the evaluation-set
-label vocabulary used by the eval framework and human annotators.
+Combines the internal independence assessment (``IndependenceAssessment``)
+and the duplicate-relationship sub-label (``DuplicateRelationship``) into
+the user-facing label vocabulary used by the eval framework, the review
+HTML, and human annotators.
 
-See: docs/same_individual_assessment_spec.md § Decision logic
+See: docs/duplicate_adjudication_spec.md § Decision logic
 """
 
 from __future__ import annotations
 
 from pydantic import BaseModel
 
-from .enums import PrimaryClassification, RelationshipClassification
+from .enums import DuplicateRelationship, IndependenceAssessment
 
 
 class ClassificationResult(BaseModel):
-    """Full classification output for a report pair.
+    """Full duplicate-adjudication output for a report pair.
 
-    The primary classification determines whether the reports describe
-    the same individual. When primary is 'Different individuals', the
-    relationship sub-classification assesses clinical relatedness.
+    Two layered internal labels are produced by the decision logic:
+
+    * ``independence_assessment`` — whether the rarity-based matching
+      evidence is strong enough to reject the null hypothesis that the
+      two reports are independent draws from the comparison population.
+    * ``duplicate_relationship`` — when independence has been rejected,
+      a sub-label that uses inconsistency signals to distinguish a
+      likely-duplicate case from one that is linked by something other
+      than being the same individual case (e.g. same reporter, same
+      study).
+
+    Use ``final_label`` for the user-facing label
+    (``Duplicates`` / ``Otherwise_related`` / ``Unrelated`` / ``Abstain``);
+    downstream consumers should depend on this rather than on the raw
+    internal fields.
     """
 
     pair_id: str
-    primary: PrimaryClassification
-    relationship: RelationshipClassification | None = None
+    independence_assessment: IndependenceAssessment
+    duplicate_relationship: DuplicateRelationship | None = None
     explanation: str = ""
 
     @property
     def final_label(self) -> str:
-        """Map to the eval-set label vocabulary.
+        """Map the internal labels to the user-facing label vocabulary.
 
         Mapping:
-            Same individual             → Duplicates
-            Different individuals + Related   → Otherwise_related
-            Different individuals + Unrelated → Unrelated
-            Abstain                     → Abstain
+            Non-independent + Duplicates         → Duplicates
+            Non-independent + Otherwise_related  → Otherwise_related
+            Independent                          → Unrelated
+            Abstain                              → Abstain
         """
-        if self.primary == PrimaryClassification.SAME_INDIVIDUAL:
-            return "Duplicates"
-        if self.primary == PrimaryClassification.ABSTAIN:
+        if self.independence_assessment == IndependenceAssessment.ABSTAIN:
             return "Abstain"
-        # Different individuals — check relationship
-        if self.relationship == RelationshipClassification.RELATED:
-            return "Otherwise_related"
-        if self.relationship == RelationshipClassification.UNRELATED:
+        if self.independence_assessment == IndependenceAssessment.INDEPENDENT:
             return "Unrelated"
+        # Non-independent — use the duplicate relationship sub-label
+        if self.duplicate_relationship == DuplicateRelationship.DUPLICATES:
+            return "Duplicates"
+        if self.duplicate_relationship == DuplicateRelationship.OTHERWISE_RELATED:
+            return "Otherwise_related"
         return "Abstain"

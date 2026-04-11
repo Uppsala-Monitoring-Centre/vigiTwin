@@ -1,9 +1,9 @@
-"""Data models for the same-individual assessment pipeline.
+"""Data models for the duplicate adjudication pipeline.
 
 Three conceptual layers (see docs/data_contracts.md):
 - Report: structured representation of a single report
 - ReportPair: candidate pair identifiers
-- PairFeatures: derived features for duplicate assessment
+- PairFeatures: derived features for report-pair duplicate adjudication
 
 Plus classification results and enumeration types.
 """
@@ -11,10 +11,10 @@ Plus classification results and enumeration types.
 from .enums import (
     AnchorType,
     DrugRole,
+    DuplicateRelationship,
+    IndependenceAssessment,
     InconsistencySeverity,
     NarrativeConsistency,
-    PrimaryClassification,
-    RelationshipClassification,
     ReportingContextLevel,
 )
 from .report import (
@@ -45,10 +45,10 @@ __all__ = [
     # Enums
     "AnchorType",
     "DrugRole",
+    "DuplicateRelationship",
+    "IndependenceAssessment",
     "InconsistencySeverity",
     "NarrativeConsistency",
-    "PrimaryClassification",
-    "RelationshipClassification",
     "ReportingContextLevel",
     # Report layer
     "AdverseEvent",

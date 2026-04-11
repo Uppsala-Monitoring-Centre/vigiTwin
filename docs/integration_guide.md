@@ -1,6 +1,8 @@
 # Integration Guide
 
-This document explains how to run the same-individual assessment pipeline and what needs to be implemented in the secure repository (`llm_dup_pv_secure`) to connect it to real data.
+This document explains how to run the **duplicate adjudication pipeline** (the report-pair classification pipeline implemented in this repo) and what needs to be implemented in the secure repository (`llm_dup_pv_secure`) to connect it to real data.
+
+The pipeline takes candidate report pairs (typically produced upstream by vigiMatch), computes structured pair features, and produces a final classification of `Duplicates`, `Otherwise_related`, `Unrelated`, or `Abstain`. See [`pipeline_overview.md`](pipeline_overview.md) for the high-level description and [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md) for the full method specification.
 
 ---
 
@@ -408,13 +410,21 @@ Each annotation dict must contain:
 | `pair_id` | str | Must match pipeline output |
 | `duplicates_assessment` | str | "duplicates", "otherwise_related", "unrelated", "abstain" |
 
-The pipeline maps its internal labels to match:
+The pipeline's two layered internal labels — an `IndependenceAssessment`
+(`Non-independent / Independent / Abstain`) driven by the rarity-based
+matching evidence, plus a `DuplicateRelationship` sub-label
+(`Duplicates / Otherwise_related / Abstain`) used when independence has
+been rejected — are mapped to the user-facing label by
+`ClassificationResult.final_label`:
 
-| Pipeline output | Annotation value |
+| Independence assessment / sub-label | User-facing final label |
 |-----------------|------------------|
-| Same individual | `duplicates` |
-| Different / Related | `otherwise_related` |
-| Different / Unrelated | `unrelated` |
+| Non-independent + Duplicates | `Duplicates` |
+| Non-independent + Otherwise_related | `Otherwise_related` |
+| Independent | `Unrelated` |
+| Abstain | `Abstain` |
+
+Eval consumers should compare against `result.final_label` rather than the internal `independence_assessment` / `duplicate_relationship` fields.
 
 ---
 
@@ -475,16 +485,17 @@ runner = PipelineRunner(
 
 Inconsistencies are combined into a single weighted score:
 
-    w_tot = w_moderate × moderate + w_strong × strong  (defaults: 1 × moderate + 3 × strong)
+    w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
+    (defaults: 0.4 × minor + 1 × moderate + 3 × strong)
 
-| L_match zone | Same individual if... | Otherwise → |
+| L_match zone | Duplicates if... | Otherwise → |
 |---|---|---|
-| > 3.0 (strong) | `w_tot < 4` | Different / Related |
-| > 2.0 (medium) | `w_tot < 3` | Different / Related |
-| > 1.0 (weak)   | `w_tot < 1` | Different / Unrelated |
-| ≤ 1.0          | never | Different / Unrelated |
+| > 3.0 (strong) | `w_tot < 4` | Non-independent / Otherwise_related |
+| > 2.0 (medium) | `w_tot < 3` | Non-independent / Otherwise_related |
+| > 1.0 (weak)   | `w_tot < 1` | Independent (Unrelated) |
+| ≤ 1.0          | never | Independent (Unrelated) |
 
-Decisive inconsistencies (e.g. distinct patient IDs from the same study) always force Different, with Related/Unrelated determined by whether L_match > lmatch_med.
+Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclude `Duplicates`. The matching evidence then decides the surface label: `Otherwise_related` when `L_match > lmatch_med` (independence still rejected), `Unrelated` otherwise.
 
 ---
 
@@ -627,7 +638,7 @@ Each page contains:
 - **Adverse events** — same union logic; onset date in `(YYYY-MM-DD)` format where available
 - **Narratives** — side-by-side free text (if present)
 - **Evidence summary** — L_match, anchor, reporting context, inconsistencies (if `features` supplied)
-- **Classification** — primary, relationship, final label, explanation (if `classification` supplied)
+- **Classification** — independence assessment, duplicate relationship, final label, explanation (if `classification` supplied)
 
 ---
 
@@ -637,7 +648,8 @@ Each page contains:
 |------|---------|
 | `schemas/*.schema.json` | JSON schemas generated from Pydantic models |
 | `examples/*_example.json` | Concrete example objects |
-| `docs/same_individual_assessment_spec.md` | Full method specification |
+| `docs/duplicate_adjudication_spec.md` | Full method specification |
+| `docs/pipeline_overview.md` | High-level pipeline description |
 | `docs/data_contracts.md` | Data layer design and contracts |
 | `docs/repository_roles.md` | Security controls between repos |
 | `src/llm_dup_dev/review_html/__init__.py` | `render_pair_html` / `render_batch_html` API docstrings |

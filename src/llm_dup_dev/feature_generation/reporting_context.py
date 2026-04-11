@@ -4,7 +4,7 @@ The reporting context defines the population within which
 probabilities and frequencies are evaluated. The most specific
 shared context is preferred.
 
-See: docs/same_individual_assessment_spec.md § Reporting Context
+See: docs/duplicate_adjudication_spec.md § Reporting Context
 """
 
 from __future__ import annotations

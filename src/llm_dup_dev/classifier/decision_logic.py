@@ -1,33 +1,57 @@
-"""Decision logic for classifying report pairs.
+"""Decision logic for the duplicate adjudication pipeline.
 
-Jointly evaluates matching evidence (L_match) and inconsistencies to
-produce a final Same / Different / Abstain classification with an
-optional Related / Unrelated sub-classification.
+Adjudicates a candidate report pair by jointly evaluating the rarity-based
+matching evidence (``L_match``) and the inconsistency signals.
 
-Inconsistencies are combined into a single weighted score:
+Two layered internal labels are produced:
+
+* an ``IndependenceAssessment`` capturing whether the matching evidence
+  is strong enough to reject the null hypothesis that the two reports
+  are independent draws from the comparison population
+  (``NON_INDEPENDENT`` / ``INDEPENDENT`` / ``ABSTAIN``);
+* when independence has been rejected, a ``DuplicateRelationship``
+  sub-label that uses the inconsistency signals to distinguish a
+  likely-duplicate case from one that is linked by something other
+  than being the same individual case (``DUPLICATES`` /
+  ``OTHERWISE_RELATED``).
+
+These are mapped by ``ClassificationResult.final_label`` to the
+user-facing labels ``Duplicates`` / ``Otherwise_related`` /
+``Unrelated`` / ``Abstain``.
+
+Inconsistencies are combined into a single weighted score::
 
     w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
 
-The decision space is divided into four zones by L_match thresholds.
-Each zone has its own tolerance for w_tot:
+The decision space is divided into four zones by ``L_match`` thresholds.
+Each zone has its own tolerance for ``w_tot``::
 
-    L_match > strong  →  w_tot < 4 allows Same
-    L_match > med     →  w_tot < 3 allows Same
-    L_match > weak    →  w_tot < 1 allows Same
-    L_match ≤ weak    →  always Different / Unrelated
+    L_match > strong  →  w_tot < 4 ⇒ Non-independent / Duplicates
+                          else      ⇒ Non-independent / Otherwise_related
+    L_match > med     →  w_tot < 3 ⇒ Non-independent / Duplicates
+                          else      ⇒ Non-independent / Otherwise_related
+    L_match > weak    →  w_tot < 1 ⇒ Non-independent / Duplicates
+                          else      ⇒ Independent
+    L_match ≤ weak    →  always Independent
 
-Decisive inconsistencies (e.g. distinct patient IDs from the same
-study found in the narratives) override all matching evidence and
-force a Different classification.
+The asymmetry in the weak zone is deliberate: at very low ``L_match``
+the independence test is only marginally rejected, and any inconsistency
+is enough to fall back to "couldn't reject independence".
 
-See: docs/same_individual_assessment_spec.md § Decision logic
+Decisive inconsistencies (e.g. distinct patient identifiers from the
+same study found in the narratives) override the zone-based logic. When
+``L_match > lmatch_med`` the matching evidence still indicates
+non-independence (so the pair is surfaced as ``Otherwise_related``);
+otherwise the pair falls back to ``Independent``.
+
+See: docs/duplicate_adjudication_spec.md § Decision logic
 """
 
 from __future__ import annotations
 
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
-from llm_dup_dev.models.enums import PrimaryClassification, RelationshipClassification
+from llm_dup_dev.models.enums import DuplicateRelationship, IndependenceAssessment
 from llm_dup_dev.models.pair_features import InconsistencyCounts, PairFeatures
 
 
@@ -35,7 +59,7 @@ def classify(
     features: PairFeatures,
     thresholds: DecisionThresholds | None = None,
 ) -> ClassificationResult:
-    """Classify a report pair based on its computed features.
+    """Adjudicate a report pair based on its computed features.
 
     Parameters
     ----------
@@ -47,8 +71,8 @@ def classify(
     Returns
     -------
     ClassificationResult
-        Classification with primary label, optional relationship
-        sub-label, and human-readable explanation.
+        Classification with internal independence assessment, optional
+        duplicate-relationship sub-label, and a human-readable explanation.
     """
     if thresholds is None:
         thresholds = DecisionThresholds()
@@ -57,21 +81,31 @@ def classify(
     L = features.L_match
     w_tot = _weighted_inconsistency(counts, thresholds)
 
-    # --- Decisive inconsistencies override everything ---
+    # --- Decisive inconsistencies override the zone-based logic ---
     if counts.decisive > 0:
-        return _different(
+        if L > thresholds.lmatch_med:
+            return _otherwise_related(
+                pair_id=features.pair_id,
+                explanation=(
+                    f"Decisive inconsistency detected "
+                    f"(n={counts.decisive}); matching evidence still "
+                    f"indicates non-independence (L_match={L:.2f} > "
+                    f"{thresholds.lmatch_med})."
+                ),
+            )
+        return _independent(
             pair_id=features.pair_id,
-            relationship=_relationship_for_decisive(L, thresholds),
             explanation=(
                 f"Decisive inconsistency detected "
-                f"(n={counts.decisive}); overrides L_match={L:.2f}."
+                f"(n={counts.decisive}); L_match={L:.2f} ≤ "
+                f"{thresholds.lmatch_med} so independence cannot be rejected."
             ),
         )
 
     # --- Strong zone: L_match > lmatch_strong ---
     if L > thresholds.lmatch_strong:
         if w_tot < thresholds.w_tot_strong_zone:
-            return _same(
+            return _duplicates(
                 pair_id=features.pair_id,
                 explanation=(
                     f"Strong matching evidence (L_match={L:.2f} > "
@@ -79,9 +113,8 @@ def classify(
                     f"< {thresholds.w_tot_strong_zone:.1f}."
                 ),
             )
-        return _different(
+        return _otherwise_related(
             pair_id=features.pair_id,
-            relationship=RelationshipClassification.RELATED,
             explanation=(
                 f"Strong matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_strong_zone:.1f} "
@@ -92,7 +125,7 @@ def classify(
     # --- Medium zone: L_match > lmatch_med ---
     if L > thresholds.lmatch_med:
         if w_tot < thresholds.w_tot_med_zone:
-            return _same(
+            return _duplicates(
                 pair_id=features.pair_id,
                 explanation=(
                     f"Moderate matching evidence (L_match={L:.2f} > "
@@ -100,9 +133,8 @@ def classify(
                     f"< {thresholds.w_tot_med_zone:.1f}."
                 ),
             )
-        return _different(
+        return _otherwise_related(
             pair_id=features.pair_id,
-            relationship=RelationshipClassification.RELATED,
             explanation=(
                 f"Moderate matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f} "
@@ -113,7 +145,7 @@ def classify(
     # --- Weak zone: L_match > lmatch_weak ---
     if L > thresholds.lmatch_weak:
         if w_tot < thresholds.w_tot_weak_zone:
-            return _same(
+            return _duplicates(
                 pair_id=features.pair_id,
                 explanation=(
                     f"Weak matching evidence (L_match={L:.2f} > "
@@ -121,24 +153,23 @@ def classify(
                     f"< {thresholds.w_tot_weak_zone:.1f}."
                 ),
             )
-        return _different(
+        return _independent(
             pair_id=features.pair_id,
-            relationship=RelationshipClassification.UNRELATED,
             explanation=(
                 f"Weak matching evidence (L_match={L:.2f}) with "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f} "
                 f"(strong={counts.strong}, moderate={counts.moderate}); "
-                f"classified as unrelated."
+                f"independence cannot be rejected."
             ),
         )
 
     # --- Below weak threshold ---
-    return _different(
+    return _independent(
         pair_id=features.pair_id,
-        relationship=RelationshipClassification.UNRELATED,
         explanation=(
             f"Matching evidence below weak threshold "
-            f"(L_match={L:.2f} ≤ {thresholds.lmatch_weak})."
+            f"(L_match={L:.2f} ≤ {thresholds.lmatch_weak}); "
+            f"independence cannot be rejected."
         ),
     )
 
@@ -163,44 +194,36 @@ def _weighted_inconsistency(
     )
 
 
-def _relationship_for_decisive(
-    L_match: float,
-    thresholds: DecisionThresholds,
-) -> RelationshipClassification:
-    """Determine Related/Unrelated when a decisive inconsistency is present.
-
-    If L_match > lmatch_med the reports share meaningful clinical
-    context → Related.  Otherwise → Unrelated.
-    """
-    if L_match > thresholds.lmatch_med:
-        return RelationshipClassification.RELATED
-    return RelationshipClassification.UNRELATED
-
-
 # ---------------------------------------------------------------------------
 # Result constructors
 # ---------------------------------------------------------------------------
 
 
-def _same(pair_id: str, explanation: str) -> ClassificationResult:
-    """Build a Same individual result."""
+def _duplicates(pair_id: str, explanation: str) -> ClassificationResult:
+    """Build a Non-independent / Duplicates result."""
     return ClassificationResult(
         pair_id=pair_id,
-        primary=PrimaryClassification.SAME_INDIVIDUAL,
-        relationship=None,
+        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+        duplicate_relationship=DuplicateRelationship.DUPLICATES,
         explanation=explanation,
     )
 
 
-def _different(
-    pair_id: str,
-    relationship: RelationshipClassification,
-    explanation: str,
-) -> ClassificationResult:
-    """Build a Different individuals result."""
+def _otherwise_related(pair_id: str, explanation: str) -> ClassificationResult:
+    """Build a Non-independent / Otherwise_related result."""
     return ClassificationResult(
         pair_id=pair_id,
-        primary=PrimaryClassification.DIFFERENT_INDIVIDUALS,
-        relationship=relationship,
+        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+        duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+        explanation=explanation,
+    )
+
+
+def _independent(pair_id: str, explanation: str) -> ClassificationResult:
+    """Build an Independent result (user-facing label: Unrelated)."""
+    return ClassificationResult(
+        pair_id=pair_id,
+        independence_assessment=IndependenceAssessment.INDEPENDENT,
+        duplicate_relationship=None,
         explanation=explanation,
     )
