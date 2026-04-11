@@ -598,7 +598,7 @@ class TestPredictionRendering:
         assert (out / "index.html").exists()
 
     def test_batch_index_shows_evaluation_columns(self, report_a, report_b):
-        """Batch index includes label, L_match, inconsistencies, and narrative."""
+        """Batch index includes label, L_match, inconsistencies, anchor, context, features."""
         features = _make_features()
         classification = _make_classification()
         vm = build_pair_view_model(
@@ -609,11 +609,20 @@ class TestPredictionRendering:
         item = build_batch_index_item(vm, "R001__R002.html")
         assert item.final_label == "Duplicates"
         assert item.l_match == 3.8
-        assert item.inconsistency_summary == "1M / 0S / 0D"
+        # Inconsistency summary now leads with lowercase-m minor count
+        assert item.inconsistency_summary == "0m / 1M / 0S / 0D"
         assert item.narrative_consistency == "consistent"
+        # Anchor: drugs_AEs anchor type combines matching drugs and AEs
+        assert item.anchor_label == "pregabalin + somnolence: 40 reports"
+        # Context: country + year extracted from the reporting context
+        assert item.context_label == "US 2020"
+        # Matching features summary lists matching drugs and AEs
+        assert item.matching_features is not None
+        assert "drugs=pregabalin" in item.matching_features
+        assert "AEs=somnolence" in item.matching_features
 
     def test_batch_index_renders_evaluation_columns(self, report_a, report_b):
-        """Rendered index HTML includes evaluation columns."""
+        """Rendered index HTML includes the new column set."""
         features = _make_features()
         classification = _make_classification()
         vm = build_pair_view_model(
@@ -625,8 +634,17 @@ class TestPredictionRendering:
         html = render_index([item])
         assert "Duplicates" in html
         assert "3.80" in html
-        assert "1M / 0S / 0D" in html
-        assert "consistent" in html
+        assert "0m / 1M / 0S / 0D" in html
+        # New columns are present
+        assert "Anchor" in html
+        assert "Context" in html
+        assert "Matching features" in html
+        assert "pregabalin + somnolence: 40 reports" in html
+        # Removed columns are no longer rendered
+        assert "<th>Report 1</th>" not in html
+        assert "<th>Report 2</th>" not in html
+        assert "<th>Relationship</th>" not in html
+        assert "<th>Narrative</th>" not in html
 
     def test_relationship_label_in_decision_summary(self, report_a, report_b):
         """Relationship label appears when classification is Different/Related."""
