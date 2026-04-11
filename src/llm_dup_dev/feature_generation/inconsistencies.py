@@ -12,7 +12,7 @@ report dates) are handled by the dedicated rule-based module in
 ``clinical_date_inconsistencies.py`` and exposed separately on
 ``PairFeatures.clinical_date_inconsistency_counts``.
 
-See: docs/same_individual_assessment_spec.md § Inconsistency Detection
+See: docs/duplicate_adjudication_spec.md § Inconsistency Detection
 """
 
 from __future__ import annotations

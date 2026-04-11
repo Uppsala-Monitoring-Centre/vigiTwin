@@ -3,11 +3,13 @@
 Computes feature-level probabilities, composite matching probability,
 expected collisions within the anchor population, and L_match.
 
-The core idea: if the expected number of random report pairs sharing
-the observed feature pattern is extremely small, the reports likely
-describe the same individual.
+The core idea: if the expected number of random report pairs sharing the
+observed feature pattern is extremely small, that is strong evidence the
+two reports describe the same individual — and therefore strong support
+for the *Duplicates* hypothesis in the duplicate adjudication pipeline.
+L_match is one of the main inputs to the report-pair decision logic.
 
-See: docs/same_individual_assessment_spec.md § Probability estimation
+See: docs/duplicate_adjudication_spec.md § Probability estimation
 """
 
 from __future__ import annotations

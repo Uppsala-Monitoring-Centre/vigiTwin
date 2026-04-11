@@ -617,10 +617,10 @@ def _build_classification_summary(
     classification: ClassificationResult,
 ) -> ClassificationSummaryVM:
     return ClassificationSummaryVM(
-        primary=classification.primary.value,
-        relationship=(
-            classification.relationship.value
-            if classification.relationship
+        independence_assessment=classification.independence_assessment.value,
+        duplicate_relationship=(
+            classification.duplicate_relationship.value
+            if classification.duplicate_relationship
             else None
         ),
         final_label=classification.final_label,
@@ -662,9 +662,9 @@ def _build_decision_summary(
         narrative_consistency=(
             features.narrative_consistency.value if features else None
         ),
-        relationship=(
-            classification.relationship.value
-            if classification.relationship
+        duplicate_relationship=(
+            classification.duplicate_relationship.value
+            if classification.duplicate_relationship
             else None
         ),
     )
@@ -1010,8 +1010,8 @@ def build_batch_index_item(
             if vm.features_summary
             else None
         ),
-        relationship=(
-            vm.classification_summary.relationship
+        duplicate_relationship=(
+            vm.classification_summary.duplicate_relationship
             if vm.classification_summary
             else None
         ),

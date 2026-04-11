@@ -1,3 +1,44 @@
+# Duplicate Adjudication Method Specification
+
+This document specifies the method used by the **duplicate adjudication
+pipeline** to classify candidate report pairs that have already been flagged
+as suspected duplicates by an upstream candidate-generation method (e.g.
+vigiMatch). For each pair the pipeline produces a final classification of
+**Duplicates**, **Otherwise related**, **Unrelated**, or **Abstain**.
+
+The method is primarily a transparent rule-based decision logic operating on
+structured features, with optional LLM-assisted narrative analysis. It draws
+on three complementary kinds of evidence:
+
+1. **Rarity-based matching evidence**, which quantifies how unlikely the
+   observed combination of matched features would be by chance within a
+   relevant comparison population (the *anchor population*).
+2. **Inconsistency signals**, which capture structured or narrative
+   information that argues against the duplicate hypothesis.
+3. **Narrative consistency** (planned), an LLM assessment of whether the
+   free-text narratives are clinically compatible.
+
+The probabilistic component is framed as a test of the **independence
+null hypothesis**: it estimates how surprising the matched features would
+be if the two reports were independent draws from the comparison
+population. A small expected number of collisions is evidence *against*
+independence, but it is not specifically evidence that the two reports
+describe the same individual: same reporter, same study, copies of the
+same case routed through different channels, or unusual shared context
+can all produce a small expected-collision count without the reports
+describing the same patient. The pipeline therefore distinguishes two
+internal layers (see § Decision logic):
+
+* an **independence assessment** (`Non-independent / Independent /
+  Abstain`) driven by the rarity-based matching evidence, and
+* when independence has been rejected, a **duplicate relationship**
+  sub-label (`Duplicates / Otherwise related / Abstain`) driven by the
+  inconsistency signals.
+
+The user-facing output remains `Duplicates / Otherwise related /
+Unrelated / Abstain` and is produced by combining the two internal
+layers (see `ClassificationResult.final_label`).
+
 ## Evidence components
 
 ### Probabilistic matching framework
@@ -516,7 +557,7 @@ Three levels of inconsistency severity are defined:
 
 Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight, drug set). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
 
-Decisive inconsistencies are expected to originate from narrative analysis (e.g. distinct patient identifiers mentioned in case narratives from the same study). When present, they override all matching evidence and force a Different individuals classification.
+Decisive inconsistencies are expected to originate from narrative analysis (e.g. distinct patient identifiers mentioned in case narratives from the same study). When present, they preclude a `Duplicates` verdict; the surrounding matching evidence then determines whether the pair is surfaced as `Otherwise related` (when independence is still rejected) or `Unrelated` (otherwise) — see § Decision logic.
 
 ------
 
@@ -767,25 +808,45 @@ For example:
 
 ## Decision logic
 
-The final classification of a report pair is determined by jointly evaluating:
+The final adjudication of a report pair is determined by jointly evaluating:
 
 - the strength of the **rarity-based matching evidence** (\(L_{\text{match}}\)),
 - the presence and severity of **detected inconsistencies**, and
 - the **narrative consistency assessment**.
 
-The decision logic balances positive evidence suggesting that the reports describe the same individual against contradictory evidence suggesting that they describe different individuals.
+The decision logic balances positive evidence (the matched features being
+unlikely under an *independence* null) against contradictory evidence
+(structured or narrative-derived inconsistencies).
 
-The decision logic produces one of three primary outcomes:
+Internally, the decision logic produces two layered labels:
 
-- **Same individual**
-- **Different individuals**
-- **Abstain**
+* an **independence assessment** — whether the matching evidence is
+  strong enough to reject the null that the two reports are independent
+  draws from the comparison population
+  (`Non-independent / Independent / Abstain`); and
+* when independence has been rejected, a **duplicate relationship**
+  sub-label that uses the inconsistency signals to distinguish a
+  likely-duplicate case from one linked by something other than being
+  the same individual (`Duplicates / Otherwise related / Abstain`).
 
-If the classification is **Different individuals**, the method additionally assesses whether the reports appear to be clinically related:
+These map to the user-facing label vocabulary as follows:
 
-- **Related**
-- **Unrelated**
-- **Abstain**
+| Independence assessment | Duplicate relationship | User-facing final label |
+|---|---|---|
+| Non-independent | Duplicates | **Duplicates** |
+| Non-independent | Otherwise related | **Otherwise related** |
+| Independent | — | **Unrelated** |
+| Abstain | — | **Abstain** |
+
+The two-layer split is deliberate: a low expected-collision count is
+evidence *against independence*, not specifically *for same individual*.
+Same reporter, same study, or unusual shared context can all produce
+strong matching evidence without the reports describing the same
+patient. The duplicate vs otherwise-related distinction is therefore
+handled by the inconsistency component once independence has been
+rejected. The mapping above is implemented by
+`ClassificationResult.final_label` and is the only label that downstream
+consumers (eval, review HTML, secure repo) should rely on.
 
 ---
 
@@ -840,35 +901,48 @@ where \(w_{mi}\), \(w_m\), and \(w_s\) are configurable weights. With the curren
 
 The decision space is divided into four zones based on the magnitude of \(L_{\text{match}}\). Each zone applies a progressively stricter tolerance for \(w_{\text{tot}}\):
 
-| Zone | Condition | Same individual if... | Otherwise |
+| Zone | Condition | Duplicates if... | Otherwise |
 |---|---|---|---|
-| Strong evidence | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Different / Related |
-| Moderate evidence | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Different / Related |
-| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Different / Unrelated |
-| Below threshold | \(L_{\text{match}} \leq 1.0\) | never | Different / Unrelated |
+| Strong evidence | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Non-independent / Otherwise related |
+| Moderate evidence | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Non-independent / Otherwise related |
+| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Independent (Unrelated) |
+| Below threshold | \(L_{\text{match}} \leq 1.0\) | never | Independent (Unrelated) |
 
-The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3), and the inconsistency weights (\(w_m\), \(w_s\)) are all configurable parameters.
+In the strong and moderate zones the matching evidence is strong enough
+to reject the independence null on its own, so any pair in these zones
+is labelled `Non-independent`; the inconsistency score then decides
+whether the sub-label is `Duplicates` or `Otherwise related`. In the
+weak zone the rejection is only marginal, so any inconsistency at all
+collapses the verdict back to `Independent`. Below the weak threshold
+the matching evidence is too weak to reject independence regardless of
+how clean the structured comparison looks.
+
+The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3, 1), and the inconsistency weights are all configurable parameters.
 
 **Examples** (using default parameters):
 
-- \(L_{\text{match}} = 4.2\), one strong inconsistency: \(w_{\text{tot}} = 3 < 4\) → **Same individual**
-- \(L_{\text{match}} = 4.2\), one strong + one moderate: \(w_{\text{tot}} = 4\), not \(< 4\) → **Different / Related**
-- \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Same individual**
-- \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Different / Related**
-- \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Same individual**
-- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Different / Unrelated**
-- \(L_{\text{match}} = 0.8\): below threshold → **Different / Unrelated** regardless of inconsistencies
+- \(L_{\text{match}} = 4.2\), one strong inconsistency: \(w_{\text{tot}} = 3 < 4\) → **Non-independent / Duplicates**
+- \(L_{\text{match}} = 4.2\), one strong + one moderate: \(w_{\text{tot}} = 4\), not \(< 4\) → **Non-independent / Otherwise related**
+- \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Non-independent / Duplicates**
+- \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Non-independent / Otherwise related**
+- \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Non-independent / Duplicates**
+- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Independent (Unrelated)**
+- \(L_{\text{match}} = 0.8\): below threshold → **Independent (Unrelated)** regardless of inconsistencies
 
 ---
 
 ### Decisive inconsistencies
 
-Decisive inconsistencies (e.g. distinct patient identifiers from the same study, identified through narrative analysis) override all matching evidence and force a **Different individuals** classification.
+Decisive inconsistencies (e.g. distinct patient identifiers from the same study, identified through narrative analysis) override the zone-based logic. They preclude a `Duplicates` verdict — the reports cannot describe the same individual case — but they do not by themselves overturn the independence assessment.
 
-When a decisive inconsistency is present, the relationship sub-classification is determined solely by whether the reports share meaningful clinical context:
+When a decisive inconsistency is present:
 
-- \(L_{\text{match}} > 2.0\) → **Related**
-- \(L_{\text{match}} \leq 2.0\) → **Unrelated**
+- \(L_{\text{match}} > 2.0\) → **Non-independent / Otherwise related**
+  (the matching evidence still rejects independence, so the pair is
+  surfaced as related but not the same case)
+- \(L_{\text{match}} \leq 2.0\) → **Independent (Unrelated)**
+  (independence cannot be rejected, so no claim about relatedness is
+  made)
 
 ---
 
@@ -878,9 +952,9 @@ The zone-based design explicitly allows strong matching evidence to outweigh iso
 
 - In the strong evidence zone, a single strong inconsistency (such as mismatching patient sex) is tolerated because the combined rarity of the matched features makes coincidence unlikely.
 - In the moderate evidence zone, only moderate inconsistencies are tolerated, and only a limited number.
-- In the weak evidence zone, any inconsistency tips the balance towards different individuals.
+- In the weak evidence zone, any inconsistency tips the balance back to the independence null.
 
-When a pair is classified as **Different individuals** in the strong or moderate evidence zones, the reports are labelled **Related** because significant clinical overlap remains. In the weak evidence and below-threshold zones, they are labelled **Unrelated**.
+When a pair is moved out of the `Duplicates` zone in the strong or moderate evidence zones, the rejection of independence still stands (the matching evidence is too strong to attribute to chance), so the pair is surfaced as **Otherwise related**. In the weak and below-threshold zones the rejection of independence is too marginal to support any inconsistency, so the pair falls back to **Unrelated**.
 
 ---
 
@@ -896,9 +970,9 @@ The following parameters define the decision behaviour and are configurable:
 | `w_minor` | 0.4 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
 | `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
 | `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
-| `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for Same in the strong zone |
-| `w_tot_med_zone` | 3.0 | Maximum \(w_{\text{tot}}\) for Same in the moderate zone |
-| `w_tot_weak_zone` | 1.0 | Maximum \(w_{\text{tot}}\) for Same in the weak zone |
+| `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for `Duplicates` in the strong zone |
+| `w_tot_med_zone` | 3.0 | Maximum \(w_{\text{tot}}\) for `Duplicates` in the moderate zone |
+| `w_tot_weak_zone` | 1.0 | Maximum \(w_{\text{tot}}\) for `Duplicates` in the weak zone |
 
 These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behaviour.
 

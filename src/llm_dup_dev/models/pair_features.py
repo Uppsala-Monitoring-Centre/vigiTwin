@@ -1,11 +1,12 @@
 """Data models for the PairFeatures layer.
 
-The PairFeatures layer contains all derived information used to evaluate
-whether two reports refer to the same individual. These features are
-computed from the Report layer and statistical summaries of the database.
+The PairFeatures layer contains all derived information used by the
+duplicate adjudication pipeline to classify a report pair as duplicates,
+otherwise related, or unrelated. These features are computed from the
+Report layer and statistical summaries of the database.
 
 See: docs/data_contracts.md § PairFeatures Layer
-See: docs/same_individual_assessment_spec.md § Evidence components
+See: docs/duplicate_adjudication_spec.md § Evidence components
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ class ReportingContext(BaseModel):
     Defines the subset of the database within which probabilities
     and frequencies are evaluated.
 
-    See: docs/same_individual_assessment_spec.md § Reporting Context
+    See: docs/duplicate_adjudication_spec.md § Reporting Context
     """
 
     level: ReportingContextLevel
@@ -39,7 +40,7 @@ class AnchorPopulation(BaseModel):
 
     Contains three candidate population sizes and the selected anchor.
 
-    See: docs/same_individual_assessment_spec.md § Anchor Selection
+    See: docs/duplicate_adjudication_spec.md § Anchor Selection
     """
 
     N_drugs: int
@@ -56,7 +57,7 @@ class FeatureContribution(BaseModel):
     together to form p_joint. Useful for debugging and method development:
     understanding which features contributed how much evidence.
 
-    See: docs/same_individual_assessment_spec.md § Probability estimation
+    See: docs/duplicate_adjudication_spec.md § Probability estimation
     """
 
     feature: str
@@ -69,7 +70,7 @@ class FeatureContribution(BaseModel):
 class ProbabilityEstimate(BaseModel):
     """Result of the collision probability computation.
 
-    See: docs/same_individual_assessment_spec.md § Probability estimation
+    See: docs/duplicate_adjudication_spec.md § Probability estimation
     """
 
     p_joint: float
@@ -80,7 +81,7 @@ class ProbabilityEstimate(BaseModel):
 class Inconsistency(BaseModel):
     """A detected inconsistency between two reports.
 
-    See: docs/same_individual_assessment_spec.md § Inconsistency Detection
+    See: docs/duplicate_adjudication_spec.md § Inconsistency Detection
     """
 
     feature: str
@@ -149,11 +150,13 @@ class EvidenceSummary(BaseModel):
 
 
 class PairFeatures(BaseModel):
-    """All derived features for evaluating whether two reports
-    refer to the same individual.
+    """All derived features for adjudicating a candidate duplicate report pair.
 
-    Computed from the Report layer and statistical summaries.
-    Provides inputs to the decision logic.
+    Combines shared clinical context, anchor population statistics,
+    rarity-based matching evidence, detected inconsistencies and
+    (optionally) narrative consistency. Computed from the Report layer
+    and statistical summaries; provides the inputs to the duplicate
+    adjudication decision logic.
 
     See: docs/data_contracts.md § PairFeatures Layer
     """

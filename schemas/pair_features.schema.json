@@ -1,7 +1,7 @@
 {
   "$defs": {
     "AnchorPopulation": {
-      "description": "Anchor population statistics for probability estimation.\n\nContains three candidate population sizes and the selected anchor.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Anchor Selection",
+      "description": "Anchor population statistics for probability estimation.\n\nContains three candidate population sizes and the selected anchor.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Anchor Selection",
       "properties": {
         "N_drugs": {
           "title": "N Drugs",
@@ -34,7 +34,7 @@
       "type": "object"
     },
     "AnchorType": {
-      "description": "Type of anchor population selected for probability estimation.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Anchor Selection",
+      "description": "Type of anchor population selected for probability estimation.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Anchor Selection",
       "enum": [
         "drugs",
         "AEs",
@@ -140,7 +140,7 @@
       "type": "object"
     },
     "FeatureContribution": {
-      "description": "Per-feature probability contribution to the composite p_joint.\n\nExposes the individual feature probabilities that are multiplied\ntogether to form p_joint. Useful for debugging and method development:\nunderstanding which features contributed how much evidence.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Probability estimation",
+      "description": "Per-feature probability contribution to the composite p_joint.\n\nExposes the individual feature probabilities that are multiplied\ntogether to form p_joint. Useful for debugging and method development:\nunderstanding which features contributed how much evidence.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Probability estimation",
       "properties": {
         "feature": {
           "title": "Feature",
@@ -181,7 +181,7 @@
       "type": "object"
     },
     "Inconsistency": {
-      "description": "A detected inconsistency between two reports.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Inconsistency Detection",
+      "description": "A detected inconsistency between two reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Inconsistency Detection",
       "properties": {
         "feature": {
           "title": "Feature",
@@ -262,7 +262,7 @@
       "type": "object"
     },
     "InconsistencySeverity": {
-      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Severity Levels\n\nLevels:\n    minor     \u2013 small difference, weakly suggests different individuals\n    moderate  \u2013 meaningful difference, weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
+      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Severity Levels\n\nLevels:\n    minor     \u2013 small difference, weakly suggests different individuals\n    moderate  \u2013 meaningful difference, weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
       "enum": [
         "minor",
         "moderate",
@@ -273,7 +273,7 @@
       "type": "string"
     },
     "NarrativeConsistency": {
-      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Narrative Consistency Assessment\n\nValues\n------\nSTRONGLY_CONSISTENT : narratives clearly describe the same patient\nCONSISTENT : probable but not certain match\nNEUTRAL : narratives too sparse to judge\nINCONSISTENT : narratives clearly describe different patients\nNOT_AVAILABLE : LLM assessment was not performed or failed",
+      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Narrative Consistency Assessment\n\nValues\n------\nSTRONGLY_CONSISTENT : narratives clearly describe the same patient\nCONSISTENT : probable but not certain match\nNEUTRAL : narratives too sparse to judge\nINCONSISTENT : narratives clearly describe different patients\nNOT_AVAILABLE : LLM assessment was not performed or failed",
       "enum": [
         "strongly_consistent",
         "consistent",
@@ -285,7 +285,7 @@
       "type": "string"
     },
     "ProbabilityEstimate": {
-      "description": "Result of the collision probability computation.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Probability estimation",
+      "description": "Result of the collision probability computation.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Probability estimation",
       "properties": {
         "p_joint": {
           "title": "P Joint",
@@ -311,7 +311,7 @@
       "type": "object"
     },
     "ReportingContext": {
-      "description": "The population context for frequency estimation.\n\nDefines the subset of the database within which probabilities\nand frequencies are evaluated.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Reporting Context",
+      "description": "The population context for frequency estimation.\n\nDefines the subset of the database within which probabilities\nand frequencies are evaluated.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Reporting Context",
       "properties": {
         "level": {
           "$ref": "#/$defs/ReportingContextLevel"
@@ -348,7 +348,7 @@
       "type": "object"
     },
     "ReportingContextLevel": {
-      "description": "Granularity of the reporting context used for probability estimation.\n\nSee: docs/same_individual_assessment_spec.md \u00a7 Reporting Context",
+      "description": "Granularity of the reporting context used for probability estimation.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Reporting Context",
       "enum": [
         "country_year",
         "country",
@@ -358,7 +358,7 @@
       "type": "string"
     }
   },
-  "description": "All derived features for evaluating whether two reports\nrefer to the same individual.\n\nComputed from the Report layer and statistical summaries.\nProvides inputs to the decision logic.\n\nSee: docs/data_contracts.md \u00a7 PairFeatures Layer",
+  "description": "All derived features for adjudicating a candidate duplicate report pair.\n\nCombines shared clinical context, anchor population statistics,\nrarity-based matching evidence, detected inconsistencies and\n(optionally) narrative consistency. Computed from the Report layer\nand statistical summaries; provides the inputs to the duplicate\nadjudication decision logic.\n\nSee: docs/data_contracts.md \u00a7 PairFeatures Layer",
   "properties": {
     "pair_id": {
       "title": "Pair Id",

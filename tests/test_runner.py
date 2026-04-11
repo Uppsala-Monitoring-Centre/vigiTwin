@@ -8,9 +8,8 @@ from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
 from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
 from llm_dup_dev.models.enums import (
+    IndependenceAssessment,
     NarrativeConsistency,
-    PrimaryClassification,
-    RelationshipClassification,
 )
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
@@ -84,19 +83,19 @@ class TestRunPair:
 
     def test_classification_populated(self, runner, pair_ab):
         result = runner.run_pair(pair_ab)
-        assert result.classification.primary in PrimaryClassification
+        assert result.classification.independence_assessment in IndependenceAssessment
         assert result.final_label in (
             "Duplicates", "Otherwise_related", "Unrelated", "Abstain"
         )
 
-    def test_near_duplicate_classified_same_or_related(self, runner, pair_ab):
+    def test_near_duplicate_classified_non_independent(self, runner, pair_ab):
         """Reports A and B share drugs, demographics, dates — expect strong evidence."""
         result = runner.run_pair(pair_ab)
         # With default stats (N_drugs=200), pregabalin+sertraline is a rare
-        # combination. The pair should classify as Same or at least Related.
-        assert result.classification.primary in (
-            PrimaryClassification.SAME_INDIVIDUAL,
-            PrimaryClassification.DIFFERENT_INDIVIDUALS,
+        # combination. Independence should be rejected.
+        assert (
+            result.classification.independence_assessment
+            == IndependenceAssessment.NON_INDEPENDENT
         )
 
     def test_different_reports_lower_lmatch(self, runner, pair_ab, pair_ac):
@@ -200,8 +199,11 @@ class TestCustomConfig:
             decision_thresholds=strict,
         )
         result = runner.run_pair(pair_ab)
-        # With very high thresholds, most pairs should be Different
-        assert result.classification.primary == PrimaryClassification.DIFFERENT_INDIVIDUALS
+        # With very high thresholds, evidence is too weak to reject independence
+        assert (
+            result.classification.independence_assessment
+            == IndependenceAssessment.INDEPENDENT
+        )
 
     def test_very_small_anchor_produces_high_lmatch(
         self, loader, pair_ab

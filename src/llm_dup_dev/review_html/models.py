@@ -214,8 +214,8 @@ class FeaturesSummaryVM(BaseModel):
 class ClassificationSummaryVM(BaseModel):
     """View model for the optional classification result section."""
 
-    primary: str
-    relationship: str | None = None
+    independence_assessment: str
+    duplicate_relationship: str | None = None
     final_label: str
     explanation: str
 
@@ -283,7 +283,7 @@ class DecisionSummaryVM(BaseModel):
     inconsistency_counts: InconsistencyCountsVM | None = None
     clinical_date_counts: ClinicalDateCountsVM | None = None
     narrative_consistency: str | None = None
-    relationship: str | None = None
+    duplicate_relationship: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +335,7 @@ class BatchIndexItem(BaseModel):
     filename: str
     final_label: str | None = None
     l_match: float | None = None
-    relationship: str | None = None
+    duplicate_relationship: str | None = None
     inconsistency_summary: str | None = None
     narrative_consistency: str | None = None
     anchor_label: str | None = None              # e.g. "ranitidine + rash: 820 reports"

@@ -1,28 +1,35 @@
-# Same-Individual Assessment for Suspected Duplicate Reports
+# Duplicate Adjudication Pipeline Overview
 
-This document describes a probabilistic framework for **same-patient assessment** of report pairs that have already been flagged as suspected duplicates by vigiMatch. The method is primarily based on expert defined explicit programming, but includes some LLM-assisted evidence extraction. It combines three complementary sources of evidence:
+This document gives a high-level overview of the **duplicate adjudication pipeline** for pharmacovigilance reports. The pipeline operates on **report pairs** that have already been flagged as suspected duplicates by an upstream candidate-generation method (e.g. vigiMatch). For each pair it produces a final classification of **Duplicates**, **Otherwise related**, **Unrelated**, or **Abstain**.
+
+The pipeline is primarily a transparent rule-based decision logic operating on structured features, with optional LLM-assisted narrative analysis. It combines three complementary kinds of evidence:
 
 1. **Rarity-based matching evidence**, which evaluates how unlikely it would be for two unrelated reports to share the observed combination of clinical features.
-2. **Narrative consistency**, assessed using a large language model to determine whether the narrative descriptions are compatible with the same clinical scenario.
-3. **Inconsistency detection**, which identifies structured or narrative information that suggests the reports may describe different individuals.
+2. **Inconsistency signals** from structured data and clinical dates, which capture information arguing against the duplicate hypothesis.
+3. **Narrative consistency** (planned), assessed using a language model to determine whether free-text narratives are clinically compatible with the same case.
 
-The central idea is to estimate how likely the observed pattern of matching features would occur by chance within a relevant comparison population. This population, referred to as the **anchor population**, is defined by the shared clinical context of the two reports.
+The matching evidence is anchored in a **comparison population** (the *anchor population*) defined by the shared clinical context of the two reports. The expected number of report pairs within that population that would share the observed feature pattern by chance is approximated using a birthday-problem-style collision calculation; small expected counts produce strong evidence in favour of the duplicate hypothesis.
 
-Matching evidence is quantified using a collision-probability framework inspired by the classical birthday problem: if the expected number of report pairs sharing the same combination of features within the anchor population is very small, the reports are likely to refer to the same patient.
+The combined evidence is then fed into a transparent decision logic that classifies each report pair into one of four user-facing categories:
 
-The resulting evidence is then combined with detected inconsistencies and narrative similarity assessments in a transparent decision logic that classifies report pairs into three categories:
+- **Duplicates** — the pair very likely describes the same clinical case
+- **Otherwise related** — different individuals or different events but meaningful clinical overlap remains (e.g. two patients in the same clinical study)
+- **Unrelated** — the matching evidence is too weak or the inconsistencies too strong to support either of the above
+- **Abstain** — insufficient evidence to commit to a label
 
-- **Same individual**
-- **Different individuals**
-- **Abstain**
-
-When classifying reports are related to **Different individuals**, it can provide a complementary classification regarding the nature of the two reports:
-
-- **Related**
-- **Unrelated**
-- **Abstain**
-
-The following sections describe the components of this framework in detail.
+> **Internal vs user-facing labels.** Internally the decision logic
+> produces two layered labels: an **independence assessment**
+> (`Non-independent / Independent / Abstain`) driven by the matching
+> evidence, plus, when independence is rejected, a **duplicate
+> relationship** sub-label (`Duplicates / Otherwise related / Abstain`)
+> driven by the inconsistency signals. These are mapped to the
+> user-facing labels above by `ClassificationResult.final_label`. The
+> two-layer split exists because a small expected-collision count is
+> evidence against independence but not specifically for the
+> same-individual hypothesis (same reporter, same study, etc. can also
+> produce strong matching evidence). New code should depend only on the
+> user-facing labels — see `docs/duplicate_adjudication_spec.md`
+> § Decision logic.
 
 ## Method overview
 
@@ -37,22 +44,20 @@ C["Narrative"]
 D["Statistics<br>(drug sets, AE sets)"]
 end
 
-subgraph Duplicate_Assessment["Same Individual Assessment"]
+subgraph Adjudication["Duplicate Adjudication"]
 E["Determine Reporting Context"]
 F["Select Anchor Population<br>(drugs, AEs, drugs∩AEs)"]
-H["Assess Additional Matching Evidence"]
+H["Assess Matching Evidence"]
 I["Assess Inconsistencies"]
 J["Assess Narrative Consistency (LLM)"]
 K["Decision Logic"]
 end
 
-subgraph Output["Method output"]
-M["Same individual"]
-N["Different individuals"]
-O["Abstain"]
-P["Related"]
-Q["Unrelated"]
-R["Abstain"]
+subgraph Output["Final classification"]
+M["Duplicates"]
+N["Otherwise related"]
+O["Unrelated"]
+P["Abstain"]
 end
 
 
@@ -79,8 +84,7 @@ J --> K
 K --> M
 K --> N
 K --> O
-
-N --> P
-N --> Q
-N --> R
+K --> P
 ```
+
+For full details of each component, see [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md).

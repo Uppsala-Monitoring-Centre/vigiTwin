@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This document defines the **data contracts** used in the LLM-assisted same-individual assessment pipeline.
+This document defines the **data contracts** used in the duplicate adjudication pipeline (i.e. the LLM-assisted report-pair classification pipeline).
 
-The schemas defined in this document specify the expected structure of data produced and consumed by the duplicate assessment pipeline. In operational environments these datasets are stored in the secure repository and are **not included in this repository**.
+The schemas defined in this document specify the expected structure of data produced and consumed by the duplicate adjudication pipeline. In operational environments these datasets are stored in the secure repository and are **not included in this repository**.
 
 The purpose of these contracts is to ensure that:
 
@@ -15,11 +15,11 @@ The purpose of these contracts is to ensure that:
 
 The pipeline processes information about pharmacovigilance reports in **three conceptual layers**.
 
-| Layer        | Purpose                                          | Stability   |
-| ------------ | ------------------------------------------------ | ----------- |
-| Report       | Structured representation of a single report     | Very stable |
-| ReportPair   | Relationship between two reports being evaluated | Stable      |
-| PairFeatures | Derived features used for duplicate assessment   | May evolve  |
+| Layer        | Purpose                                                     | Stability   |
+| ------------ | ----------------------------------------------------------- | ----------- |
+| Report       | Structured representation of a single report                | Very stable |
+| ReportPair   | Identifiers of two reports being adjudicated as a pair      | Stable      |
+| PairFeatures | Derived features used for report-pair duplicate adjudication | May evolve  |
 
 Each layer builds on the previous one.
 
@@ -45,10 +45,10 @@ DB -->|compute frequency statistics| STATS[Frequency statistics]
 REPORTS --> PF[PairFeatures]
 STATS --> PF
 
-PF --> DECISION[Duplicate decision logic]
+PF --> DECISION[Duplicate adjudication decision logic]
 ```
 
-ReportPair objects define the set of report pairs that will be evaluated. These pairs determine which reports must be extracted from the pharmacovigilance database and which frequency statistics must be computed to support probability-based matching.
+ReportPair objects define the set of report pairs that will be adjudicated. These pairs determine which reports must be extracted from the pharmacovigilance database and which frequency statistics must be computed to support probability-based matching.
 
 This layered design separates **data extraction**, **pair construction**, and **feature generation**, allowing the analytical components of the method to evolve without modifying the core report representation.
 
@@ -62,7 +62,7 @@ Each layer has a clearly defined responsibility:
 
 - **Report:** represent extracted report information
 - **ReportPair:** define which reports are compared
-- **PairFeatures:** represent analytical evidence used for duplicate assessment
+- **PairFeatures:** represent analytical evidence used for duplicate adjudication
 
 ------
 
@@ -210,7 +210,7 @@ month
 year
 ```
 
-Report dates are matched for evidence display but are excluded from the collision-probability computation. Drug and AE dates (start/end/onset) are used instead — see the method specification § Clinical Dates.
+Report dates are matched for evidence display but are excluded from the collision-probability computation. Drug and AE dates (start/end/onset) are used instead — see `duplicate_adjudication_spec.md` § Clinical Dates.
 
 ------
 
@@ -244,7 +244,7 @@ drugs: [
 Notes:
 
 - `substance` corresponds to the **WHODrug active substance**
-- `role` classifies the drug's importance in the report: `"suspected"`, `"interacting"`, `"concomitant"`, or `null` (unknown). Used by the drug-set inconsistency check to distinguish clinically central drugs from background medication (see method specification § Inconsistency Detection).
+- `role` classifies the drug's importance in the report: `"suspected"`, `"interacting"`, `"concomitant"`, or `null` (unknown). Used by the drug-set inconsistency check to distinguish clinically central drugs from background medication (see `duplicate_adjudication_spec.md` § Inconsistency Detection).
 - additional attributes (`form`, `strength`, `start_date`, `end_date`) are optional
 - drugs are interpreted as **sets** when comparing reports
 
@@ -288,8 +288,8 @@ resolution convention (`year`, `month`, `day`).
 This field is **optional** (defaults to `null`). When present, it
 overrides the dev-side derived overall AE onset date used by the
 clinical-date inconsistency module; when absent, the derived fallback
-applies. See the method specification § Clinical Date Inconsistencies
-for the resolution rule.
+applies. See `duplicate_adjudication_spec.md` § Clinical Date
+Inconsistencies for the resolution rule.
 
 ------
 
@@ -311,7 +311,7 @@ matching_drugs
 matching_AEs
 ```
 
-which help define the **shared clinical context** for PairFeatures used in duplicate assessment.
+which help define the **shared clinical context** for PairFeatures used in duplicate adjudication.
 
 ------
 
@@ -331,9 +331,9 @@ Missing values must **not produce matching evidence**.
 
 ## Purpose
 
-The **ReportPair layer** defines candidate pairs of reports that are evaluated for possible duplication.
+The **ReportPair layer** defines candidate pairs of reports that are adjudicated for possible duplication.
 
-Each ReportPair object contains **only the identifiers of the two reports forming the pair**. All derived information used in duplicate assessment is stored in the **PairFeatures layer**.
+Each ReportPair object contains **only the identifiers of the two reports forming the pair**. All derived information used in duplicate adjudication is stored in the **PairFeatures layer**.
 
 ------
 
@@ -377,17 +377,17 @@ Both must correspond to `report_id` values in the **Report layer**.
 
 ## Purpose
 
-The **PairFeatures layer** contains all derived information used to evaluate whether two reports refer to the same individual.
+The **PairFeatures layer** contains all derived information used to adjudicate a report pair as duplicates, otherwise related, or unrelated.
 
 These features are computed from the Report layer and statistical summaries of the database and include:
 
 - the **shared clinical context**
 - **anchor population statistics**
-- **probability-based matching evidence**
+- **probability-based matching evidence** (used to test the null that the two reports are independent draws from the comparison population)
 - **detected inconsistencies**
 - **narrative similarity assessments**
 
-These features provide the inputs to the **duplicate decision logic**.
+These features provide the inputs to the **duplicate adjudication decision logic**.
 
 ------
 

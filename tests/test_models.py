@@ -6,8 +6,8 @@ import pytest
 
 from llm_dup_dev.models import (
     ClassificationResult,
-    PrimaryClassification,
-    RelationshipClassification,
+    DuplicateRelationship,
+    IndependenceAssessment,
     Report,
 )
 from llm_dup_dev.models.report import PartialDate
@@ -101,40 +101,40 @@ class TestReportedOverallAeOnsetDate:
 
 
 class TestClassificationResult:
-    def test_same_individual_label(self):
+    def test_duplicates_label(self):
         r = ClassificationResult(
             pair_id="A__B",
-            primary=PrimaryClassification.SAME_INDIVIDUAL,
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.DUPLICATES,
         )
         assert r.final_label == "Duplicates"
 
-    def test_different_related_label(self):
+    def test_otherwise_related_label(self):
         r = ClassificationResult(
             pair_id="A__B",
-            primary=PrimaryClassification.DIFFERENT_INDIVIDUALS,
-            relationship=RelationshipClassification.RELATED,
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
         )
         assert r.final_label == "Otherwise_related"
 
-    def test_different_unrelated_label(self):
+    def test_independent_label(self):
         r = ClassificationResult(
             pair_id="A__B",
-            primary=PrimaryClassification.DIFFERENT_INDIVIDUALS,
-            relationship=RelationshipClassification.UNRELATED,
+            independence_assessment=IndependenceAssessment.INDEPENDENT,
         )
         assert r.final_label == "Unrelated"
 
     def test_abstain_label(self):
         r = ClassificationResult(
             pair_id="A__B",
-            primary=PrimaryClassification.ABSTAIN,
+            independence_assessment=IndependenceAssessment.ABSTAIN,
         )
         assert r.final_label == "Abstain"
 
-    def test_different_no_relationship_defaults_to_abstain(self):
-        """If primary is Different but relationship is None, label is Abstain."""
+    def test_non_independent_no_relationship_defaults_to_abstain(self):
+        """If non-independent but no duplicate_relationship, label is Abstain."""
         r = ClassificationResult(
             pair_id="A__B",
-            primary=PrimaryClassification.DIFFERENT_INDIVIDUALS,
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
         )
         assert r.final_label == "Abstain"

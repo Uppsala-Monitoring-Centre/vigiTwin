@@ -312,9 +312,9 @@ details.debug-section pre {
                 {{ vm.decision_summary.final_label }}
             </span>
         </dd>
-        {% if vm.decision_summary.relationship %}
+        {% if vm.decision_summary.duplicate_relationship %}
         <dt>Relationship</dt>
-        <dd>{{ vm.decision_summary.relationship }}</dd>
+        <dd>{{ vm.decision_summary.duplicate_relationship }}</dd>
         {% endif %}
         {% if vm.decision_summary.l_match is not none %}
         <dt>L<sub>match</sub></dt>
@@ -629,11 +629,11 @@ details.debug-section pre {
 <div class="section">
     <h2>Classification</h2>
     <dl class="evidence-kv">
-        <dt>Primary</dt>
-        <dd>{{ vm.classification_summary.primary }}</dd>
-        {% if vm.classification_summary.relationship %}
+        <dt>Independence</dt>
+        <dd>{{ vm.classification_summary.independence_assessment }}</dd>
+        {% if vm.classification_summary.duplicate_relationship %}
         <dt>Relationship</dt>
-        <dd>{{ vm.classification_summary.relationship }}</dd>
+        <dd>{{ vm.classification_summary.duplicate_relationship }}</dd>
         {% endif %}
         <dt>Pipeline label</dt>
         <dd>

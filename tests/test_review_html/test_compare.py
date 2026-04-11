@@ -394,11 +394,15 @@ class TestClinicalDateCountsInViewModels:
     ):
         """features_summary.clinical_date_counts must be populated."""
         from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import PrimaryClassification
+        from llm_dup_dev.models.enums import (
+            DuplicateRelationship,
+            IndependenceAssessment,
+        )
 
         classification = ClassificationResult(
             pair_id="R001__R002",
-            primary=PrimaryClassification.SAME_INDIVIDUAL,
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.DUPLICATES,
             explanation="test",
         )
         vm = build_pair_view_model(
@@ -421,11 +425,15 @@ class TestClinicalDateCountsInViewModels:
     ):
         """decision_summary.clinical_date_counts must be populated."""
         from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import PrimaryClassification
+        from llm_dup_dev.models.enums import (
+            DuplicateRelationship,
+            IndependenceAssessment,
+        )
 
         classification = ClassificationResult(
             pair_id="R001__R002",
-            primary=PrimaryClassification.SAME_INDIVIDUAL,
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.DUPLICATES,
             explanation="test",
         )
         vm = build_pair_view_model(

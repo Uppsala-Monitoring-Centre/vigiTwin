@@ -3,13 +3,27 @@
 This repository is designed to be developed with assistance from AI coding agents.
 
 ## Purpose of repo
-LLM-powered duplicate post-processing and annotation support for pharmacovigilance adverse 
-event reports (VigiBase/FAERS).
-Pairs of reports classified as suspected duplicates by the vigiMatch 2025 method
-(see: https://doi.org/10.48550/arXiv.2504.03729) are further processed by
-by an explicitly programmed decision logic with some LLM-based evidence extraction
-operating solely on the structured outputs 
-which classifies report pairs as   **Duplicates**, **Otherwise_related**, or **Unrelated** .
+A **duplicate adjudication pipeline** (with optional LLM-assisted evidence
+extraction) for pharmacovigilance adverse event reports (VigiBase/FAERS).
+Report pairs that have been flagged as suspected duplicates by the vigiMatch
+2025 method (see: https://doi.org/10.48550/arXiv.2504.03729) are passed to a
+transparent rule-based decision logic that classifies each pair as
+**Duplicates**, **Otherwise_related**, **Unrelated**, or **Abstain**. The
+pipeline combines probabilistic match signals, structured/clinical-date
+inconsistency signals, and (planned) LLM-based narrative consistency
+assessment.
+
+Historically the pipeline was framed as a "same-individual assessment".
+The current framing is **report-pair adjudication / duplicate
+adjudication**, and the rarity-based matching component is treated as a
+test of the **independence null** (was it plausible that the two reports
+were independent draws from the comparison population?). Internally the
+decision logic produces two layered labels — an `IndependenceAssessment`
+plus a `DuplicateRelationship` sub-label — that are mapped to the
+user-facing `Duplicates / Otherwise_related / Unrelated / Abstain`
+labels by `ClassificationResult.final_label`. See
+`docs/duplicate_adjudication_spec.md` § Decision logic for the full
+mapping and rationale.
 
 ## Core principles
 
@@ -56,7 +70,7 @@ Unit tests should be added for key components where possible.
 
 Implementation should follow the specifications in:
 
-`docs/same_individual_assessment_spec.md`
+`docs/duplicate_adjudication_spec.md`
 
 If specifications conflict with legacy code, **the specification takes precedence.**
 
@@ -72,7 +86,7 @@ If specifications conflict with legacy code, **the specification takes precedenc
 │   ├── data_contracts.md                   # Data layer schemas and contracts
 │   ├── pipeline_overview.md                # End-to-end pipeline description
 │   ├── repository_roles.md                 # Repo separation and security controls
-│   └── same_individual_assessment_spec.md  # Primary method specification
+│   └── duplicate_adjudication_spec.md      # Primary method specification
 │
 ├── examples/
 │   ├── pair_features_example.json

@@ -474,7 +474,14 @@ class TestOfflineEquivalenceToLive:
         assert offline_result.features.L_match == pytest.approx(
             live_result.features.L_match
         )
-        assert offline_result.classification.primary == live_result.classification.primary
+        assert (
+            offline_result.classification.independence_assessment
+            == live_result.classification.independence_assessment
+        )
+        assert (
+            offline_result.classification.duplicate_relationship
+            == live_result.classification.duplicate_relationship
+        )
 
 
 # ---------------------------------------------------------------------------
