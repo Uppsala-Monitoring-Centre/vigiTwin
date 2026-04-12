@@ -44,6 +44,12 @@ a:hover { text-decoration: underline; }
 .label-Unrelated { background: #f8d7da; color: #721c24; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
+/* Severity colours for inline inconsistency items */
+.inc-minor { color: #b8860b; font-weight: 600; }
+.inc-moderate { color: #d2691e; font-weight: 600; }
+.inc-strong { color: #c0392b; font-weight: 600; }
+.inc-decisive { color: #8b0000; font-weight: 700; }
+
 @media print { body { background: #fff; padding: 0; } }
 </style>
 </head>
@@ -66,6 +72,9 @@ a:hover { text-decoration: underline; }
                 {% endif %}
                 {% if has_anchor %}
                 <th>Anchor</th>
+                {% endif %}
+                {% if has_anchor_n %}
+                <th>Anchor N</th>
                 {% endif %}
                 {% if has_matching_features %}
                 <th>Additional matching features</th>
@@ -95,14 +104,28 @@ a:hover { text-decoration: underline; }
                 {% if has_anchor %}
                 <td>{{ item.anchor_label | safe if item.anchor_label else '--' }}</td>
                 {% endif %}
+                {% if has_anchor_n %}
+                <td>{{ item.anchor_n if item.anchor_n is not none else '--' }}</td>
+                {% endif %}
                 {% if has_matching_features %}
-                <td>{{ item.matching_features or '--' }}</td>
+                <td>{{ item.matching_features | safe if item.matching_features else '--' }}</td>
                 {% endif %}
                 {% if has_l_match %}
                 <td>{{ "%.2f"|format(item.l_match) if item.l_match is not none else '--' }}</td>
                 {% endif %}
                 {% if has_inconsistencies %}
-                <td>{{ item.inconsistency_summary or '--' }}</td>
+                <td>
+                    {%- if item.inconsistency_items -%}
+                    {%- for ii in item.inconsistency_items -%}
+                    {%- if not loop.first %}; {% endif -%}
+                    <span class="inc-{{ ii.severity }}">{{ ii.label | safe }}: {{ ii.detail | safe }}</span>
+                    {%- endfor -%}
+                    {%- elif item.inconsistency_summary -%}
+                    {{ item.inconsistency_summary }}
+                    {%- else -%}
+                    --
+                    {%- endif -%}
+                </td>
                 {% endif %}
                 {% if has_labels %}
                 <td>

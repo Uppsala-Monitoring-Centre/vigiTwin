@@ -625,7 +625,9 @@ class TestPredictionRendering:
         assert item.inconsistency_summary == "0m / 1M / 0S / 0D"
         assert item.narrative_consistency == "consistent"
         # Anchor: drugs_AEs anchor type combines matching drugs and AEs
-        assert item.anchor_label == "pregabalin + somnolence: <strong>40</strong> reports"
+        # (descriptor only — count is in anchor_n)
+        assert item.anchor_label == "pregabalin + somnolence"
+        assert item.anchor_n == 40
         # Context: country + year extracted from the reporting context
         assert item.context_label == "US 2020"
         # Matching features shows the actual values behind each contribution
@@ -646,17 +648,71 @@ class TestPredictionRendering:
         html = render_index([item])
         assert "Duplicates" in html
         assert "3.80" in html
-        assert "0m / 1M / 0S / 0D" in html
+        # Inconsistency items rendered with colour-coded severity
+        assert "weight: Weight differs by 2.0 kg" in html
+        assert 'class="inc-moderate"' in html
         # New columns are present
         assert "Anchor" in html
         assert "Context" in html
         assert "Additional matching features" in html
-        assert "pregabalin + somnolence: <strong>40</strong> reports" in html
+        assert "pregabalin + somnolence" in html
+        assert "Anchor N" in html
+        assert "<td>40</td>" in html
         # Removed columns are no longer rendered
         assert "<th>Report 1</th>" not in html
         assert "<th>Report 2</th>" not in html
         assert "<th>Relationship</th>" not in html
         assert "<th>Narrative</th>" not in html
+
+    def test_key_drugs_bolded_in_index(self, report_a, report_b):
+        """Suspected/interacting drugs are bolded; concomitant and role=None are not."""
+        from llm_dup_dev.models.enums import DrugRole
+        from llm_dup_dev.models.report import Drug
+
+        # Give report_a drugs with explicit roles
+        r_a = report_a.model_copy(deep=True)
+        r_a.drugs = [
+            Drug(substance="pregabalin", sources=["s"], role=DrugRole.SUSPECTED),
+            Drug(substance="sertraline", sources=["s"], role=DrugRole.CONCOMITANT),
+        ]
+        r_b = report_b.model_copy(deep=True)
+        r_b.drugs = [
+            Drug(substance="pregabalin", sources=["s"], role=DrugRole.SUSPECTED),
+            Drug(substance="omeprazole", sources=["s"]),  # role=None
+        ]
+        features = _make_features()
+        classification = _make_classification()
+        vm = build_pair_view_model(
+            r_a, r_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+
+        # Anchor label: pregabalin should be bolded (suspected), somnolence is an AE (plain)
+        assert "<strong>pregabalin</strong>" in item.anchor_label
+        assert "<strong>somnolence" not in item.anchor_label
+
+        # Matching features: pregabalin bolded
+        assert "<strong>pregabalin</strong>" in item.matching_features
+
+        # Rendered HTML: bold tags survive rendering
+        html = render_index([item])
+        assert "<strong>pregabalin</strong>" in html
+
+    def test_role_none_drugs_not_bolded(self, report_a, report_b):
+        """Drugs with role=None are not bolded (matching inconsistency logic)."""
+        features = _make_features()
+        classification = _make_classification()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+        # No drugs have explicit suspected/interacting role → no bolding
+        assert "<strong>" not in (item.anchor_label or "")
+        assert "<strong>" not in (item.matching_features or "")
 
     def test_relationship_label_in_decision_summary(self, report_a, report_b):
         """Relationship label appears when classification is Otherwise_related."""
