@@ -326,6 +326,18 @@ class PairViewModel(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class IndexInconsistencyItem(BaseModel):
+    """One inconsistency fragment shown inline in the batch index row.
+
+    Carries enough info for the template to render a colour-coded span,
+    e.g. ``<span class="severity-strong">Male vs Female</span>``.
+    """
+
+    label: str      # e.g. "Overall AE (onset)" or "Fluoxetine (start)"
+    detail: str     # e.g. "2022-01-28 vs 2020" or "Male vs Female"
+    severity: str   # "minor" | "moderate" | "strong" | "decisive"
+
+
 class BatchIndexItem(BaseModel):
     """One entry in the batch index page."""
 
@@ -337,8 +349,12 @@ class BatchIndexItem(BaseModel):
     l_match: float | None = None
     duplicate_relationship: str | None = None
     inconsistency_summary: str | None = None
+    inconsistency_items: list[IndexInconsistencyItem] = Field(
+        default_factory=list
+    )
     narrative_consistency: str | None = None
-    anchor_label: str | None = None              # e.g. "ranitidine + rash: 820 reports"
+    anchor_label: str | None = None              # e.g. "<strong>ranitidine</strong> + rash"
+    anchor_n: int | None = None                  # anchor population count (own column)
     context_label: str | None = None             # e.g. "SE 2025" / "Global"
     matching_features: str | None = None         # e.g. "sex=male, age=25 years, AEs=headache"
     annotation_label: str | None = None          # normalised human annotation

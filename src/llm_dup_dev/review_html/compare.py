@@ -24,6 +24,8 @@ from __future__ import annotations
 import re
 from collections import OrderedDict
 
+from markupsafe import escape as _esc
+
 from llm_dup_dev.data.offline import FrozenPairBundle
 from llm_dup_dev.feature_generation.matching import (
     _coarser_resolution,
@@ -60,6 +62,7 @@ from .models import (
     FreqStatsVM,
     InconsistencyCountsVM,
     InconsistencyVM,
+    IndexInconsistencyItem,
     NarrativeComparison,
     PairViewModel,
     SubfieldStatus,
@@ -996,6 +999,27 @@ def build_batch_index_item(
                 f" {cdc.n_strong}S / {cdc.n_decisive}D)"
             )
 
+    # Build per-item inconsistency list for colour-coded inline display.
+    key_drugs = _key_drug_names(vm)
+    inc_items: list[IndexInconsistencyItem] = []
+    if vm.features_summary:
+        for inc in vm.features_summary.inconsistencies:
+            inc_items.append(IndexInconsistencyItem(
+                label=str(_esc(inc.feature)),
+                detail=_bold_drugs_in_text(inc.description, key_drugs),
+                severity=inc.severity,
+            ))
+        for cdf in vm.features_summary.clinical_date_findings:
+            inc_items.append(IndexInconsistencyItem(
+                label=_bold_entity_label(cdf.entity_label, key_drugs),
+                detail=(
+                    f"{_esc(cdf.source_date)} vs {_esc(cdf.matched_date)}"
+                ),
+                severity=cdf.severity,
+            ))
+
+    anchor_label, anchor_n = _format_anchor_label(vm, key_drugs)
+
     return BatchIndexItem(
         pair_id=vm.pair_id,
         report_1_id=vm.report_1_id,
@@ -1017,14 +1041,16 @@ def build_batch_index_item(
             else None
         ),
         inconsistency_summary=inc_summary,
+        inconsistency_items=inc_items,
         narrative_consistency=(
             vm.features_summary.narrative_consistency
             if vm.features_summary
             else None
         ),
-        anchor_label=_format_anchor_label(vm),
+        anchor_label=anchor_label,
+        anchor_n=anchor_n,
         context_label=_format_context_label(vm),
-        matching_features=_format_matching_features(vm),
+        matching_features=_format_matching_features(vm, key_drugs),
         annotation_label=(
             vm.annotation.normalised_label if vm.annotation else None
         ),
@@ -1038,21 +1064,104 @@ def build_batch_index_item(
 # Index-row formatting helpers
 # ===================================================================
 
+_KEY_DISPLAY_ROLES = {"suspected", "interacting"}
 
-def _format_anchor_label(vm: PairViewModel) -> str | None:
-    """Format the anchor population descriptor for the index row.
 
-    Examples:
-        DRUGS_AES anchor: "ranitidine + rash: 820 reports"
-        DRUGS anchor:     "ranitidine, aspirin: 820 reports"
-        AES anchor:       "rash, fever: 820 reports"
+def _key_drug_names(vm: PairViewModel) -> set[str]:
+    """Return casefolded substance names for drugs with key roles.
+
+    A drug is "key" if any DrugDetail (left or right) has role
+    ``"suspected"`` or ``"interacting"``.  Drugs with ``role=None``
+    or ``"concomitant"`` are excluded, matching the convention in
+    ``feature_generation.inconsistencies._KEY_ROLES``.
+    """
+    key: set[str] = set()
+    for row in vm.drugs:
+        for detail in (*row.left_details, *row.right_details):
+            if detail.role and detail.role.lower() in _KEY_DISPLAY_ROLES:
+                key.add(row.substance.casefold())
+                break
+    return key
+
+
+def _bold_drug(name: str, key_drugs: set[str]) -> str:
+    """Return HTML for a drug name, bolded if it's a key (suspected/interacting) drug."""
+    escaped = _esc(name)
+    if name.casefold() in key_drugs:
+        return f"<strong>{escaped}</strong>"
+    return str(escaped)
+
+
+# Prefixes in clinical-date entity_labels that reference a drug.
+_DRUG_ENTITY_PREFIXES = ("drug_start:", "drug_end:")
+
+
+def _bold_entity_label(entity_label: str, key_drugs: set[str]) -> str:
+    """Bold the drug name portion of a clinical-date entity label if key.
+
+    Labels like ``"drug_start:aspirin"`` have the drug name after the colon.
+    Non-drug labels (e.g. ``"ae_onset:headache"``, ``"overall_ae_onset"``)
+    are returned HTML-escaped but otherwise unchanged.
+    """
+    for prefix in _DRUG_ENTITY_PREFIXES:
+        if entity_label.startswith(prefix):
+            drug_name = entity_label[len(prefix):]
+            return f"{_esc(prefix)}{_bold_drug(drug_name, key_drugs)}"
+    return str(_esc(entity_label))
+
+
+def _bold_drugs_in_text(text: str, key_drugs: set[str]) -> str:
+    """Bold any key drug names found in a free-text inconsistency description.
+
+    Scans for each key drug name (case-insensitive) and wraps matches
+    in ``<strong>`` tags.  The rest of the text is HTML-escaped.
+
+    For descriptions like ``"Key drug(s) in report 1 not found in report 2:
+    ['aspirin', 'ibuprofen']"``, this will bold the drug names inside.
+    """
+    if not key_drugs:
+        return str(_esc(text))
+
+    # Build a regex that matches any key drug name (case-insensitive, word
+    # boundaries).  We sort by length descending so longer names match first.
+    sorted_drugs = sorted(key_drugs, key=len, reverse=True)
+    pattern = re.compile(
+        "|".join(re.escape(d) for d in sorted_drugs),
+        re.IGNORECASE,
+    )
+
+    parts: list[str] = []
+    last_end = 0
+    for m in pattern.finditer(text):
+        # Escape the text before this match
+        parts.append(str(_esc(text[last_end:m.start()])))
+        parts.append(f"<strong>{_esc(m.group())}</strong>")
+        last_end = m.end()
+    parts.append(str(_esc(text[last_end:])))
+    return "".join(parts)
+
+
+def _format_anchor_label(
+    vm: PairViewModel,
+    key_drugs: set[str],
+) -> tuple[str | None, int | None]:
+    """Format the anchor descriptor and population count for the index row.
+
+    Returns ``(descriptor_html, anchor_n)`` where *descriptor_html* contains
+    drug/AE names (key drugs bolded) and *anchor_n* is the raw population
+    count for its own column.
+
+    Examples (descriptor only):
+        DRUGS_AES anchor: ``"<strong>ranitidine</strong> + rash"``
+        DRUGS anchor:     ``"<strong>ranitidine</strong>, aspirin"``
+        AES anchor:       ``"rash, fever"``
     """
     fs = vm.features_summary
     if fs is None:
-        return None
+        return None, None
 
-    drugs = ", ".join(fs.matching_drugs)
-    aes = ", ".join(fs.matching_aes)
+    drugs = ", ".join(_bold_drug(d, key_drugs) for d in fs.matching_drugs)
+    aes = ", ".join(str(_esc(a)) for a in fs.matching_aes)
 
     if fs.anchor_type == "drugs_AEs" and drugs and aes:
         body = f"{drugs} + {aes}"
@@ -1062,9 +1171,9 @@ def _format_anchor_label(vm: PairViewModel) -> str | None:
         body = aes
     else:
         # Fallback: include whatever is present
-        body = " + ".join(p for p in (drugs, aes) if p) or fs.anchor_type
+        body = " + ".join(p for p in (drugs, aes) if p) or str(_esc(fs.anchor_type))
 
-    return f"{body}: <strong>{fs.anchor_n}</strong> reports"
+    return body, fs.anchor_n
 
 
 def _format_context_label(vm: PairViewModel) -> str | None:
@@ -1102,13 +1211,17 @@ _FEATURE_TO_DEMO_LABEL: dict[str, str] = {
 _CLINICAL_DATE_RE = re.compile(r"^clinical_date\s+(\S+)\s")
 
 
-def _format_matching_features(vm: PairViewModel) -> str | None:
+def _format_matching_features(
+    vm: PairViewModel,
+    key_drugs: set[str],
+) -> str | None:
     """Build a compact summary of the values behind each probability feature.
 
     Shows the actual matching values (e.g. ``"male; sertraline, paroxetine;
     2005-03-02"``) rather than technical descriptions.  Only features that
     contributed to the probability calculation are included — the same set
     shown in the *Feature Contributions* table on the detailed pair page.
+    Key drugs are wrapped in ``<strong>`` tags.
 
     Order: sex, age, height, weight, drugs, AEs, dates.
     """
@@ -1150,15 +1263,17 @@ def _format_matching_features(vm: PairViewModel) -> str | None:
         if demo_label is not None:
             value = demo_display.get(demo_label)
             if value:
-                parts.append(value)
+                parts.append(str(_esc(value)))
 
     if "drug_set" in present_features and fs.matching_drugs:
-        parts.append(", ".join(fs.matching_drugs))
+        parts.append(
+            ", ".join(_bold_drug(d, key_drugs) for d in fs.matching_drugs)
+        )
 
     if "ae_set" in present_features and fs.matching_aes:
-        parts.append(", ".join(fs.matching_aes))
+        parts.append(", ".join(str(_esc(a)) for a in fs.matching_aes))
 
     if clinical_dates:
-        parts.append(", ".join(clinical_dates))
+        parts.append(", ".join(str(_esc(d)) for d in clinical_dates))
 
     return "; ".join(parts) if parts else None
