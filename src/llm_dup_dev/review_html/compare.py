@@ -21,6 +21,7 @@ causing the field to be omitted from the demographics table.
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 
 from llm_dup_dev.data.offline import FrozenPairBundle
@@ -1087,39 +1088,70 @@ def _format_context_label(vm: PairViewModel) -> str | None:
     return raw
 
 
-# Map demographic FieldComparison labels to short feature names.
-_DEMO_FEATURE_NAMES: dict[str, str] = {
-    "Sex": "sex",
-    "Age": "age",
-    "Country": "country",
-    "Height": "height",
-    "Weight": "weight",
+# Map probability feature names to demographic FieldComparison labels.
+_FEATURE_TO_DEMO_LABEL: dict[str, str] = {
+    "patient_sex": "Sex",
+    "patient_age": "Age",
+    "patient_country": "Country",
+    "patient_height": "Height",
+    "patient_weight": "Weight",
 }
+
+# Regex to extract the date value from a clinical_date description like
+# "clinical_date 2024-01-15 (day): D_f=365".
+_CLINICAL_DATE_RE = re.compile(r"^clinical_date\s+(\S+)\s")
 
 
 def _format_matching_features(vm: PairViewModel) -> str | None:
-    """Build a compact summary of features contributing to the match.
+    """Build a compact summary of the values behind each probability feature.
 
-    Includes matching demographic fields (from ``vm.demographics``) and
-    matching drugs / AEs (from ``vm.features_summary``). Example:
-    ``"sex=male, age=25 years, AEs=headache, myocardial infarction"``.
+    Shows the actual matching values (e.g. ``"male; sertraline, paroxetine;
+    2005-03-02"``) rather than technical descriptions.  Only features that
+    contributed to the probability calculation are included — the same set
+    shown in the *Feature Contributions* table on the detailed pair page.
     """
-    parts: list[str] = []
-
-    # Matching demographic fields
-    for fc in vm.demographics:
-        name = _DEMO_FEATURE_NAMES.get(fc.label)
-        if name is None:
-            continue
-        if fc.status == ComparisonStatus.MATCH:
-            parts.append(f"{name}={fc.left_display}")
-
-    # Matching drugs / AEs
     fs = vm.features_summary
-    if fs is not None:
-        if fs.matching_drugs:
-            parts.append("drugs=" + ", ".join(fs.matching_drugs))
-        if fs.matching_aes:
-            parts.append("AEs=" + ", ".join(fs.matching_aes))
+    if fs is None or not fs.feature_contributions:
+        return None
+
+    # Build a lookup from demographic label → display value.
+    demo_display: dict[str, str] = {
+        fc.label: fc.left_display for fc in vm.demographics
+    }
+
+    # Collect unique clinical dates (may have multiple contributions).
+    clinical_dates: list[str] = []
+
+    parts: list[str] = []
+    for fc in fs.feature_contributions:
+        # Demographic features
+        demo_label = _FEATURE_TO_DEMO_LABEL.get(fc.feature)
+        if demo_label is not None:
+            value = demo_display.get(demo_label)
+            if value:
+                parts.append(value)
+            continue
+
+        # Drug set
+        if fc.feature == "drug_set" and fs.matching_drugs:
+            parts.append(", ".join(fs.matching_drugs))
+            continue
+
+        # AE set
+        if fc.feature == "ae_set" and fs.matching_aes:
+            parts.append(", ".join(fs.matching_aes))
+            continue
+
+        # Clinical dates — extract date value from description
+        if fc.feature == "clinical_date":
+            m = _CLINICAL_DATE_RE.match(fc.description)
+            if m:
+                date_val = m.group(1)
+                if date_val not in clinical_dates:
+                    clinical_dates.append(date_val)
+            continue
+
+    if clinical_dates:
+        parts.append(", ".join(clinical_dates))
 
     return "; ".join(parts) if parts else None

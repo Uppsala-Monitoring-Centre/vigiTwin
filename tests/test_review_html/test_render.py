@@ -14,6 +14,7 @@ from llm_dup_dev.models.enums import (
 )
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
+    FeatureContribution,
     InconsistencyCounts,
     Inconsistency,
     PairFeatures,
@@ -404,6 +405,16 @@ def _make_features(pair_id: str = "R001__R002") -> PairFeatures:
         ),
         probability=ProbabilityEstimate(
             p_joint=1.5e-5, expected_collisions=0.075,
+            feature_contributions=[
+                FeatureContribution(
+                    feature="patient_sex", p_f=0.5, method="domain_size",
+                    domain_size=2, description="patient_sex: D_f=2",
+                ),
+                FeatureContribution(
+                    feature="drug_set", p_f=0.01, method="leave_pair_out",
+                    description="Drug set: (5-2)/(200-2)",
+                ),
+            ],
         ),
         L_match=3.8,
         inconsistencies=[
@@ -617,10 +628,10 @@ class TestPredictionRendering:
         assert item.anchor_label == "pregabalin + somnolence: 40 reports"
         # Context: country + year extracted from the reporting context
         assert item.context_label == "US 2020"
-        # Matching features summary lists matching drugs and AEs
+        # Matching features shows the actual values behind each contribution
         assert item.matching_features is not None
-        assert "drugs=pregabalin" in item.matching_features
-        assert "AEs=somnolence" in item.matching_features
+        assert "female" in item.matching_features
+        assert "pregabalin" in item.matching_features
 
     def test_batch_index_renders_evaluation_columns(self, report_a, report_b):
         """Rendered index HTML includes the new column set."""
