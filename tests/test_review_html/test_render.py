@@ -621,8 +621,10 @@ class TestPredictionRendering:
         item = build_batch_index_item(vm, "R001__R002.html")
         assert item.final_label == "Duplicates"
         assert item.l_match == 3.8
-        # Inconsistency summary now leads with lowercase-m minor count
-        assert item.inconsistency_summary == "0m / 1M / 0S / 0D"
+        # Inconsistency items carry succinct text with severity
+        assert len(item.inconsistency_items) == 1
+        assert "68 kg vs 70 kg" in item.inconsistency_items[0].text
+        assert item.inconsistency_items[0].severity == "moderate"
         assert item.narrative_consistency == "consistent"
         # Anchor: drugs_AEs anchor type combines matching drugs and AEs
         # (descriptor only — count is in anchor_n)
@@ -649,7 +651,7 @@ class TestPredictionRendering:
         assert "Duplicates" in html
         assert "3.80" in html
         # Inconsistency items rendered with colour-coded severity
-        assert "weight: Weight differs by 2.0 kg" in html
+        assert "68 kg vs 70 kg" in html
         assert 'class="inc-moderate"' in html
         # New columns are present
         assert "Anchor" in html

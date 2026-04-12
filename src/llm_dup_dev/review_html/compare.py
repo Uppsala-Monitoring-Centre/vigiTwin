@@ -981,42 +981,9 @@ def build_batch_index_item(
     filename: str,
 ) -> BatchIndexItem:
     """Build an index entry from a rendered pair view model."""
-    # Inconsistency summary: "1m / 2M / 1S / 0D" style — lowercase m for minor
-    # to distinguish from uppercase M (moderate).
-    inc_summary: str | None = None
-    if (
-        vm.features_summary
-        and vm.features_summary.inconsistency_counts
-    ):
-        ic = vm.features_summary.inconsistency_counts
-        inc_summary = (
-            f"{ic.minor}m / {ic.moderate}M / {ic.strong}S / {ic.decisive}D"
-        )
-        cdc = vm.features_summary.clinical_date_counts
-        if cdc and cdc.total > 0:
-            inc_summary += (
-                f" (dates: {cdc.n_minor}m / {cdc.n_moderate}M /"
-                f" {cdc.n_strong}S / {cdc.n_decisive}D)"
-            )
-
     # Build per-item inconsistency list for colour-coded inline display.
     key_drugs = _key_drug_names(vm)
-    inc_items: list[IndexInconsistencyItem] = []
-    if vm.features_summary:
-        for inc in vm.features_summary.inconsistencies:
-            inc_items.append(IndexInconsistencyItem(
-                label=str(_esc(inc.feature)),
-                detail=_bold_drugs_in_text(inc.description, key_drugs),
-                severity=inc.severity,
-            ))
-        for cdf in vm.features_summary.clinical_date_findings:
-            inc_items.append(IndexInconsistencyItem(
-                label=_bold_entity_label(cdf.entity_label, key_drugs),
-                detail=(
-                    f"{_esc(cdf.source_date)} vs {_esc(cdf.matched_date)}"
-                ),
-                severity=cdf.severity,
-            ))
+    inc_items = _build_index_inconsistency_items(vm, key_drugs)
 
     anchor_label, anchor_n = _format_anchor_label(vm, key_drugs)
 
@@ -1040,7 +1007,6 @@ def build_batch_index_item(
             if vm.classification_summary
             else None
         ),
-        inconsistency_summary=inc_summary,
         inconsistency_items=inc_items,
         narrative_consistency=(
             vm.features_summary.narrative_consistency
@@ -1066,6 +1032,137 @@ def build_batch_index_item(
 
 _KEY_DISPLAY_ROLES = {"suspected", "interacting"}
 
+# Regex for parsing drug_set inconsistency descriptions.
+_DRUG_SET_RE_1 = re.compile(
+    r"Key drug\(s\) in report 1 not found in report 2:\s*\[(.+)\]"
+)
+_DRUG_SET_RE_2 = re.compile(
+    r"Key drug\(s\) in report 2 not found in report 1:\s*\[(.+)\]"
+)
+
+
+def _parse_drug_list(raw: str) -> list[str]:
+    """Parse a Python-style string list like ``"'placebo', 'blinded therapy'"``."""
+    return [s.strip().strip("'\"") for s in raw.split(",")]
+
+
+def _build_index_inconsistency_items(
+    vm: PairViewModel,
+    key_drugs: set[str],
+) -> list[IndexInconsistencyItem]:
+    """Build succinct, colour-coded inconsistency items for the index row.
+
+    Produces compact text like ``"male vs female"``,
+    ``"75 years vs 68 years"``, ``"Sertraline: 2022-01 vs 2020"``,
+    or ``"Placebo listed only on report 1"``.
+    """
+    if vm.features_summary is None:
+        return []
+
+    # Lookup from demographic label → (left_display, right_display).
+    demo_values: dict[str, tuple[str, str]] = {
+        fc.label: (fc.left_display, fc.right_display)
+        for fc in vm.demographics
+    }
+
+    items: list[IndexInconsistencyItem] = []
+
+    for inc in vm.features_summary.inconsistencies:
+        text = _format_demographic_inconsistency(
+            inc, demo_values, key_drugs,
+        )
+        items.append(IndexInconsistencyItem(text=text, severity=inc.severity))
+
+    for cdf in vm.features_summary.clinical_date_findings:
+        text = _format_clinical_date_item(cdf, key_drugs)
+        items.append(IndexInconsistencyItem(
+            text=text, severity=cdf.severity,
+        ))
+
+    return items
+
+
+def _format_demographic_inconsistency(
+    inc: InconsistencyVM,
+    demo_values: dict[str, tuple[str, str]],
+    key_drugs: set[str],
+) -> str:
+    """Format a single demographic/drug-set inconsistency for the index.
+
+    Returns an HTML-safe string.
+    """
+    # --- patient_sex / sex: "male vs female" ---
+    if inc.feature in ("patient_sex", "sex"):
+        vals = demo_values.get("Sex")
+        if vals:
+            return f"{_esc(vals[0])} vs {_esc(vals[1])}"
+        # Fallback: parse from description "Sex mismatch: ['male'] vs ['female']"
+        return str(_esc(inc.description))
+
+    # --- patient_age / patient_weight / patient_height: "75 years vs 68 years" ---
+    demo_label = _FEATURE_TO_DEMO_LABEL.get(inc.feature)
+    if demo_label:
+        vals = demo_values.get(demo_label)
+        if vals:
+            return f"{_esc(vals[0])} vs {_esc(vals[1])}"
+
+    # --- drug_set: "Placebo listed only on report 1" ---
+    if inc.feature == "drug_set":
+        return _format_drug_set_item(inc.description, key_drugs)
+
+    # Fallback for any unknown feature
+    return str(_esc(inc.description or inc.feature))
+
+
+def _format_drug_set_item(description: str, key_drugs: set[str]) -> str:
+    """Format a drug-set inconsistency as succinct HTML.
+
+    Converts ``"Key drug(s) in report 1 not found in report 2: ['placebo']"``
+    to ``"<strong>Placebo</strong> listed only on report 1"``.
+    """
+    m1 = _DRUG_SET_RE_1.match(description)
+    if m1:
+        drugs = _parse_drug_list(m1.group(1))
+        names = ", ".join(_bold_drug(d.title(), key_drugs) for d in drugs)
+        return f"{names} listed only on report 1"
+
+    m2 = _DRUG_SET_RE_2.match(description)
+    if m2:
+        drugs = _parse_drug_list(m2.group(1))
+        names = ", ".join(_bold_drug(d.title(), key_drugs) for d in drugs)
+        return f"{names} listed only on report 2"
+
+    # Fallback
+    return _bold_drugs_in_text(description, key_drugs)
+
+
+# Prefixes in clinical-date entity_labels that reference a drug or AE.
+_ENTITY_LABEL_PREFIXES = ("drug_start:", "drug_end:", "ae_onset:")
+
+
+def _format_clinical_date_item(
+    cdf: ClinicalDateFindingVM,
+    key_drugs: set[str],
+) -> str:
+    """Format a clinical-date inconsistency for the index.
+
+    Converts ``entity_label="drug_start:sertraline"`` with dates
+    to ``"<strong>Sertraline</strong>: 2022-01-28 vs 2020"``.
+    """
+    dates = f"{_esc(cdf.source_date)} vs {_esc(cdf.matched_date)}"
+
+    for prefix in _ENTITY_LABEL_PREFIXES:
+        if cdf.entity_label.startswith(prefix):
+            name = cdf.entity_label[len(prefix):]
+            if prefix.startswith("drug_"):
+                label = _bold_drug(name, key_drugs)
+            else:
+                label = str(_esc(name))
+            return f"{label}: {dates}"
+
+    # Fallback for other entity labels (e.g. "overall_ae_onset")
+    return f"{_esc(cdf.entity_label)}: {dates}"
+
 
 def _key_drug_names(vm: PairViewModel) -> set[str]:
     """Return casefolded substance names for drugs with key roles.
@@ -1090,24 +1187,6 @@ def _bold_drug(name: str, key_drugs: set[str]) -> str:
     if name.casefold() in key_drugs:
         return f"<strong>{escaped}</strong>"
     return str(escaped)
-
-
-# Prefixes in clinical-date entity_labels that reference a drug.
-_DRUG_ENTITY_PREFIXES = ("drug_start:", "drug_end:")
-
-
-def _bold_entity_label(entity_label: str, key_drugs: set[str]) -> str:
-    """Bold the drug name portion of a clinical-date entity label if key.
-
-    Labels like ``"drug_start:aspirin"`` have the drug name after the colon.
-    Non-drug labels (e.g. ``"ae_onset:headache"``, ``"overall_ae_onset"``)
-    are returned HTML-escaped but otherwise unchanged.
-    """
-    for prefix in _DRUG_ENTITY_PREFIXES:
-        if entity_label.startswith(prefix):
-            drug_name = entity_label[len(prefix):]
-            return f"{_esc(prefix)}{_bold_drug(drug_name, key_drugs)}"
-    return str(_esc(entity_label))
 
 
 def _bold_drugs_in_text(text: str, key_drugs: set[str]) -> str:
@@ -1197,13 +1276,20 @@ def _format_context_label(vm: PairViewModel) -> str | None:
     return raw
 
 
-# Map probability feature names to demographic FieldComparison labels.
+# Map probability/inconsistency feature names to demographic FieldComparison
+# labels.  Both long (``"patient_weight"``) and short (``"weight"``) forms
+# are accepted for robustness.
 _FEATURE_TO_DEMO_LABEL: dict[str, str] = {
     "patient_sex": "Sex",
     "patient_age": "Age",
     "patient_country": "Country",
     "patient_height": "Height",
     "patient_weight": "Weight",
+    # Short forms (used in some inconsistency feature names)
+    "sex": "Sex",
+    "age": "Age",
+    "height": "Height",
+    "weight": "Weight",
 }
 
 # Regex to extract the date value from a clinical_date description like

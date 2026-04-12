@@ -329,12 +329,17 @@ class PairViewModel(BaseModel):
 class IndexInconsistencyItem(BaseModel):
     """One inconsistency fragment shown inline in the batch index row.
 
-    Carries enough info for the template to render a colour-coded span,
-    e.g. ``<span class="severity-strong">Male vs Female</span>``.
+    Carries a pre-formatted, HTML-safe text snippet and a severity level
+    so the template can render a colour-coded ``<span>``.
+
+    Examples of ``text``:
+        ``"male vs female"``
+        ``"75 years vs 68 years"``
+        ``"<strong>Sertraline</strong>: 1994-03-30 vs 1994-03-20"``
+        ``"<strong>Placebo</strong> listed only on report 1"``
     """
 
-    label: str      # e.g. "Overall AE (onset)" or "Fluoxetine (start)"
-    detail: str     # e.g. "2022-01-28 vs 2020" or "Male vs Female"
+    text: str       # pre-formatted HTML-safe snippet
     severity: str   # "minor" | "moderate" | "strong" | "decisive"
 
 
@@ -348,7 +353,6 @@ class BatchIndexItem(BaseModel):
     final_label: str | None = None
     l_match: float | None = None
     duplicate_relationship: str | None = None
-    inconsistency_summary: str | None = None
     inconsistency_items: list[IndexInconsistencyItem] = Field(
         default_factory=list
     )
