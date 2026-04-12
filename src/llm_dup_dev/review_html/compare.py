@@ -1064,7 +1064,7 @@ def _format_anchor_label(vm: PairViewModel) -> str | None:
         # Fallback: include whatever is present
         body = " + ".join(p for p in (drugs, aes) if p) or fs.anchor_type
 
-    return f"{body}: {fs.anchor_n} reports"
+    return f"{body}: <strong>{fs.anchor_n}</strong> reports"
 
 
 def _format_context_label(vm: PairViewModel) -> str | None:
@@ -1109,6 +1109,8 @@ def _format_matching_features(vm: PairViewModel) -> str | None:
     2005-03-02"``) rather than technical descriptions.  Only features that
     contributed to the probability calculation are included — the same set
     shown in the *Feature Contributions* table on the detailed pair page.
+
+    Order: sex, age, height, weight, drugs, AEs, dates.
     """
     fs = vm.features_summary
     if fs is None or not fs.feature_contributions:
@@ -1119,37 +1121,42 @@ def _format_matching_features(vm: PairViewModel) -> str | None:
         fc.label: fc.left_display for fc in vm.demographics
     }
 
+    # Which demographic features are present (as a set for quick lookup).
+    present_features = {fc.feature for fc in fs.feature_contributions}
+
     # Collect unique clinical dates (may have multiple contributions).
     clinical_dates: list[str] = []
-
-    parts: list[str] = []
     for fc in fs.feature_contributions:
-        # Demographic features
-        demo_label = _FEATURE_TO_DEMO_LABEL.get(fc.feature)
-        if demo_label is not None:
-            value = demo_display.get(demo_label)
-            if value:
-                parts.append(value)
-            continue
-
-        # Drug set
-        if fc.feature == "drug_set" and fs.matching_drugs:
-            parts.append(", ".join(fs.matching_drugs))
-            continue
-
-        # AE set
-        if fc.feature == "ae_set" and fs.matching_aes:
-            parts.append(", ".join(fs.matching_aes))
-            continue
-
-        # Clinical dates — extract date value from description
         if fc.feature == "clinical_date":
             m = _CLINICAL_DATE_RE.match(fc.description)
             if m:
                 date_val = m.group(1)
                 if date_val not in clinical_dates:
                     clinical_dates.append(date_val)
+
+    # Emit in fixed order: sex, age, height, weight, drugs, AEs, dates.
+    _ORDERED_FEATURES = [
+        "patient_sex",
+        "patient_age",
+        "patient_height",
+        "patient_weight",
+    ]
+
+    parts: list[str] = []
+    for feature in _ORDERED_FEATURES:
+        if feature not in present_features:
             continue
+        demo_label = _FEATURE_TO_DEMO_LABEL.get(feature)
+        if demo_label is not None:
+            value = demo_display.get(demo_label)
+            if value:
+                parts.append(value)
+
+    if "drug_set" in present_features and fs.matching_drugs:
+        parts.append(", ".join(fs.matching_drugs))
+
+    if "ae_set" in present_features and fs.matching_aes:
+        parts.append(", ".join(fs.matching_aes))
 
     if clinical_dates:
         parts.append(", ".join(clinical_dates))

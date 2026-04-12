@@ -61,14 +61,14 @@ a:hover { text-decoration: underline; }
             <tr>
                 <th>#</th>
                 <th>Pair ID</th>
-                {% if has_anchor %}
-                <th>Anchor</th>
-                {% endif %}
                 {% if has_context %}
                 <th>Context</th>
                 {% endif %}
+                {% if has_anchor %}
+                <th>Anchor</th>
+                {% endif %}
                 {% if has_matching_features %}
-                <th>Matching features</th>
+                <th>Additional matching features</th>
                 {% endif %}
                 {% if has_l_match %}
                 <th>L<sub>match</sub></th>
@@ -89,11 +89,11 @@ a:hover { text-decoration: underline; }
             <tr>
                 <td>{{ loop.index }}</td>
                 <td><a href="{{ item.filename }}">{{ item.pair_id }}</a></td>
-                {% if has_anchor %}
-                <td>{{ item.anchor_label or '--' }}</td>
-                {% endif %}
                 {% if has_context %}
                 <td>{{ item.context_label or '--' }}</td>
+                {% endif %}
+                {% if has_anchor %}
+                <td>{{ item.anchor_label | safe if item.anchor_label else '--' }}</td>
                 {% endif %}
                 {% if has_matching_features %}
                 <td>{{ item.matching_features or '--' }}</td>

@@ -625,7 +625,7 @@ class TestPredictionRendering:
         assert item.inconsistency_summary == "0m / 1M / 0S / 0D"
         assert item.narrative_consistency == "consistent"
         # Anchor: drugs_AEs anchor type combines matching drugs and AEs
-        assert item.anchor_label == "pregabalin + somnolence: 40 reports"
+        assert item.anchor_label == "pregabalin + somnolence: <strong>40</strong> reports"
         # Context: country + year extracted from the reporting context
         assert item.context_label == "US 2020"
         # Matching features shows the actual values behind each contribution
@@ -650,8 +650,8 @@ class TestPredictionRendering:
         # New columns are present
         assert "Anchor" in html
         assert "Context" in html
-        assert "Matching features" in html
-        assert "pregabalin + somnolence: 40 reports" in html
+        assert "Additional matching features" in html
+        assert "pregabalin + somnolence: <strong>40</strong> reports" in html
         # Removed columns are no longer rendered
         assert "<th>Report 1</th>" not in html
         assert "<th>Report 2</th>" not in html
