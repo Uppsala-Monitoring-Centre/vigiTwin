@@ -162,7 +162,7 @@ The features that contribute to the composite matching probability are:
 - **Drug set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed frequency)
 - **AE set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed frequency)
 - **Patient demographics** — age, sex, height, weight (domain-size based)
-- **Clinical dates** — unique dates matching across drug start/end and AE onset fields (domain-size based)
+- **Clinical dates** — unique dates matching across drug start/end, AE onset, and overall AE onset fields (domain-size based)
 
 Note: **report date is excluded** from the probability computation. It is matched for evidence display purposes only, as it primarily reflects administrative timing rather than patient-identifying clinical information.
 
@@ -398,9 +398,9 @@ This logic applies symmetrically: if the anchor is the drug set and the addition
 
 ---
 
-##### Clinical Dates (Drug Start/End, AE Onset)
+##### Clinical Dates (Drug Start/End, AE Onset, Overall AE Onset)
 
-Matching dates from drug and adverse event records provide additional evidence for the collision probability. This uses **explicit date-field coincidence** only — treatment intervals are NOT expanded into sets of intermediate dates.
+Matching dates from drug, adverse event, and overall AE onset records provide additional evidence for the collision probability. This uses **explicit date-field coincidence** only — treatment intervals are NOT expanded into sets of intermediate dates.
 
 ###### Which dates are compared
 
@@ -412,6 +412,8 @@ For each matched drug (shared between the two reports), the following date field
 For each matched adverse event, the following field is compared:
 
 - **onset date** ↔ **onset date**
+
+Additionally, the **overall AE onset date** is compared at the report level. This is a case-level date (either explicitly reported or derived — see the Clinical Date Inconsistencies section) and does not require shared AE terms between the two reports.
 
 Only same-field-type comparisons count. A drug's start date on one report must NOT match against the same drug's end date on the other report. Dates from unmatched drugs or unmatched AEs are not considered.
 
