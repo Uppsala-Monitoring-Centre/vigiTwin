@@ -13,6 +13,7 @@ See: docs/duplicate_adjudication_spec.md § Matching Clinical Feature Sets
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from llm_dup_dev.models.report import (
     AgeValue,
@@ -112,58 +113,46 @@ class MatchResult:
 # ---------------------------------------------------------------------------
 
 
+def _compute_set_overlap(
+    items_r1: list,
+    items_r2: list,
+    key_fn: Callable,
+) -> tuple[list[str], list[str], list[str]]:
+    """Compute case-insensitive set intersection and differences.
+
+    *key_fn* extracts the display name from each item (e.g. ``d.substance``
+    or ``ae.pt_name``).  Original casing from report 1 is preserved.
+
+    Returns ``(matching, only_r1, only_r2)`` — all in canonical sorted order.
+    """
+    map_1 = {key_fn(item).lower(): key_fn(item) for item in items_r1}
+    map_2 = {key_fn(item).lower(): key_fn(item) for item in items_r2}
+
+    matching_keys = set(map_1) & set(map_2)
+    only_r1_keys = set(map_1) - set(map_2)
+    only_r2_keys = set(map_2) - set(map_1)
+
+    return (
+        sorted(map_1[k] for k in matching_keys),
+        sorted(map_1[k] for k in only_r1_keys),
+        sorted(map_2[k] for k in only_r2_keys),
+    )
+
+
 def compute_matching_drugs(
     r1: Report, r2: Report
 ) -> tuple[list[str], list[str], list[str]]:
-    """Compute drug set intersection and differences.
-
-    Drug substances are compared case-insensitively. The original casing
-    from report 1 is preserved in the output.
-
-    Returns
-    -------
-    (matching, only_r1, only_r2)
-        All lists in canonical sorted order.
-    """
-    substances_1 = {d.substance.lower(): d.substance for d in r1.drugs}
-    substances_2 = {d.substance.lower(): d.substance for d in r2.drugs}
-
-    matching_keys = set(substances_1) & set(substances_2)
-    only_r1_keys = set(substances_1) - set(substances_2)
-    only_r2_keys = set(substances_2) - set(substances_1)
-
-    matching = sorted(substances_1[k] for k in matching_keys)
-    only_r1 = sorted(substances_1[k] for k in only_r1_keys)
-    only_r2 = sorted(substances_2[k] for k in only_r2_keys)
-
-    return matching, only_r1, only_r2
+    """Compute drug set intersection and differences (case-insensitive)."""
+    return _compute_set_overlap(r1.drugs, r2.drugs, lambda d: d.substance)
 
 
 def compute_matching_aes(
     r1: Report, r2: Report
 ) -> tuple[list[str], list[str], list[str]]:
-    """Compute adverse event set intersection and differences.
-
-    PT names are compared case-insensitively. The original casing
-    from report 1 is preserved in the output.
-
-    Returns
-    -------
-    (matching, only_r1, only_r2)
-        All lists in canonical sorted order.
-    """
-    pts_1 = {ae.pt_name.lower(): ae.pt_name for ae in r1.adverse_events}
-    pts_2 = {ae.pt_name.lower(): ae.pt_name for ae in r2.adverse_events}
-
-    matching_keys = set(pts_1) & set(pts_2)
-    only_r1_keys = set(pts_1) - set(pts_2)
-    only_r2_keys = set(pts_2) - set(pts_1)
-
-    matching = sorted(pts_1[k] for k in matching_keys)
-    only_r1 = sorted(pts_1[k] for k in only_r1_keys)
-    only_r2 = sorted(pts_2[k] for k in only_r2_keys)
-
-    return matching, only_r1, only_r2
+    """Compute adverse event set intersection and differences (case-insensitive)."""
+    return _compute_set_overlap(
+        r1.adverse_events, r2.adverse_events, lambda ae: ae.pt_name
+    )
 
 
 # ---------------------------------------------------------------------------
