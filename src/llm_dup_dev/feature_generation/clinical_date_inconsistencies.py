@@ -575,6 +575,17 @@ def _align_partial_date_lists(
 # Downgrade logic
 # ---------------------------------------------------------------------------
 
+_STEP_DOWN: dict[Severity, Severity] = {
+    Severity.STRONG: Severity.MODERATE,
+    Severity.MODERATE: Severity.MINOR,
+    Severity.MINOR: Severity.IGNORED,
+}
+
+
+def _step_down_severity(severity: Severity) -> Severity:
+    """Lower severity by one step (STRONG->MODERATE->MINOR->IGNORED)."""
+    return _STEP_DOWN.get(severity, severity)
+
 
 def _apply_cross_entity_downgrade(
     severity: Severity,
@@ -604,13 +615,7 @@ def _apply_concomitant_downgrade(
     contributes as a minor inconsistency.
     """
     reason = "concomitant drug downgrade (-1 step)"
-    if severity == Severity.STRONG:
-        return Severity.MODERATE, reason
-    if severity == Severity.MODERATE:
-        return Severity.MINOR, reason
-    if severity == Severity.MINOR:
-        return Severity.IGNORED, reason
-    return severity, reason
+    return _step_down_severity(severity), reason
 
 
 # ---------------------------------------------------------------------------
