@@ -14,6 +14,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
+    effective_overall_ae_onset_date,
+)
 from llm_dup_dev.models.report import (
     AgeValue,
     DateValue,
@@ -298,7 +301,7 @@ def compute_matching_clinical_dates(
     matching_drugs: list[str],
     matching_AEs: list[str],
 ) -> list[ClinicalDateMatch]:
-    """Compute unique matching dates from drug and AE date fields.
+    """Compute unique matching dates from drug, AE, and overall AE onset fields.
 
     Examines explicitly recorded date values only — NOT treatment intervals.
     A drug exposure period (start → stop) does NOT imply that intermediate
@@ -308,10 +311,12 @@ def compute_matching_clinical_dates(
         1. Only same-field-type comparisons count:
            drug start ↔ drug start, drug end ↔ drug end, AE onset ↔ AE onset.
         2. Only dates for the same matched entity are compared.
-        3. The result is collapsed to unique matched dates.  If the same
+        3. The overall AE onset date is compared at the report level
+           (does not require shared AE terms).
+        4. The result is collapsed to unique matched dates.  If the same
            calendar date matches for multiple drugs/AEs/field types, it
            contributes only once (at the finest matched resolution).
-        4. Standard partial-date matching rules apply (month-only and
+        5. Standard partial-date matching rules apply (month-only and
            year-only values match at their coarser resolution).
 
     Parameters
@@ -388,6 +393,16 @@ def compute_matching_clinical_dates(
                 if result is not None:
                     _update_unique_dates(unique, result[0], result[1])
 
+    # Overall AE onset date: report-level comparison that does not require
+    # shared AE terms.  Feeds into the same unique-date dict so an already-
+    # matched calendar date is not double-counted.
+    onset1 = effective_overall_ae_onset_date(r1)
+    onset2 = effective_overall_ae_onset_date(r2)
+    if onset1 is not None and onset2 is not None:
+        result = _compare_partial_dates(onset1, onset2)
+        if result is not None:
+            _update_unique_dates(unique, result[0], result[1])
+
     return [
         ClinicalDateMatch(matched_value=val, resolution=res)
         for val, res in sorted(unique.items())
@@ -439,7 +454,8 @@ def compute_matches(r1: Report, r2: Report) -> MatchResult:
         ),
     ]
 
-    # Clinical date matching: unique dates from drug start/end and AE onset
+    # Clinical date matching: unique dates from drug start/end, AE onset,
+    # and overall AE onset
     matched_clinical_dates = compute_matching_clinical_dates(
         r1, r2, matching_drugs, matching_aes
     )
