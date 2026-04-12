@@ -45,7 +45,7 @@ a:hover { text-decoration: underline; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
 /* Severity colours for inline inconsistency items */
-.inc-minor { color: #b8860b; font-weight: 600; }
+.inc-minor { color: #9a8200; font-weight: 600; }
 .inc-moderate { color: #d2691e; font-weight: 600; }
 .inc-strong { color: #c0392b; font-weight: 600; }
 .inc-decisive { color: #8b0000; font-weight: 700; }
@@ -118,12 +118,8 @@ a:hover { text-decoration: underline; }
                     {%- if item.inconsistency_items -%}
                     {%- for ii in item.inconsistency_items -%}
                     {%- if not loop.first %}; {% endif -%}
-                    <span class="inc-{{ ii.severity }}">{{ ii.label | safe }}: {{ ii.detail | safe }}</span>
+                    <span class="inc-{{ ii.severity }}">{{ ii.text | safe }}</span>
                     {%- endfor -%}
-                    {%- elif item.inconsistency_summary -%}
-                    {{ item.inconsistency_summary }}
-                    {%- else -%}
-                    --
                     {%- endif -%}
                 </td>
                 {% endif %}
