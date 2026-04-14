@@ -286,12 +286,14 @@ class TestComparePartialDates:
 # ---------------------------------------------------------------------------
 
 
-def _make_report(report_id, drugs=None, adverse_events=None):
+def _make_report(report_id, drugs=None, adverse_events=None,
+                  reported_overall_ae_onset_date=None):
     """Helper to build minimal reports for clinical date tests."""
     return Report(
         report_id=report_id,
         drugs=drugs or [],
         adverse_events=adverse_events or [],
+        reported_overall_ae_onset_date=reported_overall_ae_onset_date,
     )
 
 
@@ -770,3 +772,123 @@ class TestClinicalDateMatching:
         assert len(result) == 2
         assert result[0].matched_value == "2020-01-15"
         assert result[1].matched_value == "2020-09-01"
+
+    # -- Overall AE onset date matching --
+
+    def test_overall_ae_onset_date_match(self):
+        """Matching reported_overall_ae_onset_date should produce a clinical
+        date match alongside drug dates, without requiring shared AE terms.
+
+        Regression test for the ranitidine / prostate cancer scenario where
+        both reports carry reported_overall_ae_onset_date = 2012-11 and
+        shared drug dates (2001-01, 2019-12) but the AE has no onset date.
+        """
+        r1 = _make_report("1",
+            drugs=[
+                Drug(substance="ranitidine", sources=["structured"],
+                     role="suspected",
+                     start_date=PartialDate(value="2001-01", resolution="month"),
+                     end_date=PartialDate(value="2019-12", resolution="month")),
+            ],
+            adverse_events=[
+                AdverseEvent(pt_name="prostate cancer", sources=["structured"]),
+            ],
+            reported_overall_ae_onset_date=PartialDate(
+                value="2012-11", resolution="month"
+            ),
+        )
+        r2 = _make_report("2",
+            drugs=[
+                Drug(substance="ranitidine", sources=["structured"],
+                     role="suspected", form="FILM-COATED TABLET",
+                     start_date=PartialDate(value="2001-01", resolution="month"),
+                     end_date=PartialDate(value="2019-12", resolution="month")),
+                Drug(substance="ranitidine", sources=["structured"],
+                     role="suspected", form="TABLET",
+                     start_date=PartialDate(value="2001-01", resolution="month"),
+                     end_date=PartialDate(value="2019-12", resolution="month")),
+            ],
+            adverse_events=[
+                AdverseEvent(pt_name="prostate cancer", sources=["structured"]),
+            ],
+            reported_overall_ae_onset_date=PartialDate(
+                value="2012-11", resolution="month"
+            ),
+        )
+        result = compute_matching_clinical_dates(
+            r1, r2, ["ranitidine"], ["prostate cancer"]
+        )
+        matched_values = {cd.matched_value for cd in result}
+        assert matched_values == {"2001-01", "2012-11", "2019-12"}
+        assert len(result) == 3
+        # All at month resolution
+        assert all(cd.resolution == "month" for cd in result)
+
+    def test_overall_ae_onset_date_dedup_with_ae_onset(self):
+        """If overall AE onset matches a per-AE onset date, it is deduplicated."""
+        r1 = _make_report("1",
+            adverse_events=[
+                AdverseEvent(pt_name="rash", sources=["s"],
+                             start_date=PartialDate(value="2020-06-15", resolution="day")),
+            ],
+            reported_overall_ae_onset_date=PartialDate(
+                value="2020-06-15", resolution="day"
+            ),
+        )
+        r2 = _make_report("2",
+            adverse_events=[
+                AdverseEvent(pt_name="rash", sources=["s"],
+                             start_date=PartialDate(value="2020-06-15", resolution="day")),
+            ],
+            reported_overall_ae_onset_date=PartialDate(
+                value="2020-06-15", resolution="day"
+            ),
+        )
+        result = compute_matching_clinical_dates(r1, r2, [], ["rash"])
+        # Same date from AE onset and overall onset — counted once
+        assert len(result) == 1
+        assert result[0].matched_value == "2020-06-15"
+
+    def test_overall_ae_onset_only_one_report_no_match(self):
+        """Overall AE onset date on only one report → no match."""
+        r1 = _make_report("1",
+            reported_overall_ae_onset_date=PartialDate(
+                value="2012-11", resolution="month"
+            ),
+        )
+        r2 = _make_report("2")
+        result = compute_matching_clinical_dates(r1, r2, [], [])
+        assert len(result) == 0
+
+    def test_overall_ae_onset_via_compute_matches(self):
+        """End-to-end: compute_matches includes overall AE onset in
+        matched_clinical_dates."""
+        r1 = Report(
+            report_id="r1",
+            drugs=[Drug(substance="ranitidine", sources=["structured"],
+                        role="suspected",
+                        start_date=PartialDate(value="2001-01", resolution="month"),
+                        end_date=PartialDate(value="2019-12", resolution="month"))],
+            adverse_events=[AdverseEvent(pt_name="prostate cancer",
+                                         sources=["structured"])],
+            reported_overall_ae_onset_date=PartialDate(
+                value="2012-11", resolution="month"
+            ),
+        )
+        r2 = Report(
+            report_id="r2",
+            drugs=[Drug(substance="ranitidine", sources=["structured"],
+                        role="suspected",
+                        start_date=PartialDate(value="2001-01", resolution="month"),
+                        end_date=PartialDate(value="2019-12", resolution="month"))],
+            adverse_events=[AdverseEvent(pt_name="prostate cancer",
+                                         sources=["structured"])],
+            reported_overall_ae_onset_date=PartialDate(
+                value="2012-11", resolution="month"
+            ),
+        )
+        match_result = compute_matches(r1, r2)
+        matched_values = {cd.matched_value
+                          for cd in match_result.matched_clinical_dates}
+        assert "2012-11" in matched_values
+        assert len(match_result.matched_clinical_dates) == 3
