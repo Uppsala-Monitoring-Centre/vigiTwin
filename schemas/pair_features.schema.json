@@ -1,5 +1,41 @@
 {
   "$defs": {
+    "AEClinicalPictureCounts": {
+      "description": "Severity-bucketed counts from the AE clinical-picture LLM component.\n\nCounts reflect *kept* findings only (i.e. after the dedup step\nsuppresses subordinate findings under a decisive global mismatch).\nThey are derivable from the master ``Inconsistency`` list by\nfiltering ``source == \"llm_ae_clinical_picture\"`` and\n``suppressed is False``, but persisted explicitly for ergonomics\nand downstream symmetry with ``ClinicalDateInconsistencyCounts``.\n\nSee: llm/tasks/ae_clinical_picture.py",
+      "properties": {
+        "n_minor": {
+          "default": 0,
+          "title": "N Minor",
+          "type": "integer"
+        },
+        "n_moderate": {
+          "default": 0,
+          "title": "N Moderate",
+          "type": "integer"
+        },
+        "n_strong": {
+          "default": 0,
+          "title": "N Strong",
+          "type": "integer"
+        },
+        "n_decisive": {
+          "default": 0,
+          "title": "N Decisive",
+          "type": "integer"
+        }
+      },
+      "title": "AEClinicalPictureCounts",
+      "type": "object"
+    },
+    "AEClinicalPictureStatus": {
+      "description": "Assessment status for the AE clinical-picture inconsistency component.\n\nDistinguishes \"the LLM assessed the AE pictures and produced findings\"\nfrom \"no LLM assessment was performed\" (no LLM client configured,\ntrivially-matched skip, or LLM error).  Downstream code must treat\n``NOT_ASSESSED`` as *no information*, not as \"assessed and found no\ndiscrepancies\".\n\nThe accompanying ``reason`` string (carried alongside the status on\n``PairFeatures.ae_clinical_picture_reason``) refines ``NOT_ASSESSED``\ninto one of: ``\"\"`` (assessed), ``\"no_llm_client\"``,\n``\"trivially_matched\"``, or ``\"llm_error\"``.  Reason is a string\nrather than an enum so new codes can be added without enum churn.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 AE clinical-picture inconsistency",
+      "enum": [
+        "assessed",
+        "not_assessed"
+      ],
+      "title": "AEClinicalPictureStatus",
+      "type": "string"
+    },
     "AnchorPopulation": {
       "description": "Anchor population statistics for probability estimation.\n\nContains three candidate population sizes and the selected anchor.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Anchor Selection",
       "properties": {
@@ -181,7 +217,7 @@
       "type": "object"
     },
     "Inconsistency": {
-      "description": "A detected inconsistency between two reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Inconsistency Detection",
+      "description": "A detected inconsistency between two reports.\n\nCarries entries from all sources: rule-based demographic/drug-set\nchecks and LLM-assisted AE clinical-picture findings. The optional\n``source``, ``kind``, ``rationale``, ``terms``, ``cluster_label``,\n``suppressed`` and ``suppressed_by`` fields support the richer\nLLM-derived entries while remaining backwards-compatible defaults\nfor existing rule-based call sites.\n\nSuppressed entries (``suppressed=True``) are kept in the master\nlist for transparency in human review but are excluded from the\nseverity counts that feed downstream decision logic.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Inconsistency Detection",
       "properties": {
         "feature": {
           "title": "Feature",
@@ -225,6 +261,50 @@
           ],
           "default": null,
           "title": "Description"
+        },
+        "source": {
+          "default": "rule",
+          "title": "Source",
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "rationale": {
+          "default": "",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "terms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Terms",
+          "type": "array"
+        },
+        "cluster_label": {
+          "default": "",
+          "title": "Cluster Label",
+          "type": "string"
+        },
+        "suppressed": {
+          "default": false,
+          "title": "Suppressed",
+          "type": "boolean"
+        },
+        "suppressed_by": {
+          "default": "",
+          "title": "Suppressed By",
+          "type": "string"
         }
       },
       "required": [
@@ -415,6 +495,18 @@
       },
       "title": "Clinical Date Findings",
       "type": "array"
+    },
+    "ae_clinical_picture_status": {
+      "$ref": "#/$defs/AEClinicalPictureStatus",
+      "default": "not_assessed"
+    },
+    "ae_clinical_picture_reason": {
+      "default": "",
+      "title": "Ae Clinical Picture Reason",
+      "type": "string"
+    },
+    "ae_clinical_picture_counts": {
+      "$ref": "#/$defs/AEClinicalPictureCounts"
     },
     "narrative_consistency": {
       "$ref": "#/$defs/NarrativeConsistency"

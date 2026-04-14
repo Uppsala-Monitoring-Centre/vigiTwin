@@ -129,11 +129,26 @@ class NarrativeComparison(BaseModel):
 
 
 class InconsistencyVM(BaseModel):
-    """View model for a single detected inconsistency."""
+    """View model for a single detected inconsistency.
+
+    Carries entries from all sources: rule-based demographic/drug-set
+    checks and LLM-assisted AE clinical-picture findings. The optional
+    fields below are populated for AE findings; rule-based entries
+    leave them at their defaults.
+    """
 
     feature: str
     severity: str
     description: str
+
+    # AE clinical-picture extensions (defaulted for rule-based entries).
+    source: str = "rule"
+    kind: str = ""
+    rationale: str = ""
+    terms: list[str] = Field(default_factory=list)
+    cluster_label: str = ""
+    suppressed: bool = False
+    suppressed_by: str = ""
 
 
 class ClinicalDateFindingVM(BaseModel):
@@ -183,6 +198,23 @@ class ClinicalDateCountsVM(BaseModel):
         return self.n_minor + self.n_moderate + self.n_strong + self.n_decisive
 
 
+class AEClinicalPictureCountsVM(BaseModel):
+    """View model for AE clinical-picture inconsistency counts.
+
+    Counts reflect *kept* findings only (i.e. excluding entries
+    suppressed under a decisive global mismatch).
+    """
+
+    n_minor: int = 0
+    n_moderate: int = 0
+    n_strong: int = 0
+    n_decisive: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.n_minor + self.n_moderate + self.n_strong + self.n_decisive
+
+
 class FeaturesSummaryVM(BaseModel):
     """View model for the optional PairFeatures evidence section."""
 
@@ -209,6 +241,11 @@ class FeaturesSummaryVM(BaseModel):
     clinical_date_findings: list[ClinicalDateFindingVM] = Field(
         default_factory=list
     )
+
+    # AE clinical-picture (LLM-assisted)
+    ae_clinical_picture_status: str | None = None  # "assessed" | "not_assessed"
+    ae_clinical_picture_reason: str = ""
+    ae_clinical_picture_counts: AEClinicalPictureCountsVM | None = None
 
 
 class ClassificationSummaryVM(BaseModel):
@@ -282,6 +319,8 @@ class DecisionSummaryVM(BaseModel):
     l_match: float | None = None
     inconsistency_counts: InconsistencyCountsVM | None = None
     clinical_date_counts: ClinicalDateCountsVM | None = None
+    ae_clinical_picture_counts: AEClinicalPictureCountsVM | None = None
+    ae_clinical_picture_status: str | None = None
     narrative_consistency: str | None = None
     duplicate_relationship: str | None = None
 

@@ -974,3 +974,113 @@ class TestAnnotationRendering:
         content = path.read_text(encoding="utf-8")
         assert "Human annotation" in content
         assert "&#10003;" in content
+
+
+# ---------------------------------------------------------------------------
+# AE clinical-picture rendering
+# ---------------------------------------------------------------------------
+
+
+class TestAEClinicalPictureRendering:
+    """Suppressed AE findings render with the badge but don't inflate counts."""
+
+    def _features_with_ae(self) -> PairFeatures:
+        from llm_dup_dev.llm.tasks.ae_clinical_picture import (
+            SOURCE_LABEL,
+            SUPPRESSED_BY_DECISIVE_GLOBAL,
+        )
+        from llm_dup_dev.models.enums import AEClinicalPictureStatus
+        from llm_dup_dev.models.pair_features import AEClinicalPictureCounts
+
+        feats = _make_features()
+        feats.inconsistencies = list(feats.inconsistencies) + [
+            Inconsistency(
+                feature="ae_clinical_picture:global_picture_mismatch",
+                severity=InconsistencySeverity.DECISIVE,
+                source=SOURCE_LABEL,
+                kind="global_picture_mismatch",
+                rationale="completely different pictures",
+                terms=["headache", "myocardial infarction"],
+            ),
+            Inconsistency(
+                feature="ae_clinical_picture:unmatched_cluster",
+                severity=InconsistencySeverity.MODERATE,
+                source=SOURCE_LABEL,
+                kind="unmatched_cluster",
+                rationale="extra cardiac cluster",
+                terms=["myocardial infarction"],
+                suppressed=True,
+                suppressed_by=SUPPRESSED_BY_DECISIVE_GLOBAL,
+            ),
+        ]
+        feats.ae_clinical_picture_status = AEClinicalPictureStatus.ASSESSED
+        feats.ae_clinical_picture_counts = AEClinicalPictureCounts(n_decisive=1)
+        feats.inconsistency_counts = InconsistencyCounts(
+            moderate=1, decisive=1
+        )
+        return feats
+
+    def test_assessed_status_panel_rendered(self, report_a, report_b):
+        feats = self._features_with_ae()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats,
+            classification=_make_classification(),
+        )
+        html = render_pair(vm)
+        assert "AE clinical-picture" in html
+        assert "ae-cp-status-assessed" in html
+
+    def test_suppressed_finding_rendered_with_badge(self, report_a, report_b):
+        feats = self._features_with_ae()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats,
+            classification=_make_classification(),
+        )
+        html = render_pair(vm)
+        # Suppressed row carries the de-emphasis class and the badge
+        assert "inc-suppressed" in html
+        assert "suppressed-badge" in html
+        # Both rationales are visible
+        assert "completely different pictures" in html
+        assert "extra cardiac cluster" in html
+        # Suppressed-by reason is human-readable
+        assert "decisive global mismatch" in html
+
+    def test_suppressed_excluded_from_index_inconsistency_items(
+        self, report_a, report_b
+    ):
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        feats = self._features_with_ae()
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats,
+            classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        # Index items list the kept decisive global, not the suppressed cluster
+        ae_items = [
+            ii
+            for ii in item.inconsistency_items
+            if ii.text.startswith("AE picture:")
+        ]
+        assert len(ae_items) == 1
+        assert ae_items[0].severity == InconsistencySeverity.DECISIVE
+        assert "myocardial infarction" in ae_items[0].text
+
+    def test_not_assessed_status_panel_rendered(self, report_a, report_b):
+        from llm_dup_dev.models.enums import AEClinicalPictureStatus
+
+        feats = _make_features()
+        feats.ae_clinical_picture_status = AEClinicalPictureStatus.NOT_ASSESSED
+        feats.ae_clinical_picture_reason = "no_llm_client"
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats,
+            classification=_make_classification(),
+        )
+        html = render_pair(vm)
+        assert "ae-cp-status-not_assessed" in html
+        assert "no_llm_client" in html

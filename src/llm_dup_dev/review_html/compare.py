@@ -44,6 +44,7 @@ from llm_dup_dev.models.report import (
 )
 
 from .models import (
+    AEClinicalPictureCountsVM,
     AEDetail,
     AERow,
     AnnotationVM,
@@ -573,6 +574,13 @@ def _build_features_summary(
                 feature=inc.feature,
                 severity=inc.severity.value,
                 description=inc.description or "",
+                source=inc.source,
+                kind=inc.kind or "",
+                rationale=inc.rationale,
+                terms=list(inc.terms),
+                cluster_label=inc.cluster_label,
+                suppressed=inc.suppressed,
+                suppressed_by=inc.suppressed_by,
             )
             for inc in features.inconsistencies
         ],
@@ -614,6 +622,14 @@ def _build_features_summary(
             )
             for f in features.clinical_date_findings
         ],
+        ae_clinical_picture_status=features.ae_clinical_picture_status.value,
+        ae_clinical_picture_reason=features.ae_clinical_picture_reason,
+        ae_clinical_picture_counts=AEClinicalPictureCountsVM(
+            n_minor=features.ae_clinical_picture_counts.n_minor,
+            n_moderate=features.ae_clinical_picture_counts.n_moderate,
+            n_strong=features.ae_clinical_picture_counts.n_strong,
+            n_decisive=features.ae_clinical_picture_counts.n_decisive,
+        ),
     )
 
 
@@ -662,6 +678,19 @@ def _build_decision_summary(
             )
             if features
             else None
+        ),
+        ae_clinical_picture_counts=(
+            AEClinicalPictureCountsVM(
+                n_minor=features.ae_clinical_picture_counts.n_minor,
+                n_moderate=features.ae_clinical_picture_counts.n_moderate,
+                n_strong=features.ae_clinical_picture_counts.n_strong,
+                n_decisive=features.ae_clinical_picture_counts.n_decisive,
+            )
+            if features
+            else None
+        ),
+        ae_clinical_picture_status=(
+            features.ae_clinical_picture_status.value if features else None
         ),
         narrative_consistency=(
             features.narrative_consistency.value if features else None
@@ -1068,9 +1097,16 @@ def _build_index_inconsistency_items(
     items: list[IndexInconsistencyItem] = []
 
     for inc in vm.features_summary.inconsistencies:
-        text = _format_demographic_inconsistency(
-            inc, demo_values, key_drugs,
-        )
+        # Skip suppressed AE entries — they exist for transparency in the
+        # detailed view but should not inflate the index row.
+        if inc.suppressed:
+            continue
+        if inc.source == "llm_ae_clinical_picture":
+            text = _format_ae_clinical_picture_item(inc)
+        else:
+            text = _format_demographic_inconsistency(
+                inc, demo_values, key_drugs,
+            )
         items.append(IndexInconsistencyItem(text=text, severity=inc.severity))
 
     for cdf in vm.features_summary.clinical_date_findings:
@@ -1080,6 +1116,24 @@ def _build_index_inconsistency_items(
         ))
 
     return items
+
+
+def _format_ae_clinical_picture_item(inc: InconsistencyVM) -> str:
+    """Format an AE clinical-picture finding for the index row.
+
+    Produces a compact label like ``"AE picture: cutaneous syndrome
+    (rash, pruritus)"`` or ``"AE picture: global mismatch
+    (rash, fracture)"``. Falls back to the kind label when no terms
+    are available.
+    """
+    label = inc.cluster_label or inc.kind.replace("_", " ") or "AE picture"
+    terms = ", ".join(inc.terms[:5])
+    if len(inc.terms) > 5:
+        terms += ", ..."
+    body = f"{_esc(label)}"
+    if terms:
+        body += f" ({_esc(terms)})"
+    return f"AE picture: {body}"
 
 
 def _format_demographic_inconsistency(

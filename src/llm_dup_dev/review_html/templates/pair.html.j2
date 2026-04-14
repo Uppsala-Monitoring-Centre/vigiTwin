@@ -150,6 +150,65 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 .severity-strong { color: #721c24; font-weight: 600; }
 .severity-decisive { color: #fff; background: #721c24; padding: 1px 5px; border-radius: 3px; font-weight: 600; }
 
+/* --- Suppressed inconsistency rows (kept for transparency) --- */
+tr.inc-suppressed td { color: #959da5; background: #fafbfc; }
+tr.inc-suppressed .severity-minor,
+tr.inc-suppressed .severity-moderate,
+tr.inc-suppressed .severity-strong { color: #959da5; }
+tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
+.suppressed-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: #e2e3e5;
+    color: #383d41;
+    margin-left: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+/* --- AE clinical-picture status / counts panel --- */
+.ae-cp-panel {
+    margin: 8px 0 10px;
+    padding: 8px 10px;
+    background: #f6f8fa;
+    border: 1px solid #d1d5da;
+    border-radius: 4px;
+    font-size: 13px;
+}
+.ae-cp-panel .label { font-weight: 600; color: #586069; margin-right: 6px; }
+.ae-cp-status-assessed {
+    display: inline-block;
+    background: #155724;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+.ae-cp-status-not_assessed {
+    display: inline-block;
+    background: #6c757d;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+}
+.inc-rationale {
+    color: #586069;
+    font-size: 12px;
+    margin-top: 2px;
+    font-style: italic;
+}
+.inc-terms {
+    color: #586069;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
 /* --- Classification badge --- */
 .label-badge {
     display: inline-block;
@@ -329,6 +388,14 @@ details.debug-section pre {
         {%- set cdc = vm.decision_summary.clinical_date_counts %}
         <dt style="font-size: 0.85em; padding-left: 8px;">of which clinical dates</dt>
         <dd style="font-size: 0.85em;">{{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive</dd>
+        {% endif %}
+        {% if vm.decision_summary.ae_clinical_picture_counts and vm.decision_summary.ae_clinical_picture_counts.total > 0 %}
+        {%- set acp = vm.decision_summary.ae_clinical_picture_counts %}
+        <dt style="font-size: 0.85em; padding-left: 8px;">of which AE clinical-picture</dt>
+        <dd style="font-size: 0.85em;">{{ acp.n_minor }} minor, {{ acp.n_moderate }} moderate, {{ acp.n_strong }} strong, {{ acp.n_decisive }} decisive</dd>
+        {% elif vm.decision_summary.ae_clinical_picture_status == 'not_assessed' %}
+        <dt style="font-size: 0.85em; padding-left: 8px;">AE clinical-picture</dt>
+        <dd style="font-size: 0.85em; color: #586069;">not assessed</dd>
         {% endif %}
         {% if vm.decision_summary.narrative_consistency %}
         <dt>Narrative</dt>
@@ -556,6 +623,24 @@ details.debug-section pre {
     {% endif %}
     {% endif %}
 
+    {# ── AE clinical-picture status panel (LLM-assisted) ── #}
+    {% if vm.features_summary.ae_clinical_picture_status %}
+    {%- set ae_status = vm.features_summary.ae_clinical_picture_status %}
+    {%- set ae_counts = vm.features_summary.ae_clinical_picture_counts %}
+    <div class="ae-cp-panel">
+        <span class="label">AE clinical-picture:</span>
+        <span class="ae-cp-status-{{ ae_status }}">{{ ae_status | replace('_', ' ') }}</span>
+        {% if ae_status == 'assessed' and ae_counts %}
+        &nbsp;&middot;&nbsp;
+        {{ ae_counts.n_minor }} minor, {{ ae_counts.n_moderate }} moderate,
+        {{ ae_counts.n_strong }} strong, {{ ae_counts.n_decisive }} decisive
+        ({{ ae_counts.total }} kept)
+        {% elif ae_status == 'not_assessed' and vm.features_summary.ae_clinical_picture_reason %}
+        &nbsp;<span style="color: #586069; font-size: 12px;">({{ vm.features_summary.ae_clinical_picture_reason }})</span>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {# ── Discrepancies (all inconsistencies factored into the decision) ── #}
     {% if vm.features_summary.inconsistencies or vm.features_summary.clinical_date_findings %}
     <h3 style="font-size: 1rem; margin: 12px 0 6px;">Discrepancies</h3>
@@ -570,10 +655,26 @@ details.debug-section pre {
         <thead><tr><th>Feature</th><th>Severity</th><th>Description</th></tr></thead>
         <tbody>
         {% for inc in vm.features_summary.inconsistencies %}
-        <tr>
-            <td>{{ inc.feature }}</td>
+        <tr{% if inc.suppressed %} class="inc-suppressed"{% endif %}>
+            <td>
+                {{ inc.feature }}
+                {% if inc.suppressed %}
+                <span class="suppressed-badge" title="{{ inc.suppressed_by }}">suppressed</span>
+                {% endif %}
+            </td>
             <td><span class="severity-{{ inc.severity }}">{{ inc.severity }}</span></td>
-            <td>{{ inc.description }}</td>
+            <td>
+                {% if inc.description %}{{ inc.description }}{% endif %}
+                {% if inc.rationale %}
+                <div class="inc-rationale">{{ inc.rationale }}</div>
+                {% endif %}
+                {% if inc.terms %}
+                <div class="inc-terms"><strong>Terms:</strong> {{ inc.terms | join(', ') }}</div>
+                {% endif %}
+                {% if inc.suppressed and inc.suppressed_by %}
+                <div class="inc-rationale">Suppressed by: {{ inc.suppressed_by | replace('_', ' ') }}</div>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
         {% for cdf in vm.features_summary.clinical_date_findings %}
