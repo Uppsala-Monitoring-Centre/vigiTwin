@@ -14,6 +14,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from .enums import (
+    AEClinicalPictureStatus,
     AnchorType,
     InconsistencySeverity,
     NarrativeConsistency,
@@ -81,6 +82,17 @@ class ProbabilityEstimate(BaseModel):
 class Inconsistency(BaseModel):
     """A detected inconsistency between two reports.
 
+    Carries entries from all sources: rule-based demographic/drug-set
+    checks and LLM-assisted AE clinical-picture findings. The optional
+    ``source``, ``kind``, ``rationale``, ``terms``, ``cluster_label``,
+    ``suppressed`` and ``suppressed_by`` fields support the richer
+    LLM-derived entries while remaining backwards-compatible defaults
+    for existing rule-based call sites.
+
+    Suppressed entries (``suppressed=True``) are kept in the master
+    list for transparency in human review but are excluded from the
+    severity counts that feed downstream decision logic.
+
     See: docs/duplicate_adjudication_spec.md § Inconsistency Detection
     """
 
@@ -89,6 +101,16 @@ class Inconsistency(BaseModel):
     difference: float | None = None
     units: str | None = None
     description: str | None = None
+
+    # Extended provenance / metadata (defaulted so existing call sites
+    # need no change). Populated by the AE clinical-picture component.
+    source: str = "rule"
+    kind: str | None = None
+    rationale: str = ""
+    terms: list[str] = Field(default_factory=list)
+    cluster_label: str = ""
+    suppressed: bool = False
+    suppressed_by: str = ""
 
 
 class InconsistencyCounts(BaseModel):
@@ -135,6 +157,41 @@ class ClinicalDateFindingSummary(BaseModel):
     matched_date: str  # date value on the other report
     diff_days: int | None = None  # minimum day difference (None for decisive)
     downgrades: list[str] = Field(default_factory=list)
+
+
+class AEClinicalPictureCounts(BaseModel):
+    """Severity-bucketed counts from the AE clinical-picture LLM component.
+
+    Counts reflect *kept* findings only (i.e. after the dedup step
+    suppresses subordinate findings under a decisive global mismatch).
+    They are derivable from the master ``Inconsistency`` list by
+    filtering ``source == "llm_ae_clinical_picture"`` and
+    ``suppressed is False``, but persisted explicitly for ergonomics
+    and downstream symmetry with ``ClinicalDateInconsistencyCounts``.
+
+    See: llm/tasks/ae_clinical_picture.py
+    """
+
+    n_minor: int = 0
+    n_moderate: int = 0
+    n_strong: int = 0
+    n_decisive: int = 0
+
+
+class AEClinicalPictureResult(BaseModel):
+    """Full result of the AE clinical-picture inconsistency assessment.
+
+    Returned by :func:`llm_dup_dev.llm.tasks.ae_clinical_picture.assess_ae_clinical_picture`
+    and threaded through the pipeline. ``findings`` are already in the
+    unified :class:`Inconsistency` shape, ready to be appended to
+    ``PairFeatures.inconsistencies`` (suppressed entries included).
+    """
+
+    status: AEClinicalPictureStatus = AEClinicalPictureStatus.NOT_ASSESSED
+    reason: str = ""  # "" | "no_llm_client" | "trivially_matched" | "llm_error"
+    counts: AEClinicalPictureCounts = Field(default_factory=AEClinicalPictureCounts)
+    findings: list[Inconsistency] = Field(default_factory=list)
+    reasoning: str = ""  # free-text LLM rationale for human review
 
 
 class EvidenceSummary(BaseModel):
@@ -188,6 +245,17 @@ class PairFeatures(BaseModel):
     )
     clinical_date_findings: list[ClinicalDateFindingSummary] = Field(
         default_factory=list
+    )
+
+    # AE clinical-picture (LLM-assisted) — status + bucketed counts.
+    # The actual finding entries live in ``inconsistencies`` above
+    # (filter ``source == "llm_ae_clinical_picture"`` to retrieve them).
+    ae_clinical_picture_status: AEClinicalPictureStatus = (
+        AEClinicalPictureStatus.NOT_ASSESSED
+    )
+    ae_clinical_picture_reason: str = ""
+    ae_clinical_picture_counts: AEClinicalPictureCounts = Field(
+        default_factory=AEClinicalPictureCounts
     )
 
     # Narrative assessment

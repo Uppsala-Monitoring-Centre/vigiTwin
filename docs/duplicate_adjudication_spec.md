@@ -505,6 +505,48 @@ Example:
 
 This output is later interpreted together with the matching evidence and detected inconsistencies in the decision logic.
 
+### AE clinical-picture inconsistency
+
+A second LLM-assisted component evaluates whether the two reports describe a clinically inconsistent **adverse-event picture** — independently of chronology, which is handled by the rule-based clinical-date inconsistency module. The motivation is that two reports can share dates yet describe clinically different AE pictures (and conversely differ in wording while describing the same picture); rule-based set comparison alone cannot distinguish these.
+
+#### Output shape
+
+The LLM returns a list of distinct, clinically non-redundant findings rather than a single global label. Each finding carries:
+
+- `kind` ∈ {`unmatched_cluster`, `matched_characterization`, `global_picture_mismatch`}
+- `severity` ∈ {`minor`, `moderate`, `strong`, `decisive`}
+- a short `rationale`, the involved AE `terms`, and an optional human `cluster_label`
+
+The findings are post-processed by a deterministic dedup step: when any finding has `kind = global_picture_mismatch` and `severity = decisive`, all other findings are suppressed from the severity counts. Suppressed findings remain in the master inconsistency list (with `suppressed = true` and a `suppressed_by` reason) so reviewers can see the full LLM reasoning.
+
+#### Severity rubric
+
+| Severity | Interpretation |
+| --- | --- |
+| minor | small, peripheral, or compatible-but-broader difference |
+| moderate | clinically meaningful non-redundant difference, not dominant |
+| strong | substantial difference materially weakening same-case interpretation |
+| decisive | no shared / compatible AEs; clearly different pictures at the case level |
+
+The model is instructed to anti-overcount: group related unmatched AEs into a single finding, tolerate a few unmatched terms in long lists with broad overlap, treat one-sided subset-style differences leniently, and avoid stacking subordinate findings under a decisive global mismatch.
+
+#### Assessment status
+
+Findings are accompanied by a status that distinguishes "did look" from "did not look":
+
+| `ae_clinical_picture_status` | `ae_clinical_picture_reason` | When |
+| --- | --- | --- |
+| `assessed` | `""` | LLM was called and produced a verdict |
+| `not_assessed` | `no_llm_client` | no LLM client configured (default) |
+| `not_assessed` | `trivially_matched` | normalised AE PT sets equal AND both narratives empty (LLM call skipped — no information to assess) |
+| `not_assessed` | `llm_error` | LLM call raised an exception |
+
+Downstream code must treat `not_assessed` as *no information*, not as "assessed and clean". There is no rule-based fallback.
+
+#### Integration with PairFeatures
+
+Findings are appended to the unified `PairFeatures.inconsistencies` list with `source = "llm_ae_clinical_picture"`; severity counts (excluding suppressed entries) are merged into `inconsistency_counts` alongside the rule-based and clinical-date counts that already feed the weighted inconsistency score. Per-component counts are also persisted (`ae_clinical_picture_counts`) for auditability and review surfacing.
+
 ### Inconsistency Detection
 
 In addition to matching evidence, the method evaluates information that may indicate that two reports describe different patients.

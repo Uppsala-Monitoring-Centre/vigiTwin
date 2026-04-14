@@ -6,6 +6,7 @@ from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
+from llm_dup_dev.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
 from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
 from llm_dup_dev.models.enums import (
     IndependenceAssessment,
@@ -254,6 +255,9 @@ class TestLLMNarrativeIntegration:
             evidence=["Both describe same patient"],
         )
         fake.seed_response(verdict)
+        # The runner now also makes an AE clinical-picture LLM call;
+        # seed a benign verdict so the second call succeeds too.
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
 
         runner = PipelineRunner(
             report_loader=loader,
@@ -268,16 +272,16 @@ class TestLLMNarrativeIntegration:
             == NarrativeConsistency.STRONGLY_CONSISTENT
         )
         assert result.results[0].narrative_verdict == verdict
-        assert len(fake.requests) == 1
+        # Two requests per pair: narrative + AE clinical-picture
+        assert len(fake.requests) == 2
 
     def test_narrative_provider_takes_precedence_over_llm(
         self, loader, stats_provider, pair_ab
     ):
-        """Explicit narrative_provider overrides llm_client."""
+        """Explicit narrative_provider overrides llm_client (for narrative)."""
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
-        ))
+        # Narrative LLM call should NOT happen; AE clinical-picture call still does.
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
 
         runner = PipelineRunner(
             report_loader=loader,
@@ -294,9 +298,9 @@ class TestLLMNarrativeIntegration:
             result.results[0].features.narrative_consistency
             == NarrativeConsistency.INCONSISTENT
         )
-        # LLM should NOT have been called
-        assert len(fake.requests) == 0
-        # No verdict when using callback
+        # Narrative LLM call skipped; only the AE clinical-picture call was made.
+        assert len(fake.requests) == 1
+        # No narrative verdict when using callback
         assert result.results[0].narrative_verdict is None
 
     def test_llm_failure_falls_back_to_not_available(

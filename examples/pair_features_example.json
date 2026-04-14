@@ -54,7 +54,14 @@
       "severity": "moderate",
       "difference": 2.0,
       "units": "kg",
-      "description": null
+      "description": null,
+      "source": "rule",
+      "kind": null,
+      "rationale": "",
+      "terms": [],
+      "cluster_label": "",
+      "suppressed": false,
+      "suppressed_by": ""
     }
   ],
   "inconsistency_counts": {
@@ -70,6 +77,14 @@
     "n_decisive": 0
   },
   "clinical_date_findings": [],
+  "ae_clinical_picture_status": "not_assessed",
+  "ae_clinical_picture_reason": "no_llm_client",
+  "ae_clinical_picture_counts": {
+    "n_minor": 0,
+    "n_moderate": 0,
+    "n_strong": 0,
+    "n_decisive": 0
+  },
   "narrative_consistency": "consistent",
   "evidence_summary": {
     "shared": {

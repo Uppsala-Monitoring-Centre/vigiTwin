@@ -48,13 +48,22 @@ from llm_dup_dev.feature_generation.reporting_context import (
     determine_reporting_context,
 )
 from llm_dup_dev.llm.protocols import LLMClient
+from llm_dup_dev.llm.tasks.ae_clinical_picture import assess_ae_clinical_picture
 from llm_dup_dev.llm.tasks.narrative_comparison import (
     NarrativeVerdict,
     compare_narratives,
 )
 from llm_dup_dev.models.classification import ClassificationResult
-from llm_dup_dev.models.enums import NarrativeConsistency, ReportingContextLevel
-from llm_dup_dev.models.pair_features import PairFeatures
+from llm_dup_dev.models.enums import (
+    AEClinicalPictureStatus,
+    NarrativeConsistency,
+    ReportingContextLevel,
+)
+from llm_dup_dev.models.pair_features import (
+    AEClinicalPictureResult,
+    PairFeatures,
+)
+from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
 
 logger = logging.getLogger(__name__)
@@ -95,12 +104,18 @@ class PairResult:
         when an LLM client was used.  ``None`` when the narrative was
         provided via a simple ``NarrativeProvider`` callback or was not
         assessed.
+    ae_clinical_picture : AEClinicalPictureResult or None
+        Full AE clinical-picture assessment result (status, counts and
+        unified findings) when an LLM client was used.  ``None`` when
+        no LLM client was configured (the merged ``PairFeatures`` will
+        carry status NOT_ASSESSED with reason ``"no_llm_client"``).
     """
 
     pair_id: str
     features: PairFeatures
     classification: ClassificationResult
     narrative_verdict: NarrativeVerdict | None = None
+    ae_clinical_picture: AEClinicalPictureResult | None = None
 
     @property
     def final_label(self) -> str:
@@ -174,6 +189,7 @@ class PipelineRunner:
         pair: ReportPair,
         narrative_consistency: NarrativeConsistency = NarrativeConsistency.NOT_AVAILABLE,
         narrative_verdict: NarrativeVerdict | None = None,
+        ae_clinical_picture: AEClinicalPictureResult | None = None,
     ) -> PairResult:
         """Process a single report pair end-to-end.
 
@@ -189,6 +205,11 @@ class PipelineRunner:
             Full LLM narrative assessment.  When provided, its
             ``consistency`` field is used and the ``narrative_consistency``
             parameter is ignored.
+        ae_clinical_picture : AEClinicalPictureResult, optional
+            Pre-computed AE clinical-picture assessment.  When ``None``
+            and no in-pair assessment can be performed (no LLM client
+            on the runner), the AE component is recorded as
+            ``NOT_ASSESSED`` with reason ``"no_llm_client"``.
 
         Returns
         -------
@@ -234,6 +255,7 @@ class PipelineRunner:
             narrative_consistency=effective_consistency,
             config=self._pipeline_config,
             pair_id=pair.pair_id,
+            ae_clinical_picture=ae_clinical_picture,
         )
 
         # Step 6: Classify
@@ -244,6 +266,7 @@ class PipelineRunner:
             features=features,
             classification=classification,
             narrative_verdict=narrative_verdict,
+            ae_clinical_picture=ae_clinical_picture,
         )
 
     def _assess_narrative(
@@ -278,6 +301,46 @@ class PipelineRunner:
                 exc,
             )
             return NarrativeConsistency.NOT_AVAILABLE, None
+
+    def _assess_ae_clinical_picture(
+        self,
+        pair_id: str,
+        r1: Report,
+        r2: Report,
+    ) -> AEClinicalPictureResult:
+        """Assess AE clinical-picture inconsistency via the injected LLM client.
+
+        Returns
+        -------
+        AEClinicalPictureResult
+            ``status=ASSESSED`` with findings + counts on success;
+            ``status=NOT_ASSESSED`` with a reason code on the no-LLM
+            path, the trivially-matched short-circuit (handled inside
+            the task), or LLM error.
+        """
+        if self._llm_client is None:
+            return AEClinicalPictureResult(
+                status=AEClinicalPictureStatus.NOT_ASSESSED,
+                reason="no_llm_client",
+            )
+
+        try:
+            return assess_ae_clinical_picture(
+                self._llm_client,
+                pair_id=pair_id,
+                r1=r1,
+                r2=r2,
+            )
+        except Exception as exc:
+            logger.warning(
+                "LLM AE clinical-picture assessment failed for pair %s: %s",
+                pair_id,
+                exc,
+            )
+            return AEClinicalPictureResult(
+                status=AEClinicalPictureStatus.NOT_ASSESSED,
+                reason="llm_error",
+            )
 
     def run_batch(
         self,
@@ -335,10 +398,17 @@ class PipelineRunner:
                 else:
                     consistency = NarrativeConsistency.NOT_AVAILABLE
 
+                # AE clinical-picture assessment (LLM-driven; graceful
+                # NOT_ASSESSED fallback when no LLM client or on error).
+                ae_result = self._assess_ae_clinical_picture(
+                    pair.pair_id, r1, r2
+                )
+
                 result = self.run_pair(
                     pair,
                     narrative_consistency=consistency,
                     narrative_verdict=verdict,
+                    ae_clinical_picture=ae_result,
                 )
                 batch.results.append(result)
 

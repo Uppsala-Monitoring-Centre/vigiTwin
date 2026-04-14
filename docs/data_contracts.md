@@ -418,6 +418,12 @@ Example structure:
     "n_minor": 0, "n_moderate": 1, "n_strong": 0, "n_decisive": 0
   },
 
+  "ae_clinical_picture_status": "not_assessed",
+  "ae_clinical_picture_reason": "no_llm_client",
+  "ae_clinical_picture_counts": {
+    "n_minor": 0, "n_moderate": 0, "n_strong": 0, "n_decisive": 0
+  },
+
   "narrative_consistency": "consistent",
 
   "evidence_summary": {...}
@@ -540,6 +546,59 @@ clinical_date_findings: [
   }
 ]
 ```
+
+------
+
+## AE Clinical-Picture Inconsistency (LLM-assisted)
+
+A second LLM-assisted component evaluates whether the two reports describe a clinically inconsistent **adverse-event picture** apart from chronology (which is handled by the rule-based clinical-date module). The component returns a list of distinct findings rather than a single global label, and its severity counts are merged into `inconsistency_counts` after a deterministic dedup step.
+
+### Status
+
+```
+ae_clinical_picture_status: "assessed" | "not_assessed"
+ae_clinical_picture_reason: "" | "no_llm_client" | "trivially_matched" | "llm_error"
+```
+
+| status         | reason              | meaning                                                                |
+| -------------- | ------------------- | ---------------------------------------------------------------------- |
+| `assessed`     | `""`                | LLM was called and produced a verdict                                  |
+| `not_assessed` | `no_llm_client`     | no LLM client configured (default)                                     |
+| `not_assessed` | `trivially_matched` | normalised AE PT sets equal AND both narratives empty (LLM call skipped) |
+| `not_assessed` | `llm_error`         | LLM call raised an exception                                           |
+
+Downstream code must treat `not_assessed` as *no information*, not as "assessed and clean".
+
+### Counts
+
+```
+ae_clinical_picture_counts: {
+  "n_minor": 0, "n_moderate": 0, "n_strong": 0, "n_decisive": 0
+}
+```
+
+Counts reflect *kept* findings only (excluding entries suppressed under a decisive global mismatch). They are also already included in `inconsistency_counts`; the separate field is retained for auditability and review surfacing.
+
+### Findings
+
+AE clinical-picture findings live in the unified `inconsistencies` list with `source = "llm_ae_clinical_picture"`. They use the extended `Inconsistency` fields:
+
+```
+{
+  "feature": "ae_clinical_picture:unmatched_cluster:cutaneous syndrome",
+  "severity": "moderate",
+  "description": null,
+  "source": "llm_ae_clinical_picture",
+  "kind": "unmatched_cluster",
+  "rationale": "report 1 lists a cutaneous syndrome (rash, pruritus); not present on report 2",
+  "terms": ["rash", "pruritus"],
+  "cluster_label": "cutaneous syndrome",
+  "suppressed": false,
+  "suppressed_by": ""
+}
+```
+
+Suppressed entries (`suppressed = true`, `suppressed_by = "decisive_global_mismatch"`) are kept in the master list for transparency in human review but are excluded from the severity counts.
 
 ------
 

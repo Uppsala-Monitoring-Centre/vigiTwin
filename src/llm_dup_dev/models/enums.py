@@ -80,6 +80,28 @@ class InconsistencySeverity(str, Enum):
     DECISIVE = "decisive"
 
 
+class AEClinicalPictureStatus(str, Enum):
+    """Assessment status for the AE clinical-picture inconsistency component.
+
+    Distinguishes "the LLM assessed the AE pictures and produced findings"
+    from "no LLM assessment was performed" (no LLM client configured,
+    trivially-matched skip, or LLM error).  Downstream code must treat
+    ``NOT_ASSESSED`` as *no information*, not as "assessed and found no
+    discrepancies".
+
+    The accompanying ``reason`` string (carried alongside the status on
+    ``PairFeatures.ae_clinical_picture_reason``) refines ``NOT_ASSESSED``
+    into one of: ``""`` (assessed), ``"no_llm_client"``,
+    ``"trivially_matched"``, or ``"llm_error"``.  Reason is a string
+    rather than an enum so new codes can be added without enum churn.
+
+    See: docs/duplicate_adjudication_spec.md § AE clinical-picture inconsistency
+    """
+
+    ASSESSED = "assessed"
+    NOT_ASSESSED = "not_assessed"
+
+
 class DrugRole(str, Enum):
     """Role of a drug in a pharmacovigilance report.
 

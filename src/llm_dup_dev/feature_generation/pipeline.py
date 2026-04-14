@@ -23,8 +23,13 @@ from llm_dup_dev.feature_generation.probability import (
 from llm_dup_dev.feature_generation.reporting_context import (
     determine_reporting_context,
 )
-from llm_dup_dev.models.enums import InconsistencySeverity, NarrativeConsistency
+from llm_dup_dev.models.enums import (
+    AEClinicalPictureStatus,
+    InconsistencySeverity,
+    NarrativeConsistency,
+)
 from llm_dup_dev.models.pair_features import (
+    AEClinicalPictureResult,
     ClinicalDateFindingSummary,
     ClinicalDateInconsistencyCounts,
     EvidenceSummary,
@@ -41,6 +46,7 @@ def generate_pair_features(
     narrative_consistency: NarrativeConsistency,
     config: PipelineConfig | None = None,
     pair_id: str | None = None,
+    ae_clinical_picture: AEClinicalPictureResult | None = None,
 ) -> PairFeatures:
     """Generate all features for a report pair.
 
@@ -67,6 +73,12 @@ def generate_pair_features(
     pair_id : str, optional
         Explicit pair ID. If not provided, constructed as
         ``{r1.report_id}__{r2.report_id}``.
+    ae_clinical_picture : AEClinicalPictureResult, optional
+        Result of the LLM-based AE clinical-picture inconsistency
+        assessment (computed externally by the orchestrator). When
+        ``None``, defaults to a NOT_ASSESSED result with reason
+        ``"no_llm_client"``: no findings are appended and the AE
+        component contributes zero to the merged severity counts.
 
     Returns
     -------
@@ -78,6 +90,12 @@ def generate_pair_features(
 
     if pair_id is None:
         pair_id = f"{r1.report_id}__{r2.report_id}"
+
+    if ae_clinical_picture is None:
+        ae_clinical_picture = AEClinicalPictureResult(
+            status=AEClinicalPictureStatus.NOT_ASSESSED,
+            reason="no_llm_client",
+        )
 
     # Step 1: Determine reporting context
     reporting_context = determine_reporting_context(r1, r2)
@@ -118,26 +136,31 @@ def generate_pair_features(
         n_decisive=cdi_result.n_decisive,
     )
 
+    # Append AE clinical-picture findings into the unified master list
+    # (suppressed entries included for transparency; they are excluded
+    # from counts via the ``not suppressed`` filter below).
+    inconsistencies = [*inconsistencies, *ae_clinical_picture.findings]
+
     inconsistency_counts = InconsistencyCounts(
         minor=sum(
             1
             for i in inconsistencies
-            if i.severity == InconsistencySeverity.MINOR
+            if i.severity == InconsistencySeverity.MINOR and not i.suppressed
         ) + clinical_date_counts.n_minor,
         moderate=sum(
             1
             for i in inconsistencies
-            if i.severity == InconsistencySeverity.MODERATE
+            if i.severity == InconsistencySeverity.MODERATE and not i.suppressed
         ) + clinical_date_counts.n_moderate,
         strong=sum(
             1
             for i in inconsistencies
-            if i.severity == InconsistencySeverity.STRONG
+            if i.severity == InconsistencySeverity.STRONG and not i.suppressed
         ) + clinical_date_counts.n_strong,
         decisive=sum(
             1
             for i in inconsistencies
-            if i.severity == InconsistencySeverity.DECISIVE
+            if i.severity == InconsistencySeverity.DECISIVE and not i.suppressed
         ) + clinical_date_counts.n_decisive,
     )
 
@@ -171,6 +194,9 @@ def generate_pair_features(
         inconsistency_counts=inconsistency_counts,
         clinical_date_inconsistency_counts=clinical_date_counts,
         clinical_date_findings=clinical_date_findings,
+        ae_clinical_picture_status=ae_clinical_picture.status,
+        ae_clinical_picture_reason=ae_clinical_picture.reason,
+        ae_clinical_picture_counts=ae_clinical_picture.counts,
         narrative_consistency=narrative_consistency,
         evidence_summary=evidence_summary,
     )
