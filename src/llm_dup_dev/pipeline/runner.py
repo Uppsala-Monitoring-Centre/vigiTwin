@@ -150,7 +150,8 @@ class PipelineRunner:
         1. Report loading (via ReportLoader protocol)
         2. Feature matching and reporting context
         3. Stats retrieval (via StatsProvider protocol)
-        4. Narrative assessment (via LLMClient or NarrativeProvider)
+        4. LLM assessment (AE clinical-picture inconsistency via LLMClient;
+           narrative comparison via LLMClient or NarrativeProvider)
         5. Feature generation (probability, inconsistencies, anchor)
         6. Decision logic classification
 
@@ -161,9 +162,10 @@ class PipelineRunner:
     stats_provider : StatsProvider
         Computes frequency statistics for clinical contexts.
     llm_client : LLMClient, optional
-        If provided, used for LLM-based narrative comparison during
-        batch processing.  Takes precedence over ``narrative_provider``
-        passed to :meth:`run_batch`.
+        If provided, used for AE clinical-picture inconsistency assessment
+        on every pair, and for narrative comparison during batch processing.
+        Takes precedence over ``narrative_provider`` passed to
+        :meth:`run_batch`.
     pipeline_config : PipelineConfig, optional
         Feature generation configuration.
     decision_thresholds : DecisionThresholds, optional
