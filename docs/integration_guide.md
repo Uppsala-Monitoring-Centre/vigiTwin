@@ -239,7 +239,39 @@ class SqlReportLoader:
 
 See `schemas/report.schema.json` for the full JSON schema and `examples/report_example.json` for a concrete example.
 
-### 2. StatsProvider
+### 2. LLMClient (optional)
+
+Enables LLM-based assessment of whether two reports describe a clinically inconsistent adverse-event picture. If omitted, the pipeline skips this step and records `ae_clinical_picture_status = "not_assessed"` with `ae_clinical_picture_reason = "no_llm_client"` — this has no effect on the classification.
+
+Implement the `LLMClient` protocol from `llm_dup_dev.llm.protocols`:
+
+```python
+from llm_dup_dev.llm import LLMClient, LLMRequest, LLMResponse
+
+
+class AzureOpenAIClient:
+    """Implements LLMClient against Azure OpenAI."""
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        # Call Azure OpenAI with structured-output parsing.
+        # request.response_model is a Pydantic model; parse the response
+        # and return LLMResponse(parsed=<model_instance>, raw_text=<str>).
+        ...
+```
+
+The client is injected via `PipelineRunner(llm_client=...)`. The protocol is structural (`@runtime_checkable`), so any class implementing `generate(request: LLMRequest) -> LLMResponse` will satisfy it. The dev repo never instantiates a concrete client — it only calls `client.generate(...)`.
+
+**PairFeatures output fields added by this module:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ae_clinical_picture_status` | `"assessed"` / `"not_assessed"` | Whether the LLM assessment ran |
+| `ae_clinical_picture_reason` | str | Refines `not_assessed`: `""` (assessed), `"no_llm_client"`, `"trivially_matched"`, `"llm_error"` |
+| `ae_clinical_picture_counts` | `AEClinicalPictureCounts` | Finding counts by severity (minor / moderate / strong / decisive), after deduplication |
+
+AE findings are also included in the unified `PairFeatures.inconsistencies` list alongside rule-based inconsistencies, and their counts are merged into `PairFeatures.inconsistency_counts`.
+
+### 3. StatsProvider
 
 Computes frequency statistics from the database for a given clinical context:
 
@@ -312,6 +344,7 @@ from llm_dup_dev.models.report_pair import ReportPair
 runner = PipelineRunner(
     report_loader=SqlReportLoader(conn_str),
     stats_provider=SqlStatsProvider(conn_str),
+    llm_client=my_azure_client,   # optional; enables AE clinical-picture assessment
 )
 
 # Process a single pair
@@ -597,6 +630,7 @@ output_dir = render_results_html(items, output_dir=Path("outputs/evaluated"))
 The evaluated-pair pages reuse the same side-by-side comparison layout and add:
 
 - **Decision summary** — final label, L_match, inconsistency counts, clinical-date inconsistency counts, explanation
+- **AE clinical-picture status panel** — assessment status, reason (if not assessed), and per-severity finding counts; suppressed findings are shown with a de-emphasised badge
 - **Extended evidence** — anchor population details, probability breakdown, feature contributions, inconsistency counts, clinical-date inconsistency counts
 - **Debug section** (optional) — collapsible raw JSON for PairFeatures and ClassificationResult
 
@@ -665,7 +699,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-311 tests covering all modules.
+552 tests covering all modules.
 
 ### Quick smoke test (in the secure repo)
 
@@ -710,4 +744,4 @@ print(f"Reason:  {result.classification.explanation}")
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Narrative analysis (Phase 9) | Deferred | LLM-based narrative consistency assessment. The pipeline currently defaults to NEUTRAL. When implemented, the `NarrativeProvider` callback will supply narrative-derived inconsistencies (moderate, strong, decisive) that feed into the existing decision logic. |
+| Narrative analysis (Phase 9) | Deferred | LLM-based free-text narrative consistency assessment. The pipeline currently defaults to `NEUTRAL`. When implemented, the `NarrativeProvider` callback will supply narrative-derived inconsistencies (moderate, strong, decisive) that feed into the existing decision logic. This is distinct from the AE clinical-picture module (already implemented), which compares structured adverse-event terms and narratives via the `LLMClient` protocol. |
