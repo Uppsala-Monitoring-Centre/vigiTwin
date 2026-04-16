@@ -234,11 +234,20 @@ this into a single strong finding unless the divergence dominates \
 the picture.
 - Reserve a decisive global picture mismatch for cases where there \
 is no shared or clinically compatible AE overlap and the two \
-pictures are clearly different at the case level.
+pictures are clearly different at the case level. This applies \
+even when each report contains only one or a few AEs, provided \
+each AE is clearly identifiable and clinically unrelated to \
+anything in the other report — short but well-defined distinct \
+pictures are the prototypical decisive case, not a reason to \
+downgrade to moderate.
 - Treat one-sided additional AE content (one report's AEs are largely \
 a subset of the other's) more leniently than bidirectional \
 non-trivial divergence: sparser coding or partial capture is a \
-plausible benign explanation.
+plausible benign explanation. This leniency is intended for cases \
+where sparse coding could plausibly reflect incomplete capture of \
+the same underlying event; it does not apply when each report \
+contains a clear, well-defined AE that is clinically unrelated to \
+anything in the other report.
 
 Anti-overcounting principles
 ----------------------------
