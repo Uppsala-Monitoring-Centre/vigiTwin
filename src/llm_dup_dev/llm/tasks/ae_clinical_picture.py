@@ -213,7 +213,10 @@ especially when there is still substantial AE overlap.
 - strong: substantial AE-picture difference that materially weakens \
 same-case interpretation. Use when the mismatch is clearly more than \
 minor or moderate, but not so globally incompatible that it should \
-be decisive. Keep this level relatively uncommon.
+be decisive. Typical shape: little or no PT-level overlap together \
+with a large severity, depth, or organ-system-reach gap, while the \
+two pictures still sit within a shared broad mechanism that keeps \
+them from being decisive.
 - decisive: no shared or clinically compatible AEs and clearly \
 different AE pictures at the case level. Use only when the difference \
 is clearly positive and clinically meaningful, not merely because the \
@@ -240,6 +243,17 @@ each AE is clearly identifiable and clinically unrelated to \
 anything in the other report — short but well-defined distinct \
 pictures are the prototypical decisive case, not a reason to \
 downgrade to moderate.
+- When the two pictures share a broad mechanism or pathophysiology \
+family (e.g. both hepatic, both cardiac, both haematologic) but \
+have no PT-level overlap AND differ materially in severity, depth, \
+or organ-system reach, use strong. An illustrative pattern: acute \
+hepatic failure on one side vs. isolated transaminases increased \
+on the other — both hepatic, so not decisive, but the severity \
+and character gap is large enough that calling it merely moderate \
+understates how much the mismatch weakens same-case \
+interpretation. Shared mechanism prevents decisive; it does not \
+by itself justify moderate when the specific clinical pictures \
+are substantially different.
 - Treat one-sided additional AE content (one report's AEs are largely \
 a subset of the other's) more leniently than bidirectional \
 non-trivial divergence: sparser coding or partial capture is a \
@@ -247,7 +261,9 @@ plausible benign explanation. This leniency is intended for cases \
 where sparse coding could plausibly reflect incomplete capture of \
 the same underlying event; it does not apply when each report \
 contains a clear, well-defined AE that is clinically unrelated to \
-anything in the other report.
+anything in the other report, nor when the reports' AEs differ \
+materially in severity or organ-system reach even within a shared \
+mechanism family.
 
 Anti-overcounting principles
 ----------------------------
