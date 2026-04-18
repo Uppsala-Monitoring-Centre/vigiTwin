@@ -18,7 +18,7 @@ Usage (new typed interface)::
 
 from .bridge import evaluate_batch, evaluate_results, to_eval_dict
 from .comparison import evaluate
-from .metrics import ConfusionMatrix, EvalSummary
+from .metrics import BinaryMetrics, ConfusionMatrix, EvalSummary
 from .report import summary_to_markdown, summary_to_text
 
 __all__ = [
@@ -30,6 +30,7 @@ __all__ = [
     "to_eval_dict",
     # Metrics
     "EvalSummary",
+    "BinaryMetrics",
     "ConfusionMatrix",
     # Reporting
     "summary_to_text",

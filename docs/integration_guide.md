@@ -427,12 +427,54 @@ print(summary_to_text(summary))
 === Experiment: v1_baseline ===
 Pairs evaluated: 138  (abstained: 12)
 
---- Final Classification ---
-  Accuracy:                    0.823
-  Duplicates              P=0.880  R=0.850  F1=0.865
-  Otherwise_related       P=0.720  R=0.690  F1=0.705
-  Unrelated               P=0.810  R=0.840  F1=0.825
+--- Reference: 3x3 Confusion ---
+Confusion (rows=predicted, cols=actual):
+                     Duplicates  Otherwise_related  Unrelated
+         Duplicates          58                  2          3
+  Otherwise_related           4                 12          5
+          Unrelated           1                  7         46
+
+--- Primary: detecting Non-duplicates ---
+  Positive class: Non_duplicates (Otherwise_related + Unrelated collapsed)
+  Pairs in this view: 138
+  Precision:       0.93
+  Recall:          0.93
+  F1:              0.93
+  Specificity:     0.92
+  False positives: 5
+  False negatives: 5
+
+Confusion (rows=predicted, cols=actual):
+                      Non_duplicates  Duplicates
+      Non_duplicates              70           5
+          Duplicates               5          58
+
+--- Complement: detecting Duplicates ---
+  Positive class: Duplicates (same 2x2 partition, polarity flipped)
+  Pairs in this view: 138
+  Precision:       0.92
+  Recall:          0.92
+  F1:              0.92
+  Specificity:     0.93
+  False positives: 5
+  False negatives: 5
+
+Confusion (rows=predicted, cols=actual):
+                      Duplicates  Non_duplicates
+          Duplicates          58               5
+      Non_duplicates           5              70
 ```
+
+Metrics are quoted to two significant figures. Accuracy is
+deliberately not reported: the 3-class accuracy is dominated by the
+majority class and hides the precision / recall trade-off that matters
+for duplicate detection. The primary view treats Non_duplicates (the
+union of Otherwise_related and Unrelated) as the positive class of
+interest, so recall is the proportion of actual non-duplicates the
+pipeline correctly classifies as such. The complement reports the
+same 2x2 partition with the polarity flipped — positive class
+Duplicates — so recall there is the proportion of actual duplicates
+correctly flagged.
 
 ### Eval annotation format
 

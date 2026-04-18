@@ -21,10 +21,61 @@ from typing import Any
 
 from .labels import FINAL_LABELS, is_abstain, normalise_label
 from .metrics import (
-    ConfusionMatrix,
+    BinaryMetrics,
     EvalSummary,
+    binary_metrics,
     confusion_matrix,
 )
+
+# Label used for the collapsed negative class in the primary binary view.
+_NON_DUPLICATES_LABEL = "Non_duplicates"
+
+
+def _collapse_to_duplicates_vs_nonduplicates(label: str) -> str:
+    """Map a 3-class label to the 2-class primary view vocabulary."""
+    return "Duplicates" if label == "Duplicates" else _NON_DUPLICATES_LABEL
+
+
+def _nonduplicates_vs_duplicates(
+    predicted: list[str], actual: list[str]
+) -> BinaryMetrics:
+    """Primary binary view: Non_duplicates as positive class.
+
+    Non_duplicates (the union of Otherwise_related and Unrelated) is
+    the positive class — detecting non-duplicates is the task of
+    interest, so precision / recall / specificity are anchored on
+    that class. Duplicates is the negative class.
+    """
+    pred_binary = [_collapse_to_duplicates_vs_nonduplicates(p) for p in predicted]
+    actual_binary = [_collapse_to_duplicates_vs_nonduplicates(a) for a in actual]
+    return binary_metrics(
+        pred_binary,
+        actual_binary,
+        positive_label=_NON_DUPLICATES_LABEL,
+        negative_label="Duplicates",
+    )
+
+
+def _duplicates_vs_nonduplicates(
+    predicted: list[str], actual: list[str]
+) -> BinaryMetrics:
+    """Complement binary view: Duplicates as positive class.
+
+    Same 2x2 partition as the primary view — Otherwise_related and
+    Unrelated both collapse to Non_duplicates — but with the polarity
+    flipped. Recall here is the fraction of actual duplicates the
+    pipeline correctly flags.
+    """
+    pred_binary = [_collapse_to_duplicates_vs_nonduplicates(p) for p in predicted]
+    actual_binary = [_collapse_to_duplicates_vs_nonduplicates(a) for a in actual]
+    return binary_metrics(
+        pred_binary,
+        actual_binary,
+        positive_label="Duplicates",
+        negative_label=_NON_DUPLICATES_LABEL,
+    )
+
+
 
 
 def evaluate(
@@ -58,7 +109,9 @@ def evaluate(
     Returns
     -------
     EvalSummary
-        Aggregated metrics (no individual case data).
+        Aggregated metrics: a 3x3 reference confusion matrix plus two
+        binary views (duplicates-vs-nonduplicates and
+        duplicates-vs-unrelated). See :mod:`.metrics` for details.
     """
     # Index eval annotations by pair_id
     eval_by_id = {a["pair_id"]: a for a in eval_annotations}
@@ -87,15 +140,15 @@ def evaluate(
         actual_final.append(normalise_label(assessment))
 
     cm = confusion_matrix(pred_final, actual_final, FINAL_LABELS)
+    bin_primary = _nonduplicates_vs_duplicates(pred_final, actual_final)
+    bin_complement = _duplicates_vs_nonduplicates(pred_final, actual_final)
 
     return EvalSummary(
         experiment_id=experiment_id,
         n_pairs=len(pred_final),
         n_abstained=n_abstained,
-        final_accuracy=cm.accuracy(),
         final_confusion=cm,
-        final_per_class={
-            label: cm.precision_recall_f1(label) for label in FINAL_LABELS
-        },
+        nonduplicates_vs_duplicates=bin_primary,
+        duplicates_vs_nonduplicates=bin_complement,
         config_snapshot=config_snapshot,
     )
