@@ -31,6 +31,7 @@ from llm_dup_dev.feature_generation.matching import (
     _coarser_resolution,
     _truncate_to_resolution,
 )
+from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import (
@@ -635,6 +636,7 @@ def _build_features_summary(
 
 def _build_classification_summary(
     classification: ClassificationResult,
+    features: PairFeatures | None,
 ) -> ClassificationSummaryVM:
     return ClassificationSummaryVM(
         independence_assessment=classification.independence_assessment.value,
@@ -645,6 +647,10 @@ def _build_classification_summary(
         ),
         final_label=classification.final_label,
         explanation=classification.explanation,
+        penalty_summary=_format_penalty_summary(
+            features.inconsistency_counts if features else None,
+            classification.explanation,
+        ),
     )
 
 
@@ -699,6 +705,10 @@ def _build_decision_summary(
             classification.duplicate_relationship.value
             if classification.duplicate_relationship
             else None
+        ),
+        penalty_summary=_format_penalty_summary(
+            features.inconsistency_counts if features else None,
+            classification.explanation,
         ),
     )
 
@@ -942,7 +952,7 @@ def build_pair_view_model(
         _build_features_summary(features) if features else None
     )
     classification_summary = (
-        _build_classification_summary(classification)
+        _build_classification_summary(classification, features)
         if classification
         else None
     )
@@ -1016,6 +1026,8 @@ def build_batch_index_item(
 
     anchor_label, anchor_n = _format_anchor_label(vm, key_drugs)
 
+    penalty_text = _format_penalty_text(vm)
+
     return BatchIndexItem(
         pair_id=vm.pair_id,
         report_1_id=vm.report_1_id,
@@ -1052,6 +1064,7 @@ def build_batch_index_item(
         annotation_agrees=(
             vm.annotation.agrees_with_pipeline if vm.annotation else None
         ),
+        penalty_text=penalty_text,
     )
 
 
@@ -1068,6 +1081,78 @@ _DRUG_SET_RE_1 = re.compile(
 _DRUG_SET_RE_2 = re.compile(
     r"Key drug\(s\) in report 2 not found in report 1:\s*\[(.+)\]"
 )
+
+# Regex for extracting the aggregated discrepancy penalty fragment from
+# classification explanations, e.g. "w_tot=0.8 < 4.0" or "w_tot=2.5 >= 3.0".
+_PENALTY_RE = re.compile(r"w_tot=\d+\.?\d*\s*(?:<|>=)\s*\d+\.?\d*")
+_PENALTY_CMP_RE = re.compile(r"(<|>=)\s*(\d+\.?\d*)")
+
+
+def _format_penalty_summary(
+    counts: object | None,
+    explanation: str,
+) -> str | None:
+    """Build a transparent summation of the aggregated discrepancy penalty.
+
+    Produces a string like ``"3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"`` showing
+    how each severity count contributes to ``w_tot`` alongside the
+    zone-specific comparison.
+
+    ``counts`` may be either the domain ``InconsistencyCounts`` object
+    or the view-model ``InconsistencyCountsVM``; both expose
+    ``minor`` / ``moderate`` / ``strong`` integer attributes.
+
+    Returns ``None`` when the explanation carries no ``w_tot=...``
+    fragment (decisive-override and below-weak branches of the decision
+    logic) or when ``counts`` is missing.
+
+    Note on weights: ``DecisionThresholds()`` defaults are used for the
+    multipliers. If the pipeline ran with custom weights, the shown
+    breakdown remains internally consistent (terms sum to the displayed
+    total) but may disagree with the classifier's own w_tot in the
+    source explanation string.
+    """
+    if counts is None:
+        return None
+    m = _PENALTY_RE.search(explanation)
+    if m is None:
+        return None
+    cmp_match = _PENALTY_CMP_RE.search(m.group(0))
+    if cmp_match is None:
+        return None
+    op, threshold = cmp_match.group(1), cmp_match.group(2)
+
+    thresholds = DecisionThresholds()
+    terms: list[str] = []
+    if counts.minor > 0:
+        terms.append(f"{counts.minor} × {thresholds.w_minor:.1f}")
+    if counts.moderate > 0:
+        terms.append(f"{counts.moderate} × {thresholds.w_moderate:.1f}")
+    if counts.strong > 0:
+        terms.append(f"{counts.strong} × {thresholds.w_strong:.1f}")
+
+    w_tot = (
+        thresholds.w_minor * counts.minor
+        + thresholds.w_moderate * counts.moderate
+        + thresholds.w_strong * counts.strong
+    )
+    if terms:
+        return f"{' + '.join(terms)} = {w_tot:.1f} {op} {threshold}"
+    return f"{w_tot:.1f} {op} {threshold}"
+
+
+def _format_penalty_text(vm: PairViewModel) -> str | None:
+    """Build the batch-index Penalty cell content for a pair."""
+    if not vm.classification_summary:
+        return None
+    counts = (
+        vm.features_summary.inconsistency_counts
+        if vm.features_summary
+        else None
+    )
+    return _format_penalty_summary(
+        counts, vm.classification_summary.explanation
+    )
 
 
 def _parse_drug_list(raw: str) -> list[str]:
@@ -1416,4 +1501,4 @@ def _format_matching_features(
     if clinical_dates:
         parts.append(", ".join(str(_esc(d)) for d in clinical_dates))
 
-    return "; ".join(parts) if parts else None
+    return "<br>".join(parts) if parts else None

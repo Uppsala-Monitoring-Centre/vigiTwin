@@ -40,15 +40,15 @@ a:hover { text-decoration: underline; }
 
 .label-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-size: 12px; }
 .label-Duplicates { background: #d4edda; color: #155724; }
-.label-Otherwise_related { background: #fff3cd; color: #856404; }
+.label-Otherwise_related { background: #fce4ec; color: #880e4f; }
 .label-Unrelated { background: #f8d7da; color: #721c24; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
 /* Severity colours for inline inconsistency items */
-.inc-minor { color: #9a8200; font-weight: 600; }
-.inc-moderate { color: #d2691e; font-weight: 600; }
+.inc-minor { color: #d4a017; font-weight: 600; }
+.inc-moderate { color: #e67e22; font-weight: 600; }
 .inc-strong { color: #c0392b; font-weight: 600; }
-.inc-decisive { color: #8b0000; font-weight: 700; }
+.inc-decisive { color: #7b2cbf; font-weight: 700; }
 
 @media print { body { background: #fff; padding: 0; } }
 </style>
@@ -85,8 +85,11 @@ a:hover { text-decoration: underline; }
                 {% if has_inconsistencies %}
                 <th>Inconsistencies</th>
                 {% endif %}
+                {% if has_penalty %}
+                <th>Penalty</th>
+                {% endif %}
                 {% if has_labels %}
-                <th>Label</th>
+                <th>Classification</th>
                 {% endif %}
                 {% if has_annotations %}
                 <th>Human annotation</th>
@@ -117,11 +120,14 @@ a:hover { text-decoration: underline; }
                 <td>
                     {%- if item.inconsistency_items -%}
                     {%- for ii in item.inconsistency_items -%}
-                    {%- if not loop.first %}; {% endif -%}
+                    {%- if not loop.first %}<br>{% endif -%}
                     <span class="inc-{{ ii.severity }}">{{ ii.text | safe }}</span>
                     {%- endfor -%}
                     {%- endif -%}
                 </td>
+                {% endif %}
+                {% if has_penalty %}
+                <td>{{ item.penalty_text or '--' }}</td>
                 {% endif %}
                 {% if has_labels %}
                 <td>
