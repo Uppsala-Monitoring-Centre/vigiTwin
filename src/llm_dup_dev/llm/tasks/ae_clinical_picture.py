@@ -207,9 +207,12 @@ Often reflects partial overlap, slightly different framing, or one \
 report listing some extra clinically compatible terms. Should not \
 carry major weight against duplication by itself.
 - moderate: clinically meaningful non-redundant difference beyond a \
-minor discrepancy. Still not enough to amount to a major \
-incompatibility. Use for distinct but not dominant discrepancies, \
-especially when there is still substantial AE overlap.
+minor discrepancy, but not so dominant that it reshapes the overall \
+AE picture. Moderate presumes substantial AE overlap remaining \
+between the two reports — the discrepancy is a side-issue against \
+a shared core. When the two reports have no PT-level overlap at \
+all, the discrepancy is by definition the whole picture, not a \
+side-issue, and moderate is too low; escalate to at least strong.
 - strong: substantial AE-picture difference that materially weakens \
 same-case interpretation. Use when the mismatch is clearly more than \
 minor or moderate, but not so globally incompatible that it should \
@@ -224,6 +227,11 @@ reports are sparse, vague, or incompletely coded.
 
 Calibration guidance
 --------------------
+- Boundary rule — zero PT-level overlap: when the two reports share \
+no PT-level AE content, the finding is NEVER moderate. It is strong \
+when the two pictures still sit within a shared broad mechanism or \
+pathophysiology family, decisive when they do not. Moderate is \
+reserved for side-issue discrepancies against a shared AE core.
 - Wording or coding-granularity differences for the same underlying \
 AE produce NO finding (e.g. nominally different terms that describe \
 the same clinical entity, or the same syndrome described by a single \
