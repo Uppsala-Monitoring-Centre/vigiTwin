@@ -1102,9 +1102,12 @@ def _format_penalty_summary(
     or the view-model ``InconsistencyCountsVM``; both expose
     ``minor`` / ``moderate`` / ``strong`` integer attributes.
 
-    Returns ``None`` when the explanation carries no ``w_tot=...``
-    fragment (decisive-override and below-weak branches of the decision
-    logic) or when ``counts`` is missing.
+    Returns ``None`` for the decisive-override branches of the decision
+    logic (where the penalty is not what's driving the outcome) or when
+    ``counts`` is missing. For the below-weak branch — where the pair is
+    always classified as ``Unrelated`` regardless of the penalty — a
+    notional threshold of ``0.0`` with operator ``>=`` is used so the
+    breakdown is still shown for visual consistency.
 
     Note on weights: ``DecisionThresholds()`` defaults are used for the
     multipliers. If the pipeline ran with custom weights, the shown
@@ -1115,12 +1118,17 @@ def _format_penalty_summary(
     if counts is None:
         return None
     m = _PENALTY_RE.search(explanation)
-    if m is None:
+    if m is not None:
+        cmp_match = _PENALTY_CMP_RE.search(m.group(0))
+        if cmp_match is None:
+            return None
+        op, threshold = cmp_match.group(1), cmp_match.group(2)
+    elif "below weak threshold" in explanation:
+        # Below-weak zone: always Unrelated regardless of penalty. Use a
+        # notional threshold of 0 so the row still shows the breakdown.
+        op, threshold = ">=", "0.0"
+    else:
         return None
-    cmp_match = _PENALTY_CMP_RE.search(m.group(0))
-    if cmp_match is None:
-        return None
-    op, threshold = cmp_match.group(1), cmp_match.group(2)
 
     thresholds = DecisionThresholds()
     terms: list[str] = []

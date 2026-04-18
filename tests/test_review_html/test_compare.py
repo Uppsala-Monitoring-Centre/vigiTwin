@@ -494,14 +494,22 @@ class TestFormatPenaltySummary:
         )
         assert _format_penalty_summary(counts, explanation) is None
 
-    def test_below_weak_returns_none(self):
-        """Below-weak branch has no w_tot fragment → None."""
-        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0)
+    def test_below_weak_uses_zero_threshold(self):
+        """Below-weak branch: always Unrelated → show breakdown with '>= 0.0'."""
         explanation = (
             "Matching evidence below weak threshold "
             "(L_match=0.50 ≤ 1.0); independence cannot be rejected."
         )
-        assert _format_penalty_summary(counts, explanation) is None
+        # Zero inconsistencies → no terms, just the total comparison.
+        result = _format_penalty_summary(
+            InconsistencyCountsVM(minor=0, moderate=0, strong=0), explanation
+        )
+        assert result == "0.0 >= 0.0"
+        # Non-zero minor → full breakdown.
+        result = _format_penalty_summary(
+            InconsistencyCountsVM(minor=2, moderate=0, strong=0), explanation
+        )
+        assert result == "2 × 0.4 = 0.8 >= 0.0"
 
     def test_zero_inconsistencies_strong_zone(self):
         """Clean strong-zone pass with zero inconsistencies → no terms, just '0.0 < Y'."""
