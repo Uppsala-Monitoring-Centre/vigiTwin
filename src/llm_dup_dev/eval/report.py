@@ -4,42 +4,36 @@ Format EvalSummary objects into human-readable text or markdown.
 
 from __future__ import annotations
 
-from .labels import FINAL_LABELS
-from .metrics import ConfusionMatrix, EvalSummary
+from .metrics import BinaryMetrics, ConfusionMatrix, EvalSummary
+
+
+# All numeric metrics are quoted to two significant figures. Using Python's
+# ``g`` format lets values like 0.046 retain their leading zeros while still
+# collapsing 0.97222... to 0.97 and 1.0 to 1.
+def _fmt(value: float) -> str:
+    return f"{value:.2g}"
 
 
 def summary_to_text(summary: EvalSummary) -> str:
     """
     Plain-text summary suitable for terminal output or log files.
-
-    Example output::
-
-        === Experiment: baseline_v1 ===
-        Pairs evaluated: 138  (abstained: 12)
-
-        --- Final Classification ---
-          Accuracy:                    0.823
-          Duplicates            P=0.880  R=0.850  F1=0.865
-          Otherwise_related     P=0.720  R=0.690  F1=0.705
-          Unrelated             P=0.810  R=0.840  F1=0.825
     """
     lines = [
         f"=== Experiment: {summary.experiment_id} ===",
         f"Pairs evaluated: {summary.n_pairs}  (abstained: {summary.n_abstained})",
         "",
-        "--- Final Classification ---",
-        f"  Accuracy:                    {summary.final_accuracy:.3f}",
+        "--- Reference: 3x3 Confusion ---",
+        _format_confusion_text(summary.final_confusion),
+        "",
+        "--- Primary: detecting Non-duplicates ---",
+        "  Positive class: Non_duplicates "
+        "(Otherwise_related + Unrelated collapsed)",
+        *_format_binary_text(summary.nonduplicates_vs_duplicates),
+        "",
+        "--- Complement: detecting Duplicates ---",
+        "  Positive class: Duplicates (same 2x2 partition, polarity flipped)",
+        *_format_binary_text(summary.duplicates_vs_nonduplicates),
     ]
-
-    for label in FINAL_LABELS:
-        m = summary.final_per_class.get(label, {})
-        lines.append(
-            f"  {label:22s}  P={m.get('precision', 0):.3f}"
-            f"  R={m.get('recall', 0):.3f}"
-            f"  F1={m.get('f1', 0):.3f}"
-        )
-
-    lines += ["", _format_confusion_text(summary.final_confusion)]
     return "\n".join(lines)
 
 
@@ -52,35 +46,63 @@ def summary_to_markdown(summary: EvalSummary) -> str:
         "",
         f"**Pairs evaluated:** {summary.n_pairs} (abstained: {summary.n_abstained})",
         "",
-        "### Final Classification",
-        "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
-        f"| Accuracy | {summary.final_accuracy:.3f} |",
-        "",
-        "| Label | Precision | Recall | F1 |",
-        "|-------|-----------|--------|----|",
-    ]
-
-    for label in FINAL_LABELS:
-        m = summary.final_per_class.get(label, {})
-        lines.append(
-            f"| {label} "
-            f"| {m.get('precision', 0):.3f} "
-            f"| {m.get('recall', 0):.3f} "
-            f"| {m.get('f1', 0):.3f} |"
-        )
-
-    lines += [
-        "",
-        "### Confusion Matrix",
+        "### Reference: 3x3 Confusion",
         "",
         _format_confusion_markdown(summary.final_confusion),
+        "",
+        "### Primary: detecting Non-duplicates",
+        "",
+        "*Positive class: Non_duplicates "
+        "(Otherwise_related + Unrelated collapsed).*",
+        "",
+        *_format_binary_markdown(summary.nonduplicates_vs_duplicates),
+        "",
+        "### Complement: detecting Duplicates",
+        "",
+        "*Positive class: Duplicates. Same 2x2 partition, polarity flipped.*",
+        "",
+        *_format_binary_markdown(summary.duplicates_vs_nonduplicates),
     ]
     return "\n".join(lines)
 
 
-# ======================== helpers ========================
+# ======================== binary view helpers ========================
+
+
+def _format_binary_text(bm: BinaryMetrics) -> list[str]:
+    """Render a BinaryMetrics as plain-text lines."""
+    return [
+        f"  Pairs in this view: {bm.n_pairs}",
+        f"  Precision:       {_fmt(bm.precision)}",
+        f"  Recall:          {_fmt(bm.recall)}",
+        f"  F1:              {_fmt(bm.f1)}",
+        f"  Specificity:     {_fmt(bm.specificity)}",
+        f"  False positives: {bm.false_positives}",
+        f"  False negatives: {bm.false_negatives}",
+        "",
+        _format_confusion_text(bm.confusion),
+    ]
+
+
+def _format_binary_markdown(bm: BinaryMetrics) -> list[str]:
+    """Render a BinaryMetrics as markdown lines."""
+    return [
+        f"**Pairs in this view:** {bm.n_pairs}",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
+        f"| Precision | {_fmt(bm.precision)} |",
+        f"| Recall | {_fmt(bm.recall)} |",
+        f"| F1 | {_fmt(bm.f1)} |",
+        f"| Specificity | {_fmt(bm.specificity)} |",
+        f"| False positives | {bm.false_positives} |",
+        f"| False negatives | {bm.false_negatives} |",
+        "",
+        _format_confusion_markdown(bm.confusion),
+    ]
+
+
+# ======================== confusion matrix helpers ========================
 
 
 def _format_confusion_text(cm: ConfusionMatrix) -> str:

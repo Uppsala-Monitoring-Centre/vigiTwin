@@ -140,13 +140,21 @@ class TestEvaluateResults:
         summary = evaluate_results(results, annotations, experiment_id="test")
         assert summary.experiment_id == "test"
         assert summary.n_pairs == 2
-        assert summary.final_accuracy == 1.0  # both correct
+        # Primary binary view reports perfect separation on these two pairs.
+        assert summary.nonduplicates_vs_duplicates.precision == 1.0
+        assert summary.nonduplicates_vs_duplicates.recall == 1.0
 
     def test_incorrect_prediction(self):
+        # Predicted Duplicates, actual Unrelated.
+        # In the primary view (positive = Non_duplicates) this is a
+        # false negative — the actual positive was missed. Precision
+        # is undefined (no predicted positives) so falls back to 0.0;
+        # recall is also 0.0 since the one actual positive was missed.
         results = [_make_duplicates("p1")]
         annotations = [_make_annotation("p1", "unrelated")]
         summary = evaluate_results(results, annotations)
-        assert summary.final_accuracy == 0.0
+        assert summary.nonduplicates_vs_duplicates.precision == 0.0
+        assert summary.nonduplicates_vs_duplicates.recall == 0.0
 
     def test_abstain_annotations_excluded(self):
         results = [
@@ -166,7 +174,16 @@ class TestEvaluateResults:
         results = [_make_otherwise_related("p1")]
         annotations = [_make_annotation("p1", "otherwise_related")]
         summary = evaluate_results(results, annotations)
-        assert summary.final_accuracy == 1.0
+        # 3x3 diagonal cell for Otherwise_related should be 1.
+        cm = summary.final_confusion
+        or_idx = cm.labels.index("Otherwise_related")
+        assert cm.matrix[or_idx][or_idx] == 1
+        # Primary view (positive = Non_duplicates): this is a true positive.
+        primary = summary.nonduplicates_vs_duplicates
+        assert primary.n_pairs == 1
+        assert primary.confusion.matrix[0][0] == 1  # TP cell
+        assert primary.precision == 1.0
+        assert primary.recall == 1.0
 
     def test_config_snapshot_preserved(self):
         results = [_make_duplicates("p1")]
@@ -207,7 +224,8 @@ class TestEvaluateBatch:
         ]
         summary = evaluate_batch(batch, annotations, experiment_id="batch_test")
         assert summary.n_pairs == 2
-        assert summary.final_accuracy == 1.0
+        assert summary.nonduplicates_vs_duplicates.precision == 1.0
+        assert summary.nonduplicates_vs_duplicates.recall == 1.0
 
     def test_batch_with_errors_only_evaluates_successes(self):
         batch = BatchResult(
