@@ -234,7 +234,9 @@ the same syndrome should generally produce at most a minor finding.
 distinct clinically meaningful additional AE cluster of a different \
 type, emit one moderate finding per such cluster. Do not collapse \
 this into a single strong finding unless the divergence dominates \
-the picture.
+the picture. This guidance applies ONLY when there is genuine \
+shared AE content between the two reports; it does not apply when \
+the reports have no PT-level overlap at all.
 - Reserve a decisive global picture mismatch for cases where there \
 is no shared or clinically compatible AE overlap and the two \
 pictures are clearly different at the case level. This applies \
@@ -276,6 +278,16 @@ should usually produce no finding or only a minor finding, especially \
 when they appear peripheral or look like background/history coding.
 - Do not stack a cluster-level finding and a broader summary finding \
 that reflect the same underlying issue.
+- When the two reports have NO PT-level overlap at all, represent \
+the divergence as a SINGLE finding, not as one unmatched_cluster \
+per side. Bidirectional no-overlap is one picture-level discrepancy, \
+not two, and splitting it into per-report findings both fragments \
+the rationale and mis-weights the discrepancy under downstream \
+severity aggregation. Choose the severity per the rubric: typically \
+strong when the two pictures still sit within a shared broad \
+mechanism family, decisive when they do not. Use either a single \
+unmatched_cluster covering the overall divergence or a \
+global_picture_mismatch, whichever fits more naturally.
 - If you emit a decisive global picture mismatch, do not also emit \
 subordinate lower-severity findings describing the same contradiction \
 — a downstream step will suppress them automatically, but emitting \
