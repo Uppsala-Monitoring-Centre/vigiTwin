@@ -1,9 +1,10 @@
 """Tests for classifier.decision_logic.
 
 Uses the weighted inconsistency score
-``w_tot = w_minor * minor + w_moderate * moderate + w_strong * strong``
-(defaults: w_minor=0.4, w_moderate=1.0, w_strong=3.0) with per-zone
-thresholds:
+``w_tot = w_minor * minor + w_moderate * moderate + w_strong * strong
+         + w_decisive * decisive``
+(defaults: w_minor=0.4, w_moderate=1.0, w_strong=3.0, w_decisive=100.0)
+with per-zone thresholds:
 
     strong zone (L > 3.0): w_tot < 4 → Non-independent / Duplicates
                             else      → Non-independent / Otherwise_related
@@ -243,7 +244,9 @@ class TestBelowWeak:
 # ===================================================================
 
 class TestDecisiveInconsistency:
-    """Decisive inconsistencies override the zone-based logic."""
+    """Decisive inconsistencies participate via ``w_decisive`` (default 100)
+    which exceeds every zone threshold, so any decisive count forces the
+    failing-zone branch."""
 
     def test_decisive_with_high_lmatch_otherwise_related(self):
         """Decisive + L_match > lmatch_med → Non-independent / Otherwise_related."""
@@ -269,7 +272,7 @@ class TestDecisiveInconsistency:
         result = classify(f, THRESHOLDS)
         _assert_independent(result)
 
-    def test_decisive_overrides_clean_strong_zone(self):
+    def test_decisive_forces_otherwise_related_in_clean_strong_zone(self):
         """Even with no other inconsistencies and very high L_match,
         decisive forces Otherwise_related (not Duplicates)."""
         f = _make_features(L_match=10.0, decisive=1, strong=0, moderate=0)
@@ -281,7 +284,7 @@ class TestDecisiveInconsistency:
         f = _make_features(L_match=4.0, decisive=3)
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
-        assert "n=3" in result.explanation
+        assert "decisive=3" in result.explanation
 
 
 # ===================================================================

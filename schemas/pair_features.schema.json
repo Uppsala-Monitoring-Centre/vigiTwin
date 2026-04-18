@@ -315,7 +315,7 @@
       "type": "object"
     },
     "InconsistencyCounts": {
-      "description": "Summary counts of inconsistencies by severity level.\n\nThese counts are merged across all inconsistency sources:\ndemographic (age, weight, height, sex), drug-set, clinical-date,\nand narrative-derived inconsistencies.  They feed directly into\nthe weighted inconsistency score w_tot in the decision logic.\n\nDecisive inconsistencies (e.g. distinct patient IDs from the\nsame study, or clinical-date impossibilities) override all other\nevidence and force a Different individuals classification.",
+      "description": "Summary counts of inconsistencies by severity level.\n\nThese counts are merged across all inconsistency sources:\ndemographic (age, weight, height, sex), drug-set, clinical-date,\nand narrative-derived inconsistencies.  They feed directly into\nthe weighted inconsistency score w_tot in the decision logic.\n\nDecisive inconsistencies (e.g. distinct patient IDs from the\nsame study, or clinical-date impossibilities) contribute to\nw_tot via ``w_decisive``, which is set high enough that any\ndecisive count always exceeds the zone tolerance.",
       "properties": {
         "minor": {
           "default": 0,

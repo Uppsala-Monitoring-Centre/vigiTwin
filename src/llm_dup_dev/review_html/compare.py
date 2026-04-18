@@ -1102,12 +1102,13 @@ def _format_penalty_summary(
     or the view-model ``InconsistencyCountsVM``; both expose
     ``minor`` / ``moderate`` / ``strong`` integer attributes.
 
-    Returns ``None`` for the decisive-override branches of the decision
-    logic (where the penalty is not what's driving the outcome) or when
-    ``counts`` is missing. For the below-weak branch — where the pair is
-    always classified as ``Unrelated`` regardless of the penalty — a
-    notional threshold of ``0.0`` with operator ``>=`` is used so the
-    breakdown is still shown for visual consistency.
+    Returns ``None`` only when ``counts`` is missing. For the below-weak
+    branch — where the pair is always classified as ``Unrelated``
+    regardless of the penalty — a notional threshold of ``0.0`` with
+    operator ``>=`` is used so the breakdown is still shown for visual
+    consistency. Decisive inconsistencies contribute via
+    ``w_decisive × decisive`` and therefore appear in the breakdown
+    like any other severity.
 
     Note on weights: ``DecisionThresholds()`` defaults are used for the
     multipliers. If the pipeline ran with custom weights, the shown
@@ -1138,11 +1139,14 @@ def _format_penalty_summary(
         terms.append(f"{counts.moderate} × {thresholds.w_moderate:.1f}")
     if counts.strong > 0:
         terms.append(f"{counts.strong} × {thresholds.w_strong:.1f}")
+    if counts.decisive > 0:
+        terms.append(f"{counts.decisive} × {thresholds.w_decisive:.1f}")
 
     w_tot = (
         thresholds.w_minor * counts.minor
         + thresholds.w_moderate * counts.moderate
         + thresholds.w_strong * counts.strong
+        + thresholds.w_decisive * counts.decisive
     )
     if terms:
         return f"{' + '.join(terms)} = {w_tot:.1f} {op} {threshold}"

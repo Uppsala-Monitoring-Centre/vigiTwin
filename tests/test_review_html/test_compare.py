@@ -485,14 +485,16 @@ class TestFormatPenaltySummary:
         # 2*3.0 = 6.0
         assert result == "2 × 3.0 = 6.0 >= 4.0"
 
-    def test_decisive_override_returns_none(self):
-        """Decisive-override branch has no w_tot fragment → None."""
+    def test_decisive_included_in_breakdown(self):
+        """Decisive counts now contribute via w_decisive in the breakdown."""
         counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0, decisive=1)
         explanation = (
-            "Decisive inconsistency detected (n=1); matching evidence "
-            "still indicates non-independence (L_match=3.50 > 2.0)."
+            "Strong matching evidence (L_match=3.50) but "
+            "w_tot=100.0 >= 4.0 (strong=0, moderate=0, decisive=1)."
         )
-        assert _format_penalty_summary(counts, explanation) is None
+        # Default w_decisive=100.0 → 1 × 100.0 = 100.0
+        result = _format_penalty_summary(counts, explanation)
+        assert result == "1 × 100.0 = 100.0 >= 4.0"
 
     def test_below_weak_uses_zero_threshold(self):
         """Below-weak branch: always Unrelated → show breakdown with '>= 0.0'."""

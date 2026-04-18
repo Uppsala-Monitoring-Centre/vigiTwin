@@ -8,7 +8,7 @@ pairs.
 See: docs/duplicate_adjudication_spec.md
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DomainSizeConfig(BaseModel):
@@ -137,7 +137,8 @@ class DecisionThresholds(BaseModel):
 
     The decision uses a weighted inconsistency score:
 
-        w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
+        w_tot = w_minor × minor + w_moderate × moderate
+              + w_strong × strong + w_decisive × decisive
 
     Three L_match zones define progressively stricter tolerance for w_tot:
 
@@ -146,7 +147,11 @@ class DecisionThresholds(BaseModel):
     - weak zone   (L_match > lmatch_weak):   w_tot < 1 → Same
     - below weak: always Different individuals / Unrelated
 
-    Decisive inconsistencies override all zones → Different.
+    ``w_decisive`` is set far above any zone threshold so that a single
+    decisive inconsistency always forces the failing-zone branch, which
+    in combination with the zone logic yields ``Otherwise_related``
+    when ``L_match > lmatch_med`` and ``Unrelated`` otherwise. This is
+    enforced by an invariant validator.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
@@ -160,11 +165,27 @@ class DecisionThresholds(BaseModel):
     w_minor: float = 0.4
     w_moderate: float = 1.0
     w_strong: float = 3.0
+    w_decisive: float = 100.0
 
     # Per-zone w_tot thresholds (Same if w_tot < threshold)
     w_tot_strong_zone: float = 4.0
     w_tot_med_zone: float = 3.0
     w_tot_weak_zone: float = 1.0
+
+    @model_validator(mode="after")
+    def _w_decisive_exceeds_zone_thresholds(self) -> "DecisionThresholds":
+        max_zone = max(
+            self.w_tot_strong_zone,
+            self.w_tot_med_zone,
+            self.w_tot_weak_zone,
+        )
+        if self.w_decisive <= max_zone:
+            raise ValueError(
+                f"w_decisive ({self.w_decisive}) must exceed the largest "
+                f"zone threshold ({max_zone}) so that a single decisive "
+                f"inconsistency always fails every zone."
+            )
+        return self
 
 
 class PipelineConfig(BaseModel):

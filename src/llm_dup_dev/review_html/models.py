@@ -256,9 +256,8 @@ class ClassificationSummaryVM(BaseModel):
     final_label: str
     explanation: str
     # Optional transparent breakdown of the aggregated discrepancy
-    # penalty (e.g. "3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"). Absent when the
-    # decision did not apply a w_tot comparison (decisive-override or
-    # below-weak branches) or when inconsistency counts are unavailable.
+    # penalty (e.g. "3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"). Absent when
+    # inconsistency counts are unavailable.
     penalty_summary: str | None = None
 
 

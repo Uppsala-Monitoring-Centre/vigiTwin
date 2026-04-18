@@ -21,7 +21,8 @@ user-facing labels ``Duplicates`` / ``Otherwise_related`` /
 
 Inconsistencies are combined into a single weighted score::
 
-    w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
+    w_tot = w_minor × minor + w_moderate × moderate
+          + w_strong × strong + w_decisive × decisive
 
 The decision space is divided into four zones by ``L_match`` thresholds.
 Each zone has its own tolerance for ``w_tot``::
@@ -39,10 +40,12 @@ the independence test is only marginally rejected, and any inconsistency
 is enough to fall back to "couldn't reject independence".
 
 Decisive inconsistencies (e.g. distinct patient identifiers from the
-same study found in the narratives) override the zone-based logic. When
-``L_match > lmatch_med`` the matching evidence still indicates
-non-independence (so the pair is surfaced as ``Otherwise_related``);
-otherwise the pair falls back to ``Independent``.
+same study found in the narratives) participate through the same
+weighted score with a large weight (``w_decisive``, default 100) that
+always exceeds every zone threshold. As a result, any decisive count
+forces the failing-zone branch, which combined with the zone logic
+yields ``Otherwise_related`` when ``L_match > lmatch_med`` and
+``Independent`` otherwise — with no separate override.
 
 See: docs/duplicate_adjudication_spec.md § Decision logic
 """
@@ -81,27 +84,6 @@ def classify(
     L = features.L_match
     w_tot = _weighted_inconsistency(counts, thresholds)
 
-    # --- Decisive inconsistencies override the zone-based logic ---
-    if counts.decisive > 0:
-        if L > thresholds.lmatch_med:
-            return _otherwise_related(
-                pair_id=features.pair_id,
-                explanation=(
-                    f"Decisive inconsistency detected "
-                    f"(n={counts.decisive}); matching evidence still "
-                    f"indicates non-independence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_med})."
-                ),
-            )
-        return _independent(
-            pair_id=features.pair_id,
-            explanation=(
-                f"Decisive inconsistency detected "
-                f"(n={counts.decisive}); L_match={L:.2f} ≤ "
-                f"{thresholds.lmatch_med} so independence cannot be rejected."
-            ),
-        )
-
     # --- Strong zone: L_match > lmatch_strong ---
     if L > thresholds.lmatch_strong:
         if w_tot < thresholds.w_tot_strong_zone:
@@ -118,7 +100,8 @@ def classify(
             explanation=(
                 f"Strong matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_strong_zone:.1f} "
-                f"(strong={counts.strong}, moderate={counts.moderate})."
+                f"(strong={counts.strong}, moderate={counts.moderate}, "
+                f"decisive={counts.decisive})."
             ),
         )
 
@@ -138,7 +121,8 @@ def classify(
             explanation=(
                 f"Moderate matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f} "
-                f"(strong={counts.strong}, moderate={counts.moderate})."
+                f"(strong={counts.strong}, moderate={counts.moderate}, "
+                f"decisive={counts.decisive})."
             ),
         )
 
@@ -158,7 +142,8 @@ def classify(
             explanation=(
                 f"Weak matching evidence (L_match={L:.2f}) with "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f} "
-                f"(strong={counts.strong}, moderate={counts.moderate}); "
+                f"(strong={counts.strong}, moderate={counts.moderate}, "
+                f"decisive={counts.decisive}); "
                 f"independence cannot be rejected."
             ),
         )
@@ -185,12 +170,14 @@ def _weighted_inconsistency(
 ) -> float:
     """Compute the weighted inconsistency score.
 
-    w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
+    w_tot = w_minor × minor + w_moderate × moderate
+          + w_strong × strong + w_decisive × decisive
     """
     return (
         thresholds.w_minor * counts.minor
         + thresholds.w_moderate * counts.moderate
         + thresholds.w_strong * counts.strong
+        + thresholds.w_decisive * counts.decisive
     )
 
 

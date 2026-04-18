@@ -122,8 +122,9 @@ class InconsistencyCounts(BaseModel):
     the weighted inconsistency score w_tot in the decision logic.
 
     Decisive inconsistencies (e.g. distinct patient IDs from the
-    same study, or clinical-date impossibilities) override all other
-    evidence and force a Different individuals classification.
+    same study, or clinical-date impossibilities) contribute to
+    w_tot via ``w_decisive``, which is set high enough that any
+    decisive count always exceeds the zone tolerance.
     """
 
     minor: int = 0
