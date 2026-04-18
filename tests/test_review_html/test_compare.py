@@ -22,9 +22,13 @@ from llm_dup_dev.review_html.compare import (
     _compare_date_values,
     _compare_measurement_values,
     _compare_sourced_values,
+    _format_penalty_summary,
     build_pair_view_model,
 )
-from llm_dup_dev.review_html.models import ComparisonStatus
+from llm_dup_dev.review_html.models import (
+    ComparisonStatus,
+    InconsistencyCountsVM,
+)
 
 
 # ===================================================================
@@ -448,3 +452,67 @@ class TestClinicalDateCountsInViewModels:
         assert cdc is not None
         assert isinstance(cdc.n_minor, int)
         assert isinstance(cdc.n_decisive, int)
+
+
+# ===================================================================
+# _format_penalty_summary
+# ===================================================================
+
+
+class TestFormatPenaltySummary:
+    """Transparent summation of the aggregated discrepancy penalty."""
+
+    def test_zone_based_explanation_produces_breakdown(self):
+        """A typical zone-based explanation yields 'n × w + ... = total op Y'."""
+        counts = InconsistencyCountsVM(minor=3, moderate=1, strong=0)
+        explanation = (
+            "Strong matching evidence (L_match=3.50 > 3.0); "
+            "w_tot=2.2 < 4.0."
+        )
+        result = _format_penalty_summary(counts, explanation)
+        # Default thresholds: w_minor=0.4, w_moderate=1.0, w_strong=3.0
+        # 3*0.4 + 1*1.0 = 2.2
+        assert result == "3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"
+
+    def test_failing_zone_uses_gte_operator(self):
+        """Explanation with 'w_tot=X >= Y' keeps the >= operator."""
+        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=2)
+        explanation = (
+            "Strong matching evidence (L_match=3.50) but "
+            "w_tot=6.0 >= 4.0 (strong=2, moderate=0)."
+        )
+        result = _format_penalty_summary(counts, explanation)
+        # 2*3.0 = 6.0
+        assert result == "2 × 3.0 = 6.0 >= 4.0"
+
+    def test_decisive_override_returns_none(self):
+        """Decisive-override branch has no w_tot fragment → None."""
+        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0, decisive=1)
+        explanation = (
+            "Decisive inconsistency detected (n=1); matching evidence "
+            "still indicates non-independence (L_match=3.50 > 2.0)."
+        )
+        assert _format_penalty_summary(counts, explanation) is None
+
+    def test_below_weak_returns_none(self):
+        """Below-weak branch has no w_tot fragment → None."""
+        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0)
+        explanation = (
+            "Matching evidence below weak threshold "
+            "(L_match=0.50 ≤ 1.0); independence cannot be rejected."
+        )
+        assert _format_penalty_summary(counts, explanation) is None
+
+    def test_zero_inconsistencies_strong_zone(self):
+        """Clean strong-zone pass with zero inconsistencies → no terms, just '0.0 < Y'."""
+        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0)
+        explanation = (
+            "Strong matching evidence (L_match=4.00 > 3.0); "
+            "w_tot=0.0 < 4.0."
+        )
+        result = _format_penalty_summary(counts, explanation)
+        assert result == "0.0 < 4.0"
+
+    def test_missing_counts_returns_none(self):
+        """No inconsistency_counts available → None (template falls back to '--')."""
+        assert _format_penalty_summary(None, "w_tot=1.0 < 4.0") is None

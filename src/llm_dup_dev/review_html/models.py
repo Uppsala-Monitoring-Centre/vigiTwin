@@ -255,6 +255,11 @@ class ClassificationSummaryVM(BaseModel):
     duplicate_relationship: str | None = None
     final_label: str
     explanation: str
+    # Optional transparent breakdown of the aggregated discrepancy
+    # penalty (e.g. "3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"). Absent when the
+    # decision did not apply a w_tot comparison (decisive-override or
+    # below-weak branches) or when inconsistency counts are unavailable.
+    penalty_summary: str | None = None
 
 
 class AnnotationVM(BaseModel):
@@ -323,6 +328,8 @@ class DecisionSummaryVM(BaseModel):
     ae_clinical_picture_status: str | None = None
     narrative_consistency: str | None = None
     duplicate_relationship: str | None = None
+    # See ClassificationSummaryVM.penalty_summary.
+    penalty_summary: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -402,3 +409,4 @@ class BatchIndexItem(BaseModel):
     matching_features: str | None = None         # e.g. "sex=male, age=25 years, AEs=headache"
     annotation_label: str | None = None          # normalised human annotation
     annotation_agrees: bool | None = None        # True/False/None (no pipeline label)
+    penalty_text: str | None = None              # e.g. "w_tot=0.8 < 4.0"
