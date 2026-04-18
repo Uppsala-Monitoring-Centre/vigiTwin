@@ -597,7 +597,7 @@ Three levels of inconsistency severity are defined:
 | -------- | ------------------------------------------------------- |
 | moderate | difference that weakens the duplicate hypothesis        |
 | strong   | difference that strongly suggests different individuals |
-| decisive | hard contradiction that overrides all matching evidence |
+| decisive | hard contradiction that precludes a `Duplicates` verdict |
 
 Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight, drug set). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
 
@@ -909,14 +909,10 @@ which quantifies how unlikely the observed combination of matched features would
 **Weighted inconsistency score**
 
 $$
-w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
+w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}} + w_d \times n_{\text{decisive}}
 $$
 
-which combines minor, moderate, and strong inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, weight, height, sex), drug-set inconsistencies, clinical-date inconsistencies, and narrative-derived inconsistencies. The weights \(w_{mi}\), \(w_m\), and \(w_s\) are configurable (defaults: \(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\)).
-
-**Decisive inconsistency count**
-
-The number of decisive inconsistencies detected (from narrative analysis, clinical-date impossibilities, etc.). Any non-zero count overrides the zone-based logic.
+which combines minor, moderate, strong, and decisive inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, weight, height, sex), drug-set inconsistencies, clinical-date inconsistencies, and narrative-derived inconsistencies. The weights \(w_{mi}\), \(w_m\), \(w_s\) and \(w_d\) are configurable (defaults: \(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\), \(w_d = 100\)). The decisive weight is deliberately set large enough that any decisive count always exceeds every zone tolerance; a configuration validator enforces this invariant.
 
 **Narrative consistency category**
 
@@ -931,13 +927,13 @@ One of:
 
 ### Weighted inconsistency score
 
-Minor, moderate, and strong inconsistencies are combined into a single weighted score:
+Minor, moderate, strong, and decisive inconsistencies are combined into a single weighted score:
 
 $$
-w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}}
+w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}} + w_d \times n_{\text{decisive}}
 $$
 
-where \(w_{mi}\), \(w_m\), and \(w_s\) are configurable weights. With the current defaults (\(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\)), a single strong inconsistency contributes 7.5 times as much as a minor one.
+where \(w_{mi}\), \(w_m\), \(w_s\) and \(w_d\) are configurable weights. With the current defaults (\(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\), \(w_d = 100\)), a single strong inconsistency contributes 7.5 times as much as a minor one, and a single decisive inconsistency always exceeds every zone tolerance (see § Decisive inconsistencies below).
 
 ---
 
@@ -977,7 +973,9 @@ The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}
 
 ### Decisive inconsistencies
 
-Decisive inconsistencies (e.g. distinct patient identifiers from the same study, identified through narrative analysis) override the zone-based logic. They preclude a `Duplicates` verdict — the reports cannot describe the same individual case — but they do not by themselves overturn the independence assessment.
+Decisive inconsistencies (e.g. distinct patient identifiers from the same study, identified through narrative analysis) participate in the zone-based logic as a term in \(w_{\text{tot}}\) with a deliberately large weight \(w_d = 100\). This is set high enough that any non-zero decisive count drives \(w_{\text{tot}}\) past every zone tolerance, so the zone's failing-branch outcome is taken. A configuration validator enforces \(w_d > \max(\text{zone thresholds})\) so this invariant is preserved if the thresholds are ever retuned.
+
+The effect is the same as an explicit override, but expressed through the ordinary weighted score — which keeps the breakdown transparent (the decisive contribution is visible in the explanation string and in the review HTML penalty column).
 
 When a decisive inconsistency is present:
 
@@ -987,6 +985,8 @@ When a decisive inconsistency is present:
 - \(L_{\text{match}} \leq 2.0\) → **Independent (Unrelated)**
   (independence cannot be rejected, so no claim about relatedness is
   made)
+
+In other words, decisive inconsistencies preclude a `Duplicates` verdict — the reports cannot describe the same individual case — but do not by themselves overturn the independence assessment.
 
 ---
 
