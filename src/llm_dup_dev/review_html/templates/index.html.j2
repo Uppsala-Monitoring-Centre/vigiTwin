@@ -41,14 +41,24 @@ a:hover { text-decoration: underline; }
 .label-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-weight: 600; font-size: 12px; }
 .label-Duplicates { background: #d4edda; color: #155724; }
 .label-Otherwise_related { background: #fce4ec; color: #880e4f; }
-.label-Unrelated { background: #f8d7da; color: #721c24; }
+.label-Unrelated { background: #721c24; color: #fff; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
-/* Severity colours for inline inconsistency items */
-.inc-minor { color: #d4a017; font-weight: 600; }
-.inc-moderate { color: #e67e22; font-weight: 600; }
-.inc-strong { color: #c0392b; font-weight: 600; }
-.inc-decisive { color: #7b2cbf; font-weight: 700; }
+/* Severity badges for inline inconsistency items */
+.inc-minor,
+.inc-moderate,
+.inc-strong,
+.inc-decisive {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #fff;
+    font-weight: 600;
+}
+.inc-minor    { background: #b8860b; }
+.inc-moderate { background: #e67e22; }
+.inc-strong   { background: #c0392b; }
+.inc-decisive { background: #7b2cbf; font-weight: 700; }
 
 @media print { body { background: #fff; padding: 0; } }
 </style>
