@@ -304,7 +304,11 @@ def compute_matching_clinical_dates(
            (does not require shared AE terms).
         4. The result is collapsed to unique matched dates.  If the same
            calendar date matches for multiple drugs/AEs/field types, it
-           contributes only once (at the finest matched resolution).
+           contributes only once (at the finest matched resolution).  A
+           coarser match whose value is the truncation of a finer match
+           (e.g. year-only ``2000`` alongside day ``2000-04-08``) is
+           subsumed and dropped — it is the coarser view of the same
+           calendar coincidence and must not be rewarded independently.
         5. Standard partial-date matching rules apply (month-only and
            year-only values match at their coarser resolution).
 
@@ -392,6 +396,7 @@ def compute_matching_clinical_dates(
         if result is not None:
             _update_unique_dates(unique, result[0], result[1])
 
+    unique = _drop_subsumed_dates(unique)
     return [
         ClinicalDateMatch(matched_value=val, resolution=res)
         for val, res in sorted(unique.items())
@@ -407,6 +412,28 @@ def _update_unique_dates(
         resolution, 0
     ) > _RESOLUTION_RANK.get(existing, 0):
         unique[value] = resolution
+
+
+def _drop_subsumed_dates(unique: dict[str, str]) -> dict[str, str]:
+    """Drop entries that are prefix-truncations of a finer entry in the same dict.
+
+    A coarse match (e.g. year-only "2021") that falls inside a finer match
+    (e.g. "2021-11-08") is the coarser view of the same calendar coincidence
+    and must not contribute an independent reward downstream.
+    """
+    items = list(unique.items())
+    kept: dict[str, str] = {}
+    for val, res in items:
+        rank = _RESOLUTION_RANK[res]
+        subsumed = any(
+            _RESOLUTION_RANK[other_res] > rank
+            and _truncate_to_resolution(other_val, res) == val
+            for other_val, other_res in items
+            if other_val != val
+        )
+        if not subsumed:
+            kept[val] = res
+    return kept
 
 
 # ---------------------------------------------------------------------------
