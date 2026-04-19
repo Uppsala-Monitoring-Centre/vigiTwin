@@ -145,16 +145,26 @@ th.status-col, td.status-col { width: 56px; text-align: center; white-space: now
 .evidence-kv dt { font-weight: 600; color: #586069; }
 .evidence-kv dd { margin: 0; }
 
-.severity-minor { color: #d4a017; font-weight: 600; }
-.severity-moderate { color: #e67e22; font-weight: 600; }
-.severity-strong { color: #c0392b; font-weight: 600; }
-.severity-decisive { color: #fff; background: #7b2cbf; padding: 1px 5px; border-radius: 3px; font-weight: 700; }
+.severity-minor,
+.severity-moderate,
+.severity-strong,
+.severity-decisive {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #fff;
+    font-weight: 600;
+}
+.severity-minor    { background: #b8860b; }
+.severity-moderate { background: #e67e22; }
+.severity-strong   { background: #c0392b; }
+.severity-decisive { background: #7b2cbf; font-weight: 700; }
 
 /* --- Suppressed inconsistency rows (kept for transparency) --- */
 tr.inc-suppressed td { color: #959da5; background: #fafbfc; }
 tr.inc-suppressed .severity-minor,
 tr.inc-suppressed .severity-moderate,
-tr.inc-suppressed .severity-strong { color: #959da5; }
+tr.inc-suppressed .severity-strong,
 tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
 .suppressed-badge {
     display: inline-block;
@@ -219,7 +229,7 @@ tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
 }
 .label-Duplicates { background: #d4edda; color: #155724; }
 .label-Otherwise_related { background: #fce4ec; color: #880e4f; }
-.label-Unrelated { background: #f8d7da; color: #721c24; }
+.label-Unrelated { background: #721c24; color: #fff; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
 /* --- Annotation badge --- */
