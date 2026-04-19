@@ -549,35 +549,116 @@ class TestClinicalDateMatching:
         result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
         assert len(result) == 1
 
-    def test_dedup_keeps_finest_resolution(self):
-        """When same date matches at different resolutions, keep the finest."""
-        r1 = _make_report("1",
-            drugs=[
-                Drug(substance="drugA", sources=["s"],
-                     start_date=PartialDate(value="2020-06-15", resolution="day")),
-                Drug(substance="drugB", sources=["s"],
-                     start_date=PartialDate(value="2020-06", resolution="month")),
-            ],
-        )
-        r2 = _make_report("2",
-            drugs=[
-                Drug(substance="drugA", sources=["s"],
-                     start_date=PartialDate(value="2020-06-15", resolution="day")),
-                Drug(substance="drugB", sources=["s"],
-                     start_date=PartialDate(value="2020-06-15", resolution="day")),
-            ],
-        )
+    def test_coarser_match_absorbed_by_finer_same_drug(self):
+        """Month-only match on one side that sits inside a finer day match
+        must not contribute a second reward — the coarser "2021-11" is just
+        the month-truncated view of the day "2021-11-08"."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day"),
+                 end_date=PartialDate(value="2021-11", resolution="month")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day"),
+                 end_date=PartialDate(value="2021-11-08", resolution="day")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        # start↔start matches as day "2021-11-08".
+        # end↔end matches as month "2021-11" (coarser of month/day), which is
+        # subsumed by the day match above — should not count again.
+        assert len(result) == 1
+        assert result[0].matched_value == "2021-11-08"
+        assert result[0].resolution == "day"
+
+    def test_year_match_absorbed_by_finer_day_match_same_drug(self):
+        """User's reported scenario: a year-only match (2000) on top of a
+        day match (2000-04-08) should collapse to the day match only."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2000-04-08", resolution="day"),
+                 end_date=PartialDate(value="2000", resolution="year")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2000-04-08", resolution="day"),
+                 end_date=PartialDate(value="2000", resolution="year")),
+        ])
+        result = compute_matching_clinical_dates(r1, r2, ["drugA"], [])
+        assert len(result) == 1
+        assert result[0].matched_value == "2000-04-08"
+        assert result[0].resolution == "day"
+
+    def test_coarser_match_absorbed_across_entities(self):
+        """Subsumption works across different matched entities: a year-only
+        match on drugB gets absorbed by a day match on drugA within the same
+        year."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2021", resolution="year")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2021", resolution="year")),
+        ])
         result = compute_matching_clinical_dates(
             r1, r2, ["drugA", "drugB"], []
         )
-        # drugA: start matches at day "2020-06-15"
-        # drugB: start matches at month "2020-06" (coarser of day/month)
-        # These are different matched_value strings, so 2 unique dates
+        assert len(result) == 1
+        assert result[0].matched_value == "2021-11-08"
+        assert result[0].resolution == "day"
+
+    def test_coarser_match_kept_when_not_subsumed(self):
+        """A year-only match in a different calendar year from any finer
+        match must still count independently."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2022", resolution="year")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2022", resolution="year")),
+        ])
+        result = compute_matching_clinical_dates(
+            r1, r2, ["drugA", "drugB"], []
+        )
         assert len(result) == 2
-        day_matches = [r for r in result if r.resolution == "day"]
-        month_matches = [r for r in result if r.resolution == "month"]
-        assert len(day_matches) == 1
-        assert len(month_matches) == 1
+        by_res = {cd.resolution: cd.matched_value for cd in result}
+        assert by_res == {"day": "2021-11-08", "year": "2022"}
+
+    def test_three_way_subsumption_collapses_to_finest(self):
+        """Year, month, and day matches for the same underlying calendar
+        date should all collapse to the single day entry."""
+        r1 = _make_report("1", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2021-11", resolution="month")),
+            Drug(substance="drugC", sources=["s"],
+                 start_date=PartialDate(value="2021", resolution="year")),
+        ])
+        r2 = _make_report("2", drugs=[
+            Drug(substance="drugA", sources=["s"],
+                 start_date=PartialDate(value="2021-11-08", resolution="day")),
+            Drug(substance="drugB", sources=["s"],
+                 start_date=PartialDate(value="2021-11", resolution="month")),
+            Drug(substance="drugC", sources=["s"],
+                 start_date=PartialDate(value="2021", resolution="year")),
+        ])
+        result = compute_matching_clinical_dates(
+            r1, r2, ["drugA", "drugB", "drugC"], []
+        )
+        assert len(result) == 1
+        assert result[0].matched_value == "2021-11-08"
+        assert result[0].resolution == "day"
 
     # -- Partial-date behavior --
 

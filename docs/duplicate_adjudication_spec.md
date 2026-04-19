@@ -425,6 +425,8 @@ Standard partial-date matching rules apply: month-only and year-only values matc
 
 The result is collapsed to a set of **unique matched dates**. If the same calendar date matches for multiple drugs, multiple AEs, or multiple field types, it contributes only once (at the finest matched resolution).
 
+A coarser match is also **subsumed** by a finer match whose value falls inside it: when both `2021-11-08` (day) and `2021-11` (month) appear, or `2000-04-08` (day) and `2000` (year), only the finer entry is kept. The coarser value is the truncated view of the same calendar coincidence and must not contribute an independent reward. Coarser matches are retained only when they stand apart from every finer match (e.g. a year-only `2022` alongside a day `2021-11-08`).
+
 Each unique matched date contributes \(p_f = 1/D_f\) to the composite probability, where \(D_f\) is the context-dependent date domain size.
 
 ###### Example
