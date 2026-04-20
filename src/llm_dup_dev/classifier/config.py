@@ -139,11 +139,16 @@ class DecisionThresholds(BaseModel):
     - weak zone   (L_match > lmatch_weak):   w_tot < 1 → Same
     - below weak: always Different individuals / Unrelated
 
+    In all three non-trivial zones, matching evidence is treated as
+    sufficient to reject independence; w_tot only decides the
+    duplicate-vs-otherwise-related sub-label. Only the below-weak
+    branch yields Unrelated.
+
     ``w_decisive`` is set far above any zone threshold so that a single
     decisive inconsistency always forces the failing-zone branch, which
     in combination with the zone logic yields ``Otherwise_related``
-    when ``L_match > lmatch_med`` and ``Unrelated`` otherwise. This is
-    enforced by an invariant validator.
+    whenever ``L_match > lmatch_weak`` and ``Unrelated`` otherwise. This
+    is enforced by an invariant validator.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """

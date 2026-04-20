@@ -567,10 +567,10 @@ Inconsistencies are combined into a single weighted score:
 |---|---|---|
 | > 3.0 (strong) | `w_tot < 4` | Non-independent / Otherwise_related |
 | > 2.0 (medium) | `w_tot < 3` | Non-independent / Otherwise_related |
-| > 1.0 (weak)   | `w_tot < 1` | Independent (Unrelated) |
+| > 1.0 (weak)   | `w_tot < 1` | Non-independent / Otherwise_related |
 | ≤ 1.0          | never | Independent (Unrelated) |
 
-Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclude `Duplicates`. The matching evidence then decides the surface label: `Otherwise_related` when `L_match > lmatch_med` (independence still rejected), `Unrelated` otherwise.
+Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclude `Duplicates`. The matching evidence then decides the surface label: `Otherwise_related` when `L_match > lmatch_weak` (independence still rejected), `Unrelated` otherwise.
 
 ---
 

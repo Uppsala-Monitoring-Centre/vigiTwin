@@ -14,7 +14,7 @@ The combined evidence is then fed into a transparent decision logic that classif
 
 - **Duplicates** — the pair very likely describes the same clinical case
 - **Otherwise related** — different individuals or different events but meaningful clinical overlap remains (e.g. two patients in the same clinical study)
-- **Unrelated** — the matching evidence is too weak or the inconsistencies too strong to support either of the above
+- **Unrelated** — the matching evidence is too weak to reject the independence null
 - **Abstain** — insufficient evidence to commit to a label
 
 > **Internal vs user-facing labels.** Internally the decision logic
