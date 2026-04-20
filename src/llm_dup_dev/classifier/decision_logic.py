@@ -32,19 +32,21 @@ Each zone has its own tolerance for ``w_tot``::
     L_match > med     →  w_tot < 3 ⇒ Non-independent / Duplicates
                           else      ⇒ Non-independent / Otherwise_related
     L_match > weak    →  w_tot < 1 ⇒ Non-independent / Duplicates
-                          else      ⇒ Independent
+                          else      ⇒ Non-independent / Otherwise_related
     L_match ≤ weak    →  always Independent
 
-The asymmetry in the weak zone is deliberate: at very low ``L_match``
-the independence test is only marginally rejected, and any inconsistency
-is enough to fall back to "couldn't reject independence".
+All three non-trivial zones share the same structure: matching evidence
+above ``lmatch_weak`` is treated as sufficient to reject independence,
+and ``w_tot`` only decides the duplicate-vs-otherwise-related sub-label.
+Only when ``L_match`` falls at or below ``lmatch_weak`` is the matching
+evidence considered too weak to reject independence at all.
 
 Decisive inconsistencies (e.g. distinct patient identifiers from the
 same study found in the narratives) participate through the same
 weighted score with a large weight (``w_decisive``, default 100) that
 always exceeds every zone threshold. As a result, any decisive count
 forces the failing-zone branch, which combined with the zone logic
-yields ``Otherwise_related`` when ``L_match > lmatch_med`` and
+yields ``Otherwise_related`` whenever ``L_match > lmatch_weak`` and
 ``Independent`` otherwise — with no separate override.
 
 See: docs/duplicate_adjudication_spec.md § Decision logic
@@ -137,14 +139,13 @@ def classify(
                     f"< {thresholds.w_tot_weak_zone:.1f}."
                 ),
             )
-        return _independent(
+        return _otherwise_related(
             pair_id=features.pair_id,
             explanation=(
-                f"Weak matching evidence (L_match={L:.2f}) with "
+                f"Weak matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f} "
                 f"(strong={counts.strong}, moderate={counts.moderate}, "
-                f"decisive={counts.decisive}); "
-                f"independence cannot be rejected."
+                f"decisive={counts.decisive})."
             ),
         )
 

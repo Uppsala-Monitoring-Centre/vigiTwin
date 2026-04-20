@@ -956,17 +956,17 @@ The decision space is divided into four zones based on the magnitude of \(L_{\te
 |---|---|---|---|
 | Strong evidence | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Non-independent / Otherwise related |
 | Moderate evidence | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Non-independent / Otherwise related |
-| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Independent (Unrelated) |
+| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Non-independent / Otherwise related |
 | Below threshold | \(L_{\text{match}} \leq 1.0\) | never | Independent (Unrelated) |
 
-In the strong and moderate zones the matching evidence is strong enough
-to reject the independence null on its own, so any pair in these zones
-is labelled `Non-independent`; the inconsistency score then decides
-whether the sub-label is `Duplicates` or `Otherwise related`. In the
-weak zone the rejection is only marginal, so any inconsistency at all
-collapses the verdict back to `Independent`. Below the weak threshold
-the matching evidence is too weak to reject independence regardless of
-how clean the structured comparison looks.
+In all three non-trivial zones the matching evidence is treated as
+strong enough to reject the independence null on its own, so any pair
+in these zones is labelled `Non-independent`; the inconsistency score
+then decides whether the sub-label is `Duplicates` or `Otherwise
+related`. The zones differ only in how much inconsistency evidence is
+tolerated before the verdict is downgraded from `Duplicates`. Below the
+weak threshold the matching evidence is too weak to reject independence
+regardless of how clean the structured comparison looks.
 
 The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3, 1), and the inconsistency weights are all configurable parameters.
 
@@ -977,7 +977,7 @@ The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}
 - \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Non-independent / Duplicates**
 - \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Non-independent / Otherwise related**
 - \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Non-independent / Duplicates**
-- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Independent (Unrelated)**
+- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Non-independent / Otherwise related**
 - \(L_{\text{match}} = 0.8\): below threshold → **Independent (Unrelated)** regardless of inconsistencies
 
 ---
@@ -990,10 +990,10 @@ The effect is the same as an explicit override, but expressed through the ordina
 
 When a decisive inconsistency is present:
 
-- \(L_{\text{match}} > 2.0\) → **Non-independent / Otherwise related**
+- \(L_{\text{match}} > 1.0\) → **Non-independent / Otherwise related**
   (the matching evidence still rejects independence, so the pair is
   surfaced as related but not the same case)
-- \(L_{\text{match}} \leq 2.0\) → **Independent (Unrelated)**
+- \(L_{\text{match}} \leq 1.0\) → **Independent (Unrelated)**
   (independence cannot be rejected, so no claim about relatedness is
   made)
 
@@ -1007,9 +1007,9 @@ The zone-based design explicitly allows strong matching evidence to outweigh iso
 
 - In the strong evidence zone, a single strong inconsistency (such as mismatching patient sex) is tolerated because the combined rarity of the matched features makes coincidence unlikely.
 - In the moderate evidence zone, only moderate inconsistencies are tolerated, and only a limited number.
-- In the weak evidence zone, any inconsistency tips the balance back to the independence null.
+- In the weak evidence zone, any inconsistency at all is enough to move the pair out of `Duplicates`.
 
-When a pair is moved out of the `Duplicates` zone in the strong or moderate evidence zones, the rejection of independence still stands (the matching evidence is too strong to attribute to chance), so the pair is surfaced as **Otherwise related**. In the weak and below-threshold zones the rejection of independence is too marginal to support any inconsistency, so the pair falls back to **Unrelated**.
+Whenever a pair is moved out of the `Duplicates` zone in any of the three non-trivial zones, the rejection of independence still stands (matching evidence above `lmatch_weak` is treated as sufficient on its own), so the pair is surfaced as **Otherwise related**. Only below the weak threshold, where the matching evidence cannot reject independence at all, does the pair fall back to **Unrelated**.
 
 ---
 

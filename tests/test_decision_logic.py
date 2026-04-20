@@ -11,7 +11,7 @@ with per-zone thresholds:
     medium zone (L > 2.0): w_tot < 3 → Non-independent / Duplicates
                             else      → Non-independent / Otherwise_related
     weak zone   (L > 1.0): w_tot < 1 → Non-independent / Duplicates
-                            else      → Independent
+                            else      → Non-independent / Otherwise_related
     below weak:            always Independent
 """
 
@@ -183,8 +183,8 @@ class TestMediumZone:
 
 # ===================================================================
 # Weak zone: lmatch_weak < L_match ≤ lmatch_med — w_tot < 1 → Duplicates,
-# else Independent (rejection of independence is too marginal to support
-# any inconsistency).
+# else Non-independent / Otherwise_related (matching evidence still
+# rejects independence; inconsistencies only downgrade the sub-label).
 # ===================================================================
 
 class TestWeakZone:
@@ -196,17 +196,17 @@ class TestWeakZone:
         result = classify(f, THRESHOLDS)
         _assert_duplicates(result)
 
-    def test_one_moderate_boundary_independent(self):
-        """w_tot = 1, NOT < 1 → Independent (Unrelated)."""
+    def test_one_moderate_boundary_otherwise_related(self):
+        """w_tot = 1, NOT < 1 → Otherwise_related."""
         f = _make_features(L_match=1.5, moderate=1)
         result = classify(f, THRESHOLDS)
-        _assert_independent(result)
+        _assert_otherwise_related(result)
 
-    def test_one_strong_independent(self):
-        """w_tot = 3 ≥ 1 → Independent (Unrelated)."""
+    def test_one_strong_otherwise_related(self):
+        """w_tot = 3 ≥ 1 → Otherwise_related."""
         f = _make_features(L_match=1.5, strong=1)
         result = classify(f, THRESHOLDS)
-        _assert_independent(result)
+        _assert_otherwise_related(result)
 
     def test_boundary_lmatch_exactly_weak(self):
         """L_match == lmatch_weak (1.0) → NOT in weak zone, falls to below."""
@@ -260,15 +260,23 @@ class TestDecisiveInconsistency:
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
 
-    def test_decisive_with_low_lmatch_independent(self):
-        """Decisive + L_match ≤ lmatch_med → Independent."""
+    def test_decisive_with_weak_lmatch_otherwise_related(self):
+        """Decisive + lmatch_weak < L_match ≤ lmatch_med → Otherwise_related."""
         f = _make_features(L_match=1.5, decisive=1)
         result = classify(f, THRESHOLDS)
-        _assert_independent(result)
+        _assert_otherwise_related(result)
 
     def test_decisive_boundary_at_med(self):
-        """Decisive + L_match == lmatch_med (2.0) → NOT > med → Independent."""
+        """Decisive + L_match == lmatch_med (2.0) → NOT > med, falls to weak
+        zone → Otherwise_related."""
         f = _make_features(L_match=2.0, decisive=1)
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+
+    def test_decisive_at_weak_boundary_independent(self):
+        """Decisive + L_match == lmatch_weak (1.0) → falls to below-weak →
+        Independent (only zone where decisive still yields Unrelated)."""
+        f = _make_features(L_match=1.0, decisive=1)
         result = classify(f, THRESHOLDS)
         _assert_independent(result)
 
@@ -311,10 +319,10 @@ class TestCustomThresholds:
             lmatch_strong=5.0, lmatch_med=4.0, lmatch_weak=3.0,
         )
         # L_match=3.5 is now in the weak zone (>3.0 but ≤4.0)
-        # moderate=1 → w_tot=1 ≥ 1 → Independent
+        # moderate=1 → w_tot=1 ≥ 1 → Otherwise_related
         f = _make_features(L_match=3.5, moderate=1)
         result = classify(f, strict)
-        _assert_independent(result)
+        _assert_otherwise_related(result)
 
     def test_custom_weights(self):
         """Custom weights change what w_tot value is produced."""
