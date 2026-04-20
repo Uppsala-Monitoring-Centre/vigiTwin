@@ -36,10 +36,13 @@ class DomainSizeConfig(BaseModel):
     weight_kg_range_adult: int = 40
 
     # Dates — default domain sizes depend on reporting context.
-    # Country-year context: 1 year (most reports in a country-year are recent).
-    # Broader contexts (country, global): 10 years (database spans ~50 years
-    # but exponential growth means most reports are from the last decade).
-    date_plausible_days_country_year: int = 365
+    # Country-year context: 1.5 years (most reports in a country-year are
+    # recent; 1.5 years gives the month/year resolutions a bit of headroom
+    # — 540 days → 18 months / 2 years — while still being narrow).
+    # Broader contexts (country, global): 10 years (database spans ~50
+    # years but exponential growth means most reports are from the last
+    # decade).
+    date_plausible_days_country_year: int = 540
     date_plausible_days_broad: int = 3650  # ~10 years
 
     def height_cm(self, is_child: bool) -> int:
@@ -50,33 +53,22 @@ class DomainSizeConfig(BaseModel):
         """Domain size for weight, conditional on age group."""
         return self.weight_kg_range_child if is_child else self.weight_kg_range_adult
 
-    def date_exact(self, is_country_year: bool = False, span_days: int = 0) -> int:
-        """Domain size for exact date (day resolution).
-
-        Parameters
-        ----------
-        is_country_year : bool
-            Whether the reporting context is country-year.
-        span_days : int
-            Span in days of all matching dates across features. If this
-            exceeds the default, the domain is extended to this value.
-        """
-        default = (
+    def date_exact(self, is_country_year: bool = False) -> int:
+        """Context-dependent default domain size for exact date (day resolution)."""
+        return (
             self.date_plausible_days_country_year
             if is_country_year
             else self.date_plausible_days_broad
         )
-        return max(default, span_days)
 
-    def date_month(self, is_country_year: bool = False, span_days: int = 0) -> int:
-        """Domain size for month-year resolution."""
-        exact = self.date_exact(is_country_year, span_days)
-        # Convert days to months (integer ceiling)
+    def date_month(self, is_country_year: bool = False) -> int:
+        """Context-dependent default domain size for month-year resolution."""
+        exact = self.date_exact(is_country_year)
         return max(1, -(-exact // 30))  # ceiling division
 
-    def date_year(self, is_country_year: bool = False, span_days: int = 0) -> int:
-        """Domain size for year-only resolution."""
-        exact = self.date_exact(is_country_year, span_days)
+    def date_year(self, is_country_year: bool = False) -> int:
+        """Context-dependent default domain size for year-only resolution."""
+        exact = self.date_exact(is_country_year)
         return max(1, -(-exact // 365))  # ceiling division
 
 

@@ -252,24 +252,33 @@ The domain size depends on:
 
 ##### Dates
 
-For date features, domain size depends on the recorded resolution, the reporting context, and the temporal span of matching dates across the report pair.
+For date features, domain size depends on the recorded resolution and the reporting context. For matched **clinical** dates, domain size additionally depends on the local temporal gap to the nearest more recent matched clinical date already accounted for.
 
 ###### Context-dependent defaults
 
-The default temporal window depends on the reporting context. When the reporting context is **country-year**, a narrower 1-year window is used because most reports in a given country-year are temporally concentrated. For broader contexts (country or global), a 10-year window is used — although the database spans nearly 50 years, exponential growth means most reports have been submitted in the most recent decade.
+The default temporal window depends on the reporting context. When the reporting context is **country-year**, a narrower 1.5-year window is used because most reports in a given country-year are temporally concentrated. For broader contexts (country or global), a 10-year window is used — although the database spans nearly 50 years, exponential growth means most reports have been submitted in the most recent decade.
 
 | Reporting context | Default window | Exact date \(D_f\) | Month–year \(D_f\) | Year only \(D_f\) |
 | ----------------- | -------------- | ------------------- | ------------------- | ------------------ |
-| Country-year      | 1 year         | 365                 | 12                  | 1                  |
+| Country-year      | 1.5 years      | 540                 | 18                  | 2                  |
 | Country or global | 10 years       | 3650                | 122                 | 10                 |
 
-###### Span-based extension
+###### Sequential local-gap rule for clinical dates
 
-If the matching dates across the two reports span a period longer than the default window, the domain size is extended to cover the actual span. This prevents underestimating the domain when reports contain dates spread across a wide temporal range.
+Matched clinical dates contribute evidence in proportion to the *incremental* temporal extent each one establishes, not to the global temporal span of the pair. The unique matched clinical dates are sorted from most recent to oldest. The first (most recent) date is evaluated under the context-dependent default. Each subsequent date is evaluated under a domain equal to twice the temporal gap to the nearest more recent already-accounted-for matched date, expressed in the unit of that date's own resolution (days / months / years).
 
-For example, if matched drug start dates include 2001-02-01 and matched AE onset dates include 2007-03-03, the span is approximately 6 years. In a country-year context (default 365 days), the domain would be extended to the actual span (~2,226 days).
+This naturally downweights tightly clustered additional dates — they contribute only modest extra evidence — while dates temporally far from anything already matched contribute more.
 
-The span is computed from all matched date values (including clinical dates and report dates) and applies uniformly to all date-type features in the probability computation.
+*Example.* Matched clinical dates `2022-05-20`, `2022-05-18`, `2022-05-15`, `2019-01-01` (day resolution, country-year context). Sorted most-recent-first:
+
+| Date         | Gap to previous | Domain \(D_f\) |
+| ------------ | --------------- | -------------- |
+| 2022-05-20   | —               | 540 (default)  |
+| 2022-05-18   | 2 days          | 4              |
+| 2022-05-15   | 3 days          | 6              |
+| 2019-01-01   | 1230 days       | 2460           |
+
+Report dates and other demographic dates no longer contribute to this sizing — only unique matched clinical dates do. A late report date therefore cannot inflate the domain used to score clinical-date coincidences.
 
 ---
 
@@ -427,7 +436,7 @@ The result is collapsed to a set of **unique matched dates**. If the same calend
 
 A coarser match is also **subsumed** by a finer match whose value falls inside it: when both `2021-11-08` (day) and `2021-11` (month) appear, or `2000-04-08` (day) and `2000` (year), only the finer entry is kept. The coarser value is the truncated view of the same calendar coincidence and must not contribute an independent reward. Coarser matches are retained only when they stand apart from every finer match (e.g. a year-only `2022` alongside a day `2021-11-08`).
 
-Each unique matched date contributes \(p_f = 1/D_f\) to the composite probability, where \(D_f\) is the context-dependent date domain size.
+Each unique matched date contributes \(p_f = 1/D_f\) to the composite probability. The most recent matched date is sized by the context-dependent default; each older matched date is sized by the sequential local-gap rule (see § Dates above).
 
 ###### Example
 

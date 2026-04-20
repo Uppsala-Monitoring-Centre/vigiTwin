@@ -151,7 +151,7 @@ def compute_probability(
         Domain size configuration.
     reporting_context_level : ReportingContextLevel
         Reporting context level, used to select the default date domain
-        size (365 days for country-year, 3650 days otherwise).
+        size (540 days for country-year, 3650 days otherwise).
     epsilon : float
         Small constant for numerical stability.
     smoothing_pseudocount : int
@@ -166,9 +166,6 @@ def compute_probability(
     """
     feature_probs: list[FeatureProbability] = []
     is_country_year = reporting_context_level == ReportingContextLevel.COUNTRY_YEAR
-    date_span_days = _compute_date_span_days(
-        match_result.demographic_matches, match_result.matched_clinical_dates
-    )
 
     # Drug set probability — excluded if anchor uses drugs.
     # When the anchor is AEs, the drug set is an additional feature whose
@@ -233,7 +230,6 @@ def compute_probability(
             dm,
             config,
             is_country_year=is_country_year,
-            span_days=date_span_days,
             matched_age_years=matched_age_years,
         )
         if domain_size is not None and domain_size > 0:
@@ -249,27 +245,35 @@ def compute_probability(
             )
 
     # Clinical date probabilities (drug start/end, AE onset).
-    # Each unique matched date contributes p_f = 1/D_f based on its
-    # resolution. Uses explicit date-field coincidence only — NOT
-    # interval overlap.
-    for cd in match_result.matched_clinical_dates:
-        domain_size = _get_clinical_date_domain_size(
-            cd, config, is_country_year=is_country_year, span_days=date_span_days
-        )
-        if domain_size is not None and domain_size > 0:
-            p_f = 1.0 / domain_size
-            feature_probs.append(
-                FeatureProbability(
-                    feature="clinical_date",
-                    p_f=p_f,
-                    method="domain_size",
-                    domain_size=domain_size,
-                    description=(
-                        f"clinical_date {cd.matched_value} "
-                        f"({cd.resolution}): D_f={domain_size}"
-                    ),
-                )
+    # Each unique matched date contributes p_f = 1/D_f. Domain sizing
+    # follows the sequential local-gap rule (see
+    # ``_clinical_date_domain_sizes``): the most recent matched date
+    # uses the context-dependent default; each older date uses a domain
+    # equal to 2 × the gap to the nearest more recent matched date, in
+    # the unit of its own resolution.
+    clinical_domain_sizes = _clinical_date_domain_sizes(
+        match_result.matched_clinical_dates,
+        config,
+        is_country_year=is_country_year,
+    )
+    for cd, domain_size in zip(
+        match_result.matched_clinical_dates, clinical_domain_sizes
+    ):
+        if domain_size is None or domain_size <= 0:
+            continue
+        p_f = 1.0 / domain_size
+        feature_probs.append(
+            FeatureProbability(
+                feature="clinical_date",
+                p_f=p_f,
+                method="domain_size",
+                domain_size=domain_size,
+                description=(
+                    f"clinical_date {cd.matched_value} "
+                    f"({cd.resolution}): D_f={domain_size}"
+                ),
             )
+        )
 
     # Composite probability
     p_joint = 1.0
@@ -410,45 +414,6 @@ def _parse_date_string(val: str) -> "date | None":
         return None
 
 
-def _compute_date_span_days(
-    demographic_matches: list[DemographicMatch],
-    clinical_dates: list[ClinicalDateMatch] | None = None,
-) -> int:
-    """Compute the span in days across all matched date values.
-
-    Collects dates from matched demographic date features AND matched
-    clinical dates (drug start/end, AE onset), parses them, and returns
-    the span from earliest to latest.
-    Returns 0 if fewer than two distinct dates are found.
-    """
-    from datetime import date as date_type
-
-    all_dates: list[date_type] = []
-
-    # Dates from demographic matches (e.g. report_date)
-    for dm in demographic_matches:
-        if dm.date_resolution is None or not dm.matched:
-            continue
-        for val in list(dm.values_r1) + list(dm.values_r2):
-            if not isinstance(val, str):
-                continue
-            parsed = _parse_date_string(val)
-            if parsed is not None:
-                all_dates.append(parsed)
-
-    # Dates from clinical date matches (drug start/end, AE onset)
-    if clinical_dates:
-        for cd in clinical_dates:
-            parsed = _parse_date_string(cd.matched_value)
-            if parsed is not None:
-                all_dates.append(parsed)
-
-    if len(all_dates) < 2:
-        return 0
-
-    return (max(all_dates) - min(all_dates)).days
-
-
 def _age_decimal_resolution(value: float) -> float:
     """Return the decimal resolution of an age value (e.g. 54.2 → 0.1, 54 → 1.0)."""
     s = str(value)
@@ -464,28 +429,21 @@ def _get_domain_size(
     config: DomainSizeConfig,
     *,
     is_country_year: bool = False,
-    span_days: int = 0,
     matched_age_years: float | None = None,
 ) -> float | None:
     """Look up the domain size D_f for a matched feature.
 
     For date features, uses the matched resolution and reporting context
-    to select the appropriate domain size. The domain may be extended
-    if the span of matching dates exceeds the default.
+    to select the context-dependent default domain size.
 
     For patient_age, uses the recorded unit and decimal precision.
     For patient_height and patient_weight, uses matched_age_years to
     select the child (<= child_age_threshold_years) or adult domain size.
     """
     if dm.date_resolution is not None:
-        resolution = dm.date_resolution
-        if resolution == "day":
-            return config.date_exact(is_country_year, span_days)
-        elif resolution == "month":
-            return config.date_month(is_country_year, span_days)
-        elif resolution == "year":
-            return config.date_year(is_country_year, span_days)
-        return config.date_exact(is_country_year, span_days)
+        return _context_default_for_resolution(
+            dm.date_resolution, config, is_country_year
+        )
 
     if dm.feature == "patient_age":
         if dm.age_unit == "months":
@@ -513,23 +471,80 @@ def _get_domain_size(
     return domain_map.get(dm.feature)
 
 
-def _get_clinical_date_domain_size(
-    cd: ClinicalDateMatch,
+def _context_default_for_resolution(
+    resolution: str,
+    config: DomainSizeConfig,
+    is_country_year: bool,
+) -> float:
+    """Context-dependent default domain size for a given date resolution."""
+    if resolution == "month":
+        return config.date_month(is_country_year)
+    if resolution == "year":
+        return config.date_year(is_country_year)
+    return config.date_exact(is_country_year)
+
+
+def _gap_domain_size(resolution: str, gap_days: int) -> float:
+    """Domain size for an additional matched date: 2 × gap, in the date's unit.
+
+    Guards against accidental zero/negative values (uniqueness should make
+    them impossible upstream, but the guard keeps the function total).
+    """
+    if resolution == "month":
+        months = max(1, -(-gap_days // 30))  # ceil days → months
+        return 2 * months
+    if resolution == "year":
+        years = max(1, -(-gap_days // 365))  # ceil days → years
+        return 2 * years
+    return max(2, 2 * gap_days)  # day resolution
+
+
+def _clinical_date_domain_sizes(
+    clinical_dates: list[ClinicalDateMatch],
     config: DomainSizeConfig,
     *,
-    is_country_year: bool = False,
-    span_days: int = 0,
-) -> float | None:
-    """Look up the domain size D_f for a matched clinical date.
+    is_country_year: bool,
+) -> list[float | None]:
+    """Return per-date domain sizes using the sequential local-gap rule.
 
-    Uses the same context-dependent and span-extended logic as demographic
-    date features.
+    The set of matched clinical dates is already unique upstream. Sorted
+    most-recent-first, the first date uses the context-dependent default
+    and each later date uses a domain of ``2 × (gap to the previous
+    date)`` in the unit implied by the later date's resolution.
+
+    The returned list is aligned with the input ``clinical_dates`` order
+    (the first date in the input is not necessarily the one that receives
+    the context default — the ranking is by calendar date, not input
+    position).
     """
-    resolution = cd.resolution
-    if resolution == "day":
-        return config.date_exact(is_country_year, span_days)
-    elif resolution == "month":
-        return config.date_month(is_country_year, span_days)
-    elif resolution == "year":
-        return config.date_year(is_country_year, span_days)
-    return config.date_exact(is_country_year, span_days)
+    from datetime import date as date_type
+
+    parsed: list[tuple[date_type, int]] = []  # (date, original index)
+    result: list[float | None] = [None] * len(clinical_dates)
+
+    for idx, cd in enumerate(clinical_dates):
+        d = _parse_date_string(cd.matched_value)
+        if d is None:
+            continue
+        parsed.append((d, idx))
+
+    # Sort by calendar date, most recent first. Stable sort on original index
+    # keeps behaviour deterministic if two dates parse to the same day
+    # (should not occur given upstream uniqueness + subsumption).
+    parsed.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+    prev_date: date_type | None = None
+    for rank, (d, orig_idx) in enumerate(parsed):
+        cd = clinical_dates[orig_idx]
+        if rank == 0:
+            size = _context_default_for_resolution(
+                cd.resolution, config, is_country_year
+            )
+        else:
+            assert prev_date is not None
+            gap_days = max(1, (prev_date - d).days)
+            size = _gap_domain_size(cd.resolution, gap_days)
+        result[orig_idx] = size
+        prev_date = d
+
+    return result
