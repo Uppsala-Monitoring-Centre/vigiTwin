@@ -131,7 +131,8 @@ class TestGeneratePairFeatures:
 
         total_from_list = len(features.inconsistencies)
         total_from_counts = (
-            features.inconsistency_counts.moderate
+            features.inconsistency_counts.minor
+            + features.inconsistency_counts.moderate
             + features.inconsistency_counts.strong
         )
         assert total_from_list == total_from_counts
