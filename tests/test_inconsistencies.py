@@ -208,6 +208,76 @@ class TestSexInconsistency:
         assert len(sex_incs) == 0
 
 
+# ---- Country of origin ----
+
+
+class TestCountryInconsistency:
+    def test_country_mismatch_is_minor(self, thresholds):
+        r1 = Report(
+            report_id="1",
+            country_of_origin_values=[
+                SourcedValue(value="US", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            country_of_origin_values=[
+                SourcedValue(value="DE", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        country_incs = [i for i in result if i.feature == "patient_country"]
+        assert len(country_incs) == 1
+        assert country_incs[0].severity == InconsistencySeverity.MINOR
+
+    def test_country_match(self, thresholds):
+        r1 = Report(
+            report_id="1",
+            country_of_origin_values=[
+                SourcedValue(value="US", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            country_of_origin_values=[
+                SourcedValue(value="us", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        country_incs = [i for i in result if i.feature == "patient_country"]
+        assert len(country_incs) == 0
+
+    def test_country_overlap_no_inconsistency(self, thresholds):
+        r1 = Report(
+            report_id="1",
+            country_of_origin_values=[
+                SourcedValue(value="US", sources=["structured"]),
+                SourcedValue(value="DE", sources=["narrative"]),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            country_of_origin_values=[
+                SourcedValue(value="DE", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        country_incs = [i for i in result if i.feature == "patient_country"]
+        assert len(country_incs) == 0
+
+    def test_country_missing_one(self, thresholds):
+        r1 = Report(
+            report_id="1",
+            country_of_origin_values=[
+                SourcedValue(value="US", sources=["structured"])
+            ],
+        )
+        r2 = Report(report_id="2")
+        result = detect_inconsistencies(r1, r2, thresholds)
+        country_incs = [i for i in result if i.feature == "patient_country"]
+        assert len(country_incs) == 0
+
+
 # ---- Weight ----
 
 

@@ -30,7 +30,8 @@ def detect_inconsistencies(
 ) -> list[Inconsistency]:
     """Detect all structured-data inconsistencies between two reports.
 
-    Checks: age, height, weight, sex, drug set (role-based).
+    Checks: age, height, weight, sex, country of origin, drug set
+    (role-based).
 
     Clinical-date inconsistencies are handled separately by the
     rule-based module ``clinical_date_inconsistencies.py``.
@@ -47,6 +48,7 @@ def detect_inconsistencies(
     inconsistencies.extend(_check_height(r1, r2, thresholds))
     inconsistencies.extend(_check_weight(r1, r2, thresholds))
     inconsistencies.extend(_check_sex(r1, r2))
+    inconsistencies.extend(_check_country(r1, r2))
     inconsistencies.extend(_check_drug_set(r1, r2))
 
     severity_order = {
@@ -213,6 +215,36 @@ def _check_sex(r1: Report, r2: Report) -> list[Inconsistency]:
             feature="patient_sex",
             severity=InconsistencySeverity.STRONG,
             description=f"Sex mismatch: {sorted(sexes_1)} vs {sorted(sexes_2)}",
+        )
+    ]
+
+
+def _check_country(r1: Report, r2: Report) -> list[Inconsistency]:
+    """Check for country-of-origin inconsistencies.
+
+    A mismatch in recorded country of origin is a minor inconsistency:
+    cross-country duplication must remain detectable, so the effect on
+    the weighted inconsistency score is limited, but the mismatch is
+    still surfaced for reviewer awareness. Missing values on either
+    side do not produce an inconsistency.
+    """
+    if not r1.country_of_origin_values or not r2.country_of_origin_values:
+        return []
+
+    countries_1 = {v.value.lower() for v in r1.country_of_origin_values}
+    countries_2 = {v.value.lower() for v in r2.country_of_origin_values}
+
+    if countries_1 & countries_2:
+        return []
+
+    return [
+        Inconsistency(
+            feature="patient_country",
+            severity=InconsistencySeverity.MINOR,
+            description=(
+                f"Country mismatch: {sorted(countries_1)} vs "
+                f"{sorted(countries_2)}"
+            ),
         )
     ]
 

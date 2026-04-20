@@ -610,7 +610,7 @@ Three levels of inconsistency severity are defined:
 | strong   | difference that strongly suggests different individuals |
 | decisive | hard contradiction that precludes a `Duplicates` verdict |
 
-Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight, drug set). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
+Moderate and strong inconsistencies are derived from structured data comparisons (age, sex, height, weight, country of origin, drug set). Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
 
 Decisive inconsistencies are expected to originate from narrative analysis (e.g. distinct patient identifiers mentioned in case narratives from the same study). When present, they preclude a `Duplicates` verdict; the surrounding matching evidence then determines whether the pair is surfaced as `Otherwise related` (when independence is still rejected) or `Unrelated` (otherwise) — see § Decision logic.
 
@@ -661,6 +661,18 @@ A mismatch in recorded patient sex is treated as a strong inconsistency:
 ```
 sex_R1 ≠ sex_R2
 ```
+
+------
+
+##### Country of origin
+
+Country of origin is treated as a categorical variable. A mismatch is classified as a **minor** inconsistency:
+
+```
+country_R1 ∩ country_R2 = ∅   →   minor inconsistency
+```
+
+Cross-country duplication does occur (e.g. a case originally reported in one country may resurface in another), so the mismatch is given limited weight in the weighted inconsistency score. Surfacing it as a minor inconsistency keeps reviewers aware of the discrepancy without materially suppressing duplicate candidates that differ only by reporting country. As with sex, missing values on either side produce no inconsistency, and any shared country value between the two reports removes the inconsistency.
 
 ------
 
