@@ -198,7 +198,17 @@ whether their characterisation is consistent.
 ordering. Date-based inconsistencies are handled by a separate \
 rule-based module and are out of scope for your assessment.
 - Do NOT comment on demographics, drugs, or narrative-only attributes \
-unless they directly characterise an adverse event.
+unless they directly characterise an adverse event. DO use the \
+narratives to characterise the reported AEs: clinical findings, \
+imaging and laboratory results, required interventions, severity \
+descriptors, complications, and sequelae described in a narrative \
+are characterisation evidence for the AE they describe — not \
+"narrative-only" attributes — and must be weighed against the \
+corresponding narrative on the other report. The reported PT list \
+and the narrative together constitute the AE clinical picture; \
+neither alone is sufficient, and full PT-level overlap does not \
+imply clinical-picture compatibility if the narratives characterise \
+the shared AEs differently.
 
 Severity rubric (use exactly these levels)
 ------------------------------------------
@@ -232,6 +242,25 @@ no PT-level AE content, the finding is NEVER moderate. It is strong \
 when the two pictures still sit within a shared broad mechanism or \
 pathophysiology family, decisive when they do not. Moderate is \
 reserved for side-issue discrepancies against a shared AE core.
+- Boundary rule — full or near-full PT-level overlap: when the two \
+reports share all or nearly all of their PT-level AE content, \
+severity cannot be judged from PT overlap alone — full overlap does \
+NOT automatically mean "no finding". In this regime, actively \
+compare the narratives for clinically meaningful differences in how \
+the shared AEs manifested: completeness, severity, specific \
+complications, diagnostic findings, and the nature or extent of any \
+required intervention. Such differences are matched_characterization \
+findings, typically minor when the narratives describe a broadly \
+compatible course with only framing or granularity differences, and \
+moderate when the shared AEs are characterised in materially \
+different ways on the two reports (e.g. one narrative documents a \
+specific complication, imaging finding, or intervention that the \
+other's narrative does not support or meaningfully diverges from). \
+These are NOT chronology findings even when the differing \
+manifestations occurred at different time points relative to \
+treatment — chronology here refers to onset and event dates and \
+temporal ordering, not to qualitative differences in what \
+clinically happened.
 - Wording or coding-granularity differences for the same underlying \
 AE produce NO finding (e.g. nominally different terms that describe \
 the same clinical entity, or the same syndrome described by a single \
