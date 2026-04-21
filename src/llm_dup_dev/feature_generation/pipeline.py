@@ -197,6 +197,7 @@ def generate_pair_features(
         ae_clinical_picture_status=ae_clinical_picture.status,
         ae_clinical_picture_reason=ae_clinical_picture.reason,
         ae_clinical_picture_counts=ae_clinical_picture.counts,
+        ae_clinical_picture_reasoning=ae_clinical_picture.reasoning,
         narrative_consistency=narrative_consistency,
         evidence_summary=evidence_summary,
     )

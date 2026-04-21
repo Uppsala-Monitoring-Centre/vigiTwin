@@ -258,6 +258,7 @@ class PairFeatures(BaseModel):
     ae_clinical_picture_counts: AEClinicalPictureCounts = Field(
         default_factory=AEClinicalPictureCounts
     )
+    ae_clinical_picture_reasoning: str = ""
 
     # Narrative assessment
     narrative_consistency: NarrativeConsistency

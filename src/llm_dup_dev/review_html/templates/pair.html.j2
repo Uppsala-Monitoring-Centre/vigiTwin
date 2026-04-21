@@ -652,6 +652,12 @@ details.debug-section pre {
         {% elif ae_status == 'not_assessed' and vm.features_summary.ae_clinical_picture_reason %}
         &nbsp;<span style="color: #586069; font-size: 12px;">({{ vm.features_summary.ae_clinical_picture_reason }})</span>
         {% endif %}
+        {% if ae_status == 'assessed' and vm.features_summary.ae_clinical_picture_reasoning %}
+        <details class="ae-cp-reasoning" style="margin-top: 4px;">
+            <summary style="cursor: pointer; font-size: 12px; color: #586069;">LLM reasoning</summary>
+            <div style="font-size: 12px; color: #24292e; white-space: pre-wrap; margin-top: 4px;">{{ vm.features_summary.ae_clinical_picture_reasoning }}</div>
+        </details>
+        {% endif %}
     </div>
     {% endif %}
 

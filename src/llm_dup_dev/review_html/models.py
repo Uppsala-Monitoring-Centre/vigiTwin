@@ -246,6 +246,7 @@ class FeaturesSummaryVM(BaseModel):
     ae_clinical_picture_status: str | None = None  # "assessed" | "not_assessed"
     ae_clinical_picture_reason: str = ""
     ae_clinical_picture_counts: AEClinicalPictureCountsVM | None = None
+    ae_clinical_picture_reasoning: str = ""
 
 
 class ClassificationSummaryVM(BaseModel):
