@@ -253,14 +253,21 @@ required intervention. Such differences are matched_characterization \
 findings, typically minor when the narratives describe a broadly \
 compatible course with only framing or granularity differences, and \
 moderate when the shared AEs are characterised in materially \
-different ways on the two reports (e.g. one narrative documents a \
-specific complication, imaging finding, or intervention that the \
-other's narrative does not support or meaningfully diverges from). \
-These are NOT chronology findings even when the differing \
-manifestations occurred at different time points relative to \
-treatment — chronology here refers to onset and event dates and \
-temporal ordering, not to qualitative differences in what \
-clinically happened.
+different ways on the two reports — for example, when one \
+narrative documents a specific complication, imaging finding, or \
+intervention and the other narrative, rather than being silent on \
+the detail, describes a course that cannot accommodate it or \
+asserts its own incompatible trajectory (e.g. immediate surgery \
+on day of admission vs. discharge-then-return-for-surgery-at-\
+follow-up: both narratives actively assert a timeline, and the \
+two timelines describe different clinical courses). Silence on a \
+detail is benign; an affirmative alternative trajectory is a \
+matched_characterization finding even when the reported PTs \
+overlap fully. These are NOT chronology findings even when the \
+differing manifestations occurred at different time points \
+relative to treatment — chronology here refers to onset and event \
+dates and temporal ordering, not to qualitative differences in \
+what clinically happened.
 - Wording or coding-granularity differences for the same underlying \
 AE produce NO finding (e.g. nominally different terms that describe \
 the same clinical entity, or the same syndrome described by a single \
@@ -302,7 +309,13 @@ the same underlying event; it does not apply when each report \
 contains a clear, well-defined AE that is clinically unrelated to \
 anything in the other report, nor when the reports' AEs differ \
 materially in severity or organ-system reach even within a shared \
-mechanism family.
+mechanism family, nor when the sparser narrative actively asserts \
+its own clinical course (e.g. the timing or type of a required \
+intervention, the presence or absence of a specific complication \
+or diagnostic finding) that is incompatible with the course \
+described in the denser narrative. Silence on a detail is a \
+plausible benign gap; an affirmative incompatible trajectory is \
+not, and defeats the leniency.
 
 Anti-overcounting principles
 ----------------------------
