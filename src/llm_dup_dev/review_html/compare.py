@@ -631,6 +631,7 @@ def _build_features_summary(
             n_strong=features.ae_clinical_picture_counts.n_strong,
             n_decisive=features.ae_clinical_picture_counts.n_decisive,
         ),
+        ae_clinical_picture_reasoning=features.ae_clinical_picture_reasoning,
     )
 
 

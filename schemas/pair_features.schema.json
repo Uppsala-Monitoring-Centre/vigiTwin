@@ -508,6 +508,11 @@
     "ae_clinical_picture_counts": {
       "$ref": "#/$defs/AEClinicalPictureCounts"
     },
+    "ae_clinical_picture_reasoning": {
+      "default": "",
+      "title": "Ae Clinical Picture Reasoning",
+      "type": "string"
+    },
     "narrative_consistency": {
       "$ref": "#/$defs/NarrativeConsistency"
     },

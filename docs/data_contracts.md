@@ -423,6 +423,7 @@ Example structure:
   "ae_clinical_picture_counts": {
     "n_minor": 0, "n_moderate": 0, "n_strong": 0, "n_decisive": 0
   },
+  "ae_clinical_picture_reasoning": "",
 
   "narrative_consistency": "consistent",
 
@@ -579,6 +580,14 @@ ae_clinical_picture_counts: {
 
 Counts reflect *kept* findings only (excluding entries suppressed under a decisive global mismatch). They are also already included in `inconsistency_counts`; the separate field is retained for auditability and review surfacing.
 
+### Reasoning
+
+```
+ae_clinical_picture_reasoning: str
+```
+
+Free-text LLM rationale summarising the overall AE clinical-picture comparison (a.k.a. the top-level `reasoning` field from the LLM verdict). Populated whenever `status == "assessed"`, independent of whether any findings were emitted. Surfaced in the pair-review HTML as a collapsible "LLM reasoning" disclosure so reviewers can see the model's account of why it did (or did not) flag inconsistencies. Not used by any downstream logic.
+
 ### Findings
 
 AE clinical-picture findings live in the unified `inconsistencies` list with `source = "llm_ae_clinical_picture"`. They use the extended `Inconsistency` fields:
@@ -587,10 +596,10 @@ AE clinical-picture findings live in the unified `inconsistencies` list with `so
 {
   "feature": "ae_clinical_picture:unmatched_cluster:cutaneous syndrome",
   "severity": "moderate",
-  "description": null,
+  "description": "report 1 lists a cutaneous syndrome (rash, pruritus); not present on report 2",
   "source": "llm_ae_clinical_picture",
   "kind": "unmatched_cluster",
-  "rationale": "report 1 lists a cutaneous syndrome (rash, pruritus); not present on report 2",
+  "rationale": "",
   "terms": ["rash", "pruritus"],
   "cluster_label": "cutaneous syndrome",
   "suppressed": false,

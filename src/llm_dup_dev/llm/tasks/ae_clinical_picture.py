@@ -512,7 +512,6 @@ def _llm_finding_to_inconsistency(
         description=finding.rationale or None,
         source=SOURCE_LABEL,
         kind=finding.kind.value,
-        rationale=finding.rationale,
         terms=list(finding.ae_terms),
         cluster_label=finding.cluster_label,
         suppressed=suppressed,
