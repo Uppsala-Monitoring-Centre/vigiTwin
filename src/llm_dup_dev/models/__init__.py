@@ -27,6 +27,15 @@ from .report import (
     Report,
     SourcedValue,
 )
+from .narrative_source_case import (
+    CaseIdentifierFamily,
+    EvidenceSpan,
+    NarrativeSourceCase,
+    SourceCaseAssessment,
+    SourceCaseVerdict,
+    SourceIdentifierType,
+    SourceType,
+)
 from .report_pair import ReportPair
 from .pair_features import (
     AnchorPopulation,
@@ -59,6 +68,14 @@ __all__ = [
     "PartialDate",
     "Report",
     "SourcedValue",
+    # Derived narrative signals
+    "CaseIdentifierFamily",
+    "EvidenceSpan",
+    "NarrativeSourceCase",
+    "SourceCaseAssessment",
+    "SourceCaseVerdict",
+    "SourceIdentifierType",
+    "SourceType",
     # ReportPair layer
     "ReportPair",
     # PairFeatures layer

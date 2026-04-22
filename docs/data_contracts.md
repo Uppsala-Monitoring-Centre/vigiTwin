@@ -644,6 +644,23 @@ This field is **optional** and does not affect the decision logic but facilitate
 
 ------
 
+## Derived Narrative Signals
+
+Narrative text on a Report is part of the raw Report contract — it originates in the pharmacovigilance database and the secure repo provides it verbatim. Structured **interpretation** of that text is not part of the Report contract; it is a derived artifact produced by dev-side code on plain narrative input.
+
+The first such artifact is `NarrativeSourceCase`, defined in [`src/llm_dup_dev/models/narrative_source_case.py`](../src/llm_dup_dev/models/narrative_source_case.py). It captures source / case identification signals extracted from a single narrative by the LLM task [`llm_dup_dev.llm.tasks.narrative_source_case`](../src/llm_dup_dev/llm/tasks/narrative_source_case.py). The extractor is report-level: one narrative in, one structured record out. No database access is required.
+
+Key properties:
+
+- **Report-level LLM only.** The LLM is invoked once per narrative. Pair-level reasoning over two extractions is deterministic and non-LLM-based, in [`feature_generation/source_case_comparison.py`](../src/llm_dup_dev/feature_generation/source_case_comparison.py).
+- **Precision over recall.** Fields are null when the narrative does not give clear support. The comparator treats non-comparable identifiers as *uncomparable* rather than *different*; identifier mismatch alone never becomes evidence of different individuals.
+- **Frozen-friendly.** `NarrativeSourceCase` is a Pydantic model that serializes to JSON. The secure repo can run the extractor once per report and persist the result alongside the raw report for reproducible offline evaluation, in the same spirit as `FrozenPairBundle`. An example frozen record lives at [`examples/narrative_source_case_example.json`](../examples/narrative_source_case_example.json).
+- **Extensible.** The same per-report-extractor pattern (single LLM task module + derived-signal Pydantic schema + deterministic downstream consumer) is intended to cover future narrative-derived attributes such as age, sex, height, and weight.
+
+The pair-level output, `SourceCaseAssessment`, is planned for eventual inclusion on `PairFeatures` once the extractor's precision is evaluated on real narratives. In the current landing it is consumed directly by callers; no fields have been added to `PairFeatures`.
+
+------
+
 ## Summary
 
 The **minimal inputs required by the decision logic** are:
