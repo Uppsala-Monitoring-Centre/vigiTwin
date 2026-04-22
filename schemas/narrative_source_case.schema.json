@@ -1,0 +1,190 @@
+{
+  "$defs": {
+    "CaseIdentifierFamily": {
+      "description": "Normalized family/namespace of a case-within-source identifier.\n\nUsed by the deterministic comparator to decide whether two identifiers\nare safely comparable. Two identifiers with different families (or one\nin ``UNKNOWN``) are *not* treated as comparable; their mismatch never\nbecomes evidence of different individuals.",
+      "enum": [
+        "case",
+        "patient",
+        "subject",
+        "pt",
+        "unknown"
+      ],
+      "title": "CaseIdentifierFamily",
+      "type": "string"
+    },
+    "EvidenceSpan": {
+      "description": "Short verbatim snippet supporting one extracted field.",
+      "properties": {
+        "field": {
+          "description": "Name of the NarrativeSourceCase field this snippet supports.",
+          "title": "Field",
+          "type": "string"
+        },
+        "quote": {
+          "description": "Short verbatim snippet copied from the narrative.",
+          "title": "Quote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "quote"
+      ],
+      "title": "EvidenceSpan",
+      "type": "object"
+    },
+    "SourceIdentifierType": {
+      "description": "Kind of identifier that would link sibling reports to the same source.\n\n``linked_case`` covers strings like ``\"Linked case: AB-123456789\"`` that\nare expected to appear verbatim across reports sharing the same\nunderlying case. It is classified here as a *source* identifier, not a\n*case-within-source* identifier, because its defining property is that\nsibling reports carry the identical string.",
+      "enum": [
+        "doi",
+        "linked_case",
+        "article_reference",
+        "unknown"
+      ],
+      "title": "SourceIdentifierType",
+      "type": "string"
+    },
+    "SourceType": {
+      "description": "Kind of underlying source the narrative appears to describe.",
+      "enum": [
+        "literature",
+        "summary_case",
+        "spontaneous_or_other",
+        "unknown"
+      ],
+      "title": "SourceType",
+      "type": "string"
+    }
+  },
+  "description": "Structured source / case signals extracted from one report narrative.\n\nAll fields are optional by design: the extractor is precision-oriented\nand leaves fields null when the narrative does not provide clear\nsupport. Deterministic normalization (DOI form, family mapping, value\ncanonicalization) is applied after LLM parsing so downstream\ncomparison can rely on ``source_identifier`` and\n``case_identifier_value_normalized`` without re-normalizing.",
+  "properties": {
+    "source_type": {
+      "$ref": "#/$defs/SourceType",
+      "default": "unknown"
+    },
+    "multi_patient_source": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether the narrative indicates the source describes multiple patients or cases. Null when unclear.",
+      "title": "Multi Patient Source"
+    },
+    "single_patient_source": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Whether the narrative indicates the source describes a single patient or case. Intentionally *not* the negation of multi_patient_source: both may be null when evidence is weak.",
+      "title": "Single Patient Source"
+    },
+    "source_identifier": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Stable identifier of the underlying source, when present. For literature this should be a DOI (normalized to lowercase, without protocol prefix). For summary-case-like contexts it may be a 'Linked case: ...' string that appears identically across sibling reports.",
+      "title": "Source Identifier"
+    },
+    "source_identifier_type": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SourceIdentifierType"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "case_identifier_within_source": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Surface form of a label for the patient or case *inside* a multi-patient source (e.g. 'Case 2', 'Patient B', 'Subject-01'). Do not confuse with report-specific IDs.",
+      "title": "Case Identifier Within Source"
+    },
+    "case_identifier_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Free-form label from the model, e.g. 'case', 'patient_letter'.",
+      "title": "Case Identifier Type"
+    },
+    "case_identifier_family": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CaseIdentifierFamily"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "case_identifier_value_normalized": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Normalized comparable value within the identifier family, e.g. 'Case 2' -> '2', 'Patient B' -> 'B', 'Subject-01' -> '1'.",
+      "title": "Case Identifier Value Normalized"
+    },
+    "likely_report_specific_identifiers": {
+      "description": "Identifier-like strings that more likely identify *this* report than the shared source or a case-within-source (e.g. 'Other Identification Number 48392'). Kept for transparency; never used as a source_identifier.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Likely Report Specific Identifiers",
+      "type": "array"
+    },
+    "evidence": {
+      "description": "Short verbatim snippets supporting non-null fields.",
+      "items": {
+        "$ref": "#/$defs/EvidenceSpan"
+      },
+      "title": "Evidence",
+      "type": "array"
+    },
+    "notes": {
+      "default": "",
+      "description": "Brief free-text explanation for human review.",
+      "title": "Notes",
+      "type": "string"
+    }
+  },
+  "title": "NarrativeSourceCase",
+  "type": "object"
+}

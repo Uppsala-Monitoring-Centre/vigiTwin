@@ -1,0 +1,29 @@
+{
+  "source_type": "literature",
+  "multi_patient_source": true,
+  "single_patient_source": null,
+  "source_identifier": "10.1234/abc.2024.567",
+  "source_identifier_type": "doi",
+  "case_identifier_within_source": "Case 2",
+  "case_identifier_type": "case",
+  "case_identifier_family": "case",
+  "case_identifier_value_normalized": "2",
+  "likely_report_specific_identifiers": [
+    "Other Identification Number 48392"
+  ],
+  "evidence": [
+    {
+      "field": "source_identifier",
+      "quote": "doi: 10.1234/abc.2024.567"
+    },
+    {
+      "field": "multi_patient_source",
+      "quote": "The authors describe two patients"
+    },
+    {
+      "field": "case_identifier_within_source",
+      "quote": "Case 2 was a 54-year-old female"
+    }
+  ],
+  "notes": "Literature article describing two patients; this report concerns the second."
+}

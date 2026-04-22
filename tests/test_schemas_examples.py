@@ -14,6 +14,7 @@ from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 
 
@@ -28,6 +29,7 @@ MODEL_MAP = {
     "pair_features": PairFeatures,
     "classification_result": ClassificationResult,
     "frequency_stats": FrequencyStats,
+    "narrative_source_case": NarrativeSourceCase,
 }
 
 

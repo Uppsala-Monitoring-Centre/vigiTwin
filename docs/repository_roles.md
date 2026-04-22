@@ -45,6 +45,12 @@ llm_dup_pv_secure: Annotation support, evaluation on real data, Azure execution
 </ul>
 </ul>
 
+## Derived narrative signals
+
+The secure side provides **plain narrative text** as part of the Report contract. Turning that text into structured signals (source identifiers, case labels, and — in the future — patient age/sex/height/weight) is a dev-side responsibility: the prompt, the Pydantic schema, the post-parse normalization, and the deterministic downstream pair-level comparison all live in `llm_dup_dev`. The secure side only supplies narratives and an `LLMClient` implementation; extracted outputs are *derived narrative signals*, not raw source data, and can be frozen to JSON for offline reuse. See `docs/data_contracts.md § Derived Narrative Signals`.
+
+Downstream pair-level reasoning over extracted fields is deliberately deterministic (no pair-level LLM step).
+
 ## Data Flow Model
 llm_dup_dev (Claude-assisted)
         ↓
