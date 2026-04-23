@@ -3,6 +3,7 @@
 import pytest
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
+from llm_dup_dev.data.offline import FrozenSourceCaseExtractions
 from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
@@ -457,3 +458,152 @@ class TestSourceCaseIntegration:
         assert batch.n_errors == 0
         assert batch.results[0].source_case_assessment is None
         assert batch.results[0].features.source_case_assessment is None
+
+
+# ===================================================================
+# Frozen source/case extraction bundles
+# ===================================================================
+
+class TestFrozenSourceCaseExtractions:
+
+    def test_full_coverage_skips_all_source_case_llm_calls(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Bundle covers both reports → zero NarrativeSourceCase LLM calls."""
+        fake = FakeLLMClient()
+        # Still need narrative + AE calls per pair; no source/case seeds.
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+
+        bundle = FrozenSourceCaseExtractions(
+            extractions={
+                "R001": NarrativeSourceCase(),
+                "R002": NarrativeSourceCase(),
+            }
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_source_case_extractions=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        src_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeSourceCase
+        ]
+        assert src_requests == []
+
+    def test_partial_coverage_falls_back_to_live_llm(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Only R001 in bundle → one live source/case call (for R002)."""
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        # Exactly one source/case extraction call is expected — for R002.
+        fake.seed_response(NarrativeSourceCase())
+
+        bundle = FrozenSourceCaseExtractions(
+            extractions={"R001": NarrativeSourceCase()}
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_source_case_extractions=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        src_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeSourceCase
+        ]
+        assert len(src_requests) == 1
+
+    def test_partial_coverage_without_llm_client_yields_none(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Bundle covers R001, no LLM → R002 has no extraction → assessment None."""
+        bundle = FrozenSourceCaseExtractions(
+            extractions={"R001": NarrativeSourceCase()}
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            frozen_source_case_extractions=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        assert batch.n_errors == 0
+        assert batch.results[0].source_case_assessment is None
+
+    def test_shared_report_across_pairs_served_from_bundle_once(
+        self, loader, stats_provider, pair_ab, pair_ac
+    ):
+        """Same report in two pairs → still zero live extractions when covered."""
+        fake = FakeLLMClient()
+        for _ in range(2):
+            fake.seed_response(NarrativeVerdict(
+                consistency=NarrativeConsistency.CONSISTENT,
+            ))
+            fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+
+        bundle = FrozenSourceCaseExtractions(
+            extractions={
+                "R001": NarrativeSourceCase(),
+                "R002": NarrativeSourceCase(),
+                "R003": NarrativeSourceCase(),
+            }
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_source_case_extractions=bundle,
+        )
+        batch = runner_.run_batch([pair_ab, pair_ac])
+
+        assert batch.n_processed == 2
+        src_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeSourceCase
+        ]
+        assert src_requests == []
+
+    def test_empty_bundle_equivalent_to_none(
+        self, loader, stats_provider, pair_ab
+    ):
+        """extractions={} behaves identically to passing no bundle."""
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        # Two source/case extractions still fire (R001 and R002).
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+
+        bundle = FrozenSourceCaseExtractions(extractions={})
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_source_case_extractions=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        src_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeSourceCase
+        ]
+        assert len(src_requests) == 2
