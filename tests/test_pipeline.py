@@ -10,6 +10,11 @@ from llm_dup_dev.models.enums import (
     NarrativeConsistency,
     ReportingContextLevel,
 )
+from llm_dup_dev.models.narrative_source_case import (
+    SourceCaseAssessment,
+    SourceCaseVerdict,
+    SourceIdentifierType,
+)
 
 
 @pytest.fixture
@@ -191,3 +196,98 @@ class TestGeneratePairFeatures:
         assert restored.pair_id == features.pair_id
         assert restored.L_match == features.L_match
         assert restored.matching_drugs == features.matching_drugs
+
+
+class TestSourceCaseAssessmentIntegration:
+
+    def test_none_assessment_leaves_field_null_and_adds_no_findings(
+        self, report_a, report_b, stats_similar, default_config
+    ):
+        features = generate_pair_features(
+            r1=report_a,
+            r2=report_b,
+            stats=stats_similar,
+            narrative_consistency=NarrativeConsistency.CONSISTENT,
+            config=default_config,
+            source_case_assessment=None,
+        )
+        assert features.source_case_assessment is None
+        assert all(
+            i.source != "narrative_source_case"
+            for i in features.inconsistencies
+        )
+
+    def test_same_source_different_case_adds_decisive(
+        self, report_a, report_b, stats_similar, default_config
+    ):
+        assessment = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
+            shared_source_identifier="10.1234/abc",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+        )
+        features = generate_pair_features(
+            r1=report_a,
+            r2=report_b,
+            stats=stats_similar,
+            narrative_consistency=NarrativeConsistency.CONSISTENT,
+            config=default_config,
+            source_case_assessment=assessment,
+        )
+        # Assessment preserved verbatim
+        assert features.source_case_assessment == assessment
+        # One decisive source-case inconsistency synthesized
+        src_rows = [
+            i for i in features.inconsistencies
+            if i.source == "narrative_source_case"
+        ]
+        assert len(src_rows) == 1
+        assert src_rows[0].severity == InconsistencySeverity.DECISIVE
+        # Counts reflect it
+        assert features.inconsistency_counts.decisive >= 1
+
+    def test_same_source_uncomparable_adds_moderate(
+        self, report_a, report_b, stats_similar, default_config
+    ):
+        assessment = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+            shared_source_identifier="10.xyz/abc",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+        )
+        features = generate_pair_features(
+            r1=report_a,
+            r2=report_b,
+            stats=stats_similar,
+            narrative_consistency=NarrativeConsistency.CONSISTENT,
+            config=default_config,
+            source_case_assessment=assessment,
+        )
+        src_rows = [
+            i for i in features.inconsistencies
+            if i.source == "narrative_source_case"
+        ]
+        assert len(src_rows) == 1
+        assert src_rows[0].severity == InconsistencySeverity.MODERATE
+
+    def test_positive_verdict_adds_no_findings(
+        self, report_a, report_b, stats_similar, default_config
+    ):
+        assessment = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            shared_source_identifier="10.1234/abc",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+        )
+        features = generate_pair_features(
+            r1=report_a,
+            r2=report_b,
+            stats=stats_similar,
+            narrative_consistency=NarrativeConsistency.CONSISTENT,
+            config=default_config,
+            source_case_assessment=assessment,
+        )
+        src_rows = [
+            i for i in features.inconsistencies
+            if i.source == "narrative_source_case"
+        ]
+        assert src_rows == []
+        # Raw assessment still preserved for the decision logic to branch on.
+        assert features.source_case_assessment == assessment

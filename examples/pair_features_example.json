@@ -87,6 +87,7 @@
   },
   "ae_clinical_picture_reasoning": "",
   "narrative_consistency": "consistent",
+  "source_case_assessment": null,
   "evidence_summary": {
     "shared": {
       "drugs": [

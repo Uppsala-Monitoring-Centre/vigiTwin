@@ -162,6 +162,28 @@ class IndependenceAssessment(str, Enum):
     ABSTAIN = "Abstain"
 
 
+class IndependenceReason(str, Enum):
+    """Audit trail for which branch in the decision logic fired.
+
+    Attached to :class:`ClassificationResult` so downstream review can
+    tell *why* a pair landed on its independence assessment. The
+    ``RARITY_*`` values correspond to the four L_match zones of the
+    rarity-based branch; ``SHARED_SOURCE`` is set by the shared-source
+    override path (when a reliable shared source identifier has been
+    derived from the narratives). ``ABSTAIN`` is reserved for future
+    abstain paths and currently unused.
+
+    See: docs/duplicate_adjudication_spec.md § Decision logic
+    """
+
+    RARITY_STRONG = "rarity_strong"
+    RARITY_MEDIUM = "rarity_medium"
+    RARITY_WEAK = "rarity_weak"
+    RARITY_INSUFFICIENT = "rarity_insufficient"
+    SHARED_SOURCE = "shared_source"
+    ABSTAIN = "abstain"
+
+
 class DuplicateRelationship(str, Enum):
     """Sub-classification used when independence has been rejected.
 

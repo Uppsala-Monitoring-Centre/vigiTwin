@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from .enums import DuplicateRelationship, IndependenceAssessment
+from .enums import DuplicateRelationship, IndependenceAssessment, IndependenceReason
 
 
 class ClassificationResult(BaseModel):
@@ -38,6 +38,7 @@ class ClassificationResult(BaseModel):
     pair_id: str
     independence_assessment: IndependenceAssessment
     duplicate_relationship: DuplicateRelationship | None = None
+    independence_reason: IndependenceReason | None = None
     explanation: str = ""
 
     @property

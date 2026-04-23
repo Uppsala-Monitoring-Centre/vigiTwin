@@ -8,6 +8,7 @@ from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
 from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
+from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 from llm_dup_dev.models.enums import (
     IndependenceAssessment,
     NarrativeConsistency,
@@ -255,9 +256,12 @@ class TestLLMNarrativeIntegration:
             evidence=["Both describe same patient"],
         )
         fake.seed_response(verdict)
-        # The runner now also makes an AE clinical-picture LLM call;
-        # seed a benign verdict so the second call succeeds too.
+        # The runner also makes an AE clinical-picture LLM call and a
+        # narrative source/case extraction per report (two reports per
+        # pair); seed benign responses so the full chain succeeds.
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
 
         runner = PipelineRunner(
             report_loader=loader,
@@ -272,16 +276,20 @@ class TestLLMNarrativeIntegration:
             == NarrativeConsistency.STRONGLY_CONSISTENT
         )
         assert result.results[0].narrative_verdict == verdict
-        # Two requests per pair: narrative + AE clinical-picture
-        assert len(fake.requests) == 2
+        # Four requests per pair: narrative + AE clinical-picture +
+        # narrative source/case per report.
+        assert len(fake.requests) == 4
 
     def test_narrative_provider_takes_precedence_over_llm(
         self, loader, stats_provider, pair_ab
     ):
         """Explicit narrative_provider overrides llm_client (for narrative)."""
         fake = FakeLLMClient()
-        # Narrative LLM call should NOT happen; AE clinical-picture call still does.
+        # Narrative LLM call should NOT happen; AE clinical-picture +
+        # narrative source/case per report still do.
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
 
         runner = PipelineRunner(
             report_loader=loader,
@@ -298,8 +306,9 @@ class TestLLMNarrativeIntegration:
             result.results[0].features.narrative_consistency
             == NarrativeConsistency.INCONSISTENT
         )
-        # Narrative LLM call skipped; only the AE clinical-picture call was made.
-        assert len(fake.requests) == 1
+        # Narrative LLM call skipped; AE clinical-picture (1) +
+        # narrative source/case (2 reports) = 3 calls.
+        assert len(fake.requests) == 3
         # No narrative verdict when using callback
         assert result.results[0].narrative_verdict is None
 
@@ -373,3 +382,78 @@ class TestLLMNarrativeIntegration:
         """Without LLM, PairResult.narrative_verdict is None."""
         result = runner.run_pair(pair_ab)
         assert result.narrative_verdict is None
+
+
+# ===================================================================
+# Narrative source/case integration
+# ===================================================================
+
+class TestSourceCaseIntegration:
+
+    def test_no_llm_client_assessment_is_none(self, runner, pair_ab):
+        """Without LLM, no source/case assessment is produced."""
+        batch = runner.run_batch([pair_ab])
+        result = batch.results[0]
+        assert result.source_case_assessment is None
+        assert result.features.source_case_assessment is None
+
+    def test_batch_memoizes_extraction_per_report(
+        self, loader, stats_provider, pair_ab, pair_ac
+    ):
+        """Same report shared across two pairs → extracted once per report."""
+        fake = FakeLLMClient()
+        # Two pairs, each needs: narrative comparison (1) +
+        # AE clinical-picture (1). Source/case extraction is per report,
+        # and R001 is shared across both pairs — we expect 3 source/case
+        # extraction calls total (R001 once, R002, R003).
+        for _ in range(2):
+            fake.seed_response(NarrativeVerdict(
+                consistency=NarrativeConsistency.CONSISTENT,
+            ))
+            fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        # Source/case extractions: R001, R002, R001-again-memoized, R003
+        # → only R001/R002/R003 actually fire.
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        batch = runner_.run_batch([pair_ab, pair_ac])
+
+        assert batch.n_processed == 2
+        assert batch.n_errors == 0
+        # Count source/case extraction requests by response_model.
+        src_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeSourceCase
+        ]
+        assert len(src_requests) == 3
+
+    def test_extraction_failure_does_not_abort_pair(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Extraction errors → source_case_assessment=None, pair still processes."""
+        fake = FakeLLMClient()
+        # Successful narrative + AE, then two failing source/case calls.
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_error(RuntimeError("extraction failed"))
+        fake.seed_error(RuntimeError("extraction failed"))
+
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        assert batch.n_errors == 0
+        assert batch.results[0].source_case_assessment is None
+        assert batch.results[0].features.source_case_assessment is None

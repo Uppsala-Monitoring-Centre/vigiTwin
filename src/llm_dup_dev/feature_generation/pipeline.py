@@ -20,6 +20,9 @@ from llm_dup_dev.feature_generation.probability import (
     FrequencyStats,
     compute_probability,
 )
+from llm_dup_dev.feature_generation.source_case_inconsistency import (
+    source_case_findings,
+)
 from llm_dup_dev.feature_generation.reporting_context import (
     determine_reporting_context,
 )
@@ -28,6 +31,7 @@ from llm_dup_dev.models.enums import (
     InconsistencySeverity,
     NarrativeConsistency,
 )
+from llm_dup_dev.models.narrative_source_case import SourceCaseAssessment
 from llm_dup_dev.models.pair_features import (
     AEClinicalPictureResult,
     ClinicalDateFindingSummary,
@@ -47,6 +51,7 @@ def generate_pair_features(
     config: PipelineConfig | None = None,
     pair_id: str | None = None,
     ae_clinical_picture: AEClinicalPictureResult | None = None,
+    source_case_assessment: SourceCaseAssessment | None = None,
 ) -> PairFeatures:
     """Generate all features for a report pair.
 
@@ -79,6 +84,15 @@ def generate_pair_features(
         ``None``, defaults to a NOT_ASSESSED result with reason
         ``"no_llm_client"``: no findings are appended and the AE
         component contributes zero to the merged severity counts.
+    source_case_assessment : SourceCaseAssessment, optional
+        Pair-level deterministic verdict from two per-report narrative
+        extractions (see
+        :mod:`llm_dup_dev.feature_generation.source_case_comparison`).
+        When provided, synthesized inconsistency rows are merged into
+        the master list the same way AE findings are and the raw
+        assessment is stored on ``PairFeatures.source_case_assessment``
+        so the decision logic can branch on the verdict directly.
+        ``None`` when no extraction/comparison was performed.
 
     Returns
     -------
@@ -141,6 +155,13 @@ def generate_pair_features(
     # from counts via the ``not suppressed`` filter below).
     inconsistencies = [*inconsistencies, *ae_clinical_picture.findings]
 
+    # Synthesize narrative source/case findings from the deterministic
+    # verdict and merge into the master list before counts are tallied.
+    inconsistencies = [
+        *inconsistencies,
+        *source_case_findings(source_case_assessment),
+    ]
+
     inconsistency_counts = InconsistencyCounts(
         minor=sum(
             1
@@ -199,6 +220,7 @@ def generate_pair_features(
         ae_clinical_picture_counts=ae_clinical_picture.counts,
         ae_clinical_picture_reasoning=ae_clinical_picture.reasoning,
         narrative_consistency=narrative_consistency,
+        source_case_assessment=source_case_assessment,
         evidence_summary=evidence_summary,
     )
 
