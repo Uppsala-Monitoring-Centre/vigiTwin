@@ -2,5 +2,6 @@
   "pair_id": "R001__R002",
   "independence_assessment": "Non-independent",
   "duplicate_relationship": "Duplicates",
+  "independence_reason": "rarity_strong",
   "explanation": "Strong matching evidence (L_match=4.64 > 3.0); w_tot=1.0 < 4.0."
 }

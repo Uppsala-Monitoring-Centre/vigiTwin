@@ -56,8 +56,28 @@ from __future__ import annotations
 
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
-from llm_dup_dev.models.enums import DuplicateRelationship, IndependenceAssessment
+from llm_dup_dev.models.enums import (
+    DuplicateRelationship,
+    IndependenceAssessment,
+    IndependenceReason,
+)
+from llm_dup_dev.models.narrative_source_case import (
+    SourceCaseAssessment,
+    SourceCaseVerdict,
+)
 from llm_dup_dev.models.pair_features import InconsistencyCounts, PairFeatures
+
+
+# Verdicts that prove a shared source exists and therefore trigger the
+# shared-source override path. Advisory verdicts
+# (MULTI_PATIENT_CONTEXT_NO_LINK, NO_DECISIVE_SIGNAL, NOT_ASSESSED) fall
+# through to the existing L_match zone logic.
+_SHARED_SOURCE_VERDICTS = frozenset({
+    SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+    SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+    SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
+    SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+})
 
 
 def classify(
@@ -86,11 +106,21 @@ def classify(
     L = features.L_match
     w_tot = _weighted_inconsistency(counts, thresholds)
 
+    # --- Shared-source override ---
+    # A reliable shared source identifier is itself evidence against
+    # independence, regardless of L_match. Reject independence directly
+    # and pick the sub-label from the verdict (plus conservative fallback
+    # when non-source-case signals disagree).
+    asm = features.source_case_assessment
+    if asm is not None and asm.verdict in _SHARED_SOURCE_VERDICTS:
+        return _shared_source_override(features, asm, thresholds, w_tot)
+
     # --- Strong zone: L_match > lmatch_strong ---
     if L > thresholds.lmatch_strong:
         if w_tot < thresholds.w_tot_strong_zone:
             return _duplicates(
                 pair_id=features.pair_id,
+                reason=IndependenceReason.RARITY_STRONG,
                 explanation=(
                     f"Strong matching evidence (L_match={L:.2f} > "
                     f"{thresholds.lmatch_strong}); w_tot={w_tot:.1f} "
@@ -99,6 +129,7 @@ def classify(
             )
         return _otherwise_related(
             pair_id=features.pair_id,
+            reason=IndependenceReason.RARITY_STRONG,
             explanation=(
                 f"Strong matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_strong_zone:.1f} "
@@ -112,6 +143,7 @@ def classify(
         if w_tot < thresholds.w_tot_med_zone:
             return _duplicates(
                 pair_id=features.pair_id,
+                reason=IndependenceReason.RARITY_MEDIUM,
                 explanation=(
                     f"Moderate matching evidence (L_match={L:.2f} > "
                     f"{thresholds.lmatch_med}); w_tot={w_tot:.1f} "
@@ -120,6 +152,7 @@ def classify(
             )
         return _otherwise_related(
             pair_id=features.pair_id,
+            reason=IndependenceReason.RARITY_MEDIUM,
             explanation=(
                 f"Moderate matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f} "
@@ -133,6 +166,7 @@ def classify(
         if w_tot < thresholds.w_tot_weak_zone:
             return _duplicates(
                 pair_id=features.pair_id,
+                reason=IndependenceReason.RARITY_WEAK,
                 explanation=(
                     f"Weak matching evidence (L_match={L:.2f} > "
                     f"{thresholds.lmatch_weak}); w_tot={w_tot:.1f} "
@@ -141,6 +175,7 @@ def classify(
             )
         return _otherwise_related(
             pair_id=features.pair_id,
+            reason=IndependenceReason.RARITY_WEAK,
             explanation=(
                 f"Weak matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f} "
@@ -152,12 +187,92 @@ def classify(
     # --- Below weak threshold ---
     return _independent(
         pair_id=features.pair_id,
+        reason=IndependenceReason.RARITY_INSUFFICIENT,
         explanation=(
             f"Matching evidence below weak threshold "
             f"(L_match={L:.2f} ≤ {thresholds.lmatch_weak}); "
             f"independence cannot be rejected."
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared-source override
+# ---------------------------------------------------------------------------
+
+
+def _shared_source_override(
+    features: PairFeatures,
+    assessment: SourceCaseAssessment,
+    thresholds: DecisionThresholds,
+    w_tot: float,
+) -> ClassificationResult:
+    """Reject independence based on a reliable shared source identifier.
+
+    Sub-label mapping:
+
+    * ``SAME_SOURCE_DIFFERENT_CASE`` / ``SAME_SOURCE_CASE_UNCOMPARABLE``
+      → ``OTHERWISE_RELATED``. The comparator emits a decisive / moderate
+      ``Inconsistency`` for these verdicts respectively, but the sub-label
+      is pinned regardless of ``w_tot``.
+    * ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE`` →
+      ``DUPLICATES`` unless ``w_tot`` already crosses the (strictest)
+      weak-zone threshold, in which case the pair is downgraded to
+      ``OTHERWISE_RELATED``. These verdicts emit no source-case
+      inconsistency, so ``w_tot`` is free of source-case contribution by
+      construction and the comparison is apples-to-apples.
+    """
+    verdict = assessment.verdict
+    ident_str = _format_shared_identifier(assessment)
+
+    if verdict in (
+        SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
+        SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+    ):
+        explanation = (
+            f"Shared-source override ({verdict.value}{ident_str}); "
+            f"sub-label pinned to Otherwise_related."
+        )
+        return _otherwise_related(
+            pair_id=features.pair_id,
+            reason=IndependenceReason.SHARED_SOURCE,
+            explanation=explanation,
+        )
+
+    # SAME_SOURCE_SINGLE_PATIENT or SAME_SOURCE_SAME_CASE
+    if w_tot < thresholds.w_tot_weak_zone:
+        explanation = (
+            f"Shared-source override ({verdict.value}{ident_str}); "
+            f"w_tot={w_tot:.1f} < {thresholds.w_tot_weak_zone:.1f}."
+        )
+        return _duplicates(
+            pair_id=features.pair_id,
+            reason=IndependenceReason.SHARED_SOURCE,
+            explanation=explanation,
+        )
+
+    explanation = (
+        f"Shared-source override ({verdict.value}{ident_str}) but "
+        f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f}; "
+        f"downgraded to Otherwise_related."
+    )
+    return _otherwise_related(
+        pair_id=features.pair_id,
+        reason=IndependenceReason.SHARED_SOURCE,
+        explanation=explanation,
+    )
+
+
+def _format_shared_identifier(assessment: SourceCaseAssessment) -> str:
+    """Return ", type=value" suffix for explanation strings (empty if absent)."""
+    if not assessment.shared_source_identifier:
+        return ""
+    id_type = (
+        assessment.shared_source_identifier_type.value
+        if assessment.shared_source_identifier_type is not None
+        else "source_identifier"
+    )
+    return f", {id_type}={assessment.shared_source_identifier}"
 
 
 # ---------------------------------------------------------------------------
@@ -187,31 +302,46 @@ def _weighted_inconsistency(
 # ---------------------------------------------------------------------------
 
 
-def _duplicates(pair_id: str, explanation: str) -> ClassificationResult:
+def _duplicates(
+    pair_id: str,
+    explanation: str,
+    reason: IndependenceReason,
+) -> ClassificationResult:
     """Build a Non-independent / Duplicates result."""
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
         duplicate_relationship=DuplicateRelationship.DUPLICATES,
+        independence_reason=reason,
         explanation=explanation,
     )
 
 
-def _otherwise_related(pair_id: str, explanation: str) -> ClassificationResult:
+def _otherwise_related(
+    pair_id: str,
+    explanation: str,
+    reason: IndependenceReason,
+) -> ClassificationResult:
     """Build a Non-independent / Otherwise_related result."""
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
         duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+        independence_reason=reason,
         explanation=explanation,
     )
 
 
-def _independent(pair_id: str, explanation: str) -> ClassificationResult:
+def _independent(
+    pair_id: str,
+    explanation: str,
+    reason: IndependenceReason,
+) -> ClassificationResult:
     """Build an Independent result (user-facing label: Unrelated)."""
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.INDEPENDENT,
         duplicate_relationship=None,
+        independence_reason=reason,
         explanation=explanation,
     )

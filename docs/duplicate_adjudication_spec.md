@@ -1013,6 +1013,30 @@ In other words, decisive inconsistencies preclude a `Duplicates` verdict — the
 
 ---
 
+### Shared-source override
+
+A reliable shared source identifier derived from the narratives is itself evidence against independence: if two reports both quote the same DOI (or other stable source identifier), they cannot be treated as independent draws from the comparison population regardless of how rare the matched clinical features are. This case is handled through a dedicated override path in `classifier/decision_logic.py`, separate from the rarity-based \(L_{\text{match}}\) framework.
+
+The override fires whenever `features.source_case_assessment.verdict` is one of the four verdicts that prove a shared source exists:
+
+| Verdict | Sub-label mapping |
+|---|---|
+| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_weak_zone` → `Otherwise_related` |
+| `SAME_SOURCE_SAME_CASE`      | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_weak_zone` → `Otherwise_related` |
+| `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise_related` (pinned) |
+| `SAME_SOURCE_CASE_UNCOMPARABLE` | `Otherwise_related` (pinned) |
+
+The two "positive" verdicts default to `Duplicates`, but are downgraded to `Otherwise_related` when any non-source-case signal already pushes \(w_{\text{tot}}\) past the strictest (weak-zone) threshold. The two "negative" verdicts are pinned to `Otherwise_related`:
+
+- `SAME_SOURCE_DIFFERENT_CASE` emits a **decisive** `Inconsistency` (synthesized by `feature_generation/source_case_inconsistency.py`) — two reports sharing a DOI but carrying different comparable case labels clearly aren't the same individual, but they are linked by the shared source.
+- `SAME_SOURCE_CASE_UNCOMPARABLE` emits a **moderate** `Inconsistency` — enough to default the sub-label to `Otherwise_related` so that two reports sharing a DOI for a multi-patient article are not flagged as duplicates when case labels can't be safely compared.
+
+Advisory verdicts (`MULTI_PATIENT_CONTEXT_NO_LINK`, `NO_DECISIVE_SIGNAL`, `NOT_ASSESSED`) do **not** trigger the override — they fall through to the ordinary rarity-zone logic.
+
+The chosen branch is recorded on `ClassificationResult.independence_reason` (`shared_source` for the override path, one of `rarity_strong`/`rarity_medium`/`rarity_weak`/`rarity_insufficient` for the zone paths) so downstream review can tell exactly which rule fired.
+
+---
+
 ### Relationship between matching evidence and inconsistency tolerance
 
 The zone-based design explicitly allows strong matching evidence to outweigh isolated inconsistencies. This reflects the known variability and occasional recording errors in pharmacovigilance data:

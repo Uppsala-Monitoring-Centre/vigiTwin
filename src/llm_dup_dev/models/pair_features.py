@@ -20,6 +20,7 @@ from .enums import (
     NarrativeConsistency,
     ReportingContextLevel,
 )
+from .narrative_source_case import SourceCaseAssessment
 
 
 class ReportingContext(BaseModel):
@@ -262,6 +263,13 @@ class PairFeatures(BaseModel):
 
     # Narrative assessment
     narrative_consistency: NarrativeConsistency
+
+    # Derived narrative source/case signals (pair-level deterministic
+    # verdict from two per-report LLM extractions). ``None`` when the
+    # extraction/comparison was not performed. Raw verdict is kept
+    # alongside the synthesized Inconsistency rows so the decision
+    # logic can branch on the verdict directly.
+    source_case_assessment: SourceCaseAssessment | None = None
 
     # Optional diagnostic information
     evidence_summary: EvidenceSummary | None = None

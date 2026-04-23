@@ -436,6 +436,86 @@
       ],
       "title": "ReportingContextLevel",
       "type": "string"
+    },
+    "SourceCaseAssessment": {
+      "description": "Pair-level deterministic result of comparing two extractions.\n\nProduced by\n:func:`llm_dup_dev.feature_generation.source_case_comparison.compare_source_case`.\nNo LLM is involved at this stage.",
+      "properties": {
+        "verdict": {
+          "$ref": "#/$defs/SourceCaseVerdict"
+        },
+        "shared_source_identifier": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Normalized shared identifier when both extractions agree on one; null otherwise.",
+          "title": "Shared Source Identifier"
+        },
+        "shared_source_identifier_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceIdentifierType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "case_identifiers_compared": {
+          "default": false,
+          "description": "True when both extractions had non-null case identifiers and the comparator attempted to compare them.",
+          "title": "Case Identifiers Compared",
+          "type": "boolean"
+        },
+        "case_identifiers_comparable": {
+          "default": false,
+          "description": "True when the two case identifiers were judged safely comparable (same family, non-empty normalized values).",
+          "title": "Case Identifiers Comparable",
+          "type": "boolean"
+        },
+        "reasoning": {
+          "default": "",
+          "description": "Short explanation of which rule fired.",
+          "title": "Reasoning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "SourceCaseAssessment",
+      "type": "object"
+    },
+    "SourceCaseVerdict": {
+      "description": "Deterministic pair-level verdict derived from two narrative extractions.",
+      "enum": [
+        "same_source_single_patient",
+        "same_source_same_case",
+        "same_source_different_case",
+        "same_source_case_uncomparable",
+        "multi_patient_context_no_link",
+        "no_decisive_signal",
+        "not_assessed"
+      ],
+      "title": "SourceCaseVerdict",
+      "type": "string"
+    },
+    "SourceIdentifierType": {
+      "description": "Kind of identifier that would link sibling reports to the same source.\n\n``linked_case`` covers strings like ``\"Linked case: AB-123456789\"`` that\nare expected to appear verbatim across reports sharing the same\nunderlying case. It is classified here as a *source* identifier, not a\n*case-within-source* identifier, because its defining property is that\nsibling reports carry the identical string.",
+      "enum": [
+        "doi",
+        "linked_case",
+        "article_reference",
+        "unknown"
+      ],
+      "title": "SourceIdentifierType",
+      "type": "string"
     }
   },
   "description": "All derived features for adjudicating a candidate duplicate report pair.\n\nCombines shared clinical context, anchor population statistics,\nrarity-based matching evidence, detected inconsistencies and\n(optionally) narrative consistency. Computed from the Report layer\nand statistical summaries; provides the inputs to the duplicate\nadjudication decision logic.\n\nSee: docs/data_contracts.md \u00a7 PairFeatures Layer",
@@ -515,6 +595,17 @@
     },
     "narrative_consistency": {
       "$ref": "#/$defs/NarrativeConsistency"
+    },
+    "source_case_assessment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SourceCaseAssessment"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "evidence_summary": {
       "anyOf": [

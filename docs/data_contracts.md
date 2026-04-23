@@ -657,7 +657,9 @@ Key properties:
 - **Frozen-friendly.** `NarrativeSourceCase` is a Pydantic model that serializes to JSON. The secure repo can run the extractor once per report and persist the result alongside the raw report for reproducible offline evaluation, in the same spirit as `FrozenPairBundle`. An example frozen record lives at [`examples/narrative_source_case_example.json`](../examples/narrative_source_case_example.json).
 - **Extensible.** The same per-report-extractor pattern (single LLM task module + derived-signal Pydantic schema + deterministic downstream consumer) is intended to cover future narrative-derived attributes such as age, sex, height, and weight.
 
-The pair-level output, `SourceCaseAssessment`, is planned for eventual inclusion on `PairFeatures` once the extractor's precision is evaluated on real narratives. In the current landing it is consumed directly by callers; no fields have been added to `PairFeatures`.
+The pair-level output, `SourceCaseAssessment`, is carried on `PairFeatures.source_case_assessment`. Two verdicts are also mapped into the unified `Inconsistency` master list by [`feature_generation/source_case_inconsistency.py`](../src/llm_dup_dev/feature_generation/source_case_inconsistency.py) — `SAME_SOURCE_DIFFERENT_CASE` as **decisive**, `SAME_SOURCE_CASE_UNCOMPARABLE` as **moderate** — so the merged severity counts pick them up the same way AE clinical-picture findings do.
+
+The decision logic consults the raw verdict on top of those counts: a verdict in `{SAME_SOURCE_SINGLE_PATIENT, SAME_SOURCE_SAME_CASE, SAME_SOURCE_DIFFERENT_CASE, SAME_SOURCE_CASE_UNCOMPARABLE}` proves a shared source exists, and triggers a **shared-source override** that rejects independence regardless of `L_match`. The chosen branch is recorded on `ClassificationResult.independence_reason` (`shared_source` vs. one of the `rarity_*` zones) for auditability. See [`duplicate_adjudication_spec.md § Shared-source override`](duplicate_adjudication_spec.md) for the verdict → sub-label mapping.
 
 ------
 

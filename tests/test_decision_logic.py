@@ -21,8 +21,14 @@ from llm_dup_dev.models.enums import (
     AnchorType,
     DuplicateRelationship,
     IndependenceAssessment,
+    IndependenceReason,
     NarrativeConsistency,
     ReportingContextLevel,
+)
+from llm_dup_dev.models.narrative_source_case import (
+    SourceCaseAssessment,
+    SourceCaseVerdict,
+    SourceIdentifierType,
 )
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
@@ -43,6 +49,7 @@ def _make_features(
     moderate: int = 0,
     decisive: int = 0,
     pair_id: str = "test_pair",
+    source_case_assessment: SourceCaseAssessment | None = None,
 ) -> PairFeatures:
     """Build a minimal PairFeatures for decision logic testing."""
     return PairFeatures(
@@ -58,6 +65,20 @@ def _make_features(
             moderate=moderate, strong=strong, decisive=decisive,
         ),
         narrative_consistency=NarrativeConsistency.NEUTRAL,
+        source_case_assessment=source_case_assessment,
+    )
+
+
+def _assessment(
+    verdict: SourceCaseVerdict,
+    identifier: str | None = "10.1234/abc",
+) -> SourceCaseAssessment:
+    return SourceCaseAssessment(
+        verdict=verdict,
+        shared_source_identifier=identifier,
+        shared_source_identifier_type=(
+            SourceIdentifierType.DOI if identifier else None
+        ),
     )
 
 
@@ -394,3 +415,160 @@ class TestDefaultThresholds:
         f = _make_features(L_match=0.5)
         result = classify(f)
         _assert_independent(result)
+
+
+# ===================================================================
+# independence_reason propagation (rarity-zone paths)
+# ===================================================================
+
+class TestIndependenceReasonFromRarity:
+    """Each existing L_match zone branch should set the matching reason."""
+
+    def test_strong_zone_sets_rarity_strong(self):
+        result = classify(_make_features(L_match=4.0), THRESHOLDS)
+        assert result.independence_reason == IndependenceReason.RARITY_STRONG
+
+    def test_medium_zone_sets_rarity_medium(self):
+        result = classify(_make_features(L_match=2.5), THRESHOLDS)
+        assert result.independence_reason == IndependenceReason.RARITY_MEDIUM
+
+    def test_weak_zone_sets_rarity_weak(self):
+        result = classify(_make_features(L_match=1.5), THRESHOLDS)
+        assert result.independence_reason == IndependenceReason.RARITY_WEAK
+
+    def test_below_weak_sets_rarity_insufficient(self):
+        result = classify(_make_features(L_match=0.5), THRESHOLDS)
+        assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
+
+
+# ===================================================================
+# Shared-source override path
+# ===================================================================
+
+class TestSharedSourceOverride:
+    """A reliable shared source identifier rejects independence
+    regardless of L_match."""
+
+    def test_same_source_single_patient_forces_duplicates(self):
+        """SAME_SOURCE_SINGLE_PATIENT with L=0 and no other
+        inconsistencies → Duplicates via override."""
+        f = _make_features(
+            L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_same_case_forces_duplicates(self):
+        """SAME_SOURCE_SAME_CASE with L=0 and no other
+        inconsistencies → Duplicates via override."""
+        f = _make_features(
+            L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_same_case_downgrades_when_other_decisive(self):
+        """Positive verdict + decisive non-source-case inconsistency
+        → Otherwise_related (w_tot crosses weak-zone)."""
+        f = _make_features(
+            L_match=0.0,
+            decisive=1,  # w_tot = 100, well past weak-zone threshold 1.0
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_different_case_forces_otherwise_related(self):
+        """SAME_SOURCE_DIFFERENT_CASE → Otherwise_related pinned by the
+        override, even with L=0."""
+        f = _make_features(
+            L_match=0.0,
+            # Decisive finding is synthesized by generate_pair_features;
+            # the decision logic pins Otherwise_related regardless of
+            # whether it's present here.
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_case_uncomparable_forces_otherwise_related(self):
+        """SAME_SOURCE_CASE_UNCOMPARABLE → Otherwise_related pinned,
+        even with L=0 and no other inconsistencies."""
+        f = _make_features(
+            L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_multi_patient_no_link_falls_through(self):
+        """Advisory verdict does not trigger the override — existing
+        L_match logic applies."""
+        f = _make_features(
+            L_match=0.5,  # below weak threshold
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+        assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
+
+    def test_no_decisive_signal_falls_through(self):
+        f = _make_features(
+            L_match=4.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.NO_DECISIVE_SIGNAL,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.RARITY_STRONG
+
+    def test_not_assessed_falls_through(self):
+        f = _make_features(
+            L_match=0.5,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.NOT_ASSESSED,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+
+    def test_none_assessment_preserves_existing_behavior(self):
+        f = _make_features(L_match=0.5, source_case_assessment=None)
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+        assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
+
+    def test_override_explanation_mentions_verdict_and_identifier(self):
+        f = _make_features(
+            L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+                identifier="10.1234/abc",
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert "same_source_single_patient" in result.explanation
+        assert "10.1234/abc" in result.explanation

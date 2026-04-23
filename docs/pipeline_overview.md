@@ -50,7 +50,8 @@ F["Select Anchor Population<br>(drugs, AEs, drugs∩AEs)"]
 H["Assess Matching Evidence"]
 I["Assess Inconsistencies"]
 J["Assess Narrative Consistency (LLM)"]
-K["Decision Logic"]
+S["Extract Narrative Source/Case (LLM)<br>+ Deterministic Pair Comparison"]
+K["Decision Logic<br>(rarity zones + shared-source override)"]
 end
 
 subgraph Output["Final classification"]
@@ -69,12 +70,15 @@ B --> E
 B --> I
 C --> B
 C --> J
+C --> S
 D --> F
 D --> H
 
 E --> F
 F --> H
 J --> I
+S --> I
+S --> K
 
 
 H --> K

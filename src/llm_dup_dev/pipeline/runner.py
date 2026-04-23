@@ -47,17 +47,23 @@ from llm_dup_dev.feature_generation.pipeline import generate_pair_features
 from llm_dup_dev.feature_generation.reporting_context import (
     determine_reporting_context,
 )
+from llm_dup_dev.feature_generation.source_case_comparison import compare_source_case
 from llm_dup_dev.llm.protocols import LLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import assess_ae_clinical_picture
 from llm_dup_dev.llm.tasks.narrative_comparison import (
     NarrativeVerdict,
     compare_narratives,
 )
+from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
     NarrativeConsistency,
     ReportingContextLevel,
+)
+from llm_dup_dev.models.narrative_source_case import (
+    NarrativeSourceCase,
+    SourceCaseAssessment,
 )
 from llm_dup_dev.models.pair_features import (
     AEClinicalPictureResult,
@@ -116,6 +122,7 @@ class PairResult:
     classification: ClassificationResult
     narrative_verdict: NarrativeVerdict | None = None
     ae_clinical_picture: AEClinicalPictureResult | None = None
+    source_case_assessment: SourceCaseAssessment | None = None
 
     @property
     def final_label(self) -> str:
@@ -192,6 +199,7 @@ class PipelineRunner:
         narrative_consistency: NarrativeConsistency = NarrativeConsistency.NOT_AVAILABLE,
         narrative_verdict: NarrativeVerdict | None = None,
         ae_clinical_picture: AEClinicalPictureResult | None = None,
+        source_case_assessment: SourceCaseAssessment | None = None,
     ) -> PairResult:
         """Process a single report pair end-to-end.
 
@@ -212,6 +220,9 @@ class PipelineRunner:
             and no in-pair assessment can be performed (no LLM client
             on the runner), the AE component is recorded as
             ``NOT_ASSESSED`` with reason ``"no_llm_client"``.
+        source_case_assessment : SourceCaseAssessment, optional
+            Pre-computed narrative source/case verdict for the pair.
+            ``None`` disables the shared-source override path.
 
         Returns
         -------
@@ -258,6 +269,7 @@ class PipelineRunner:
             config=self._pipeline_config,
             pair_id=pair.pair_id,
             ae_clinical_picture=ae_clinical_picture,
+            source_case_assessment=source_case_assessment,
         )
 
         # Step 6: Classify
@@ -269,6 +281,7 @@ class PipelineRunner:
             classification=classification,
             narrative_verdict=narrative_verdict,
             ae_clinical_picture=ae_clinical_picture,
+            source_case_assessment=source_case_assessment,
         )
 
     def _assess_narrative(
@@ -344,6 +357,52 @@ class PipelineRunner:
                 reason="llm_error",
             )
 
+    def _extract_source_case(self, report: Report) -> NarrativeSourceCase | None:
+        """Extract narrative source/case signals for one report.
+
+        Returns ``None`` when no LLM client is configured or extraction
+        fails — never aborts the batch. Errors are logged and the pair
+        downstream receives ``source_case_assessment=None``.
+        """
+        if self._llm_client is None:
+            return None
+        try:
+            return extract_source_case(
+                self._llm_client,
+                report.report_id,
+                report.narrative,
+            )
+        except Exception as exc:
+            logger.warning(
+                "LLM narrative source/case extraction failed for "
+                "report %s: %s",
+                report.report_id,
+                exc,
+            )
+            return None
+
+    def _assess_source_case(
+        self,
+        a: NarrativeSourceCase | None,
+        b: NarrativeSourceCase | None,
+    ) -> SourceCaseAssessment | None:
+        """Run the deterministic pair-level comparator.
+
+        Returns ``None`` when either extraction is missing (so the
+        shared-source override path is disabled for this pair). The
+        comparator itself also returns a ``NOT_ASSESSED`` verdict for
+        this case, but ``None`` is a stronger signal downstream — it
+        lets the decision logic skip the override entirely rather than
+        inspect a verdict enum.
+        """
+        if a is None or b is None:
+            return None
+        try:
+            return compare_source_case(a, b)
+        except Exception as exc:
+            logger.warning("Source/case comparison failed: %s", exc)
+            return None
+
     def run_batch(
         self,
         pairs: Sequence[ReportPair],
@@ -379,6 +438,11 @@ class PipelineRunner:
         """
         batch = BatchResult()
 
+        # Memoize per-report narrative source/case extractions so each
+        # narrative is extracted only once across all pairs that
+        # reference it. Cache lifetime is one ``run_batch`` call.
+        source_case_cache: dict[str, NarrativeSourceCase | None] = {}
+
         for pair in pairs:
             try:
                 # Load reports to get narratives
@@ -406,11 +470,23 @@ class PipelineRunner:
                     pair.pair_id, r1, r2
                 )
 
+                # Narrative source/case: extract per report (memoized)
+                # then compare deterministically.
+                if r1.report_id not in source_case_cache:
+                    source_case_cache[r1.report_id] = self._extract_source_case(r1)
+                if r2.report_id not in source_case_cache:
+                    source_case_cache[r2.report_id] = self._extract_source_case(r2)
+                source_case = self._assess_source_case(
+                    source_case_cache[r1.report_id],
+                    source_case_cache[r2.report_id],
+                )
+
                 result = self.run_pair(
                     pair,
                     narrative_consistency=consistency,
                     narrative_verdict=verdict,
                     ae_clinical_picture=ae_result,
+                    source_case_assessment=source_case,
                 )
                 batch.results.append(result)
 
