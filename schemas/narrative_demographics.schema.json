@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "NarrativeAgeValue": {
+      "description": "A single candidate patient age extracted from the narrative.",
+      "properties": {
+        "value": {
+          "description": "Numeric age value.",
+          "title": "Value",
+          "type": "number"
+        },
+        "unit": {
+          "default": "years",
+          "enum": [
+            "years",
+            "months",
+            "days"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Short verbatim snippet copied from the narrative.",
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "evidence"
+      ],
+      "title": "NarrativeAgeValue",
+      "type": "object"
+    },
+    "NarrativeMeasurementValue": {
+      "description": "A single candidate patient measurement (weight or height).",
+      "properties": {
+        "value": {
+          "description": "Numeric measurement value.",
+          "title": "Value",
+          "type": "number"
+        },
+        "unit": {
+          "description": "Unit; 'kg' for weight, 'cm' for height.",
+          "enum": [
+            "kg",
+            "cm"
+          ],
+          "title": "Unit",
+          "type": "string"
+        },
+        "evidence": {
+          "description": "Short verbatim snippet copied from the narrative.",
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "unit",
+        "evidence"
+      ],
+      "title": "NarrativeMeasurementValue",
+      "type": "object"
+    },
+    "NarrativeSex": {
+      "description": "Controlled vocabulary for narrative-extracted patient sex.\n\nLowercase to match the convention used by\n:func:`llm_dup_dev.feature_generation.inconsistencies._check_sex`,\nwhich lowercases all values before comparing.",
+      "enum": [
+        "male",
+        "female",
+        "other",
+        "unknown"
+      ],
+      "title": "NarrativeSex",
+      "type": "string"
+    },
+    "NarrativeSexValue": {
+      "description": "A single candidate patient sex extracted from the narrative.",
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/NarrativeSex"
+        },
+        "evidence": {
+          "description": "Short verbatim snippet copied from the narrative.",
+          "title": "Evidence",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "evidence"
+      ],
+      "title": "NarrativeSexValue",
+      "type": "object"
+    }
+  },
+  "description": "Structured demographic signals extracted from one report narrative.\n\nAll lists are allowed to contain multiple candidates \u2014 the narrative\nmay legitimately mention more than one age (on admission vs follow-\nup) or weight (on admission vs discharge). The extractor is\nprecision-oriented: leave lists empty when the narrative does not\nclearly state a value *for the patient of interest*. Values\ndescribing family members, bystanders, or comparators must not be\nincluded.\n\nConsumed by :func:`merge_narrative_demographics`, which appends\ncandidates to the Report's ``patient_*_values`` lists with\n``sources=[\"narrative_llm\"]``.",
+  "properties": {
+    "ages": {
+      "items": {
+        "$ref": "#/$defs/NarrativeAgeValue"
+      },
+      "title": "Ages",
+      "type": "array"
+    },
+    "sexes": {
+      "items": {
+        "$ref": "#/$defs/NarrativeSexValue"
+      },
+      "title": "Sexes",
+      "type": "array"
+    },
+    "weights": {
+      "items": {
+        "$ref": "#/$defs/NarrativeMeasurementValue"
+      },
+      "title": "Weights",
+      "type": "array"
+    },
+    "heights": {
+      "items": {
+        "$ref": "#/$defs/NarrativeMeasurementValue"
+      },
+      "title": "Heights",
+      "type": "array"
+    },
+    "notes": {
+      "default": "",
+      "description": "Brief free-text explanation for human review.",
+      "title": "Notes",
+      "type": "string"
+    }
+  },
+  "title": "NarrativeDemographics",
+  "type": "object"
+}

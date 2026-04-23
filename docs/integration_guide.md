@@ -200,6 +200,28 @@ Unlike `FrozenStatsProvider`, partial bundles are allowed: `report_id` keys pres
 
 The JSON artifact matches `schemas/frozen_source_case_extractions.schema.json` and is validated by `FrozenSourceCaseExtractions.model_validate_json` on load, so schema drift between preprocessing and evaluation surfaces as a `ValidationError` rather than silent misinterpretation.
 
+### Narrative demographics extractor
+
+A parallel per-report extractor, `extract_narrative_demographics`, pulls candidate patient **age**, **sex**, **weight**, and **height** values (each with an `evidence` snippet) from a single narrative. Its deterministic consumer is a merge helper rather than a pair-level comparator:
+
+```python
+from llm_dup_dev.llm.tasks.narrative_demographics import (
+    extract_narrative_demographics,
+)
+from llm_dup_dev.feature_generation.narrative_demographics import (
+    merge_narrative_demographics,
+)
+
+extraction = extract_narrative_demographics(
+    llm_client, report.report_id, report.narrative
+)
+enriched_report = merge_narrative_demographics(report, extraction)
+```
+
+`merge_narrative_demographics` returns a copy of the `Report` with the extracted values appended to the existing `patient_*_values` lists, tagged with `sources=["narrative_llm"]`. Because the structured inconsistency checks already use min-difference / set-intersection across all candidate values, the narrative candidates participate automatically — no pipeline-side changes are needed beyond wiring the merge into the loader path.
+
+Auto-enrichment inside `PipelineRunner` and a dedicated `FrozenNarrativeDemographics` bundle (parallel to `FrozenSourceCaseExtractions`) are not yet wired in — they land as follow-up PRs once real-data evaluation has exercised the extractor.
+
 ---
 
 ## What you need to implement in the secure repo
