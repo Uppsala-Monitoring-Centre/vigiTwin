@@ -41,6 +41,7 @@ from typing import Callable, Sequence
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.classifier.decision_logic import classify
+from llm_dup_dev.data.offline import FrozenSourceCaseExtractions
 from llm_dup_dev.data.protocols import PairContextSink, ReportLoader, StatsProvider
 from llm_dup_dev.feature_generation.matching import compute_matches
 from llm_dup_dev.feature_generation.pipeline import generate_pair_features
@@ -177,6 +178,12 @@ class PipelineRunner:
         Feature generation configuration.
     decision_thresholds : DecisionThresholds, optional
         Classification decision boundaries.
+    frozen_source_case_extractions : FrozenSourceCaseExtractions, optional
+        Precomputed per-report source/case extractions. When provided,
+        ``run_batch`` seeds its internal extraction cache from this
+        bundle so covered reports skip live LLM calls. Partial bundles
+        are allowed: missing ``report_id`` keys fall back to live
+        extraction (or ``None`` if ``llm_client`` is not set).
     """
 
     def __init__(
@@ -186,12 +193,14 @@ class PipelineRunner:
         llm_client: LLMClient | None = None,
         pipeline_config: PipelineConfig | None = None,
         decision_thresholds: DecisionThresholds | None = None,
+        frozen_source_case_extractions: FrozenSourceCaseExtractions | None = None,
     ) -> None:
         self._loader = report_loader
         self._stats_provider = stats_provider
         self._llm_client = llm_client
         self._pipeline_config = pipeline_config or PipelineConfig()
         self._decision_thresholds = decision_thresholds or DecisionThresholds()
+        self._frozen_source_case = frozen_source_case_extractions
 
     def run_pair(
         self,
@@ -441,7 +450,11 @@ class PipelineRunner:
         # Memoize per-report narrative source/case extractions so each
         # narrative is extracted only once across all pairs that
         # reference it. Cache lifetime is one ``run_batch`` call.
+        # Seeded from a frozen bundle when one was passed at
+        # construction time — covered reports then skip live LLM calls.
         source_case_cache: dict[str, NarrativeSourceCase | None] = {}
+        if self._frozen_source_case is not None:
+            source_case_cache.update(self._frozen_source_case.extractions)
 
         for pair in pairs:
             try:

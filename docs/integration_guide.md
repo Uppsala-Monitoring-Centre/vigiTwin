@@ -159,6 +159,47 @@ result = runner.run_pair(pair)
 
 No changes to `PipelineRunner` construction are required; the existing `ReportLoader` interface is unchanged.
 
+### Freezing narrative source/case extractions
+
+The per-report narrative source/case extractor (`extract_source_case`) calls an LLM once per unique report. For batches where reports appear in many pairs — or where extractor output must be reproduced exactly across eval runs — the secure repo can freeze the per-report results once and reuse them offline.
+
+**Preprocessing step (online, once):**
+
+```python
+from llm_dup_dev.data.offline import (
+    FrozenSourceCaseExtractions,
+    save_frozen_source_case_extractions,
+)
+from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
+
+extractions = {}
+for report in unique_reports_in_batch:
+    extractions[report.report_id] = extract_source_case(
+        llm_client, report.report_id, report.narrative
+    )
+
+bundle = FrozenSourceCaseExtractions(extractions=extractions)
+save_frozen_source_case_extractions(bundle, "source_case.json")
+```
+
+**Evaluation step (offline, repeatable):**
+
+```python
+from llm_dup_dev.data.offline import load_frozen_source_case_extractions
+
+bundle = load_frozen_source_case_extractions("source_case.json")
+
+runner = PipelineRunner(
+    report_loader=your_report_loader,
+    stats_provider=offline_provider,
+    frozen_source_case_extractions=bundle,   # ← skips live LLM for covered reports
+)
+```
+
+Unlike `FrozenStatsProvider`, partial bundles are allowed: `report_id` keys present in the bundle are served from it, and missing keys fall back to live extraction via `llm_client` (or to `None` if no client is configured). Source/case is advisory — only the shared-source override path in the decision logic consumes it — so a missing extraction degrades gracefully rather than failing the pair.
+
+The JSON artifact matches `schemas/frozen_source_case_extractions.schema.json` and is validated by `FrozenSourceCaseExtractions.model_validate_json` on load, so schema drift between preprocessing and evaluation surfaces as a `ValidationError` rather than silent misinterpretation.
+
 ---
 
 ## What you need to implement in the secure repo

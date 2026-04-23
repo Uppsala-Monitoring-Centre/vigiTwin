@@ -1,16 +1,28 @@
 """Offline (frozen-validation) mode data implementations.
 
 For evaluation batches that run without database access, the secure repo
-preprocesses frequency statistics per pair and stores them as frozen
-bundles. This module provides typed models for those artifacts and a
-``FrozenStatsProvider`` that serves counts from them.
+preprocesses LLM- and database-dependent artifacts once and stores them
+as frozen bundles. This module provides typed models for those artifacts
+and the providers/loaders that serve them back into the pipeline.
+
+Two artifacts are supported:
+
+- ``FrozenPairBundle`` — per-pair frequency counts. Served by
+  ``FrozenStatsProvider`` as a drop-in ``StatsProvider``.
+- ``FrozenSourceCaseExtractions`` — per-report narrative source/case
+  extractions (the output of the per-report LLM task). Passed directly
+  to ``PipelineRunner`` via the ``frozen_source_case_extractions``
+  constructor kwarg; the runner seeds its internal extraction cache
+  from the bundle so covered reports skip live LLM calls.
 
 Typical usage in the secure repo::
 
     from llm_dup_dev.data.offline import (
         FrozenPairBundle,
         FrozenScopeStats,
+        FrozenSourceCaseExtractions,
         FrozenStatsProvider,
+        save_frozen_source_case_extractions,
     )
     from llm_dup_dev.pipeline.runner import PipelineRunner
 
@@ -32,7 +44,21 @@ Typical usage in the secure repo::
     }
 
     provider = FrozenStatsProvider(bundles)
-    runner = PipelineRunner(report_loader=loader, stats_provider=provider)
+
+    # Per-report extractions (one LLM call per unique report_id, once).
+    extractions = FrozenSourceCaseExtractions(
+        extractions={
+            "R001": extract_source_case(llm, "R001", r1.narrative),
+            "R002": extract_source_case(llm, "R002", r2.narrative),
+        }
+    )
+    save_frozen_source_case_extractions(extractions, "source_case.json")
+
+    runner = PipelineRunner(
+        report_loader=loader,
+        stats_provider=provider,
+        frozen_source_case_extractions=extractions,
+    )
 
 ``FrozenStatsProvider`` implements both ``StatsProvider`` and
 ``PairContextSink``. ``PipelineRunner`` calls ``set_current_pair`` before
@@ -41,11 +67,13 @@ each ``compute_stats``, so no API change is needed on the runner side.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Sequence
 
 from pydantic import BaseModel
 
 from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 
 
 class FrozenScopeStats(BaseModel):
@@ -290,3 +318,59 @@ class FrozenStatsProvider:
             return bundle.country_stats
 
         return bundle.global_stats
+
+
+# ------------------------------------------------------------------
+# Frozen narrative source/case extractions
+# ------------------------------------------------------------------
+
+
+class FrozenSourceCaseExtractions(BaseModel):
+    """Precomputed per-report narrative source/case extractions.
+
+    Produced once by the secure repo (one LLM call per unique report)
+    and serialized as a single JSON artifact. Passed to
+    ``PipelineRunner`` to skip live LLM calls during offline
+    evaluation.
+
+    Partial bundles are allowed: ``report_id`` keys present in the
+    bundle are served from it; missing ``report_id`` keys fall back to
+    live extraction (or ``None`` if no LLM client is configured on the
+    runner). This is intentionally more lenient than
+    ``FrozenStatsProvider`` because source/case is advisory — only the
+    shared-source override path in the decision logic consumes it, and
+    the override is designed to be skippable.
+
+    Attributes
+    ----------
+    extractions : dict[str, NarrativeSourceCase]
+        Mapping of ``report_id`` → per-report extraction.
+    """
+
+    extractions: dict[str, NarrativeSourceCase]
+
+
+def save_frozen_source_case_extractions(
+    bundle: FrozenSourceCaseExtractions, path: str | Path
+) -> None:
+    """Serialize a source/case bundle to a JSON file.
+
+    Uses ``model_dump_json(indent=2)`` so the artifact is readable in
+    code review and diff tools.
+    """
+    Path(path).write_text(bundle.model_dump_json(indent=2))
+
+
+def load_frozen_source_case_extractions(
+    path: str | Path,
+) -> FrozenSourceCaseExtractions:
+    """Load a source/case bundle from a JSON file.
+
+    Raises Pydantic ``ValidationError`` if the file contents do not
+    match the current ``FrozenSourceCaseExtractions`` /
+    ``NarrativeSourceCase`` schemas — surfaces drift between frozen
+    artifacts and the current code loudly rather than silently.
+    """
+    return FrozenSourceCaseExtractions.model_validate_json(
+        Path(path).read_text()
+    )

@@ -15,7 +15,17 @@ import pytest
 from llm_dup_dev.data.offline import (
     FrozenPairBundle,
     FrozenScopeStats,
+    FrozenSourceCaseExtractions,
     FrozenStatsProvider,
+    load_frozen_source_case_extractions,
+    save_frozen_source_case_extractions,
+)
+from llm_dup_dev.models.narrative_source_case import (
+    CaseIdentifierFamily,
+    EvidenceSpan,
+    NarrativeSourceCase,
+    SourceIdentifierType,
+    SourceType,
 )
 from llm_dup_dev.data.protocols import PairContextSink, StatsProvider
 from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
@@ -513,3 +523,66 @@ class TestLivePathUnchanged:
         assert result.final_label in (
             "Duplicates", "Otherwise_related", "Unrelated", "Abstain"
         )
+
+
+# ---------------------------------------------------------------------------
+# FrozenSourceCaseExtractions — bundle roundtrip + file helpers
+# ---------------------------------------------------------------------------
+
+
+def _sample_bundle() -> FrozenSourceCaseExtractions:
+    return FrozenSourceCaseExtractions(
+        extractions={
+            "R001": NarrativeSourceCase(
+                source_type=SourceType.SPONTANEOUS_OR_OTHER,
+                single_patient_source=True,
+                multi_patient_source=False,
+                evidence=[
+                    EvidenceSpan(
+                        field="single_patient_source",
+                        quote="The patient reported somnolence.",
+                    )
+                ],
+                notes="Spontaneous single-patient report.",
+            ),
+            "R002": NarrativeSourceCase(
+                source_type=SourceType.LITERATURE,
+                multi_patient_source=True,
+                source_identifier="10.1234/abc.2024.567",
+                source_identifier_type=SourceIdentifierType.DOI,
+                case_identifier_within_source="Case 2",
+                case_identifier_type="case",
+                case_identifier_family=CaseIdentifierFamily.CASE,
+                case_identifier_value_normalized="2",
+            ),
+        }
+    )
+
+
+class TestFrozenSourceCaseExtractions:
+
+    def test_json_roundtrip_preserves_all_fields(self):
+        bundle = _sample_bundle()
+        restored = FrozenSourceCaseExtractions.model_validate_json(
+            bundle.model_dump_json()
+        )
+        assert restored == bundle
+        r002 = restored.extractions["R002"]
+        assert r002.source_identifier == "10.1234/abc.2024.567"
+        assert r002.source_identifier_type == SourceIdentifierType.DOI
+        assert r002.case_identifier_family == CaseIdentifierFamily.CASE
+
+    def test_save_load_roundtrip_via_file(self, tmp_path):
+        bundle = _sample_bundle()
+        path = tmp_path / "source_case.json"
+        save_frozen_source_case_extractions(bundle, path)
+        assert path.exists()
+        restored = load_frozen_source_case_extractions(path)
+        assert restored == bundle
+
+    def test_empty_bundle_roundtrip(self, tmp_path):
+        bundle = FrozenSourceCaseExtractions(extractions={})
+        path = tmp_path / "empty.json"
+        save_frozen_source_case_extractions(bundle, path)
+        restored = load_frozen_source_case_extractions(path)
+        assert restored.extractions == {}
