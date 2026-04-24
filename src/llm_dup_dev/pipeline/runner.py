@@ -41,9 +41,15 @@ from typing import Callable, Sequence
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.data.offline import FrozenSourceCaseExtractions
+from llm_dup_dev.data.offline import (
+    FrozenNarrativeDemographics,
+    FrozenSourceCaseExtractions,
+)
 from llm_dup_dev.data.protocols import PairContextSink, ReportLoader, StatsProvider
 from llm_dup_dev.feature_generation.matching import compute_matches
+from llm_dup_dev.feature_generation.narrative_demographics import (
+    merge_narrative_demographics,
+)
 from llm_dup_dev.feature_generation.pipeline import generate_pair_features
 from llm_dup_dev.feature_generation.reporting_context import (
     determine_reporting_context,
@@ -55,6 +61,9 @@ from llm_dup_dev.llm.tasks.narrative_comparison import (
     NarrativeVerdict,
     compare_narratives,
 )
+from llm_dup_dev.llm.tasks.narrative_demographics import (
+    extract_narrative_demographics,
+)
 from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
@@ -62,6 +71,7 @@ from llm_dup_dev.models.enums import (
     NarrativeConsistency,
     ReportingContextLevel,
 )
+from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.narrative_source_case import (
     NarrativeSourceCase,
     SourceCaseAssessment,
@@ -184,6 +194,15 @@ class PipelineRunner:
         bundle so covered reports skip live LLM calls. Partial bundles
         are allowed: missing ``report_id`` keys fall back to live
         extraction (or ``None`` if ``llm_client`` is not set).
+    frozen_narrative_demographics : FrozenNarrativeDemographics, optional
+        Precomputed per-report narrative demographics extractions. When
+        provided, ``run_batch`` seeds its internal extraction cache from
+        this bundle and merges the covered extractions into each
+        ``Report`` before downstream feature generation. Partial
+        bundles are allowed: missing ``report_id`` keys fall back to
+        live extraction (or to an empty ``NarrativeDemographics()`` if
+        ``llm_client`` is not set — merging an empty extraction is a
+        no-op).
     """
 
     def __init__(
@@ -194,6 +213,7 @@ class PipelineRunner:
         pipeline_config: PipelineConfig | None = None,
         decision_thresholds: DecisionThresholds | None = None,
         frozen_source_case_extractions: FrozenSourceCaseExtractions | None = None,
+        frozen_narrative_demographics: FrozenNarrativeDemographics | None = None,
     ) -> None:
         self._loader = report_loader
         self._stats_provider = stats_provider
@@ -201,6 +221,7 @@ class PipelineRunner:
         self._pipeline_config = pipeline_config or PipelineConfig()
         self._decision_thresholds = decision_thresholds or DecisionThresholds()
         self._frozen_source_case = frozen_source_case_extractions
+        self._frozen_narrative_demographics = frozen_narrative_demographics
 
     def run_pair(
         self,
@@ -209,6 +230,8 @@ class PipelineRunner:
         narrative_verdict: NarrativeVerdict | None = None,
         ae_clinical_picture: AEClinicalPictureResult | None = None,
         source_case_assessment: SourceCaseAssessment | None = None,
+        narrative_demographics_1: NarrativeDemographics | None = None,
+        narrative_demographics_2: NarrativeDemographics | None = None,
     ) -> PairResult:
         """Process a single report pair end-to-end.
 
@@ -232,6 +255,15 @@ class PipelineRunner:
         source_case_assessment : SourceCaseAssessment, optional
             Pre-computed narrative source/case verdict for the pair.
             ``None`` disables the shared-source override path.
+        narrative_demographics_1 : NarrativeDemographics, optional
+            Pre-extracted narrative demographics for the first report.
+            When provided, merged into ``r1`` via
+            ``merge_narrative_demographics`` after loading so the
+            narrative candidates participate in the downstream
+            inconsistency checks.
+        narrative_demographics_2 : NarrativeDemographics, optional
+            Pre-extracted narrative demographics for the second report.
+            Same behavior as ``narrative_demographics_1``.
 
         Returns
         -------
@@ -246,6 +278,14 @@ class PipelineRunner:
 
         # Step 1: Load reports
         r1, r2 = self._loader.load_pair(pair)
+
+        # Step 1b: Enrich with narrative-extracted demographics so the
+        # existing inconsistency logic sees structured + narrative
+        # candidates together.
+        if narrative_demographics_1 is not None:
+            r1 = merge_narrative_demographics(r1, narrative_demographics_1)
+        if narrative_demographics_2 is not None:
+            r2 = merge_narrative_demographics(r2, narrative_demographics_2)
 
         # Step 2: Determine reporting context and compute matches
         # (needed to know what drugs/AEs to query stats for)
@@ -390,6 +430,33 @@ class PipelineRunner:
             )
             return None
 
+    def _extract_narrative_demographics(
+        self, report: Report
+    ) -> NarrativeDemographics:
+        """Extract narrative demographic candidates for one report.
+
+        Returns an empty ``NarrativeDemographics()`` when no LLM client
+        is configured or extraction fails — never aborts the batch.
+        Merging an empty extraction is a no-op, so downstream code does
+        not need a missing-value guard.
+        """
+        if self._llm_client is None:
+            return NarrativeDemographics()
+        try:
+            return extract_narrative_demographics(
+                self._llm_client,
+                report.report_id,
+                report.narrative,
+            )
+        except Exception as exc:
+            logger.warning(
+                "LLM narrative demographics extraction failed for "
+                "report %s: %s",
+                report.report_id,
+                exc,
+            )
+            return NarrativeDemographics()
+
     def _assess_source_case(
         self,
         a: NarrativeSourceCase | None,
@@ -456,6 +523,17 @@ class PipelineRunner:
         if self._frozen_source_case is not None:
             source_case_cache.update(self._frozen_source_case.extractions)
 
+        # Same memoization pattern for narrative demographics
+        # extractions. Seeded from a frozen bundle when one was passed
+        # at construction time — covered reports then skip live LLM
+        # calls and their candidates are merged into each Report inside
+        # ``run_pair``.
+        demographics_cache: dict[str, NarrativeDemographics] = {}
+        if self._frozen_narrative_demographics is not None:
+            demographics_cache.update(
+                self._frozen_narrative_demographics.extractions
+            )
+
         for pair in pairs:
             try:
                 # Load reports to get narratives
@@ -494,12 +572,26 @@ class PipelineRunner:
                     source_case_cache[r2.report_id],
                 )
 
+                # Narrative demographics: extract per report (memoized);
+                # the merge into each ``Report`` happens inside
+                # ``run_pair``.
+                if r1.report_id not in demographics_cache:
+                    demographics_cache[r1.report_id] = (
+                        self._extract_narrative_demographics(r1)
+                    )
+                if r2.report_id not in demographics_cache:
+                    demographics_cache[r2.report_id] = (
+                        self._extract_narrative_demographics(r2)
+                    )
+
                 result = self.run_pair(
                     pair,
                     narrative_consistency=consistency,
                     narrative_verdict=verdict,
                     ae_clinical_picture=ae_result,
                     source_case_assessment=source_case,
+                    narrative_demographics_1=demographics_cache[r1.report_id],
+                    narrative_demographics_2=demographics_cache[r2.report_id],
                 )
                 batch.results.append(result)
 

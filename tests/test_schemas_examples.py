@@ -10,7 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from llm_dup_dev.data.offline import FrozenSourceCaseExtractions
+from llm_dup_dev.data.offline import (
+    FrozenNarrativeDemographics,
+    FrozenSourceCaseExtractions,
+)
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
 from llm_dup_dev.models.pair_features import PairFeatures
@@ -34,6 +37,7 @@ MODEL_MAP = {
     "narrative_source_case": NarrativeSourceCase,
     "narrative_demographics": NarrativeDemographics,
     "frozen_source_case_extractions": FrozenSourceCaseExtractions,
+    "frozen_narrative_demographics": FrozenNarrativeDemographics,
 }
 
 

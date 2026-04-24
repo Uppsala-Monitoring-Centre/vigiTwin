@@ -13,12 +13,22 @@ from __future__ import annotations
 import pytest
 
 from llm_dup_dev.data.offline import (
+    FrozenNarrativeDemographics,
     FrozenPairBundle,
     FrozenScopeStats,
     FrozenSourceCaseExtractions,
     FrozenStatsProvider,
+    load_frozen_narrative_demographics,
     load_frozen_source_case_extractions,
+    save_frozen_narrative_demographics,
     save_frozen_source_case_extractions,
+)
+from llm_dup_dev.models.narrative_demographics import (
+    NarrativeAgeValue,
+    NarrativeDemographics,
+    NarrativeMeasurementValue,
+    NarrativeSex,
+    NarrativeSexValue,
 )
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
@@ -585,4 +595,75 @@ class TestFrozenSourceCaseExtractions:
         path = tmp_path / "empty.json"
         save_frozen_source_case_extractions(bundle, path)
         restored = load_frozen_source_case_extractions(path)
+        assert restored.extractions == {}
+
+
+def _sample_demographics_bundle() -> FrozenNarrativeDemographics:
+    return FrozenNarrativeDemographics(
+        extractions={
+            "R001": NarrativeDemographics(
+                ages=[
+                    NarrativeAgeValue(
+                        value=55, unit="years", evidence="55-year-old"
+                    ),
+                ],
+                sexes=[
+                    NarrativeSexValue(
+                        value=NarrativeSex.MALE, evidence="male patient"
+                    ),
+                ],
+                weights=[
+                    NarrativeMeasurementValue(
+                        value=82, unit="kg",
+                        evidence="weight on admission: 82 kg",
+                    ),
+                    NarrativeMeasurementValue(
+                        value=79.5, unit="kg",
+                        evidence="weight on discharge was 79.5 kg",
+                    ),
+                ],
+                heights=[
+                    NarrativeMeasurementValue(
+                        value=178, unit="cm", evidence="height 178 cm"
+                    ),
+                ],
+                notes="Weight at admission and discharge both reported.",
+            ),
+            "R002": NarrativeDemographics(
+                ages=[
+                    NarrativeAgeValue(
+                        value=67, unit="years", evidence="67-year-old"
+                    ),
+                ],
+            ),
+        }
+    )
+
+
+class TestFrozenNarrativeDemographics:
+
+    def test_json_roundtrip_preserves_all_fields(self):
+        bundle = _sample_demographics_bundle()
+        restored = FrozenNarrativeDemographics.model_validate_json(
+            bundle.model_dump_json()
+        )
+        assert restored == bundle
+        r001 = restored.extractions["R001"]
+        assert [w.value for w in r001.weights] == [82, 79.5]
+        assert r001.sexes[0].value is NarrativeSex.MALE
+        assert r001.notes.startswith("Weight at admission")
+
+    def test_save_load_roundtrip_via_file(self, tmp_path):
+        bundle = _sample_demographics_bundle()
+        path = tmp_path / "demographics.json"
+        save_frozen_narrative_demographics(bundle, path)
+        assert path.exists()
+        restored = load_frozen_narrative_demographics(path)
+        assert restored == bundle
+
+    def test_empty_bundle_roundtrip(self, tmp_path):
+        bundle = FrozenNarrativeDemographics(extractions={})
+        path = tmp_path / "empty.json"
+        save_frozen_narrative_demographics(bundle, path)
+        restored = load_frozen_narrative_demographics(path)
         assert restored.extractions == {}

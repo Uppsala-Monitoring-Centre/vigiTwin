@@ -3,18 +3,28 @@
 import pytest
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
-from llm_dup_dev.data.offline import FrozenSourceCaseExtractions
+from llm_dup_dev.data.offline import (
+    FrozenNarrativeDemographics,
+    FrozenSourceCaseExtractions,
+)
 from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
 from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
+from llm_dup_dev.models.narrative_demographics import (
+    NarrativeAgeValue,
+    NarrativeDemographics,
+    NarrativeMeasurementValue,
+    NarrativeSex,
+    NarrativeSexValue,
+)
 from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 from llm_dup_dev.models.enums import (
     IndependenceAssessment,
     NarrativeConsistency,
 )
-from llm_dup_dev.models.report import Report
+from llm_dup_dev.models.report import AgeValue, Report, SourcedValue
 from llm_dup_dev.models.report_pair import ReportPair
 from llm_dup_dev.pipeline.runner import (
     BatchResult,
@@ -257,12 +267,15 @@ class TestLLMNarrativeIntegration:
             evidence=["Both describe same patient"],
         )
         fake.seed_response(verdict)
-        # The runner also makes an AE clinical-picture LLM call and a
-        # narrative source/case extraction per report (two reports per
-        # pair); seed benign responses so the full chain succeeds.
+        # The runner also makes an AE clinical-picture LLM call, a
+        # narrative source/case extraction per report, and a narrative
+        # demographics extraction per report; seed benign responses so
+        # the full chain succeeds.
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeDemographics())
+        fake.seed_response(NarrativeDemographics())
 
         runner = PipelineRunner(
             report_loader=loader,
@@ -277,9 +290,10 @@ class TestLLMNarrativeIntegration:
             == NarrativeConsistency.STRONGLY_CONSISTENT
         )
         assert result.results[0].narrative_verdict == verdict
-        # Four requests per pair: narrative + AE clinical-picture +
-        # narrative source/case per report.
-        assert len(fake.requests) == 4
+        # Six requests per pair: narrative + AE clinical-picture +
+        # narrative source/case per report + narrative demographics
+        # per report.
+        assert len(fake.requests) == 6
 
     def test_narrative_provider_takes_precedence_over_llm(
         self, loader, stats_provider, pair_ab
@@ -287,10 +301,13 @@ class TestLLMNarrativeIntegration:
         """Explicit narrative_provider overrides llm_client (for narrative)."""
         fake = FakeLLMClient()
         # Narrative LLM call should NOT happen; AE clinical-picture +
-        # narrative source/case per report still do.
+        # narrative source/case per report + narrative demographics
+        # per report still do.
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeDemographics())
+        fake.seed_response(NarrativeDemographics())
 
         runner = PipelineRunner(
             report_loader=loader,
@@ -308,8 +325,9 @@ class TestLLMNarrativeIntegration:
             == NarrativeConsistency.INCONSISTENT
         )
         # Narrative LLM call skipped; AE clinical-picture (1) +
-        # narrative source/case (2 reports) = 3 calls.
-        assert len(fake.requests) == 3
+        # narrative source/case (2 reports) + narrative demographics
+        # (2 reports) = 5 calls.
+        assert len(fake.requests) == 5
         # No narrative verdict when using callback
         assert result.results[0].narrative_verdict is None
 
@@ -607,3 +625,206 @@ class TestFrozenSourceCaseExtractions:
             if r.response_model is NarrativeSourceCase
         ]
         assert len(src_requests) == 2
+
+
+# ===================================================================
+# Frozen narrative-demographics bundles
+# ===================================================================
+
+class TestFrozenNarrativeDemographics:
+
+    def test_full_coverage_skips_all_demographics_llm_calls(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Bundle covers both reports → zero NarrativeDemographics calls."""
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        # Source/case extractions still fire per report.
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+
+        bundle = FrozenNarrativeDemographics(
+            extractions={
+                "R001": NarrativeDemographics(),
+                "R002": NarrativeDemographics(),
+            }
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_narrative_demographics=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        demo_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeDemographics
+        ]
+        assert demo_requests == []
+
+    def test_partial_bundle_falls_back_to_live_extraction(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Only R001 in bundle → one live demographics call (for R002)."""
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+        # Exactly one demographics extraction call is expected — for R002.
+        fake.seed_response(NarrativeDemographics())
+
+        bundle = FrozenNarrativeDemographics(
+            extractions={"R001": NarrativeDemographics()}
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_narrative_demographics=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        demo_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeDemographics
+        ]
+        assert len(demo_requests) == 1
+
+    def test_no_llm_with_bundle(self, loader, stats_provider, pair_ab):
+        """Full-coverage bundle + no LLM client → batch still succeeds."""
+        bundle = FrozenNarrativeDemographics(
+            extractions={
+                "R001": NarrativeDemographics(),
+                "R002": NarrativeDemographics(),
+            }
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            frozen_narrative_demographics=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        assert batch.n_errors == 0
+
+    def test_empty_bundle_equivalent_to_none(
+        self, loader, stats_provider, pair_ab
+    ):
+        """extractions={} behaves identically to passing no bundle."""
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+        # Both R001 and R002 demographics still fire.
+        fake.seed_response(NarrativeDemographics())
+        fake.seed_response(NarrativeDemographics())
+
+        bundle = FrozenNarrativeDemographics(extractions={})
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_narrative_demographics=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        demo_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeDemographics
+        ]
+        assert len(demo_requests) == 2
+
+    def test_shared_report_across_pairs_extracted_once(
+        self, loader, stats_provider, pair_ab, pair_ac
+    ):
+        """Same report in two pairs → one demographics extraction per report."""
+        fake = FakeLLMClient()
+        for _ in range(2):
+            fake.seed_response(NarrativeVerdict(
+                consistency=NarrativeConsistency.CONSISTENT,
+            ))
+            fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        # Three unique reports across pair_ab and pair_ac:
+        # R001, R002, R003 — each extracted once for source/case and
+        # once for demographics.
+        for _ in range(3):
+            fake.seed_response(NarrativeSourceCase())
+        for _ in range(3):
+            fake.seed_response(NarrativeDemographics())
+
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        batch = runner_.run_batch([pair_ab, pair_ac])
+
+        assert batch.n_processed == 2
+        demo_requests = [
+            r for r in fake.requests
+            if r.response_model is NarrativeDemographics
+        ]
+        assert len(demo_requests) == 3
+
+    def test_structured_vs_narrative_same_age_no_inconsistency_end_to_end(
+        self, loader, stats_provider, pair_ac
+    ):
+        """End-to-end: bundle-injected narrative age makes structured
+        min-diff match, so no age inconsistency is raised.
+
+        R001 has structured age 54; R003 has structured age 28.
+        Structured-only min-diff is 26 (strong). Injecting a narrative
+        age of 28 for R001 via the bundle collapses min-diff to 0 →
+        the age check should produce no inconsistency. This is the
+        load-bearing integration check: it proves the full chain
+        (bundle → cache → kwarg → merge → generate_pair_features →
+        inconsistencies) wires generous matching without caller-side
+        glue.
+        """
+        fake = FakeLLMClient()
+        fake.seed_response(NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+        ))
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+
+        bundle = FrozenNarrativeDemographics(
+            extractions={
+                "R001": NarrativeDemographics(
+                    ages=[NarrativeAgeValue(
+                        value=28,
+                        unit="years",
+                        evidence="28-year-old",
+                    )],
+                ),
+                "R003": NarrativeDemographics(),
+            }
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            frozen_narrative_demographics=bundle,
+        )
+        batch = runner_.run_batch([pair_ac])
+
+        assert batch.n_processed == 1
+        assert batch.n_errors == 0
+        inconsistencies = batch.results[0].features.inconsistencies
+        age_issues = [i for i in inconsistencies if i.feature == "age"]
+        assert age_issues == []
