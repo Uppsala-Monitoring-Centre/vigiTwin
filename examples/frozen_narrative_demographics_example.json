@@ -1,0 +1,52 @@
+{
+  "extractions": {
+    "R001": {
+      "ages": [
+        {
+          "value": 55.0,
+          "unit": "years",
+          "evidence": "A 55-year-old male"
+        }
+      ],
+      "sexes": [
+        {
+          "value": "male",
+          "evidence": "A 55-year-old male"
+        }
+      ],
+      "weights": [
+        {
+          "value": 82.0,
+          "unit": "kg",
+          "evidence": "weight on admission: 82 kg"
+        },
+        {
+          "value": 79.5,
+          "unit": "kg",
+          "evidence": "weight on discharge was 79.5 kg"
+        }
+      ],
+      "heights": [
+        {
+          "value": 178.0,
+          "unit": "cm",
+          "evidence": "height 178 cm"
+        }
+      ],
+      "notes": "Weight at admission and discharge both reported."
+    },
+    "R002": {
+      "ages": [
+        {
+          "value": 67.0,
+          "unit": "years",
+          "evidence": "67-year-old patient"
+        }
+      ],
+      "sexes": [],
+      "weights": [],
+      "heights": [],
+      "notes": ""
+    }
+  }
+}

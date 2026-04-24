@@ -5,7 +5,7 @@ preprocesses LLM- and database-dependent artifacts once and stores them
 as frozen bundles. This module provides typed models for those artifacts
 and the providers/loaders that serve them back into the pipeline.
 
-Two artifacts are supported:
+Three artifacts are supported:
 
 - ``FrozenPairBundle`` — per-pair frequency counts. Served by
   ``FrozenStatsProvider`` as a drop-in ``StatsProvider``.
@@ -14,6 +14,13 @@ Two artifacts are supported:
   to ``PipelineRunner`` via the ``frozen_source_case_extractions``
   constructor kwarg; the runner seeds its internal extraction cache
   from the bundle so covered reports skip live LLM calls.
+- ``FrozenNarrativeDemographics`` — per-report narrative demographics
+  extractions (age / sex / weight / height candidates with evidence
+  quotes). Passed directly to ``PipelineRunner`` via the
+  ``frozen_narrative_demographics`` constructor kwarg; the runner
+  merges the candidates into each Report before downstream feature
+  generation so the existing generous min-difference / set-intersection
+  inconsistency checks include them automatically.
 
 Typical usage in the secure repo::
 
@@ -21,8 +28,10 @@ Typical usage in the secure repo::
         FrozenPairBundle,
         FrozenScopeStats,
         FrozenSourceCaseExtractions,
+        FrozenNarrativeDemographics,
         FrozenStatsProvider,
         save_frozen_source_case_extractions,
+        save_frozen_narrative_demographics,
     )
     from llm_dup_dev.pipeline.runner import PipelineRunner
 
@@ -46,18 +55,27 @@ Typical usage in the secure repo::
     provider = FrozenStatsProvider(bundles)
 
     # Per-report extractions (one LLM call per unique report_id, once).
-    extractions = FrozenSourceCaseExtractions(
+    source_case = FrozenSourceCaseExtractions(
         extractions={
             "R001": extract_source_case(llm, "R001", r1.narrative),
             "R002": extract_source_case(llm, "R002", r2.narrative),
         }
     )
-    save_frozen_source_case_extractions(extractions, "source_case.json")
+    save_frozen_source_case_extractions(source_case, "source_case.json")
+
+    demographics = FrozenNarrativeDemographics(
+        extractions={
+            "R001": extract_narrative_demographics(llm, "R001", r1.narrative),
+            "R002": extract_narrative_demographics(llm, "R002", r2.narrative),
+        }
+    )
+    save_frozen_narrative_demographics(demographics, "demographics.json")
 
     runner = PipelineRunner(
         report_loader=loader,
         stats_provider=provider,
-        frozen_source_case_extractions=extractions,
+        frozen_source_case_extractions=source_case,
+        frozen_narrative_demographics=demographics,
     )
 
 ``FrozenStatsProvider`` implements both ``StatsProvider`` and
@@ -73,6 +91,7 @@ from typing import Sequence
 from pydantic import BaseModel
 
 from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 
 
@@ -372,5 +391,63 @@ def load_frozen_source_case_extractions(
     artifacts and the current code loudly rather than silently.
     """
     return FrozenSourceCaseExtractions.model_validate_json(
+        Path(path).read_text()
+    )
+
+
+# ------------------------------------------------------------------
+# Frozen narrative demographics extractions
+# ------------------------------------------------------------------
+
+
+class FrozenNarrativeDemographics(BaseModel):
+    """Precomputed per-report narrative demographics extractions.
+
+    Produced once by the secure repo (one LLM call per unique report)
+    and serialized as a single JSON artifact. Passed to
+    ``PipelineRunner`` to skip live LLM calls during offline
+    evaluation. The runner merges each covered extraction into the
+    corresponding ``Report`` via ``merge_narrative_demographics``
+    before downstream feature generation, so the existing generous
+    min-difference / set-intersection inconsistency checks include the
+    narrative candidates automatically.
+
+    Partial bundles are allowed: ``report_id`` keys present in the
+    bundle are served from it; missing ``report_id`` keys fall back to
+    live extraction (or to an empty ``NarrativeDemographics()`` when no
+    LLM client is configured on the runner). Same graceful-partial
+    semantics as ``FrozenSourceCaseExtractions``.
+
+    Attributes
+    ----------
+    extractions : dict[str, NarrativeDemographics]
+        Mapping of ``report_id`` → per-report extraction.
+    """
+
+    extractions: dict[str, NarrativeDemographics]
+
+
+def save_frozen_narrative_demographics(
+    bundle: FrozenNarrativeDemographics, path: str | Path
+) -> None:
+    """Serialize a demographics bundle to a JSON file.
+
+    Uses ``model_dump_json(indent=2)`` so the artifact is readable in
+    code review and diff tools.
+    """
+    Path(path).write_text(bundle.model_dump_json(indent=2))
+
+
+def load_frozen_narrative_demographics(
+    path: str | Path,
+) -> FrozenNarrativeDemographics:
+    """Load a demographics bundle from a JSON file.
+
+    Raises Pydantic ``ValidationError`` if the file contents do not
+    match the current ``FrozenNarrativeDemographics`` /
+    ``NarrativeDemographics`` schemas — surfaces drift between frozen
+    artifacts and the current code loudly rather than silently.
+    """
+    return FrozenNarrativeDemographics.model_validate_json(
         Path(path).read_text()
     )

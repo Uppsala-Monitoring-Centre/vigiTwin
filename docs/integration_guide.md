@@ -218,9 +218,50 @@ extraction = extract_narrative_demographics(
 enriched_report = merge_narrative_demographics(report, extraction)
 ```
 
-`merge_narrative_demographics` returns a copy of the `Report` with the extracted values appended to the existing `patient_*_values` lists, tagged with `sources=["narrative_llm"]`. Because the structured inconsistency checks already use min-difference / set-intersection across all candidate values, the narrative candidates participate automatically — no pipeline-side changes are needed beyond wiring the merge into the loader path.
+`merge_narrative_demographics` returns a copy of the `Report` with the extracted values appended to the existing `patient_*_values` lists, tagged with `sources=["narrative_llm"]`. Because the structured inconsistency checks already use min-difference / set-intersection across all candidate values, the narrative candidates participate automatically.
 
-Auto-enrichment inside `PipelineRunner` and a dedicated `FrozenNarrativeDemographics` bundle (parallel to `FrozenSourceCaseExtractions`) are not yet wired in — they land as follow-up PRs once real-data evaluation has exercised the extractor.
+`PipelineRunner.run_batch` performs this extract-and-merge per report automatically: each unique report in a batch is extracted once (memoized across pairs) and merged into its `Report` before feature generation. Callers do not need to invoke `extract_narrative_demographics` or `merge_narrative_demographics` by hand — constructing the runner with an `llm_client` is sufficient.
+
+### Freezing narrative demographics extractions
+
+Parallel to source/case, per-report narrative demographics can be frozen once and reused across offline evaluation runs. The same graceful-partial semantics apply: covered `report_id` keys skip the live LLM; missing keys fall back to live extraction (or to an empty `NarrativeDemographics()` when no LLM client is configured).
+
+**Preprocessing step (online, once):**
+
+```python
+from llm_dup_dev.data.offline import (
+    FrozenNarrativeDemographics,
+    save_frozen_narrative_demographics,
+)
+from llm_dup_dev.llm.tasks.narrative_demographics import (
+    extract_narrative_demographics,
+)
+
+extractions = {}
+for report in unique_reports_in_batch:
+    extractions[report.report_id] = extract_narrative_demographics(
+        llm_client, report.report_id, report.narrative
+    )
+
+bundle = FrozenNarrativeDemographics(extractions=extractions)
+save_frozen_narrative_demographics(bundle, "narrative_demographics.json")
+```
+
+**Evaluation step (offline, repeatable):**
+
+```python
+from llm_dup_dev.data.offline import load_frozen_narrative_demographics
+
+bundle = load_frozen_narrative_demographics("narrative_demographics.json")
+
+runner = PipelineRunner(
+    report_loader=your_report_loader,
+    stats_provider=offline_provider,
+    frozen_narrative_demographics=bundle,   # ← skips live LLM for covered reports
+)
+```
+
+The JSON artifact matches `schemas/frozen_narrative_demographics.schema.json` and is validated by `FrozenNarrativeDemographics.model_validate_json` on load.
 
 ---
 
