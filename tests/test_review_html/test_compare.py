@@ -371,6 +371,56 @@ class TestBuildPairViewModel:
         country_field = next(f for f in vm.demographics if f.label == "Country")
         assert country_field.status == ComparisonStatus.MISMATCH
 
+    def test_narrative_demographics_merged_into_view_model(self):
+        """Narrative-only weight should appear in the demographics table,
+        wrapped in <em> tags to indicate narrative provenance."""
+        from llm_dup_dev.models.narrative_demographics import (
+            NarrativeDemographics,
+            NarrativeMeasurementValue,
+        )
+
+        # r1 has no structured weight; r2 has a structured weight.
+        r1 = Report(
+            report_id="R1",
+            patient_sex_values=[SourcedValue(value="male", sources=["s"])],
+        )
+        r2 = Report(
+            report_id="R2",
+            patient_sex_values=[SourcedValue(value="male", sources=["s"])],
+            patient_weight_values=[
+                MeasurementValue(value=70.0, unit="kg", sources=["s"])
+            ],
+        )
+
+        # Without narrative demographics: weight row is missing-left.
+        vm_plain = build_pair_view_model(r1, r2, pair_id="R1__R2")
+        weight_plain = next(
+            (f for f in vm_plain.demographics if f.label == "Weight"), None
+        )
+        assert weight_plain is not None
+        assert weight_plain.status == ComparisonStatus.MISSING_LEFT
+        assert "<em>" not in weight_plain.left_display
+
+        # With a narrative-extracted weight on r1: weight row now matches
+        # and the narrative-derived value is italicised.
+        nd1 = NarrativeDemographics(
+            weights=[
+                NarrativeMeasurementValue(
+                    value=72.0, unit="kg", evidence="weighed 72 kg"
+                )
+            ]
+        )
+        vm_merged = build_pair_view_model(
+            r1, r2, pair_id="R1__R2", narrative_demographics_1=nd1
+        )
+        weight_merged = next(
+            f for f in vm_merged.demographics if f.label == "Weight"
+        )
+        assert weight_merged.status == ComparisonStatus.MATCH
+        assert "<em>72 kg</em>" in weight_merged.left_display
+        # r2's weight came from a structured field — not italicised.
+        assert "<em>" not in weight_merged.right_display
+
 
 # ===================================================================
 # Clinical date counts in view models

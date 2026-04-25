@@ -439,8 +439,8 @@ details.debug-section pre {
         {% for f in vm.demographics %}
             <tr class="{{ f.status.value }}"{% if f.tooltip %} title="{{ f.tooltip }}"{% endif %}>
                 <td>{{ f.label }}</td>
-                <td><span class="name-{{ f.status.value }}">{{ f.left_display }}</span></td>
-                <td><span class="name-{{ f.status.value }}">{{ f.right_display }}</span></td>
+                <td><span class="name-{{ f.status.value }}">{{ f.left_display | safe }}</span></td>
+                <td><span class="name-{{ f.status.value }}">{{ f.right_display | safe }}</span></td>
                 <td class="status-col">{{ status_badge(f.status) }}</td>
             </tr>
         {% endfor %}
@@ -723,8 +723,10 @@ details.debug-section pre {
                 <th>Scope</th>
                 <th>Total # reports</th>
                 <th># reports on {{ drugs_label }}</th>
+                {% if vm.freq_stats.matching_aes %}
                 <th># reports with {{ aes_label }}</th>
                 <th># reports on {{ drugs_label }} with {{ aes_label }}</th>
+                {% endif %}
             </tr>
         </thead>
         <tbody>
@@ -733,8 +735,10 @@ details.debug-section pre {
                 <td><strong>{{ scope.label }}</strong></td>
                 <td>{{ scope.N_total }}</td>
                 <td>{{ scope.N_drugs }}</td>
+                {% if vm.freq_stats.matching_aes %}
                 <td>{{ scope.N_AEs }}</td>
                 <td>{{ scope.N_drugs_AEs }}</td>
+                {% endif %}
             </tr>
         {% endfor %}
         </tbody>
