@@ -126,6 +126,12 @@ class PairResult:
         unified findings) when an LLM client was used.  ``None`` when
         no LLM client was configured (the merged ``PairFeatures`` will
         carry status NOT_ASSESSED with reason ``"no_llm_client"``).
+    narrative_demographics_1, narrative_demographics_2 : NarrativeDemographics or None
+        The per-report narrative-demographics extractions used during
+        feature generation, carried through so downstream consumers
+        (notably the HTML review renderer) can re-apply
+        ``merge_narrative_demographics`` and surface the extracted
+        candidates in the demographics table.
     """
 
     pair_id: str
@@ -134,6 +140,8 @@ class PairResult:
     narrative_verdict: NarrativeVerdict | None = None
     ae_clinical_picture: AEClinicalPictureResult | None = None
     source_case_assessment: SourceCaseAssessment | None = None
+    narrative_demographics_1: NarrativeDemographics | None = None
+    narrative_demographics_2: NarrativeDemographics | None = None
 
     @property
     def final_label(self) -> str:
@@ -331,6 +339,8 @@ class PipelineRunner:
             narrative_verdict=narrative_verdict,
             ae_clinical_picture=ae_clinical_picture,
             source_case_assessment=source_case_assessment,
+            narrative_demographics_1=narrative_demographics_1,
+            narrative_demographics_2=narrative_demographics_2,
         )
 
     def _assess_narrative(

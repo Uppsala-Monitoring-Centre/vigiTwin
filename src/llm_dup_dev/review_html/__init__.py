@@ -44,6 +44,7 @@ from typing import Sequence
 
 from llm_dup_dev.data.offline import FrozenPairBundle
 from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.pipeline.runner import PairResult
@@ -75,6 +76,8 @@ class PairRenderInput:
     external_url_label: str = "External link"
     frozen_bundle: FrozenPairBundle | None = None
     annotation: dict | None = None
+    narrative_demographics_1: NarrativeDemographics | None = None
+    narrative_demographics_2: NarrativeDemographics | None = None
 
 
 def render_pair_html(
@@ -89,6 +92,8 @@ def render_pair_html(
     frozen_bundle: FrozenPairBundle | None = None,
     include_debug: bool = False,
     annotation: dict | None = None,
+    narrative_demographics_1: NarrativeDemographics | None = None,
+    narrative_demographics_2: NarrativeDemographics | None = None,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render a single pair to a standalone HTML file.
@@ -136,6 +141,8 @@ def render_pair_html(
         frozen_bundle=frozen_bundle,
         include_debug=include_debug,
         annotation=annotation,
+        narrative_demographics_1=narrative_demographics_1,
+        narrative_demographics_2=narrative_demographics_2,
     )
     return write_pair_html(vm, output_dir)
 
@@ -174,6 +181,8 @@ def render_batch_html(
             external_url_label=item.external_url_label,
             frozen_bundle=item.frozen_bundle,
             annotation=item.annotation,
+            narrative_demographics_1=item.narrative_demographics_1,
+            narrative_demographics_2=item.narrative_demographics_2,
         )
         for item in items
     ]
@@ -259,6 +268,8 @@ def render_result_html(
         frozen_bundle=frozen_bundle,
         include_debug=include_debug,
         annotation=annotation,
+        narrative_demographics_1=result.narrative_demographics_1,
+        narrative_demographics_2=result.narrative_demographics_2,
     )
     return write_pair_html(vm, output_dir)
 
@@ -297,6 +308,8 @@ def render_results_html(
             frozen_bundle=item.frozen_bundle,
             include_debug=item.include_debug,
             annotation=item.annotation,
+            narrative_demographics_1=item.result.narrative_demographics_1,
+            narrative_demographics_2=item.result.narrative_demographics_2,
         )
         for item in items
     ]

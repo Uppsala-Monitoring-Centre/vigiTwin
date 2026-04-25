@@ -63,6 +63,42 @@ class TestFormatSourcedValues:
         )
         assert result == "female"
 
+    def test_narrative_only_wrapped_in_em(self):
+        result = format_sourced_values(
+            [SourcedValue(value="female", sources=["narrative_llm"])]
+        )
+        assert result == "<em>female</em>"
+
+    def test_structured_not_wrapped_in_em(self):
+        result = format_sourced_values(
+            [SourcedValue(value="female", sources=["structured"])]
+        )
+        assert "<em>" not in result
+
+    def test_mixed_sources_not_wrapped_in_em(self):
+        result = format_sourced_values(
+            [SourcedValue(value="female", sources=["structured", "narrative_llm"])]
+        )
+        assert "<em>" not in result
+
+    def test_dedupe_drops_italics_when_any_contributor_structured(self):
+        """A value contributed by both structured and narrative is shown plain."""
+        result = format_sourced_values(
+            [
+                SourcedValue(value="female", sources=["structured"]),
+                SourcedValue(value="female", sources=["narrative_llm"]),
+            ]
+        )
+        assert "<em>" not in result
+
+    def test_html_special_chars_escaped(self):
+        result = format_sourced_values(
+            [SourcedValue(value="A&B<C", sources=["structured"])]
+        )
+        assert "&amp;" in result
+        assert "&lt;" in result
+        assert "<C" not in result
+
 
 # ---------------------------------------------------------------------------
 # format_age_values
@@ -95,6 +131,22 @@ class TestFormatAgeValues:
         assert "54 years" in result
         assert "55 years" in result
 
+    def test_narrative_only_wrapped_in_em(self):
+        result = format_age_values(
+            [AgeValue(value=42, unit="years", sources=["narrative_llm"])]
+        )
+        assert result == "<em>42 years</em>"
+
+    def test_mixed_segments_only_narrative_italicised(self):
+        result = format_age_values(
+            [
+                AgeValue(value=54, unit="years", sources=["structured"]),
+                AgeValue(value=55, unit="years", sources=["narrative_llm"]),
+            ]
+        )
+        assert "<em>55 years</em>" in result
+        assert "<em>54" not in result
+
 
 # ---------------------------------------------------------------------------
 # format_measurement_values
@@ -110,6 +162,18 @@ class TestFormatMeasurementValues:
             [MeasurementValue(value=165.0, unit="cm", sources=["structured"])]
         )
         assert result == "165 cm"
+
+    def test_narrative_only_wrapped_in_em(self):
+        result = format_measurement_values(
+            [MeasurementValue(value=70.0, unit="kg", sources=["narrative_llm"])]
+        )
+        assert result == "<em>70 kg</em>"
+
+    def test_structured_not_wrapped_in_em(self):
+        result = format_measurement_values(
+            [MeasurementValue(value=165.0, unit="cm", sources=["structured"])]
+        )
+        assert "<em>" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +196,18 @@ class TestFormatDateValues:
             [DateValue(value="2020-06", resolution="month", sources=["structured"])]
         )
         assert result == "2020-06"
+
+    def test_narrative_only_wrapped_in_em(self):
+        result = format_date_values(
+            [
+                DateValue(
+                    value="2020-06-12",
+                    resolution="day",
+                    sources=["narrative_llm"],
+                )
+            ]
+        )
+        assert result == "<em>2020-06-12</em>"
 
 
 # ---------------------------------------------------------------------------

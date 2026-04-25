@@ -31,8 +31,12 @@ from llm_dup_dev.feature_generation.matching import (
     _coarser_resolution,
     _truncate_to_resolution,
 )
+from llm_dup_dev.feature_generation.narrative_demographics import (
+    merge_narrative_demographics,
+)
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import (
     AdverseEvent,
@@ -860,6 +864,8 @@ def build_pair_view_model(
     frozen_bundle: FrozenPairBundle | None = None,
     include_debug: bool = False,
     annotation: dict | None = None,
+    narrative_demographics_1: NarrativeDemographics | None = None,
+    narrative_demographics_2: NarrativeDemographics | None = None,
 ) -> PairViewModel:
     """Build a complete comparison view model from two Reports.
 
@@ -888,12 +894,29 @@ def build_pair_view_model(
         ``"duplicates_assessment"`` key.  When provided, a human
         annotation panel is added to the page showing the label and
         whether it agrees with the pipeline classification.
+    narrative_demographics_1, narrative_demographics_2 : NarrativeDemographics, optional
+        Per-report narrative demographics extractions. When provided,
+        each is merged into the corresponding report via
+        ``merge_narrative_demographics`` before the demographics view
+        model is built, so narrative-derived candidates appear in the
+        demographics table alongside structured fields. Mirrors the
+        same merge ``PipelineRunner.run_pair`` performs internally for
+        feature generation; rendering needs an independent application
+        because the runner discards the enriched reports.
 
     Returns
     -------
     PairViewModel
         Ready for rendering by ``render.render_pair``.
     """
+    # Apply narrative demographics merge so narrative-extracted
+    # candidates participate in the demographics comparison. Returns
+    # copies; original Report objects are not mutated.
+    if narrative_demographics_1 is not None:
+        report_1 = merge_narrative_demographics(report_1, narrative_demographics_1)
+    if narrative_demographics_2 is not None:
+        report_2 = merge_narrative_demographics(report_2, narrative_demographics_2)
+
     # --- demographics (adaptive: skip if both empty) ---
     demographic_builders: dict[str, FieldComparison | None] = {
         "sex": _compare_sourced_values(
