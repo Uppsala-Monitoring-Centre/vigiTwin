@@ -79,6 +79,7 @@
   "clinical_date_findings": [],
   "ae_clinical_picture_status": "not_assessed",
   "ae_clinical_picture_reason": "no_llm_client",
+  "ae_clinical_picture_method": "",
   "ae_clinical_picture_counts": {
     "n_minor": 0,
     "n_moderate": 0,
@@ -86,6 +87,7 @@
     "n_decisive": 0
   },
   "ae_clinical_picture_reasoning": "",
+  "ae_clinical_picture_rule_based_details": null,
   "narrative_consistency": "consistent",
   "source_case_assessment": null,
   "evidence_summary": {

@@ -215,6 +215,26 @@ class AEClinicalPictureCountsVM(BaseModel):
         return self.n_minor + self.n_moderate + self.n_strong + self.n_decisive
 
 
+class AEClinicalPictureRuleDetailsVM(BaseModel):
+    """View model for the deterministic AE clinical-picture audit trail.
+
+    Surfaces the Step-1 most-granular MedDRA overlap level and the
+    directional Step-2 unmatched / matched PT counts so reviewers can
+    inspect why the rule-based assessor returned a given verdict.
+    """
+
+    step1_overlap_level: str  # "pt" | "hlt" | "hlgt" | "soc" | "none"
+    step1_severity: str | None  # "minor" | "moderate" | ... | None == no inconsistency
+    step2_r1_to_r2_u: int = 0
+    step2_r1_to_r2_m: int = 0
+    step2_r1_to_r2_severity: str | None = None
+    step2_r2_to_r1_u: int = 0
+    step2_r2_to_r1_m: int = 0
+    step2_r2_to_r1_severity: str | None = None
+    investigations_excluded_step2: bool = True
+    missing_hierarchy_warnings: list[str] = Field(default_factory=list)
+
+
 class FeaturesSummaryVM(BaseModel):
     """View model for the optional PairFeatures evidence section."""
 
@@ -242,11 +262,14 @@ class FeaturesSummaryVM(BaseModel):
         default_factory=list
     )
 
-    # AE clinical-picture (LLM-assisted)
+    # AE clinical-picture (LLM-assisted or rule-based)
     ae_clinical_picture_status: str | None = None  # "assessed" | "not_assessed"
     ae_clinical_picture_reason: str = ""
+    ae_clinical_picture_method: str | None = None  # "llm" | "rule_based" | None
     ae_clinical_picture_counts: AEClinicalPictureCountsVM | None = None
     ae_clinical_picture_reasoning: str = ""
+    # Populated only when method == "rule_based"
+    ae_clinical_picture_rule_details: AEClinicalPictureRuleDetailsVM | None = None
 
 
 class ClassificationSummaryVM(BaseModel):

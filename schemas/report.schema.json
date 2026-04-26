@@ -1,7 +1,7 @@
 {
   "$defs": {
     "AdverseEvent": {
-      "description": "An adverse event reported as a MedDRA Preferred Term (PT).\n\nAdverse events are treated as sets when comparing reports.\n\nSee: docs/data_contracts.md \u00a7 Adverse Events",
+      "description": "An adverse event reported as a MedDRA Preferred Term (PT).\n\nAdverse events are treated as sets when comparing reports.\n\nThe optional ``primary_hlt_name`` / ``primary_hlgt_name`` /\n``primary_soc_name`` carry the primary MedDRA hierarchy path for\nthe PT (i.e. the HLT/HLGT/SOC where ``PRIMARY_SOC_FG = 'Y'``). They\nare populated by the secure-side report loader when MedDRA hierarchy\ninfo is available; older frozen data and synthetic fixtures leave\nthem as ``None``. The deterministic AE clinical-picture assessor\n(:mod:`llm_dup_dev.feature_generation.ae_clinical_picture_rules`)\ndegrades gracefully when these are absent.\n\nSee: docs/data_contracts.md \u00a7 Adverse Events",
       "properties": {
         "pt_name": {
           "title": "Pt Name",
@@ -25,6 +25,42 @@
             }
           ],
           "default": null
+        },
+        "primary_hlt_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Hlt Name"
+        },
+        "primary_hlgt_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Hlgt Name"
+        },
+        "primary_soc_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Soc Name"
         }
       },
       "required": [

@@ -637,13 +637,18 @@ details.debug-section pre {
     {% endif %}
     {% endif %}
 
-    {# ── AE clinical-picture status panel (LLM-assisted) ── #}
+    {# ── AE clinical-picture status panel (LLM-assisted or rule-based) ── #}
     {% if vm.features_summary.ae_clinical_picture_status %}
     {%- set ae_status = vm.features_summary.ae_clinical_picture_status %}
     {%- set ae_counts = vm.features_summary.ae_clinical_picture_counts %}
+    {%- set ae_method = vm.features_summary.ae_clinical_picture_method %}
+    {%- set ae_rule = vm.features_summary.ae_clinical_picture_rule_details %}
     <div class="ae-cp-panel">
         <span class="label">AE clinical-picture:</span>
         <span class="ae-cp-status-{{ ae_status }}">{{ ae_status | replace('_', ' ') }}</span>
+        {% if ae_method %}
+        &nbsp;<span style="font-size: 12px; color: #586069;">[{{ ae_method | replace('_', ' ') }}]</span>
+        {% endif %}
         {% if ae_status == 'assessed' and ae_counts %}
         &nbsp;&middot;&nbsp;
         {{ ae_counts.n_minor }} minor, {{ ae_counts.n_moderate }} moderate,
@@ -656,6 +661,56 @@ details.debug-section pre {
         <details class="ae-cp-reasoning" style="margin-top: 4px;">
             <summary style="cursor: pointer; font-size: 12px; color: #586069;">LLM reasoning</summary>
             <div style="font-size: 12px; color: #24292e; white-space: pre-wrap; margin-top: 4px;">{{ vm.features_summary.ae_clinical_picture_reasoning }}</div>
+        </details>
+        {% endif %}
+        {% if ae_rule %}
+        <details class="ae-cp-rule-details" style="margin-top: 4px;">
+            <summary style="cursor: pointer; font-size: 12px; color: #586069;">Rule-based audit (Step 1 / Step 2)</summary>
+            <div style="font-size: 12px; color: #24292e; margin-top: 4px;">
+                <div>
+                    <strong>Step 1</strong> (symmetric, includes Investigations):
+                    most-granular shared MedDRA level =
+                    <code>{{ ae_rule.step1_overlap_level | upper }}</code>
+                    &nbsp;&rarr;&nbsp;
+                    {% if ae_rule.step1_severity %}
+                        severity <code>{{ ae_rule.step1_severity }}</code>
+                    {% else %}
+                        no inconsistency
+                    {% endif %}
+                </div>
+                <div style="margin-top: 2px;">
+                    <strong>Step 2 R1 &rarr; R2</strong>:
+                    U = {{ ae_rule.step2_r1_to_r2_u }},
+                    M = {{ ae_rule.step2_r1_to_r2_m }},
+                    severity =
+                    {% if ae_rule.step2_r1_to_r2_severity %}
+                        <code>{{ ae_rule.step2_r1_to_r2_severity }}</code>
+                    {% else %}
+                        none
+                    {% endif %}
+                </div>
+                <div>
+                    <strong>Step 2 R2 &rarr; R1</strong>:
+                    U = {{ ae_rule.step2_r2_to_r1_u }},
+                    M = {{ ae_rule.step2_r2_to_r1_m }},
+                    severity =
+                    {% if ae_rule.step2_r2_to_r1_severity %}
+                        <code>{{ ae_rule.step2_r2_to_r1_severity }}</code>
+                    {% else %}
+                        none
+                    {% endif %}
+                </div>
+                <div style="margin-top: 2px; color: #586069;">
+                    Investigations SOC excluded from Step 2:
+                    {{ 'yes' if ae_rule.investigations_excluded_step2 else 'no' }}
+                </div>
+                {% if ae_rule.missing_hierarchy_warnings %}
+                <div style="margin-top: 2px; color: #b08800;">
+                    Missing MedDRA hierarchy on:
+                    {{ ae_rule.missing_hierarchy_warnings | join(', ') }}
+                </div>
+                {% endif %}
+            </div>
         </details>
         {% endif %}
     </div>

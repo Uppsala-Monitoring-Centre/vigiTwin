@@ -263,10 +263,26 @@ adverse_events: [
     "start_date": {
       "value": "2020-05-15",
       "resolution": "day"
-    }
+    },
+
+    "primary_hlt_name": "disturbances in consciousness nec",
+    "primary_hlgt_name": "neurological disorders nec",
+    "primary_soc_name": "nervous system disorders"
   }
 ]
 ```
+
+The optional `primary_hlt_name`, `primary_hlgt_name`, and
+`primary_soc_name` carry the **primary MedDRA hierarchy path** for the
+PT (i.e. the HLT/HLGT/SOC where `PRIMARY_SOC_FG = 'Y'`). They are
+populated by the secure-side report loader when MedDRA hierarchy info
+is available; older frozen data and synthetic fixtures leave them as
+`null`. The deterministic AE clinical-picture assessor (see *AE
+Clinical-Picture Inconsistency* below) consumes these fields and
+degrades gracefully (`status = "not_assessed"`, reason
+`"missing_hierarchy"`) when none of the PTs in either report carry
+hierarchy info. Names are preferred over numeric MedDRA codes;
+hierarchy-name comparisons are case-folded downstream.
 
 ------
 
@@ -420,10 +436,12 @@ Example structure:
 
   "ae_clinical_picture_status": "not_assessed",
   "ae_clinical_picture_reason": "no_llm_client",
+  "ae_clinical_picture_method": "",
   "ae_clinical_picture_counts": {
     "n_minor": 0, "n_moderate": 0, "n_strong": 0, "n_decisive": 0
   },
   "ae_clinical_picture_reasoning": "",
+  "ae_clinical_picture_rule_based_details": null,
 
   "narrative_consistency": "consistent",
 
@@ -550,23 +568,33 @@ clinical_date_findings: [
 
 ------
 
-## AE Clinical-Picture Inconsistency (LLM-assisted)
+## AE Clinical-Picture Inconsistency
 
-A second LLM-assisted component evaluates whether the two reports describe a clinically inconsistent **adverse-event picture** apart from chronology (which is handled by the rule-based clinical-date module). The component returns a list of distinct findings rather than a single global label, and its severity counts are merged into `inconsistency_counts` after a deterministic dedup step.
+A dedicated component evaluates whether the two reports describe a clinically inconsistent **adverse-event picture** apart from chronology (which is handled by the rule-based clinical-date module). Two assessors share the same output shape:
 
-### Status
+* **LLM-assisted** ([`llm/tasks/ae_clinical_picture.py`](../src/llm_dup_dev/llm/tasks/ae_clinical_picture.py)) — returns a list of distinct findings; severity counts are merged into `inconsistency_counts` after a deterministic dedup step that suppresses subordinate findings under a decisive global mismatch.
+* **Rule-based / deterministic** ([`feature_generation/ae_clinical_picture_rules.py`](../src/llm_dup_dev/feature_generation/ae_clinical_picture_rules.py)) — uses MedDRA hierarchy alone (PT / primary HLT / primary HLGT / primary SOC). Suitable for organisations or settings where LLM use is not possible. Step 1 (symmetric, including Investigations PTs) finds the most-granular shared hierarchy level; Step 2 (directional, excluding Investigations PTs) measures unmatched clinical burden in each direction.
+
+The selected assessor is recorded on `ae_clinical_picture_method`; the orchestrator (`PipelineRunner`) chooses one via `ae_clinical_picture_mode` (default `"auto"`: LLM if a client is configured, otherwise rule-based). See `integration_guide.md` § *AE clinical-picture mode* for the dispatch rules.
+
+### Status, reason, method
 
 ```
 ae_clinical_picture_status: "assessed" | "not_assessed"
 ae_clinical_picture_reason: "" | "no_llm_client" | "trivially_matched" | "llm_error"
+                          | "rule_based" | "llm_fallback_to_rule" | "missing_hierarchy"
+ae_clinical_picture_method: "" | "llm" | "rule_based"
 ```
 
-| status         | reason              | meaning                                                                |
-| -------------- | ------------------- | ---------------------------------------------------------------------- |
-| `assessed`     | `""`                | LLM was called and produced a verdict                                  |
-| `not_assessed` | `no_llm_client`     | no LLM client configured (default)                                     |
-| `not_assessed` | `trivially_matched` | normalised AE PT sets equal AND both narratives empty (LLM call skipped) |
-| `not_assessed` | `llm_error`         | LLM call raised an exception                                           |
+| status         | reason                  | method        | meaning |
+| -------------- | ----------------------- | ------------- | ------- |
+| `assessed`     | `""`                    | `llm`         | LLM was called and produced a verdict |
+| `assessed`     | `rule_based`            | `rule_based`  | Deterministic assessor ran (explicit `mode="rule_based"` or `mode="auto"` with no LLM client and hierarchy present) |
+| `assessed`     | `llm_fallback_to_rule`  | `rule_based`  | `mode="auto"`: LLM call raised → fell back to deterministic assessor |
+| `not_assessed` | `no_llm_client`         | `llm`         | `mode="llm"` and no LLM client configured |
+| `not_assessed` | `trivially_matched`     | `llm`         | normalised AE PT sets equal AND both narratives empty (LLM call skipped) |
+| `not_assessed` | `llm_error`             | `llm`         | `mode="llm"`: LLM call raised an exception |
+| `not_assessed` | `missing_hierarchy`     | `rule_based`  | rule-based path, but no PT on either report carries MedDRA hierarchy info |
 
 Downstream code must treat `not_assessed` as *no information*, not as "assessed and clean".
 
@@ -578,19 +606,40 @@ ae_clinical_picture_counts: {
 }
 ```
 
-Counts reflect *kept* findings only (excluding entries suppressed under a decisive global mismatch). They are also already included in `inconsistency_counts`; the separate field is retained for auditability and review surfacing.
+Counts reflect *kept* findings only (excluding entries suppressed under a decisive global mismatch in the LLM path). They are also already included in `inconsistency_counts`; the separate field is retained for auditability and review surfacing. The same shape is used by both assessors.
 
-### Reasoning
+### Reasoning (LLM only)
 
 ```
 ae_clinical_picture_reasoning: str
 ```
 
-Free-text LLM rationale summarising the overall AE clinical-picture comparison (a.k.a. the top-level `reasoning` field from the LLM verdict). Populated whenever `status == "assessed"`, independent of whether any findings were emitted. Surfaced in the pair-review HTML as a collapsible "LLM reasoning" disclosure so reviewers can see the model's account of why it did (or did not) flag inconsistencies. Not used by any downstream logic.
+Free-text LLM rationale summarising the overall AE clinical-picture comparison (the top-level `reasoning` field from the LLM verdict). Populated whenever `method == "llm"` and `status == "assessed"`. The deterministic assessor leaves this empty and instead exposes a structured audit block (next section). Not used by any downstream logic.
+
+### Rule-based audit details
+
+```
+ae_clinical_picture_rule_based_details: {
+  "step1_overlap_level": "pt" | "hlt" | "hlgt" | "soc" | "none",
+  "step1_severity":      null | "minor" | "moderate" | "strong" | "decisive",
+  "step2_r1_to_r2_u":    int,
+  "step2_r1_to_r2_m":    int,
+  "step2_r1_to_r2_severity": null | "minor" | "moderate",
+  "step2_r2_to_r1_u":    int,
+  "step2_r2_to_r1_m":    int,
+  "step2_r2_to_r1_severity": null | "minor" | "moderate",
+  "investigations_excluded_step2": true,
+  "missing_hierarchy_warnings":   ["R001:pt_alpha", ...]
+} | null
+```
+
+Populated only when `method == "rule_based"`; `null` for the LLM path. Surfaced in the pair-review HTML as a collapsible "Rule-based audit (Step 1 / Step 2)" disclosure. See `duplicate_adjudication_spec.md` § *AE clinical-picture inconsistency* for the algorithm definition.
 
 ### Findings
 
-AE clinical-picture findings live in the unified `inconsistencies` list with `source = "llm_ae_clinical_picture"`. They use the extended `Inconsistency` fields:
+AE clinical-picture findings live in the unified `inconsistencies` list and use the extended `Inconsistency` fields. The `source` distinguishes the two assessors: `"llm_ae_clinical_picture"` vs. `"rule_ae_clinical_picture"`.
+
+LLM example:
 
 ```
 {
@@ -607,7 +656,35 @@ AE clinical-picture findings live in the unified `inconsistencies` list with `so
 }
 ```
 
-Suppressed entries (`suppressed = true`, `suppressed_by = "decisive_global_mismatch"`) are kept in the master list for transparency in human review but are excluded from the severity counts.
+Rule-based example (Step 1 + Step 2 each emit their own row when severity is non-null):
+
+```
+{
+  "feature": "ae_clinical_picture:hierarchy_overlap:hlt",
+  "severity": "minor",
+  "description": "Most granular shared MedDRA level: HLT.",
+  "source": "rule_ae_clinical_picture",
+  "kind": "global_picture_overlap",
+  "terms": [],
+  "cluster_label": "",
+  "suppressed": false,
+  "suppressed_by": ""
+}
+```
+
+```
+{
+  "feature": "ae_clinical_picture:unmatched_burden:r2_to_r1",
+  "severity": "moderate",
+  "description": "R2 carries 4 non-Investigations PT(s) without an HLT-level match in R1 (M=1).",
+  "source": "rule_ae_clinical_picture",
+  "kind": "unmatched_burden",
+  "terms": ["pallor", "loss of consciousness", "mydriasis", "urinary incontinence"],
+  ...
+}
+```
+
+Suppressed entries (`suppressed = true`, `suppressed_by = "decisive_global_mismatch"`) only arise on the LLM path; they are kept in the master list for transparency but excluded from the severity counts.
 
 ------
 

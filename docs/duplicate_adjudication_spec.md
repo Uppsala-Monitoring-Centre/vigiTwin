@@ -518,9 +518,16 @@ This output is later interpreted together with the matching evidence and detecte
 
 ### AE clinical-picture inconsistency
 
-A second LLM-assisted component evaluates whether the two reports describe a clinically inconsistent **adverse-event picture** — independently of chronology, which is handled by the rule-based clinical-date inconsistency module. The motivation is that two reports can share dates yet describe clinically different AE pictures (and conversely differ in wording while describing the same picture); rule-based set comparison alone cannot distinguish these.
+A dedicated component evaluates whether the two reports describe a clinically inconsistent **adverse-event picture** — independently of chronology, which is handled by the rule-based clinical-date inconsistency module. The motivation is that two reports can share dates yet describe clinically different AE pictures (and conversely differ in wording while describing the same picture); rule-based set comparison alone cannot distinguish these.
 
-#### Output shape
+Two interchangeable assessors produce the same `AEClinicalPictureResult` shape:
+
+* **LLM-assisted** — the original component; uses an LLM to read AE lists plus narratives and emit clinically grouped findings.
+* **Rule-based / deterministic** — a non-LLM fallback for organisations or settings where LLM use is not possible. Uses the primary MedDRA hierarchy alone (PT / primary HLT / primary HLGT / primary SOC).
+
+`PipelineRunner.ae_clinical_picture_mode` (`"llm"` | `"rule_based"` | `"auto"`, default `"auto"`) selects between them; `"auto"` uses the LLM when a client is configured and falls back to the rule-based assessor otherwise (and on LLM exception). `ae_clinical_picture_method` on `PairFeatures` records which path produced the result.
+
+#### LLM-assisted assessor — output shape
 
 The LLM returns a list of distinct, clinically non-redundant findings rather than a single global label. Each finding carries:
 
@@ -530,7 +537,7 @@ The LLM returns a list of distinct, clinically non-redundant findings rather tha
 
 The findings are post-processed by a deterministic dedup step: when any finding has `kind = global_picture_mismatch` and `severity = decisive`, all other findings are suppressed from the severity counts. Suppressed findings remain in the master inconsistency list (with `suppressed = true` and a `suppressed_by` reason) so reviewers can see the full LLM reasoning.
 
-#### Severity rubric
+#### LLM-assisted assessor — severity rubric
 
 | Severity | Interpretation |
 | --- | --- |
@@ -541,22 +548,65 @@ The findings are post-processed by a deterministic dedup step: when any finding 
 
 The model is instructed to anti-overcount: group related unmatched AEs into a single finding, tolerate a few unmatched terms in long lists with broad overlap, treat one-sided subset-style differences leniently, and avoid stacking subordinate findings under a decisive global mismatch.
 
+#### Rule-based assessor — algorithm
+
+Inputs: each `AdverseEvent` carries the primary MedDRA hierarchy (`primary_hlt_name`, `primary_hlgt_name`, `primary_soc_name`). All hierarchy-name comparisons are case-folded; empty / missing values never match. The rule-based assessor mimics the *spirit* of the LLM prompt while remaining deterministic and auditable.
+
+**Step 1 — global clinical picture overlap (symmetric, includes Investigations PTs).**
+Find the most granular shared level between any reported PT in report 1 and any in report 2:
+
+| Most granular overlap | Severity |
+| --- | --- |
+| exact PT match | none |
+| shared primary HLT | minor |
+| shared primary HLGT | moderate |
+| shared primary SOC | strong |
+| no shared primary SOC | decisive |
+
+Step 1 deliberately uses *all* reported PTs, including PTs in the Investigations SOC, and looks for any shared clinical core (not a dominant/majority-level approach).
+
+**Step 2 — directional unmatched clinical content (computed for both `R1 → R2` and `R2 → R1`, excludes Investigations PTs).**
+For source report A and target report B, filter out PTs whose primary SOC is Investigations on both sides. Then for each remaining source PT:
+
+- exact PT match in target → counts as `M`
+- else, source HLT present in target's HLT set → counts as `M` (clinically compatible coding difference)
+- else, source HLT non-empty and absent from target → counts as `U` (unmatched)
+- else (source HLT missing) → counts as `M` (cannot claim "unmatched" without hierarchy info; fail-safe)
+
+Severity:
+
+| Condition | Severity |
+| --- | --- |
+| `U == 0` | none |
+| `U == 1` | minor |
+| `U / (U + M) < 0.5` | minor |
+| otherwise | moderate |
+
+Step 2 intentionally counts **unmatched PT burden**, not clinically distinct unmatched clusters, so PTs that differ at PT level but share an HLT do not count as unmatched. Bidirectional unmatched burden therefore naturally produces a larger penalty than a simple subset relation. Investigations SOC PTs are excluded from both `U` and `M` for conceptual consistency, but Step 1 still considers them so that a shared lab-finding overlap is not lost.
+
+The full Step-1 / Step-2 audit (overlap level, directional U/M counts, Investigations exclusion flag, missing-hierarchy warnings) is persisted on `PairFeatures.ae_clinical_picture_rule_based_details` and surfaced in the pair-review HTML.
+
 #### Assessment status
 
 Findings are accompanied by a status that distinguishes "did look" from "did not look":
 
-| `ae_clinical_picture_status` | `ae_clinical_picture_reason` | When |
-| --- | --- | --- |
-| `assessed` | `""` | LLM was called and produced a verdict |
-| `not_assessed` | `no_llm_client` | no LLM client configured (default) |
-| `not_assessed` | `trivially_matched` | normalised AE PT sets equal AND both narratives empty (LLM call skipped — no information to assess) |
-| `not_assessed` | `llm_error` | LLM call raised an exception |
+| `ae_clinical_picture_status` | `ae_clinical_picture_reason` | `ae_clinical_picture_method` | When |
+| --- | --- | --- | --- |
+| `assessed` | `""` | `llm` | LLM was called and produced a verdict |
+| `assessed` | `rule_based` | `rule_based` | Deterministic assessor ran (`mode="rule_based"`, or `mode="auto"` with no LLM client and hierarchy present) |
+| `assessed` | `llm_fallback_to_rule` | `rule_based` | `mode="auto"`: LLM raised → fell back to deterministic assessor |
+| `not_assessed` | `no_llm_client` | `llm` | `mode="llm"` and no LLM client configured |
+| `not_assessed` | `trivially_matched` | `llm` | normalised AE PT sets equal AND both narratives empty (LLM call skipped — no information to assess) |
+| `not_assessed` | `llm_error` | `llm` | `mode="llm"`: LLM call raised an exception |
+| `not_assessed` | `missing_hierarchy` | `rule_based` | rule-based path, but no PT on either report carries MedDRA hierarchy info |
 
-Downstream code must treat `not_assessed` as *no information*, not as "assessed and clean". There is no rule-based fallback.
+Downstream code must treat `not_assessed` as *no information*, not as "assessed and clean".
 
 #### Integration with PairFeatures
 
-Findings are appended to the unified `PairFeatures.inconsistencies` list with `source = "llm_ae_clinical_picture"`; severity counts (excluding suppressed entries) are merged into `inconsistency_counts` alongside the rule-based and clinical-date counts that already feed the weighted inconsistency score. Per-component counts are also persisted (`ae_clinical_picture_counts`) for auditability and review surfacing.
+Findings from either assessor are appended to the unified `PairFeatures.inconsistencies` list. The `source` distinguishes them: `"llm_ae_clinical_picture"` vs. `"rule_ae_clinical_picture"`. Severity counts (excluding suppressed LLM entries) are merged into `inconsistency_counts` alongside the rule-based and clinical-date counts that already feed the weighted inconsistency score. Per-component counts are also persisted (`ae_clinical_picture_counts`) for auditability and review surfacing.
+
+Final duplicate classification logic remains rule-based and probability-anchored: this assessment feeds into the existing programmed adjudication via `inconsistency_counts`, never replacing it.
 
 ### Inconsistency Detection
 
