@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, Sequence
+from typing import Callable, Literal, Sequence
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.classifier.decision_logic import classify
@@ -46,6 +46,9 @@ from llm_dup_dev.data.offline import (
     FrozenSourceCaseExtractions,
 )
 from llm_dup_dev.data.protocols import PairContextSink, ReportLoader, StatsProvider
+from llm_dup_dev.feature_generation.ae_clinical_picture_rules import (
+    assess_ae_clinical_picture_rule_based,
+)
 from llm_dup_dev.feature_generation.matching import compute_matches
 from llm_dup_dev.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
@@ -211,6 +214,20 @@ class PipelineRunner:
         live extraction (or to an empty ``NarrativeDemographics()`` if
         ``llm_client`` is not set — merging an empty extraction is a
         no-op).
+    ae_clinical_picture_mode : {"llm", "rule_based", "auto"}, optional
+        Selects the AE clinical-picture assessor.
+
+        * ``"llm"`` — use the LLM task if a client is configured;
+          otherwise record ``NOT_ASSESSED`` with reason
+          ``"no_llm_client"`` (no fallback).
+        * ``"rule_based"`` — always use the deterministic, MedDRA-hierarchy
+          based assessor in
+          :mod:`llm_dup_dev.feature_generation.ae_clinical_picture_rules`.
+          Suitable for organisations/settings where LLM use is not
+          possible.
+        * ``"auto"`` (default) — prefer the LLM task when a client is
+          configured; otherwise (and on LLM error) fall back to the
+          deterministic assessor with reason ``"llm_fallback_to_rule"``.
     """
 
     def __init__(
@@ -222,6 +239,7 @@ class PipelineRunner:
         decision_thresholds: DecisionThresholds | None = None,
         frozen_source_case_extractions: FrozenSourceCaseExtractions | None = None,
         frozen_narrative_demographics: FrozenNarrativeDemographics | None = None,
+        ae_clinical_picture_mode: Literal["llm", "rule_based", "auto"] = "auto",
     ) -> None:
         self._loader = report_loader
         self._stats_provider = stats_provider
@@ -230,6 +248,7 @@ class PipelineRunner:
         self._decision_thresholds = decision_thresholds or DecisionThresholds()
         self._frozen_source_case = frozen_source_case_extractions
         self._frozen_narrative_demographics = frozen_narrative_demographics
+        self._ae_clinical_picture_mode = ae_clinical_picture_mode
 
     def run_pair(
         self,
@@ -382,20 +401,32 @@ class PipelineRunner:
         r1: Report,
         r2: Report,
     ) -> AEClinicalPictureResult:
-        """Assess AE clinical-picture inconsistency via the injected LLM client.
+        """Assess AE clinical-picture inconsistency.
 
-        Returns
-        -------
-        AEClinicalPictureResult
-            ``status=ASSESSED`` with findings + counts on success;
-            ``status=NOT_ASSESSED`` with a reason code on the no-LLM
-            path, the trivially-matched short-circuit (handled inside
-            the task), or LLM error.
+        Dispatches on ``ae_clinical_picture_mode``:
+
+        * ``"rule_based"`` — always use the deterministic assessor.
+        * ``"llm"`` — use the LLM task if a client is configured; else
+          ``NOT_ASSESSED("no_llm_client")``.
+        * ``"auto"`` (default) — LLM if configured; on missing client or
+          LLM exception, fall back to the deterministic assessor with
+          ``reason="llm_fallback_to_rule"``.
         """
+        mode = self._ae_clinical_picture_mode
+
+        if mode == "rule_based":
+            return assess_ae_clinical_picture_rule_based(r1, r2)
+
         if self._llm_client is None:
+            if mode == "auto":
+                return assess_ae_clinical_picture_rule_based(
+                    r1, r2, fallback_from_llm=True
+                )
+            # mode == "llm"
             return AEClinicalPictureResult(
                 status=AEClinicalPictureStatus.NOT_ASSESSED,
                 reason="no_llm_client",
+                method="llm",
             )
 
         try:
@@ -411,9 +442,14 @@ class PipelineRunner:
                 pair_id,
                 exc,
             )
+            if mode == "auto":
+                return assess_ae_clinical_picture_rule_based(
+                    r1, r2, fallback_from_llm=True
+                )
             return AEClinicalPictureResult(
                 status=AEClinicalPictureStatus.NOT_ASSESSED,
                 reason="llm_error",
+                method="llm",
             )
 
     def _extract_source_case(self, report: Report) -> NarrativeSourceCase | None:

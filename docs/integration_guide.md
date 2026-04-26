@@ -337,6 +337,7 @@ class SqlReportLoader:
 | `drugs[].substance` | WHODrug active substance name | Case-insensitive matching is handled downstream |
 | `drugs[].role` | Drug characterisation in the report | `"suspected"`, `"interacting"`, `"concomitant"`, or `null` (unknown). Used by drug-set inconsistency check. |
 | `adverse_events[].pt_name` | MedDRA Preferred Term | Case-insensitive matching is handled downstream |
+| `adverse_events[].primary_hlt_name` / `primary_hlgt_name` / `primary_soc_name` | Primary MedDRA hierarchy path for the PT (`PRIMARY_SOC_FG = 'Y'`). Optional — leave as `None` when unavailable | Used by the deterministic AE clinical-picture assessor (rule-based fallback). Populate from `MEDDRA_MD_HIERARCHY` when the secure side has access; the dev-side comparison is case-folded. Use the canonical full SOC name (e.g. `"Investigations"`, `"Cardiac disorders"`), not the abbreviation, so the Investigations-SOC exclusion works. |
 | `report_date_values` | Structured | Set `resolution` to "day", "month", or "year" based on available precision |
 | `reported_overall_ae_onset_date` | Narrative extraction (e.g. `CASE EVENT DATE: YYYYMMDD` on US reports) | Optional `PartialDate`. When supplied it overrides the derived overall AE onset date in clinical-date inconsistency detection. Leave as `None` to fall back to dev-side derivation. |
 | `narrative` | Free-text narrative from the report | Used by narrative analysis (future); set to `None` if unavailable |
@@ -345,7 +346,7 @@ See `schemas/report.schema.json` for the full JSON schema and `examples/report_e
 
 ### 2. LLMClient (optional)
 
-Enables LLM-based assessment of whether two reports describe a clinically inconsistent adverse-event picture. If omitted, the pipeline skips this step and records `ae_clinical_picture_status = "not_assessed"` with `ae_clinical_picture_reason = "no_llm_client"` — this has no effect on the classification.
+Enables LLM-based assessment of whether two reports describe a clinically inconsistent adverse-event picture. With the default `ae_clinical_picture_mode = "auto"`, omitting the client falls back to the deterministic, MedDRA-hierarchy-based assessor (`feature_generation/ae_clinical_picture_rules.py`) — see *AE clinical-picture mode* below. Selecting `mode = "llm"` explicitly opts out of the fallback: the pipeline then records `ae_clinical_picture_status = "not_assessed"` with `ae_clinical_picture_reason = "no_llm_client"` and the AE component contributes nothing to the classification.
 
 Implement the `LLMClient` protocol from `llm_dup_dev.llm.protocols`:
 
@@ -369,11 +370,30 @@ The client is injected via `PipelineRunner(llm_client=...)`. The protocol is str
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `ae_clinical_picture_status` | `"assessed"` / `"not_assessed"` | Whether the LLM assessment ran |
-| `ae_clinical_picture_reason` | str | Refines `not_assessed`: `""` (assessed), `"no_llm_client"`, `"trivially_matched"`, `"llm_error"` |
+| `ae_clinical_picture_status` | `"assessed"` / `"not_assessed"` | Whether the AE clinical-picture assessment ran |
+| `ae_clinical_picture_reason` | str | Refines status: `""` (LLM-assessed), `"no_llm_client"`, `"trivially_matched"`, `"llm_error"`, `"rule_based"`, `"llm_fallback_to_rule"`, `"missing_hierarchy"` |
+| `ae_clinical_picture_method` | `""` / `"llm"` / `"rule_based"` | Which assessor produced the result |
 | `ae_clinical_picture_counts` | `AEClinicalPictureCounts` | Finding counts by severity (minor / moderate / strong / decisive), after deduplication |
+| `ae_clinical_picture_rule_based_details` | `RuleBasedAEClinicalPictureDetails` or `null` | Step-1 / Step-2 audit trail (overlap level, U/M counts, missing-hierarchy warnings); populated only when `method == "rule_based"` |
 
 AE findings are also included in the unified `PairFeatures.inconsistencies` list alongside rule-based inconsistencies, and their counts are merged into `PairFeatures.inconsistency_counts`.
+
+#### AE clinical-picture mode
+
+`PipelineRunner(ae_clinical_picture_mode=...)` selects the assessor:
+
+| Mode | Behaviour |
+|------|-----------|
+| `"auto"` *(default)* | Use the LLM task when an `LLMClient` is configured. Otherwise — and on LLM exception — fall back to the deterministic `feature_generation/ae_clinical_picture_rules.py` assessor with `reason = "llm_fallback_to_rule"`. |
+| `"llm"` | LLM-only. No fallback: missing client or LLM error → `not_assessed`. Preserves pre-fallback behaviour. |
+| `"rule_based"` | Always use the deterministic, MedDRA-hierarchy-based assessor. Suitable for organisations or settings where LLM use is not possible. Requires `adverse_events[].primary_hlt_name` / `primary_hlgt_name` / `primary_soc_name` to be populated; without hierarchy on any PT the assessor returns `not_assessed("missing_hierarchy")`. |
+
+The deterministic assessor implements a two-step comparison:
+
+1. **Step 1 (symmetric, includes Investigations PTs)** — most-granular shared MedDRA level across all PT × PT pairs: PT match → no inconsistency; HLT → minor; HLGT → moderate; SOC → strong; nothing shared → decisive.
+2. **Step 2 (directional, excludes Investigations PTs)** — counts unmatched non-Investigations PTs (`U`) vs. PTs whose HLT is present in the other report (`M`); severity is `none` (`U=0`), `minor` (`U=1` or `U/(U+M) < 0.5`), or `moderate` otherwise. Computed independently for `R1 → R2` and `R2 → R1`.
+
+See `duplicate_adjudication_spec.md` § *AE clinical-picture inconsistency* for the full algorithm and rationale.
 
 ### 3. StatsProvider
 
@@ -448,7 +468,9 @@ from llm_dup_dev.models.report_pair import ReportPair
 runner = PipelineRunner(
     report_loader=SqlReportLoader(conn_str),
     stats_provider=SqlStatsProvider(conn_str),
-    llm_client=my_azure_client,   # optional; enables AE clinical-picture assessment
+    llm_client=my_azure_client,   # optional; with default mode="auto" the deterministic
+                                  # rule-based assessor is used as a fallback when omitted
+    # ae_clinical_picture_mode="auto",  # "llm" | "rule_based" | "auto" (default)
 )
 
 # Process a single pair

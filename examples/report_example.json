@@ -88,14 +88,20 @@
       "sources": [
         "structured"
       ],
-      "start_date": null
+      "start_date": null,
+      "primary_hlt_name": null,
+      "primary_hlgt_name": null,
+      "primary_soc_name": null
     },
     {
       "pt_name": "dizziness",
       "sources": [
         "structured"
       ],
-      "start_date": null
+      "start_date": null,
+      "primary_hlt_name": null,
+      "primary_hlgt_name": null,
+      "primary_soc_name": null
     }
   ],
   "reported_overall_ae_onset_date": {

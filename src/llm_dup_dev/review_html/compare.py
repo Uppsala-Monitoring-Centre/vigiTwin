@@ -50,6 +50,7 @@ from llm_dup_dev.models.report import (
 
 from .models import (
     AEClinicalPictureCountsVM,
+    AEClinicalPictureRuleDetailsVM,
     AEDetail,
     AERow,
     AnnotationVM,
@@ -629,6 +630,7 @@ def _build_features_summary(
         ],
         ae_clinical_picture_status=features.ae_clinical_picture_status.value,
         ae_clinical_picture_reason=features.ae_clinical_picture_reason,
+        ae_clinical_picture_method=features.ae_clinical_picture_method or None,
         ae_clinical_picture_counts=AEClinicalPictureCountsVM(
             n_minor=features.ae_clinical_picture_counts.n_minor,
             n_moderate=features.ae_clinical_picture_counts.n_moderate,
@@ -636,6 +638,39 @@ def _build_features_summary(
             n_decisive=features.ae_clinical_picture_counts.n_decisive,
         ),
         ae_clinical_picture_reasoning=features.ae_clinical_picture_reasoning,
+        ae_clinical_picture_rule_details=_build_rule_details_vm(
+            features.ae_clinical_picture_rule_based_details
+        ),
+    )
+
+
+def _build_rule_details_vm(
+    details,
+) -> AEClinicalPictureRuleDetailsVM | None:
+    """Translate the deterministic AE clinical-picture audit block to its VM."""
+    if details is None:
+        return None
+    return AEClinicalPictureRuleDetailsVM(
+        step1_overlap_level=details.step1_overlap_level.value,
+        step1_severity=(
+            details.step1_severity.value if details.step1_severity else None
+        ),
+        step2_r1_to_r2_u=details.step2_r1_to_r2_u,
+        step2_r1_to_r2_m=details.step2_r1_to_r2_m,
+        step2_r1_to_r2_severity=(
+            details.step2_r1_to_r2_severity.value
+            if details.step2_r1_to_r2_severity
+            else None
+        ),
+        step2_r2_to_r1_u=details.step2_r2_to_r1_u,
+        step2_r2_to_r1_m=details.step2_r2_to_r1_m,
+        step2_r2_to_r1_severity=(
+            details.step2_r2_to_r1_severity.value
+            if details.step2_r2_to_r1_severity
+            else None
+        ),
+        investigations_excluded_step2=details.investigations_excluded_step2,
+        missing_hierarchy_warnings=list(details.missing_hierarchy_warnings),
     )
 
 

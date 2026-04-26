@@ -655,7 +655,8 @@ class TestRunnerNoLLMClient:
             default_N_drugs_AEs=40,
         )
         runner = PipelineRunner(
-            report_loader=loader, stats_provider=stats
+            report_loader=loader, stats_provider=stats,
+            ae_clinical_picture_mode="llm",  # opt out of the auto rule-based fallback
         )
         pair = ReportPair(
             pair_id="R001__R002",
@@ -710,6 +711,7 @@ class TestRunnerNoLLMClient:
             report_loader=loader,
             stats_provider=stats,
             llm_client=fake,
+            ae_clinical_picture_mode="llm",  # opt out of the auto rule-based fallback
         )
         pair = ReportPair(
             pair_id="R001__R002",

@@ -11,6 +11,8 @@ See: docs/duplicate_adjudication_spec.md § Evidence components
 
 from __future__ import annotations
 
+from enum import Enum
+
 from pydantic import BaseModel, Field
 
 from .enums import (
@@ -180,20 +182,66 @@ class AEClinicalPictureCounts(BaseModel):
     n_decisive: int = 0
 
 
+class GlobalOverlapLevel(str, Enum):
+    """Most granular shared MedDRA-hierarchy level between two AE pictures.
+
+    Used by the deterministic AE clinical-picture assessor (Step 1).
+    """
+
+    PT = "pt"
+    HLT = "hlt"
+    HLGT = "hlgt"
+    SOC = "soc"
+    NONE = "none"
+
+
+class RuleBasedAEClinicalPictureDetails(BaseModel):
+    """Audit trail of the deterministic Step-1 / Step-2 AE clinical-picture
+    assessment. Surfaced on the result and on ``PairFeatures`` so the
+    review HTML and downstream tooling can display the underlying U/M
+    counts and overlap level alongside the bucketed severity counts.
+
+    See: feature_generation/ae_clinical_picture_rules.py
+    """
+
+    step1_overlap_level: GlobalOverlapLevel
+    step1_severity: InconsistencySeverity | None = None  # None = no inconsistency
+    step2_r1_to_r2_u: int = 0
+    step2_r1_to_r2_m: int = 0
+    step2_r1_to_r2_severity: InconsistencySeverity | None = None
+    step2_r2_to_r1_u: int = 0
+    step2_r2_to_r1_m: int = 0
+    step2_r2_to_r1_severity: InconsistencySeverity | None = None
+    investigations_excluded_step2: bool = True
+    missing_hierarchy_warnings: list[str] = Field(default_factory=list)
+
+
 class AEClinicalPictureResult(BaseModel):
     """Full result of the AE clinical-picture inconsistency assessment.
 
-    Returned by :func:`llm_dup_dev.llm.tasks.ae_clinical_picture.assess_ae_clinical_picture`
-    and threaded through the pipeline. ``findings`` are already in the
-    unified :class:`Inconsistency` shape, ready to be appended to
-    ``PairFeatures.inconsistencies`` (suppressed entries included).
+    Returned by either
+    :func:`llm_dup_dev.llm.tasks.ae_clinical_picture.assess_ae_clinical_picture`
+    (LLM-based) or
+    :func:`llm_dup_dev.feature_generation.ae_clinical_picture_rules.assess_ae_clinical_picture_rule_based`
+    (deterministic) and threaded through the pipeline.  ``findings`` are
+    already in the unified :class:`Inconsistency` shape, ready to be
+    appended to ``PairFeatures.inconsistencies`` (suppressed entries
+    included).
+
+    ``method`` distinguishes the two assessors.  ``rule_based_details``
+    is populated only when ``method == "rule_based"`` and carries the
+    Step-1 overlap level and Step-2 directional U/M counts for audit.
     """
 
     status: AEClinicalPictureStatus = AEClinicalPictureStatus.NOT_ASSESSED
-    reason: str = ""  # "" | "no_llm_client" | "trivially_matched" | "llm_error"
+    # "" (assessed) | "no_llm_client" | "trivially_matched" | "llm_error"
+    # | "rule_based" | "llm_fallback_to_rule" | "missing_hierarchy"
+    reason: str = ""
+    method: str = ""  # "" | "llm" | "rule_based"
     counts: AEClinicalPictureCounts = Field(default_factory=AEClinicalPictureCounts)
     findings: list[Inconsistency] = Field(default_factory=list)
-    reasoning: str = ""  # free-text LLM rationale for human review
+    reasoning: str = ""  # free-text rationale for human review (LLM only)
+    rule_based_details: RuleBasedAEClinicalPictureDetails | None = None
 
 
 class EvidenceSummary(BaseModel):
@@ -256,10 +304,15 @@ class PairFeatures(BaseModel):
         AEClinicalPictureStatus.NOT_ASSESSED
     )
     ae_clinical_picture_reason: str = ""
+    ae_clinical_picture_method: str = ""  # "" | "llm" | "rule_based"
     ae_clinical_picture_counts: AEClinicalPictureCounts = Field(
         default_factory=AEClinicalPictureCounts
     )
     ae_clinical_picture_reasoning: str = ""
+    # Populated only when method == "rule_based" — Step-1/Step-2 audit trail.
+    ae_clinical_picture_rule_based_details: (
+        RuleBasedAEClinicalPictureDetails | None
+    ) = None
 
     # Narrative assessment
     narrative_consistency: NarrativeConsistency

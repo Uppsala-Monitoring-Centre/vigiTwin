@@ -102,12 +102,24 @@ class AdverseEvent(BaseModel):
 
     Adverse events are treated as sets when comparing reports.
 
+    The optional ``primary_hlt_name`` / ``primary_hlgt_name`` /
+    ``primary_soc_name`` carry the primary MedDRA hierarchy path for
+    the PT (i.e. the HLT/HLGT/SOC where ``PRIMARY_SOC_FG = 'Y'``). They
+    are populated by the secure-side report loader when MedDRA hierarchy
+    info is available; older frozen data and synthetic fixtures leave
+    them as ``None``. The deterministic AE clinical-picture assessor
+    (:mod:`llm_dup_dev.feature_generation.ae_clinical_picture_rules`)
+    degrades gracefully when these are absent.
+
     See: docs/data_contracts.md § Adverse Events
     """
 
     pt_name: str
     sources: list[str] = Field(min_length=1)
     start_date: PartialDate | None = None
+    primary_hlt_name: str | None = None
+    primary_hlgt_name: str | None = None
+    primary_soc_name: str | None = None
 
 
 # ---------------------------------------------------------------------------

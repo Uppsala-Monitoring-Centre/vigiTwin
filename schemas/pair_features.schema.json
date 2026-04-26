@@ -216,6 +216,18 @@
       "title": "FeatureContribution",
       "type": "object"
     },
+    "GlobalOverlapLevel": {
+      "description": "Most granular shared MedDRA-hierarchy level between two AE pictures.\n\nUsed by the deterministic AE clinical-picture assessor (Step 1).",
+      "enum": [
+        "pt",
+        "hlt",
+        "hlgt",
+        "soc",
+        "none"
+      ],
+      "title": "GlobalOverlapLevel",
+      "type": "string"
+    },
     "Inconsistency": {
       "description": "A detected inconsistency between two reports.\n\nCarries entries from all sources: rule-based demographic/drug-set\nchecks and LLM-assisted AE clinical-picture findings. The optional\n``source``, ``kind``, ``rationale``, ``terms``, ``cluster_label``,\n``suppressed`` and ``suppressed_by`` fields support the richer\nLLM-derived entries while remaining backwards-compatible defaults\nfor existing rule-based call sites.\n\nSuppressed entries (``suppressed=True``) are kept in the master\nlist for transparency in human review but are excluded from the\nseverity counts that feed downstream decision logic.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Inconsistency Detection",
       "properties": {
@@ -437,6 +449,84 @@
       "title": "ReportingContextLevel",
       "type": "string"
     },
+    "RuleBasedAEClinicalPictureDetails": {
+      "description": "Audit trail of the deterministic Step-1 / Step-2 AE clinical-picture\nassessment. Surfaced on the result and on ``PairFeatures`` so the\nreview HTML and downstream tooling can display the underlying U/M\ncounts and overlap level alongside the bucketed severity counts.\n\nSee: feature_generation/ae_clinical_picture_rules.py",
+      "properties": {
+        "step1_overlap_level": {
+          "$ref": "#/$defs/GlobalOverlapLevel"
+        },
+        "step1_severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InconsistencySeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "step2_r1_to_r2_u": {
+          "default": 0,
+          "title": "Step2 R1 To R2 U",
+          "type": "integer"
+        },
+        "step2_r1_to_r2_m": {
+          "default": 0,
+          "title": "Step2 R1 To R2 M",
+          "type": "integer"
+        },
+        "step2_r1_to_r2_severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InconsistencySeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "step2_r2_to_r1_u": {
+          "default": 0,
+          "title": "Step2 R2 To R1 U",
+          "type": "integer"
+        },
+        "step2_r2_to_r1_m": {
+          "default": 0,
+          "title": "Step2 R2 To R1 M",
+          "type": "integer"
+        },
+        "step2_r2_to_r1_severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InconsistencySeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "investigations_excluded_step2": {
+          "default": true,
+          "title": "Investigations Excluded Step2",
+          "type": "boolean"
+        },
+        "missing_hierarchy_warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Hierarchy Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "step1_overlap_level"
+      ],
+      "title": "RuleBasedAEClinicalPictureDetails",
+      "type": "object"
+    },
     "SourceCaseAssessment": {
       "description": "Pair-level deterministic result of comparing two extractions.\n\nProduced by\n:func:`llm_dup_dev.feature_generation.source_case_comparison.compare_source_case`.\nNo LLM is involved at this stage.",
       "properties": {
@@ -585,6 +675,11 @@
       "title": "Ae Clinical Picture Reason",
       "type": "string"
     },
+    "ae_clinical_picture_method": {
+      "default": "",
+      "title": "Ae Clinical Picture Method",
+      "type": "string"
+    },
     "ae_clinical_picture_counts": {
       "$ref": "#/$defs/AEClinicalPictureCounts"
     },
@@ -592,6 +687,17 @@
       "default": "",
       "title": "Ae Clinical Picture Reasoning",
       "type": "string"
+    },
+    "ae_clinical_picture_rule_based_details": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RuleBasedAEClinicalPictureDetails"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "narrative_consistency": {
       "$ref": "#/$defs/NarrativeConsistency"

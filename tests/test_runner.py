@@ -21,10 +21,11 @@ from llm_dup_dev.models.narrative_demographics import (
 )
 from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 from llm_dup_dev.models.enums import (
+    AEClinicalPictureStatus,
     IndependenceAssessment,
     NarrativeConsistency,
 )
-from llm_dup_dev.models.report import AgeValue, Report, SourcedValue
+from llm_dup_dev.models.report import AdverseEvent, AgeValue, Report, SourcedValue
 from llm_dup_dev.models.report_pair import ReportPair
 from llm_dup_dev.pipeline.runner import (
     BatchResult,
@@ -828,3 +829,102 @@ class TestFrozenNarrativeDemographics:
         inconsistencies = batch.results[0].features.inconsistencies
         age_issues = [i for i in inconsistencies if i.feature == "age"]
         assert age_issues == []
+
+
+# ===================================================================
+# AE clinical-picture mode dispatch
+# ===================================================================
+
+class TestAEClinicalPictureMode:
+    """Verify the rule-based fallback / explicit-mode dispatch."""
+
+    @pytest.fixture
+    def hierarchy_loader(self):
+        """Loader whose reports' AEs carry MedDRA hierarchy."""
+        r1 = Report(
+            report_id="H1",
+            patient_sex_values=[SourcedValue(value="female", sources=["structured"])],
+            patient_age_values=[AgeValue(value=40, unit="years", sources=["structured"])],
+            country_of_origin_values=[SourcedValue(value="us", sources=["structured"])],
+            adverse_events=[
+                AdverseEvent(
+                    pt_name="arrhythmia", sources=["structured"],
+                    primary_hlt_name="cardiac arrhythmias",
+                    primary_hlgt_name="cardiac arrhythmias",
+                    primary_soc_name="cardiac disorders",
+                ),
+            ],
+        )
+        r2 = Report(
+            report_id="H2",
+            patient_sex_values=[SourcedValue(value="female", sources=["structured"])],
+            patient_age_values=[AgeValue(value=40, unit="years", sources=["structured"])],
+            country_of_origin_values=[SourcedValue(value="us", sources=["structured"])],
+            adverse_events=[
+                AdverseEvent(
+                    pt_name="rash", sources=["structured"],
+                    primary_hlt_name="rashes eruptions and exanthems nec",
+                    primary_hlgt_name="epidermal and dermal conditions",
+                    primary_soc_name="skin and subcutaneous tissue disorders",
+                ),
+            ],
+        )
+        return SyntheticReportLoader({r1.report_id: r1, r2.report_id: r2})
+
+    @pytest.fixture
+    def hierarchy_pair(self):
+        return ReportPair(pair_id="H1__H2", report_1_id="H1", report_2_id="H2")
+
+    def test_auto_mode_no_llm_falls_back_to_rule_based(
+        self, hierarchy_loader, stats_provider, hierarchy_pair
+    ):
+        runner_ = PipelineRunner(
+            report_loader=hierarchy_loader,
+            stats_provider=stats_provider,
+            # default ae_clinical_picture_mode = "auto"
+        )
+        batch = runner_.run_batch([hierarchy_pair])
+        features = batch.results[0].features
+        assert features.ae_clinical_picture_status == AEClinicalPictureStatus.ASSESSED
+        assert features.ae_clinical_picture_method == "rule_based"
+        assert features.ae_clinical_picture_reason == "llm_fallback_to_rule"
+        assert features.ae_clinical_picture_rule_based_details is not None
+        # AEs share no SOC → decisive Step-1 verdict.
+        assert features.ae_clinical_picture_counts.n_decisive == 1
+
+    def test_rule_based_mode_always_uses_rule(
+        self, hierarchy_loader, stats_provider, hierarchy_pair
+    ):
+        fake = FakeLLMClient()
+        # Seed responses for the other LLM-driven steps that run_batch
+        # always invokes (narrative comparison, source-case extraction).
+        fake.seed_response(NarrativeVerdict(consistency=NarrativeConsistency.NEUTRAL))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeDemographics())
+        fake.seed_response(NarrativeDemographics())
+
+        runner_ = PipelineRunner(
+            report_loader=hierarchy_loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            ae_clinical_picture_mode="rule_based",
+        )
+        batch = runner_.run_batch([hierarchy_pair])
+        features = batch.results[0].features
+        assert features.ae_clinical_picture_method == "rule_based"
+        assert features.ae_clinical_picture_reason == "rule_based"
+
+    def test_llm_mode_no_client_records_no_llm_client(
+        self, hierarchy_loader, stats_provider, hierarchy_pair
+    ):
+        runner_ = PipelineRunner(
+            report_loader=hierarchy_loader,
+            stats_provider=stats_provider,
+            ae_clinical_picture_mode="llm",
+        )
+        batch = runner_.run_batch([hierarchy_pair])
+        features = batch.results[0].features
+        assert features.ae_clinical_picture_status == AEClinicalPictureStatus.NOT_ASSESSED
+        assert features.ae_clinical_picture_reason == "no_llm_client"
+        assert features.ae_clinical_picture_method == "llm"

@@ -581,6 +581,7 @@ def _build_result_from_verdict(
     return AEClinicalPictureResult(
         status=AEClinicalPictureStatus.ASSESSED,
         reason="",
+        method="llm",
         counts=counts,
         findings=findings,
         reasoning=verdict.reasoning,
@@ -619,6 +620,7 @@ def assess_ae_clinical_picture(
         return AEClinicalPictureResult(
             status=AEClinicalPictureStatus.NOT_ASSESSED,
             reason="trivially_matched",
+            method="llm",
         )
 
     request = build_ae_clinical_picture_request(

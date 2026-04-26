@@ -217,8 +217,12 @@ def generate_pair_features(
         clinical_date_findings=clinical_date_findings,
         ae_clinical_picture_status=ae_clinical_picture.status,
         ae_clinical_picture_reason=ae_clinical_picture.reason,
+        ae_clinical_picture_method=ae_clinical_picture.method,
         ae_clinical_picture_counts=ae_clinical_picture.counts,
         ae_clinical_picture_reasoning=ae_clinical_picture.reasoning,
+        ae_clinical_picture_rule_based_details=(
+            ae_clinical_picture.rule_based_details
+        ),
         narrative_consistency=narrative_consistency,
         source_case_assessment=source_case_assessment,
         evidence_summary=evidence_summary,
