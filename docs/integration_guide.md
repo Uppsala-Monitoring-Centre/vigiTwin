@@ -395,6 +395,37 @@ The deterministic assessor implements a two-step comparison:
 
 See `duplicate_adjudication_spec.md` § *AE clinical-picture inconsistency* for the full algorithm and rationale.
 
+##### Wiring through `default_config.yaml`
+
+For deployments that flip between LLM and deterministic AE assessment per environment (e.g. an org that cannot use LLMs for AE clinical-picture specifically, but still uses one for narrative comparison), expose the mode in the secure repo's `configs/default_config.yaml`:
+
+```yaml
+# Selects the AE clinical-picture assessor.
+# One of: "llm" | "rule_based" | "auto" (default).
+ae_clinical_picture_mode: rule_based
+```
+
+Forward the value in the secure-side `make_pipeline()` factory:
+
+```python
+import yaml
+from llm_dup_dev.pipeline.runner import PipelineRunner
+
+with open("configs/default_config.yaml") as f:
+    cfg = yaml.safe_load(f) or {}
+
+runner = PipelineRunner(
+    report_loader=loader,
+    stats_provider=stats,
+    llm_client=llm_client,  # still used for narrative / source-case / demographics
+    ae_clinical_picture_mode=cfg.get("ae_clinical_picture_mode", "auto"),
+)
+```
+
+Keep this knob in the YAML, **not** in `PipelineConfig`: it's an orchestration / deployment switch (which assessor to dispatch), not a feature/scoring parameter. `PipelineConfig` stays focused on `DomainSizeConfig`, `InconsistencyThresholds`, `AnchorConfig`, etc.
+
+When the key is absent, the loader's `dict.get(..., "auto")` preserves backwards compatibility with existing YAML files.
+
 ### 3. StatsProvider
 
 Computes frequency statistics from the database for a given clinical context:
