@@ -731,6 +731,92 @@ Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclud
 
 ---
 
+## Run manifests
+
+A **run manifest** is a small YAML/JSON file written alongside a run's outputs that records *what was actually run*: the resolved pipeline configuration, decision thresholds, feature flags, dev-side package version and git commit, input/output paths, and any deployment-specific metadata supplied by the secure repo. The intent is reproducibility — given a results folder, a future operator can see which knobs were active without consulting external systems.
+
+Secure deployments should save **one `run_manifest.yaml` per run folder**. The contract:
+
+- The manifest must record **effective configuration** — the values that the pipeline actually used after defaults and overrides — not a hand-written intent file.
+- The manifest must **not contain secrets**. The utility redacts obvious secret-looking keys (`api_key`, `secret`, `token`, `password`, `connection_string`, …) and warns, but the call site should never pass them in the first place.
+- Deployment-specific metadata (secure repo commit, dataset snapshot, SQL loader version, Azure OpenAI deployment name, notebook/script name, command-line invocation) goes into `secure_context: dict[str, Any]`. The dev repo defines the field but does not prescribe its keys.
+
+### Usage
+
+```python
+import sys
+from pathlib import Path
+
+from llm_dup_dev.pipeline.runner import PipelineRunner
+from llm_dup_dev.run_manifest import build_run_manifest, write_run_manifest
+
+runner = PipelineRunner(
+    report_loader=loader,
+    stats_provider=stats,
+    llm_client=llm_client,
+    pipeline_config=pipeline_config,
+    decision_thresholds=decision_thresholds,
+    ae_clinical_picture_mode="auto",
+)
+batch = runner.run_batch(pairs)
+
+results_dir = Path("outputs/eval_2026-04-27")
+
+manifest = build_run_manifest(
+    runner=runner,
+    input_paths={"frozen_bundles": str(bundles_path)},
+    output_paths={"results_dir": str(results_dir)},
+    llm_config={
+        "deployment": "gpt-4o-prod",
+        "model": "gpt-4o",
+        "temperature": 0.0,
+    },
+    secure_context={
+        "secure_repo_commit": secure_sha,
+        "dataset_snapshot": "vigibase_2026Q1",
+        "sql_loader_version": "2.3.1",
+        "notebook": "eval_run_2026-04-27.ipynb",
+        "invocation": " ".join(sys.argv),
+    },
+    notes="Quarterly eval refresh",
+)
+write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
+```
+
+`build_run_manifest` extracts the resolved `PipelineConfig` and `DecisionThresholds` directly from the runner, so the manifest reflects defaults that were filled in alongside any overrides you passed. Auto-populated fields (`schema_version`, `created_at`, `run_id`, `dev_package.version`, `dev_git_commit`) require no caller action; missing git metadata or package metadata degrade to `None` rather than raising.
+
+`write_run_manifest` creates the output directory if needed and accepts any combination of `"yaml"` and `"json"` in `formats` (default: YAML only).
+
+### Manifest fields
+
+| Field | Type | Source | Meaning |
+|---|---|---|---|
+| `schema_version` | str | constant | Bump when the manifest layout changes incompatibly. Currently `"1.0"`. |
+| `created_at` | datetime (UTC) | auto / caller | When the manifest was built. |
+| `run_id` | str | auto / caller | Stable identifier for this run. Defaults to a 12-char hex token. |
+| `run_name` | str \| null | caller | Optional human-readable label. |
+| `dev_package.name` | str | auto | Always `"llm-dup-dev"`. |
+| `dev_package.version` | str \| null | auto | From `importlib.metadata`; `null` if the package is not installed via metadata (e.g. PYTHONPATH dev runs). |
+| `dev_git_commit` | str \| null | auto | Short SHA of the dev repo's HEAD; `null` if git is unavailable. |
+| `input_paths` | dict | caller | Free-form. Suggested keys: `frozen_bundles`, `frozen_source_case`, `frozen_narrative_demographics`, `report_loader`. |
+| `pipeline_config` | dict | runner / caller | `PipelineConfig.model_dump()` — *effective* values, defaults included. |
+| `decision_thresholds` | dict | runner / caller | `DecisionThresholds.model_dump()` — *effective* values. |
+| `feature_flags` | dict | runner / caller | When built from a runner: `ae_clinical_picture_mode`, `has_llm_client`, `has_frozen_source_case`, `has_frozen_narrative_demographics`. Caller-supplied keys merge on top. |
+| `llm_config` | dict \| null | caller | Non-secret LLM info (deployment, model, temperature, max_tokens). Secret-looking keys are auto-redacted. |
+| `output_paths` | dict | caller | Free-form. Suggested keys: `results_dir`, `review_html_dir`, `eval_summary`. |
+| `secure_context` | dict \| null | caller | Deployment-specific metadata. The dev repo does not prescribe keys; suggested values: `secure_repo_commit`, `dataset_snapshot`, `sql_loader_version`, `azure_deployment`, `notebook`, `invocation`. |
+| `notes` | str \| null | caller | Free-form prose. |
+
+### Secret redaction
+
+Keys in `llm_config` and `secure_context` whose names contain any of the following (case-insensitive substring match) are replaced with the literal string `"***REDACTED***"` and a `UserWarning` is emitted: `api_key`, `apikey`, `secret`, `token`, `password`, `passwd`, `credential`, `bearer`, `authorization`, `client_secret`, `connection_string`. Redaction recurses into nested dicts and lists. Treat the warning as a code smell — fix the call site rather than relying on the safety net.
+
+### Schema-version policy
+
+Bump `schema_version` only when the manifest's layout changes in a way that breaks downstream consumers (renamed fields, removed fields, type changes). Adding new optional fields does not require a bump.
+
+---
+
 ## Generating HTML review pages
 
 The `review_html` module produces standalone HTML files for human inspection of suspected duplicate pairs. It is a dev-side implementation — the secure repo only needs thin wrapper code to load `Report` objects and call the renderer. No database access occurs inside the renderer.
