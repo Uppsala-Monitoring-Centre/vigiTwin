@@ -36,6 +36,19 @@ class LLMClient(Protocol):
     The dev repo never instantiates a concrete client directly — it
     receives one via dependency injection (constructor argument or
     function parameter).
+
+    Optional ``info()`` method
+    --------------------------
+    Implementations *should* additionally expose::
+
+        def info(self) -> llm_dup_dev.llm.LLMInfo: ...
+
+    returning the model identity and default sampling parameters.
+    :func:`llm_dup_dev.run_manifest.build_run_manifest` calls it via
+    duck-typing to populate the manifest's ``llm_config`` block when the
+    caller doesn't supply one explicitly. Implementing ``info()`` is
+    encouraged for reproducibility but not enforced by the protocol —
+    clients without it still satisfy the structural ``isinstance`` check.
     """
 
     def generate(self, request: LLMRequest) -> LLMResponse:

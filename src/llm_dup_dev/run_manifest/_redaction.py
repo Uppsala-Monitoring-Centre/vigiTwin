@@ -23,8 +23,29 @@ SECRET_KEY_PATTERNS: tuple[str, ...] = (
 
 
 def _is_secret_key(key: str) -> bool:
+    """Return True when ``key`` looks secret-bearing.
+
+    Snake_case keys are split on underscores so single-segment patterns
+    (``"token"``, ``"secret"``, …) only match complete segments — this
+    avoids false positives like ``default_max_tokens`` matching the
+    ``"token"`` pattern via plural-form substring. Keys without
+    underscores fall back to substring matching so camelCase/lowercase
+    forms (``Authorization``, ``MyApiKey``) still trip.
+    """
     lowered = key.lower()
-    return any(pattern in lowered for pattern in SECRET_KEY_PATTERNS)
+    segments = lowered.split("_")
+    for pattern in SECRET_KEY_PATTERNS:
+        if "_" in pattern:
+            # Multi-segment pattern (e.g. ``api_key``): substring match.
+            if pattern in lowered:
+                return True
+        else:
+            if pattern in segments:
+                return True
+            # Camel/no-separator forms — fall back to substring.
+            if "_" not in lowered and pattern in lowered:
+                return True
+    return False
 
 
 def redact_secrets(

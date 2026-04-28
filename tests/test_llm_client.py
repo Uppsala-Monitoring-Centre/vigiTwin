@@ -3,7 +3,7 @@
 import pytest
 from pydantic import BaseModel
 
-from llm_dup_dev.llm import LLMClient, LLMRequest, LLMResponse, TokenUsage
+from llm_dup_dev.llm import LLMClient, LLMInfo, LLMRequest, LLMResponse, TokenUsage
 from llm_dup_dev.llm.fake import FakeLLMClient
 
 
@@ -163,6 +163,15 @@ class TestFakeClient:
 
         resp = fake.generate(_make_request())
         assert resp.model == "test-gpt-4o"
+
+    def test_info_reports_identity(self):
+        """info() returns an LLMInfo carrying the client's model name."""
+        fake = FakeLLMClient(model_name="test-gpt-4o")
+        info = fake.info()
+        assert isinstance(info, LLMInfo)
+        assert info.provider == "fake"
+        assert info.model == "test-gpt-4o"
+        assert info.default_temperature == 0.0
 
     def test_mixed_sequence(self):
         """Seed a mix of successes, raw responses, and errors."""

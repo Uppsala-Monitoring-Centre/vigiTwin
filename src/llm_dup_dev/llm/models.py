@@ -57,6 +57,52 @@ class TokenUsage:
 
 
 @dataclass(frozen=True)
+class LLMInfo:
+    """Identity and default sampling parameters of an :class:`LLMClient`.
+
+    Returned by an optional ``info()`` method on the client so that
+    :func:`llm_dup_dev.run_manifest.build_run_manifest` can record what
+    model and configuration a pipeline run used. Adding ``info()`` is
+    encouraged but not required by the :class:`LLMClient` protocol —
+    secure-side clients can implement it when convenient. When absent,
+    the manifest's ``llm_config`` is left empty (or whatever the caller
+    explicitly passes).
+
+    Parameters
+    ----------
+    provider : str
+        Stable identifier for the backend family, e.g. ``"azure_openai"``,
+        ``"openai"``, ``"anthropic"``, ``"fake"``.
+    model : str
+        Identifier of the model in use, e.g. ``"gpt-4o-2024-08-06"``.
+    deployment : str or None
+        Provider-specific deployment / endpoint identifier (Azure
+        deployment name, served-model id, …). ``None`` when not
+        applicable.
+    api_version : str or None
+        Provider API version pin (Azure ``api-version``, OpenAI Beta
+        header, etc.).
+    default_temperature : float or None
+        Default sampling temperature applied when an :class:`LLMRequest`
+        does not override it.
+    default_max_tokens : int or None
+        Default ``max_tokens`` cap applied when not overridden.
+    extra : dict[str, Any]
+        Free-form provider-specific metadata that is useful for
+        reproducibility but doesn't fit the structured fields (region,
+        seed policy, content-filter version, …). Keep small.
+    """
+
+    provider: str
+    model: str
+    deployment: str | None = None
+    api_version: str | None = None
+    default_temperature: float | None = None
+    default_max_tokens: int | None = None
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class LLMResponse:
     """Response from an LLM call.
 
