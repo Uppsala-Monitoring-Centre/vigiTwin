@@ -48,6 +48,13 @@ class FieldComparison(BaseModel):
     right_display: str
     status: ComparisonStatus
     tooltip: str = ""
+    # When this matched field contributed to L_match, its log-rarity
+    # contribution (-log10(p_f)) and the colour-bin CSS class are
+    # populated here so the template can render an inline ``(+X.X)`` chip.
+    # Both remain None for non-matching rows or when no PairFeatures are
+    # available.
+    match_contribution: float | None = None
+    match_contribution_class: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +263,17 @@ class FeaturesSummaryVM(BaseModel):
     feature_contributions: list[FeatureContributionVM] = Field(
         default_factory=list
     )
+    # Pre-computed log-rarity contributions for the drug-set, AE-set, and
+    # anchor terms so templates can render inline ``(+X.X)`` / ``(-X.X)``
+    # chips without recomputing logs.
+    matching_drugs_contribution: float | None = None
+    matching_drugs_contribution_class: str | None = None
+    matching_aes_contribution: float | None = None
+    matching_aes_contribution_class: str | None = None
+    # Anchor penalty: -log10(N_anchor * (N_anchor-1) / 2). Always <= 0 when
+    # set; None when N_anchor < 2 (penalty is undefined).
+    anchor_penalty: float | None = None
+    anchor_penalty_class: str | None = None
     inconsistency_counts: InconsistencyCountsVM | None = None
     clinical_date_counts: ClinicalDateCountsVM | None = None
     clinical_date_findings: list[ClinicalDateFindingVM] = Field(
@@ -433,3 +451,7 @@ class BatchIndexItem(BaseModel):
     annotation_label: str | None = None          # normalised human annotation
     annotation_agrees: bool | None = None        # True/False/None (no pipeline label)
     penalty_text: str | None = None              # e.g. "w_tot=0.8 < 4.0"
+    # Anchor penalty contribution to L_match (negative, in decades) and its
+    # colour-bin CSS class. None when N_anchor < 2.
+    anchor_penalty: float | None = None
+    anchor_penalty_class: str | None = None

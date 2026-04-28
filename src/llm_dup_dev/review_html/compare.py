@@ -21,6 +21,7 @@ causing the field to be omitted from the demographics table.
 
 from __future__ import annotations
 
+import math
 import re
 from collections import OrderedDict
 
@@ -554,6 +555,31 @@ def _build_ae_rows(r1: Report, r2: Report) -> list[AERow]:
 # ===================================================================
 
 
+def _annotate_demographic_contributions(
+    demographics: list[FieldComparison],
+    feature_contributions: list[FeatureContributionVM],
+) -> None:
+    """Mutate demographics rows in place with per-feature contribution chips.
+
+    For each ``FeatureContribution`` whose feature name maps to a demographic
+    label (via ``_FEATURE_TO_DEMO_LABEL``), populate ``match_contribution``
+    and ``match_contribution_class`` on the corresponding row. Non-matching
+    rows or features without a label mapping (drug_set/ae_set/clinical_date)
+    are skipped — those carry their chips elsewhere.
+    """
+    by_label: dict[str, FieldComparison] = {f.label: f for f in demographics}
+    for fc in feature_contributions:
+        label = _FEATURE_TO_DEMO_LABEL.get(fc.feature)
+        if label is None:
+            continue
+        row = by_label.get(label)
+        if row is None or fc.p_f <= 0:
+            continue
+        contribution = -math.log10(fc.p_f)
+        row.match_contribution = contribution
+        row.match_contribution_class = _contrib_pos_class(contribution)
+
+
 def _build_features_summary(
     features: PairFeatures,
 ) -> FeaturesSummaryVM:
@@ -565,6 +591,17 @@ def _build_features_summary(
         if ctx.year:
             ctx_str += f", {ctx.year}"
         ctx_str += ")"
+
+    # Pre-compute drug-set / AE-set log-rarity contributions and the
+    # anchor penalty so templates can render inline chips.
+    drugs_c: float | None = None
+    aes_c: float | None = None
+    for fc in features.probability.feature_contributions:
+        if fc.feature == "drug_set" and fc.p_f > 0:
+            drugs_c = -math.log10(fc.p_f)
+        elif fc.feature == "ae_set" and fc.p_f > 0:
+            aes_c = -math.log10(fc.p_f)
+    anchor_pen = _anchor_penalty(features.anchor.N_anchor)
 
     return FeaturesSummaryVM(
         l_match=features.L_match,
@@ -605,6 +642,18 @@ def _build_features_summary(
             )
             for fc in features.probability.feature_contributions
         ],
+        matching_drugs_contribution=drugs_c,
+        matching_drugs_contribution_class=(
+            _contrib_pos_class(drugs_c) if drugs_c is not None else None
+        ),
+        matching_aes_contribution=aes_c,
+        matching_aes_contribution_class=(
+            _contrib_pos_class(aes_c) if aes_c is not None else None
+        ),
+        anchor_penalty=anchor_pen,
+        anchor_penalty_class=(
+            _contrib_neg_class(anchor_pen) if anchor_pen is not None else None
+        ),
         inconsistency_counts=InconsistencyCountsVM(
             minor=features.inconsistency_counts.minor,
             moderate=features.inconsistency_counts.moderate,
@@ -1010,6 +1059,10 @@ def build_pair_view_model(
     features_summary = (
         _build_features_summary(features) if features else None
     )
+    if features_summary is not None:
+        _annotate_demographic_contributions(
+            demographics, features_summary.feature_contributions
+        )
     classification_summary = (
         _build_classification_summary(classification, features)
         if classification
@@ -1124,6 +1177,16 @@ def build_batch_index_item(
             vm.annotation.agrees_with_pipeline if vm.annotation else None
         ),
         penalty_text=penalty_text,
+        anchor_penalty=(
+            vm.features_summary.anchor_penalty
+            if vm.features_summary
+            else None
+        ),
+        anchor_penalty_class=(
+            vm.features_summary.anchor_penalty_class
+            if vm.features_summary
+            else None
+        ),
     )
 
 
@@ -1486,6 +1549,85 @@ def _format_context_label(vm: PairViewModel) -> str | None:
     return raw
 
 
+# ---------------------------------------------------------------------------
+# Per-feature L_match contribution chips
+# ---------------------------------------------------------------------------
+# L_match decomposes additively in log-space:
+#
+#     L_match = max(0,  -log10(N_pairs)  +  Σ -log10(p_f) )
+#
+# where N_pairs = N_anchor * (N_anchor − 1) / 2. Each per-feature chip
+# carries the positive evidence contribution -log10(p_f) (green); the
+# anchor chip carries the negative starting point -log10(N_pairs) (red).
+
+# Magnitude bins shared between green (positive evidence) and red
+# (anchor penalty) chips so reviewers learn one scale.
+_CONTRIB_BINS: tuple[tuple[float, str, str], ...] = (
+    (0.3, "vw", "vw"),
+    (1.0, "w", "w"),
+    (2.0, "m", "m"),
+    (3.5, "s", "s"),
+    (math.inf, "vs", "vs"),
+)
+
+
+def _contrib_pos_class(c: float) -> str:
+    """Return the CSS class for a positive evidence contribution (>= 0)."""
+    mag = abs(c)
+    for upper, suffix, _ in _CONTRIB_BINS:
+        if mag < upper:
+            return f"contrib-pos-{suffix}"
+    return "contrib-pos-vs"
+
+
+def _contrib_neg_class(c: float) -> str:
+    """Return the CSS class for an anchor-penalty contribution (<= 0).
+
+    The class is selected from ``|c|`` so the same bins as the positive
+    scale apply.
+    """
+    mag = abs(c)
+    for upper, _, suffix in _CONTRIB_BINS:
+        if mag < upper:
+            return f"contrib-neg-{suffix}"
+    return "contrib-neg-vs"
+
+
+def _anchor_penalty(n_anchor: int | None) -> float | None:
+    """Return -log10(N*(N-1)/2) for N >= 2, else None.
+
+    The anchor penalty is the additive starting point of L_match: it
+    captures how many random pairs the per-feature evidence had to beat.
+    """
+    if n_anchor is None or n_anchor < 2:
+        return None
+    n_pairs = n_anchor * (n_anchor - 1) / 2
+    return -math.log10(n_pairs)
+
+
+def _contrib_chip_html(
+    inner_html: str, contribution: float, *, negative: bool = False
+) -> str:
+    """Wrap inner HTML in a colour-coded chip with a ``(+X.X)`` / ``(-X.X)`` annotation.
+
+    ``inner_html`` must already be HTML-safe (escaped or known-safe markup
+    such as a ``<strong>`` tag from ``_bold_drug``). ``contribution`` is
+    the log-rarity value to display; for negative chips its sign is
+    reversed so the formatted text reads ``(-X.X)``.
+    """
+    if negative:
+        cls = _contrib_neg_class(contribution)
+        sign = "-"
+    else:
+        cls = _contrib_pos_class(contribution)
+        sign = "+"
+    mag = abs(contribution)
+    return (
+        f'<span class="contrib {cls}">{inner_html}'
+        f' ({sign}{mag:.1f})</span>'
+    )
+
+
 # Map probability/inconsistency feature names to demographic FieldComparison
 # labels.  Both long (``"patient_weight"``) and short (``"weight"``) forms
 # are accepted for robustness.
@@ -1514,62 +1656,91 @@ def _format_matching_features(
     """Build a compact summary of the values behind each probability feature.
 
     Shows the actual matching values (e.g. ``"male; sertraline, paroxetine;
-    2005-03-02"``) rather than technical descriptions.  Only features that
-    contributed to the probability calculation are included — the same set
-    shown in the *Feature Contributions* table on the detailed pair page.
-    Key drugs are wrapped in ``<strong>`` tags.
+    2005-03-02"``) rather than technical descriptions, with each value
+    annotated by its log-rarity contribution ``(+X.X)`` and shaded by
+    contribution magnitude. Rows are sorted by contribution descending so
+    the strongest evidence appears first.
 
-    Order: sex, age, height, weight, drugs, AEs, dates.
+    Drug-set and AE-set carry one shared contribution each. Clinical
+    dates are kept on a single row (since they share the "date" semantic
+    category) but each date carries its own chip; the row is placed in
+    the outer order by its strongest contribution.
+
+    Key drugs are still wrapped in ``<strong>`` tags inside the chip.
     """
     fs = vm.features_summary
     if fs is None or not fs.feature_contributions:
         return None
 
-    # Build a lookup from demographic label → display value.
+    # Demographic-label → display value
     demo_display: dict[str, str] = {
         fc.label: fc.left_display for fc in vm.demographics
     }
 
-    # Which demographic features are present (as a set for quick lookup).
-    present_features = {fc.feature for fc in fs.feature_contributions}
+    rows: list[tuple[float, str]] = []  # (contribution, html)
 
-    # Collect unique clinical dates (may have multiple contributions).
-    clinical_dates: list[str] = []
+    # Drug-set / AE-set p_f lookup.
+    drug_set_p_f: float | None = None
+    ae_set_p_f: float | None = None
+    # Clinical dates: list of (date, p_f), preserving FC order, dedup by date.
+    clinical: list[tuple[str, float]] = []
+    seen_dates: set[str] = set()
+
     for fc in fs.feature_contributions:
+        if fc.feature == "drug_set":
+            drug_set_p_f = fc.p_f
+            continue
+        if fc.feature == "ae_set":
+            ae_set_p_f = fc.p_f
+            continue
         if fc.feature == "clinical_date":
             m = _CLINICAL_DATE_RE.match(fc.description)
             if m:
                 date_val = m.group(1)
-                if date_val not in clinical_dates:
-                    clinical_dates.append(date_val)
-
-    # Emit in fixed order: sex, age, height, weight, drugs, AEs, dates.
-    _ORDERED_FEATURES = [
-        "patient_sex",
-        "patient_age",
-        "patient_height",
-        "patient_weight",
-    ]
-
-    parts: list[str] = []
-    for feature in _ORDERED_FEATURES:
-        if feature not in present_features:
+                if date_val not in seen_dates:
+                    seen_dates.add(date_val)
+                    clinical.append((date_val, fc.p_f))
             continue
-        demo_label = _FEATURE_TO_DEMO_LABEL.get(feature)
-        if demo_label is not None:
-            value = demo_display.get(demo_label)
-            if value:
-                parts.append(str(_esc(value)))
-
-    if "drug_set" in present_features and fs.matching_drugs:
-        parts.append(
-            ", ".join(_bold_drug(d, key_drugs) for d in fs.matching_drugs)
+        # Demographic features.
+        demo_label = _FEATURE_TO_DEMO_LABEL.get(fc.feature)
+        if demo_label is None:
+            continue
+        value = demo_display.get(demo_label)
+        if not value or fc.p_f <= 0:
+            continue
+        contribution = -math.log10(fc.p_f)
+        rows.append(
+            (contribution, _contrib_chip_html(str(_esc(value)), contribution))
         )
 
-    if "ae_set" in present_features and fs.matching_aes:
-        parts.append(", ".join(str(_esc(a)) for a in fs.matching_aes))
+    if drug_set_p_f is not None and drug_set_p_f > 0 and fs.matching_drugs:
+        contribution = -math.log10(drug_set_p_f)
+        joined = ", ".join(_bold_drug(d, key_drugs) for d in fs.matching_drugs)
+        rows.append((contribution, _contrib_chip_html(joined, contribution)))
 
-    if clinical_dates:
-        parts.append(", ".join(str(_esc(d)) for d in clinical_dates))
+    if ae_set_p_f is not None and ae_set_p_f > 0 and fs.matching_aes:
+        contribution = -math.log10(ae_set_p_f)
+        joined = ", ".join(str(_esc(a)) for a in fs.matching_aes)
+        rows.append((contribution, _contrib_chip_html(joined, contribution)))
 
-    return "<br>".join(parts) if parts else None
+    if clinical:
+        # Sort dates within the row by descending contribution.
+        date_chips: list[tuple[float, str]] = []
+        for date_val, p_f in clinical:
+            if p_f <= 0:
+                continue
+            c = -math.log10(p_f)
+            date_chips.append(
+                (c, _contrib_chip_html(str(_esc(date_val)), c))
+            )
+        if date_chips:
+            date_chips.sort(key=lambda t: t[0], reverse=True)
+            row_contribution = date_chips[0][0]
+            row_html = " ".join(chip for _, chip in date_chips)
+            rows.append((row_contribution, row_html))
+
+    if not rows:
+        return None
+
+    rows.sort(key=lambda t: t[0], reverse=True)
+    return "<br>".join(html for _, html in rows)
