@@ -659,7 +659,12 @@ class TestPredictionRendering:
         assert "Additional matching features" in html
         assert "pregabalin + somnolence" in html
         assert "Anchor N" in html
-        assert "<td>40</td>" in html
+        # Anchor N cell now shows "<count> reports" plus a red chip with the
+        # anchor's negative log-rarity contribution to L_match.
+        assert "40 reports" in html
+        # -log10(40 * 39 / 2) ≈ -2.89, rendered as "(-2.9)" with the
+        # contrib-neg-s class.
+        assert 'class="contrib contrib-neg-s">(-2.9)' in html
         # Removed columns are no longer rendered
         assert "<th>Report 1</th>" not in html
         assert "<th>Report 2</th>" not in html

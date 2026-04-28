@@ -16,18 +16,26 @@ from llm_dup_dev.models.report import (
     SourcedValue,
 )
 from llm_dup_dev.review_html.compare import (
+    _anchor_penalty,
     _build_ae_rows,
     _build_drug_rows,
     _compare_age_values,
     _compare_date_values,
     _compare_measurement_values,
     _compare_sourced_values,
+    _contrib_neg_class,
+    _contrib_pos_class,
+    _format_matching_features,
     _format_penalty_summary,
     build_pair_view_model,
 )
 from llm_dup_dev.review_html.models import (
     ComparisonStatus,
+    FeatureContributionVM,
+    FeaturesSummaryVM,
+    FieldComparison,
     InconsistencyCountsVM,
+    PairViewModel,
 )
 
 
@@ -576,3 +584,178 @@ class TestFormatPenaltySummary:
     def test_missing_counts_returns_none(self):
         """No inconsistency_counts available → None (template falls back to '--')."""
         assert _format_penalty_summary(None, "w_tot=1.0 < 4.0") is None
+
+
+# ===================================================================
+# Per-element L_match contribution chips
+# ===================================================================
+
+
+class TestContribClass:
+    """The five magnitude bins for green / red contribution chips."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (0.0, "contrib-pos-vw"),
+            (0.29, "contrib-pos-vw"),
+            (0.30, "contrib-pos-w"),
+            (0.99, "contrib-pos-w"),
+            (1.00, "contrib-pos-m"),
+            (1.99, "contrib-pos-m"),
+            (2.00, "contrib-pos-s"),
+            (3.49, "contrib-pos-s"),
+            (3.50, "contrib-pos-vs"),
+            (10.0, "contrib-pos-vs"),
+        ],
+    )
+    def test_pos_bins(self, value, expected):
+        assert _contrib_pos_class(value) == expected
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (0.0, "contrib-neg-vw"),
+            (-0.29, "contrib-neg-vw"),
+            (-0.30, "contrib-neg-w"),
+            (-0.99, "contrib-neg-w"),
+            (-1.00, "contrib-neg-m"),
+            (-1.99, "contrib-neg-m"),
+            (-2.00, "contrib-neg-s"),
+            (-3.49, "contrib-neg-s"),
+            (-3.50, "contrib-neg-vs"),
+            (-10.0, "contrib-neg-vs"),
+        ],
+    )
+    def test_neg_bins_use_magnitude(self, value, expected):
+        assert _contrib_neg_class(value) == expected
+
+
+class TestAnchorPenalty:
+    """Anchor penalty -log10(N*(N-1)/2) is the additive starting point of L_match."""
+
+    @pytest.mark.parametrize("n", [None, 0, 1])
+    def test_undefined_below_two(self, n):
+        assert _anchor_penalty(n) is None
+
+    def test_n_two_yields_zero(self):
+        """N=2 → N_pairs=1 → -log10(1) = 0; rendered chip is '(-0.0)'."""
+        assert _anchor_penalty(2) == pytest.approx(0.0)
+
+    def test_n_ten(self):
+        # 10 * 9 / 2 = 45 → -log10(45) ≈ -1.65
+        assert _anchor_penalty(10) == pytest.approx(-1.6532, abs=1e-3)
+
+    def test_n_thousand(self):
+        # 1000 * 999 / 2 ≈ 5e5 → -log10 ≈ -5.70
+        assert _anchor_penalty(1000) == pytest.approx(-5.6989, abs=1e-3)
+
+
+def _make_pair_vm_for_format(
+    feature_contributions, matching_drugs=None, matching_aes=None
+) -> PairViewModel:
+    """Build a PairViewModel with just enough scaffolding to call
+    _format_matching_features."""
+    fs = FeaturesSummaryVM(
+        l_match=0.0,
+        expected_collisions=1.0,
+        anchor_type="drugs_aes",
+        anchor_n=10,
+        reporting_context="Country (US, 2020)",
+        narrative_consistency="consistent",
+        matching_drugs=matching_drugs or [],
+        matching_aes=matching_aes or [],
+        feature_contributions=feature_contributions,
+    )
+    demographics = [
+        FieldComparison(
+            label="Sex", left_display="female", right_display="female",
+            status=ComparisonStatus.MATCH,
+        ),
+        FieldComparison(
+            label="Age", left_display="10 years", right_display="10 years",
+            status=ComparisonStatus.MATCH,
+        ),
+    ]
+    return PairViewModel(
+        pair_id="P", report_1_id="R1", report_2_id="R2",
+        demographics=demographics, features_summary=fs,
+    )
+
+
+class TestFormatMatchingFeatures:
+    """The Batch Index 'Additional matching features' cell now ranks rows
+    by descending log-rarity contribution and shades each one."""
+
+    def test_demographics_sorted_by_contribution_desc(self):
+        # patient_age (p_f=0.01 → +2.0) should appear before patient_sex
+        # (p_f=0.5 → +0.30) regardless of input order.
+        fcs = [
+            FeatureContributionVM(
+                feature="patient_sex", p_f=0.5, method="domain_size",
+            ),
+            FeatureContributionVM(
+                feature="patient_age", p_f=0.01, method="domain_size",
+            ),
+        ]
+        vm = _make_pair_vm_for_format(fcs)
+        html = _format_matching_features(vm, key_drugs=set())
+        assert html is not None
+        # Age row precedes sex row.
+        assert html.index("10 years") < html.index("female")
+        # Both chips carry the right magnitude.
+        assert "(+2.0)" in html
+        assert "(+0.3)" in html
+        # And the right colour bins (bin upper bounds are exclusive: 2.0
+        # falls into the "strong" bin, 0.3 into the "weak" bin).
+        assert "contrib-pos-s" in html
+        assert "contrib-pos-w" in html
+
+    def test_clinical_dates_grouped_on_one_row(self):
+        """All clinical_date contributions render on a single row, sorted
+        within the row by descending contribution."""
+        fcs = [
+            FeatureContributionVM(
+                feature="clinical_date", p_f=1.0 / 30, method="domain_size",
+                description="clinical_date 2009-11-16 (day): D_f=30",
+            ),
+            FeatureContributionVM(
+                feature="clinical_date", p_f=1.0 / 365, method="domain_size",
+                description="clinical_date 2009-11-18 (day): D_f=365",
+            ),
+        ]
+        vm = _make_pair_vm_for_format(fcs)
+        html = _format_matching_features(vm, key_drugs=set())
+        assert html is not None
+        # Only one row → no <br> separator between the two dates (they
+        # share the clinical-date row even after sorting).
+        first, second = "2009-11-18", "2009-11-16"
+        # The rarer date (D_f=365 → +2.6) outranks the common one (+1.5).
+        assert html.index(first) < html.index(second)
+        between = html[html.index(first):html.index(second)]
+        assert "<br>" not in between
+
+    def test_drug_set_one_chip_for_joined_list(self):
+        """Drug-set carries ONE shared contribution covering all matched drugs."""
+        fcs = [
+            FeatureContributionVM(
+                feature="drug_set", p_f=0.001, method="leave_pair_out",
+            ),
+        ]
+        vm = _make_pair_vm_for_format(
+            fcs, matching_drugs=["sertraline", "paroxetine"]
+        )
+        html = _format_matching_features(vm, key_drugs=set())
+        assert html is not None
+        # Exactly one (+X.X) chip in the cell.
+        assert html.count("(+") == 1
+        # Both drugs in one chip.
+        assert "sertraline, paroxetine" in html
+        # -log10(0.001) = 3.0 → moderate / strong boundary; should be the
+        # 'strong' bin (contrib-pos-s).
+        assert "(+3.0)" in html
+        assert "contrib-pos-s" in html
+
+    def test_returns_none_when_no_contributions(self):
+        vm = _make_pair_vm_for_format([])
+        assert _format_matching_features(vm, key_drugs=set()) is None

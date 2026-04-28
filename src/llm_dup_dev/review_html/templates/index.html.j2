@@ -61,6 +61,26 @@ a:hover { text-decoration: underline; }
 .inc-strong   { background: #c0392b; }
 .inc-decisive { background: #7b2cbf; font-weight: 700; }
 
+/* Per-element L_match contribution chips (positive = green, anchor = red).
+   Magnitudes binned identically across the two scales so reviewers learn one. */
+.contrib {
+    display: inline-block;
+    padding: 1px 5px;
+    margin-bottom: 2px;
+    border-radius: 3px;
+    font-weight: 600;
+}
+.contrib-pos-vw { background: #f1f8e9; color: #2e7d32; }
+.contrib-pos-w  { background: #c5e1a5; color: #1b5e20; }
+.contrib-pos-m  { background: #81c784; color: #1b5e20; }
+.contrib-pos-s  { background: #4caf50; color: #fff; }
+.contrib-pos-vs { background: #2e7d32; color: #fff; }
+.contrib-neg-vw { background: #fdecea; color: #7b241c; }
+.contrib-neg-w  { background: #f5b7b1; color: #641e16; }
+.contrib-neg-m  { background: #ef6f6c; color: #fff; }
+.contrib-neg-s  { background: #c0392b; color: #fff; }
+.contrib-neg-vs { background: #7b241c; color: #fff; }
+
 @media print { body { background: #fff; padding: 0; } }
 </style>
 </head>
@@ -119,7 +139,16 @@ a:hover { text-decoration: underline; }
                 <td>{{ item.anchor_label | safe if item.anchor_label else '--' }}</td>
                 {% endif %}
                 {% if has_anchor_n %}
-                <td>{{ item.anchor_n if item.anchor_n is not none else '--' }}</td>
+                <td>
+                    {%- if item.anchor_n is not none -%}
+                        {{ item.anchor_n }} reports
+                        {%- if item.anchor_penalty is not none %}
+                        <span class="contrib {{ item.anchor_penalty_class }}">(-{{ "%.1f"|format(-item.anchor_penalty) }})</span>
+                        {%- endif %}
+                    {%- else -%}
+                        --
+                    {%- endif -%}
+                </td>
                 {% endif %}
                 {% if has_matching_features %}
                 <td>{{ item.matching_features | safe if item.matching_features else '--' }}</td>

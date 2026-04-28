@@ -262,6 +262,26 @@ details.debug-section pre {
     max-height: 500px; overflow-y: auto;
 }
 
+/* --- Per-element L_match contribution chips --- */
+.contrib {
+    display: inline-block;
+    padding: 1px 5px;
+    margin-left: 4px;
+    border-radius: 3px;
+    font-weight: 600;
+    font-size: 12px;
+}
+.contrib-pos-vw { background: #f1f8e9; color: #2e7d32; }
+.contrib-pos-w  { background: #c5e1a5; color: #1b5e20; }
+.contrib-pos-m  { background: #81c784; color: #1b5e20; }
+.contrib-pos-s  { background: #4caf50; color: #fff; }
+.contrib-pos-vs { background: #2e7d32; color: #fff; }
+.contrib-neg-vw { background: #fdecea; color: #7b241c; }
+.contrib-neg-w  { background: #f5b7b1; color: #641e16; }
+.contrib-neg-m  { background: #ef6f6c; color: #fff; }
+.contrib-neg-s  { background: #c0392b; color: #fff; }
+.contrib-neg-vs { background: #7b241c; color: #fff; }
+
 /* --- Print --- */
 @media print {
     body { background: #fff; padding: 0; }
@@ -438,7 +458,12 @@ details.debug-section pre {
         <tbody>
         {% for f in vm.demographics %}
             <tr class="{{ f.status.value }}"{% if f.tooltip %} title="{{ f.tooltip }}"{% endif %}>
-                <td>{{ f.label }}</td>
+                <td>
+                    {{ f.label }}
+                    {%- if f.match_contribution is not none %}
+                    <span class="contrib {{ f.match_contribution_class }}">(+{{ "%.1f"|format(f.match_contribution) }})</span>
+                    {%- endif %}
+                </td>
                 <td><span class="name-{{ f.status.value }}">{{ f.left_display | safe }}</span></td>
                 <td><span class="name-{{ f.status.value }}">{{ f.right_display | safe }}</span></td>
                 <td class="status-col">{{ status_badge(f.status) }}</td>
@@ -579,15 +604,30 @@ details.debug-section pre {
         <dt>Expected collisions</dt>
         <dd>{{ "%.4e"|format(vm.features_summary.expected_collisions) }}</dd>
         <dt>Anchor</dt>
-        <dd>{{ vm.features_summary.anchor_type }} (N={{ vm.features_summary.anchor_n }})</dd>
+        <dd>
+            {{ vm.features_summary.anchor_type }} (N={{ vm.features_summary.anchor_n }})
+            {%- if vm.features_summary.anchor_penalty is not none %}
+            <span class="contrib {{ vm.features_summary.anchor_penalty_class }}">(-{{ "%.1f"|format(-vm.features_summary.anchor_penalty) }})</span>
+            {%- endif %}
+        </dd>
         <dt>Reporting context</dt>
         <dd>{{ vm.features_summary.reporting_context }}</dd>
         <dt>Narrative consistency</dt>
         <dd>{{ vm.features_summary.narrative_consistency }}</dd>
         <dt>Matching drugs</dt>
-        <dd>{{ vm.features_summary.matching_drugs|join(', ') or '--' }}</dd>
+        <dd>
+            {{ vm.features_summary.matching_drugs|join(', ') or '--' }}
+            {%- if vm.features_summary.matching_drugs_contribution is not none %}
+            <span class="contrib {{ vm.features_summary.matching_drugs_contribution_class }}">(+{{ "%.1f"|format(vm.features_summary.matching_drugs_contribution) }})</span>
+            {%- endif %}
+        </dd>
         <dt>Matching AEs</dt>
-        <dd>{{ vm.features_summary.matching_aes|join(', ') or '--' }}</dd>
+        <dd>
+            {{ vm.features_summary.matching_aes|join(', ') or '--' }}
+            {%- if vm.features_summary.matching_aes_contribution is not none %}
+            <span class="contrib {{ vm.features_summary.matching_aes_contribution_class }}">(+{{ "%.1f"|format(vm.features_summary.matching_aes_contribution) }})</span>
+            {%- endif %}
+        </dd>
     </dl>
 
     {# ── Anchor details (extended) ── #}
@@ -597,7 +637,12 @@ details.debug-section pre {
         <dt>Anchor type</dt>
         <dd>{{ vm.features_summary.anchor_type }}</dd>
         <dt>N<sub>anchor</sub></dt>
-        <dd>{{ vm.features_summary.anchor_n }}</dd>
+        <dd>
+            {{ vm.features_summary.anchor_n }}
+            {%- if vm.features_summary.anchor_penalty is not none %}
+            <span class="contrib {{ vm.features_summary.anchor_penalty_class }}">(-{{ "%.1f"|format(-vm.features_summary.anchor_penalty) }})</span>
+            {%- endif %}
+        </dd>
         <dt>N<sub>drugs</sub></dt>
         <dd>{{ vm.features_summary.anchor_n_drugs }}</dd>
         <dt>N<sub>AEs</sub></dt>
