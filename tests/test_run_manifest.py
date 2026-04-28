@@ -157,6 +157,65 @@ def test_missing_package_metadata_does_not_fail(monkeypatch) -> None:
     assert manifest.dev_package.version is None
 
 
+def test_llm_config_auto_pulled_from_runner_client() -> None:
+    """When ``llm_config=`` is omitted, the builder duck-types
+    ``runner._llm_client.info()`` to populate the field."""
+    from llm_dup_dev.llm.fake import FakeLLMClient
+
+    runner = PipelineRunner(
+        report_loader=SyntheticReportLoader({}),
+        stats_provider=SyntheticStatsProvider(),
+        llm_client=FakeLLMClient(model_name="auto-pulled-model"),
+    )
+
+    manifest = build_run_manifest(runner=runner)
+
+    assert manifest.llm_config is not None
+    assert manifest.llm_config["provider"] == "fake"
+    assert manifest.llm_config["model"] == "auto-pulled-model"
+    assert manifest.llm_config["default_temperature"] == 0.0
+    # has_llm_client flag still set alongside the auto-pulled config.
+    assert manifest.feature_flags["has_llm_client"] is True
+
+
+def test_explicit_llm_config_overrides_runner_client_info() -> None:
+    """An explicit ``llm_config=`` supersedes whatever ``info()`` would return."""
+    from llm_dup_dev.llm.fake import FakeLLMClient
+
+    runner = PipelineRunner(
+        report_loader=SyntheticReportLoader({}),
+        stats_provider=SyntheticStatsProvider(),
+        llm_client=FakeLLMClient(model_name="auto-pulled-model"),
+    )
+    manifest = build_run_manifest(
+        runner=runner,
+        llm_config={"provider": "manual", "model": "explicit-override"},
+    )
+
+    assert manifest.llm_config == {
+        "provider": "manual",
+        "model": "explicit-override",
+    }
+
+
+def test_llm_config_falls_back_to_none_when_client_lacks_info() -> None:
+    """A client missing ``info()`` is silently tolerated — manifest stays empty."""
+
+    class MinimalClient:
+        def generate(self, request):
+            raise NotImplementedError
+
+    runner = PipelineRunner(
+        report_loader=SyntheticReportLoader({}),
+        stats_provider=SyntheticStatsProvider(),
+        llm_client=MinimalClient(),
+    )
+
+    manifest = build_run_manifest(runner=runner)
+    assert manifest.llm_config is None
+    assert manifest.feature_flags["has_llm_client"] is True
+
+
 def test_secret_keys_redacted_in_llm_config() -> None:
     leaky = {
         "deployment": "gpt-4o-prod",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
@@ -32,6 +33,32 @@ def _default_dev_repo_path() -> Path:
     import llm_dup_dev
 
     return Path(llm_dup_dev.__file__).resolve().parent
+
+
+def _llm_config_from_client(client: Any) -> dict[str, Any] | None:
+    """Best-effort extraction of LLM identity from an ``LLMClient`` instance.
+
+    Calls the client's optional ``info()`` method (see the ``LLMClient``
+    protocol docstring) and converts the result to a plain dict. Returns
+    ``None`` when the client is missing, lacks ``info()``, or returns an
+    unrecognised shape — the manifest then falls back to whatever the
+    caller passed explicitly (or leaves ``llm_config`` empty).
+    """
+    if client is None:
+        return None
+    info_method = getattr(client, "info", None)
+    if not callable(info_method):
+        return None
+    info = info_method()
+    if info is None:
+        return None
+    if dataclasses.is_dataclass(info) and not isinstance(info, type):
+        return dataclasses.asdict(info)
+    if hasattr(info, "model_dump"):
+        return info.model_dump(mode="json")
+    if isinstance(info, dict):
+        return dict(info)
+    return None
 
 
 def _runner_feature_flags(runner: "PipelineRunner") -> dict[str, Any]:
@@ -84,6 +111,10 @@ def build_run_manifest(
     - ``dev_git_commit``: from ``git rev-parse --short HEAD`` rooted at
       ``dev_repo_path`` (defaults to the package source directory); ``None``
       if git metadata is unavailable.
+    - ``llm_config``: when not supplied, extracted via duck-typing from
+      ``runner._llm_client.info()`` (see the ``LLMClient`` protocol
+      docstring). Clients that don't expose ``info()`` simply leave the
+      field unset; supplying ``llm_config=`` explicitly always wins.
 
     Secrets in ``llm_config`` and ``secure_context`` are redacted by the
     model validator — see ``_redaction.SECRET_KEY_PATTERNS``.
@@ -91,6 +122,10 @@ def build_run_manifest(
     resolved_pipeline_config = pipeline_config
     resolved_decision_thresholds = decision_thresholds
     resolved_feature_flags: dict[str, Any] = {}
+
+    resolved_llm_config: dict[str, Any] | None = (
+        dict(llm_config) if llm_config is not None else None
+    )
 
     if runner is not None:
         if resolved_pipeline_config is None:
@@ -100,6 +135,10 @@ def build_run_manifest(
                 runner, "_decision_thresholds", None
             )
         resolved_feature_flags.update(_runner_feature_flags(runner))
+        if resolved_llm_config is None:
+            resolved_llm_config = _llm_config_from_client(
+                getattr(runner, "_llm_client", None)
+            )
 
     if feature_flags:
         resolved_feature_flags.update(feature_flags)
@@ -123,7 +162,7 @@ def build_run_manifest(
         pipeline_config=resolved_pipeline_config.model_dump(mode="json"),
         decision_thresholds=resolved_decision_thresholds.model_dump(mode="json"),
         feature_flags=resolved_feature_flags,
-        llm_config=dict(llm_config) if llm_config is not None else None,
+        llm_config=resolved_llm_config,
         output_paths=dict(output_paths or {}),
         secure_context=dict(secure_context) if secure_context is not None else None,
         notes=notes,

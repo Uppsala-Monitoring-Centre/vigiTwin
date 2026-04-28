@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-from .models import LLMRequest, LLMResponse, TokenUsage
+from .models import LLMInfo, LLMRequest, LLMResponse, TokenUsage
 
 
 class FakeLLMClient:
@@ -108,6 +108,14 @@ class FakeLLMClient:
     # ------------------------------------------------------------------
     # LLMClient protocol
     # ------------------------------------------------------------------
+
+    def info(self) -> LLMInfo:
+        """Return the fake client's identity for run-manifest logging."""
+        return LLMInfo(
+            provider="fake",
+            model=self._model_name,
+            default_temperature=0.0,
+        )
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         """Return the next seeded response or the default.
