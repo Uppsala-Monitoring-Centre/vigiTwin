@@ -19,10 +19,15 @@ from llm_dup_dev.models.narrative_demographics import (
     NarrativeSex,
     NarrativeSexValue,
 )
-from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
+from llm_dup_dev.models.narrative_source_case import (
+    CaseIdentifierFamily,
+    NarrativeSourceCase,
+    SourceIdentifierType,
+)
 from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
     IndependenceAssessment,
+    IndependenceReason,
     NarrativeConsistency,
 )
 from llm_dup_dev.models.report import AdverseEvent, AgeValue, Report, SourcedValue
@@ -626,6 +631,93 @@ class TestFrozenSourceCaseExtractions:
             if r.response_model is NarrativeSourceCase
         ]
         assert len(src_requests) == 2
+
+    def test_shared_source_override_fires_with_frozen_bundle_no_llm_deterministic_ae(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Pins the LLM-free deployment path: deterministic AE +
+        ``llm_client=None`` + a frozen bundle whose pair-wise comparison
+        yields a verdict in ``_SHARED_SOURCE_VERDICTS`` ⇒ the shared-source
+        override fires and the ``SHARED_SOURCE`` reason is recorded.
+
+        Regression for the silent-failure mode where switching AE to
+        deterministic and dropping the LLM client used to lose the override
+        without warning.
+        """
+        # Two extractions with the same DOI and the same case identifier
+        # (``Case 2``) → ``compare_source_case`` returns
+        # ``SAME_SOURCE_SAME_CASE``, which is in ``_SHARED_SOURCE_VERDICTS``.
+        shared = NarrativeSourceCase(
+            source_identifier="10.a/b",
+            source_identifier_type=SourceIdentifierType.DOI,
+            multi_patient_source=True,
+            case_identifier_within_source="Case 2",
+            case_identifier_family=CaseIdentifierFamily.CASE,
+            case_identifier_value_normalized="2",
+        )
+        bundle = FrozenSourceCaseExtractions(
+            extractions={"R001": shared, "R002": shared}
+        )
+
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=None,
+            ae_clinical_picture_mode="rule_based",
+            frozen_source_case_extractions=bundle,
+        )
+        batch = runner_.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        result = batch.results[0].classification
+        assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_no_warning_when_bundle_covers_pair_without_llm(
+        self, loader, stats_provider, pair_ab, caplog
+    ):
+        """A bundle covering the pair suppresses the source-case warning
+        even with ``llm_client=None``."""
+        bundle = FrozenSourceCaseExtractions(
+            extractions={
+                "R001": NarrativeSourceCase(),
+                "R002": NarrativeSourceCase(),
+            }
+        )
+        demographics_bundle = FrozenNarrativeDemographics(
+            extractions={
+                "R001": NarrativeDemographics(),
+                "R002": NarrativeDemographics(),
+            }
+        )
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=None,
+            ae_clinical_picture_mode="rule_based",
+            frozen_source_case_extractions=bundle,
+            frozen_narrative_demographics=demographics_bundle,
+        )
+        with caplog.at_level("WARNING", logger="llm_dup_dev.pipeline.runner"):
+            runner_.run_batch([pair_ab])
+        assert "Shared-source override is disabled" not in caplog.text
+        assert "Narrative-demographics extraction is disabled" not in caplog.text
+
+    def test_warns_when_no_llm_and_no_source_case_bundle(
+        self, loader, stats_provider, pair_ab, caplog
+    ):
+        """Warns once at ``run_batch`` start when the override would
+        silently fail (no llm_client, no frozen bundle)."""
+        runner_ = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=None,
+            ae_clinical_picture_mode="rule_based",
+        )
+        with caplog.at_level("WARNING", logger="llm_dup_dev.pipeline.runner"):
+            runner_.run_batch([pair_ab])
+        assert "Shared-source override is disabled" in caplog.text
+        assert "Narrative-demographics extraction is disabled" in caplog.text
 
 
 # ===================================================================
