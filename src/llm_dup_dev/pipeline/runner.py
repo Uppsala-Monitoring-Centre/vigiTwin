@@ -560,6 +560,35 @@ class PipelineRunner:
         """
         batch = BatchResult()
 
+        # Loud warning when the per-report LLM extraction paths are silently
+        # disabled — neither a live ``llm_client`` nor a frozen sidecar is
+        # configured. Without one of these the corresponding feature degrades
+        # silently: the shared-source override never fires, and the
+        # narrative-demographics merge is a no-op. Surfacing this once per
+        # ``run_batch`` is the smallest signal that catches misconfigured
+        # offline deployments. See ``docs/integration_guide.md`` §
+        # *Wiring without an LLM client*.
+        if self._llm_client is None and self._frozen_source_case is None:
+            logger.warning(
+                "Shared-source override is disabled: no llm_client and no "
+                "frozen_source_case_extractions bundle configured. "
+                "Pre-extract per-report source/case at dataset-creation time "
+                "and pass the bundle via frozen_source_case_extractions= "
+                "to enable the override."
+            )
+        if (
+            self._llm_client is None
+            and self._frozen_narrative_demographics is None
+        ):
+            logger.warning(
+                "Narrative-demographics extraction is disabled: no llm_client "
+                "and no frozen_narrative_demographics bundle configured. "
+                "Pre-extract per-report narrative demographics at "
+                "dataset-creation time and pass the bundle via "
+                "frozen_narrative_demographics= to enable LLM-derived "
+                "patient age/sex/weight/height candidates."
+            )
+
         # Memoize per-report narrative source/case extractions so each
         # narrative is extracted only once across all pairs that
         # reference it. Cache lifetime is one ``run_batch`` call.

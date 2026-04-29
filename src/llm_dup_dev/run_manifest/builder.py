@@ -62,17 +62,30 @@ def _llm_config_from_client(client: Any) -> dict[str, Any] | None:
 
 
 def _runner_feature_flags(runner: "PipelineRunner") -> dict[str, Any]:
+    has_llm_client = getattr(runner, "_llm_client", None) is not None
+    has_frozen_source_case = (
+        getattr(runner, "_frozen_source_case", None) is not None
+    )
+    has_frozen_narrative_demographics = (
+        getattr(runner, "_frozen_narrative_demographics", None) is not None
+    )
     return {
         "ae_clinical_picture_mode": getattr(
             runner, "_ae_clinical_picture_mode", None
         ),
-        "has_llm_client": getattr(runner, "_llm_client", None) is not None,
-        "has_frozen_source_case": getattr(runner, "_frozen_source_case", None)
-        is not None,
-        "has_frozen_narrative_demographics": getattr(
-            runner, "_frozen_narrative_demographics", None
-        )
-        is not None,
+        "has_llm_client": has_llm_client,
+        "has_frozen_source_case": has_frozen_source_case,
+        "has_frozen_narrative_demographics": has_frozen_narrative_demographics,
+        # Derived: an LLM-derived feature is *enabled* when either a live
+        # client is configured (so per-report extraction can happen at
+        # inference) or a frozen sidecar covers the relevant reports. With
+        # neither, the feature silently does nothing — and the runner emits
+        # a WARNING at ``run_batch`` start. Surfacing the disabled state
+        # here makes it auditable in saved manifests.
+        "source_case_override_enabled": has_llm_client
+        or has_frozen_source_case,
+        "narrative_demographics_extraction_enabled": has_llm_client
+        or has_frozen_narrative_demographics,
     }
 
 

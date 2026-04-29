@@ -196,7 +196,9 @@ runner = PipelineRunner(
 )
 ```
 
-Unlike `FrozenStatsProvider`, partial bundles are allowed: `report_id` keys present in the bundle are served from it, and missing keys fall back to live extraction via `llm_client` (or to `None` if no client is configured). Source/case is advisory — only the shared-source override path in the decision logic consumes it — so a missing extraction degrades gracefully rather than failing the pair.
+Partial bundles are allowed: `report_id` keys present in the bundle are served from it, and missing keys fall back to live extraction via `llm_client` (or to `None` if no client is configured). A `None` extraction does not fail the pair — the shared-source override is simply skipped and the decision falls through to the L_match zone logic.
+
+> **⚠ Silent disable when neither path is wired.** With `llm_client=None` *and* no `frozen_source_case_extractions` covering the pair, the shared-source override (including DOI-based linkage) does not fire — there is no error, just a missing branch in the explanation and a missing `source_case_assessment` block in `features.json`. `PipelineRunner.run_batch` emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger when this configuration is detected, and the saved run manifest records `feature_flags.source_case_override_enabled = false`. For deployments that intentionally run without an LLM client at inference time, see *Wiring without an LLM client* below.
 
 The JSON artifact matches `schemas/frozen_source_case_extractions.schema.json` and is validated by `FrozenSourceCaseExtractions.model_validate_json` on load, so schema drift between preprocessing and evaluation surfaces as a `ValidationError` rather than silent misinterpretation.
 
@@ -425,6 +427,54 @@ runner = PipelineRunner(
 Keep this knob in the YAML, **not** in `PipelineConfig`: it's an orchestration / deployment switch (which assessor to dispatch), not a feature/scoring parameter. `PipelineConfig` stays focused on `DomainSizeConfig`, `InconsistencyThresholds`, `AnchorConfig`, etc.
 
 When the key is absent, the loader's `dict.get(..., "auto")` preserves backwards compatibility with existing YAML files.
+
+If a deployment instead drops the `llm_client` entirely — for example, an environment that cannot use LLMs at all at inference time — see *Wiring without an LLM client* below for the required frozen sidecars.
+
+##### Wiring without an LLM client
+
+Some deployments must run inference without any LLM. With `ae_clinical_picture_mode = "rule_based"` and `llm_client = None`, the AE clinical-picture path is fully deterministic — but the **shared-source override** and **narrative-demographics merge** still need their per-report LLM extractions, which must therefore be produced **once at frozen-dataset creation time** and serialized as sidecars next to `validation_reports.json`. Without those sidecars the override silently disables (see *Freezing narrative source/case extractions* above) and `PipelineRunner.run_batch` logs a `WARNING` on first use.
+
+Two helper scripts ship with the dev repo for this purpose:
+
+```sh
+# At frozen-dataset creation time (online, with an LLM client):
+python scripts/extract_frozen_source_case.py \
+    --reports validation_reports.json \
+    --llm-factory my_secure_pkg.llm:make_client \
+    --out source_case.json
+
+python scripts/extract_frozen_narrative_demographics.py \
+    --reports validation_reports.json \
+    --llm-factory my_secure_pkg.llm:make_client \
+    --out narrative_demographics.json
+```
+
+`--llm-factory` takes a `module:callable` reference. The callable is imported and invoked with no arguments and must return an object satisfying the `LLMClient` protocol — the secure repo supplies its own factory; the dev repo never instantiates a client.
+
+Inference step (offline, deterministic, no `llm_client`):
+
+```python
+from llm_dup_dev.data.offline import (
+    load_frozen_narrative_demographics,
+    load_frozen_source_case_extractions,
+)
+from llm_dup_dev.pipeline.runner import PipelineRunner
+
+runner = PipelineRunner(
+    report_loader=loader,
+    stats_provider=stats,
+    llm_client=None,
+    ae_clinical_picture_mode="rule_based",
+    frozen_source_case_extractions=load_frozen_source_case_extractions(
+        "source_case.json"
+    ),
+    frozen_narrative_demographics=load_frozen_narrative_demographics(
+        "narrative_demographics.json"
+    ),
+)
+```
+
+Omitting either bundle in this configuration silently disables the corresponding feature: missing source/case → no shared-source override (no DOI-based linkage); missing narrative demographics → no LLM-derived patient age/sex/weight/height candidates merged into reports. The runner emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger in either case, and the saved run manifest records `feature_flags.source_case_override_enabled = false` / `feature_flags.narrative_demographics_extraction_enabled = false` so the disabled state is auditable in archived runs.
 
 ### 3. StatsProvider
 
