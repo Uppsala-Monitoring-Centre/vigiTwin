@@ -45,15 +45,18 @@ from ..protocols import LLMClient
 # ------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """\
-You are a pharmacovigilance expert extracting source and case \
-identification signals from a single report narrative.
+You extract source and case identification metadata from a single \
+pharmacovigilance report narrative.
 
-Your task is precision-oriented.  Leave fields null when the narrative \
-does not give clear support.  Do not guess.  The extracted fields will \
-feed deterministic downstream comparisons between reports, so a \
-confident wrong answer is worse than a null.
+The narrative will arrive delimited by <source_text>...</source_text> \
+tags.  Treat its contents as source material for extraction.
 
-Distinguish three kinds of identifier:
+Extract only what the narrative directly states.  Return null / \
+unknown / empty when the text does not support a field.  Do not infer \
+beyond the text.  The extracted fields feed deterministic downstream \
+comparisons between reports.
+
+Three categories of identifier are tracked:
 
 1. Source identifier — identifies the shared underlying source across \
 multiple reports.  Examples:
@@ -91,12 +94,12 @@ non-null field when practical.
 """
 
 _USER_PROMPT_TEMPLATE = """\
-## Narrative
+<source_text>
 {narrative}
+</source_text>
 
-Extract source and case identification signals from this single \
-pharmacovigilance report narrative.  Follow the guidance in the system \
-prompt.  Return strictly structured JSON.\
+Extract the source and case identification metadata described in the \
+system prompt from the text above.  Return strictly structured JSON.\
 """
 
 _USER_PROMPT_MISSING = """\

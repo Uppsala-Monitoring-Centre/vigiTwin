@@ -31,6 +31,14 @@ class TestBuildRequest:
         req = build_narrative_demographics_request("A 55-year-old male presented.")
         assert "55-year-old" in req.user_prompt
 
+    def test_wraps_narrative_in_source_text_delimiter(self):
+        req = build_narrative_demographics_request("A 55-year-old male presented.")
+        assert "<source_text>" in req.user_prompt
+        assert "</source_text>" in req.user_prompt
+        start = req.user_prompt.index("<source_text>")
+        end = req.user_prompt.index("</source_text>")
+        assert "55-year-old" in req.user_prompt[start:end]
+
     def test_response_model_is_extraction(self):
         req = build_narrative_demographics_request("any")
         assert req.response_model is NarrativeDemographics
@@ -51,9 +59,9 @@ class TestBuildRequest:
         req = build_narrative_demographics_request("N")
         assert req.temperature == 0.0
 
-    def test_system_prompt_mentions_precision(self):
+    def test_system_prompt_mentions_extraction(self):
         req = build_narrative_demographics_request("N")
-        assert "precision" in req.system_prompt.lower()
+        assert "extract" in req.system_prompt.lower()
 
     def test_system_prompt_excludes_family_members(self):
         req = build_narrative_demographics_request("N")
