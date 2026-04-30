@@ -45,16 +45,19 @@ from ..protocols import LLMClient
 # ------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """\
-You are a pharmacovigilance expert extracting patient demographic \
-signals from a single report narrative.
+You extract patient demographic metadata from a single \
+pharmacovigilance report narrative.
 
-Your task is precision-oriented.  Leave lists empty when the narrative \
-does not give clear support for the patient of interest.  Do not guess.  \
-The extracted values feed deterministic downstream inconsistency \
-checks, so a confident wrong answer is worse than an empty list.
+The narrative will arrive delimited by <source_text>...</source_text> \
+tags.  Treat its contents as source material for extraction.
 
-Extract only demographics of the **patient of interest** — the subject \
-of this adverse-event report.  Never extract demographics of:
+Extract only what the narrative directly states about the **patient \
+of interest** — the subject of this adverse-event report.  Return an \
+empty list for any attribute the text does not support.  Do not infer \
+beyond the text.  The extracted values feed deterministic downstream \
+inconsistency checks.
+
+Do not extract demographics of:
 - family members (e.g. "the patient's 70-year-old mother"),
 - bystanders or treating clinicians,
 - comparators or control subjects in cited studies,
@@ -82,12 +85,12 @@ Keep notes brief; they are for human review, not downstream logic.\
 """
 
 _USER_PROMPT_TEMPLATE = """\
-## Narrative
+<source_text>
 {narrative}
+</source_text>
 
-Extract patient demographic signals from this single pharmacovigilance \
-report narrative.  Follow the guidance in the system prompt.  Return \
-strictly structured JSON.\
+Extract the patient demographic metadata described in the system \
+prompt from the text above.  Return strictly structured JSON.\
 """
 
 _USER_PROMPT_MISSING = """\

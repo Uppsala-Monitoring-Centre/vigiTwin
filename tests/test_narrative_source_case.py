@@ -34,6 +34,14 @@ class TestBuildRequest:
         req = build_source_case_request("Patient was treated with drug X.")
         assert "drug X" in req.user_prompt
 
+    def test_wraps_narrative_in_source_text_delimiter(self):
+        req = build_source_case_request("Patient was treated with drug X.")
+        assert "<source_text>" in req.user_prompt
+        assert "</source_text>" in req.user_prompt
+        start = req.user_prompt.index("<source_text>")
+        end = req.user_prompt.index("</source_text>")
+        assert "drug X" in req.user_prompt[start:end]
+
     def test_response_model_is_extraction(self):
         req = build_source_case_request("anything")
         assert req.response_model is NarrativeSourceCase
@@ -54,9 +62,9 @@ class TestBuildRequest:
         req = build_source_case_request("N")
         assert req.temperature == 0.0
 
-    def test_system_prompt_mentions_precision(self):
+    def test_system_prompt_mentions_extraction(self):
         req = build_source_case_request("N")
-        assert "precision" in req.system_prompt.lower()
+        assert "extract" in req.system_prompt.lower()
 
     def test_system_prompt_distinguishes_identifier_kinds(self):
         req = build_source_case_request("N")
