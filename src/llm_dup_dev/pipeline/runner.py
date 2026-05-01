@@ -452,6 +452,30 @@ class PipelineRunner:
                 method="llm",
             )
 
+    def _seed_extraction_caches(
+        self,
+    ) -> tuple[
+        dict[str, NarrativeSourceCase | None],
+        dict[str, NarrativeDemographics],
+    ]:
+        """Initialise the per-batch extraction caches from frozen bundles.
+
+        Each cache is keyed by ``report_id``.  When a corresponding
+        frozen bundle was passed to the runner at construction time, its
+        entries are pre-populated so covered reports skip live LLM calls
+        inside ``run_batch``.
+        """
+        source_case_cache: dict[str, NarrativeSourceCase | None] = {}
+        if self._frozen_source_case is not None:
+            source_case_cache.update(self._frozen_source_case.extractions)
+
+        demographics_cache: dict[str, NarrativeDemographics] = {}
+        if self._frozen_narrative_demographics is not None:
+            demographics_cache.update(
+                self._frozen_narrative_demographics.extractions
+            )
+        return source_case_cache, demographics_cache
+
     def _extract_source_case(self, report: Report) -> NarrativeSourceCase | None:
         """Extract narrative source/case signals for one report.
 
@@ -589,25 +613,12 @@ class PipelineRunner:
                 "patient age/sex/weight/height candidates."
             )
 
-        # Memoize per-report narrative source/case extractions so each
-        # narrative is extracted only once across all pairs that
-        # reference it. Cache lifetime is one ``run_batch`` call.
-        # Seeded from a frozen bundle when one was passed at
-        # construction time — covered reports then skip live LLM calls.
-        source_case_cache: dict[str, NarrativeSourceCase | None] = {}
-        if self._frozen_source_case is not None:
-            source_case_cache.update(self._frozen_source_case.extractions)
-
-        # Same memoization pattern for narrative demographics
-        # extractions. Seeded from a frozen bundle when one was passed
-        # at construction time — covered reports then skip live LLM
-        # calls and their candidates are merged into each Report inside
-        # ``run_pair``.
-        demographics_cache: dict[str, NarrativeDemographics] = {}
-        if self._frozen_narrative_demographics is not None:
-            demographics_cache.update(
-                self._frozen_narrative_demographics.extractions
-            )
+        # Memoize per-report extractions for the duration of one
+        # ``run_batch`` call.  Both caches are seeded from their frozen
+        # bundles when configured — covered reports skip live LLM
+        # calls.  Cache misses inside the loop below trigger live
+        # extraction.
+        source_case_cache, demographics_cache = self._seed_extraction_caches()
 
         for pair in pairs:
             try:

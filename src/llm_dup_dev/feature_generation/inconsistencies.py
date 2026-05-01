@@ -127,23 +127,44 @@ def _ages_in_years(report: Report) -> list[float]:
     return result
 
 
+def _classify_numeric_inconsistency(
+    values_1: list[float],
+    values_2: list[float],
+    *,
+    feature: str,
+    units: str,
+    moderate_threshold: float,
+    strong_threshold: float,
+) -> list[Inconsistency]:
+    """Shared shape for numeric-attribute inconsistency checks.
+
+    Returns no inconsistencies when either side is empty.  Otherwise
+    computes the minimum absolute pairwise difference and delegates to
+    :func:`_classify_numeric_difference` for severity bucketing.
+    """
+    if not values_1 or not values_2:
+        return []
+
+    min_diff = min(abs(v1 - v2) for v1 in values_1 for v2 in values_2)
+    return _classify_numeric_difference(
+        feature=feature,
+        min_diff=min_diff,
+        units=units,
+        moderate_threshold=moderate_threshold,
+        strong_threshold=strong_threshold,
+    )
+
+
 def _check_age(
     r1: Report,
     r2: Report,
     thresholds: InconsistencyThresholds,
 ) -> list[Inconsistency]:
     """Check for age inconsistencies (in years)."""
-    ages_1 = _ages_in_years(r1)
-    ages_2 = _ages_in_years(r2)
-
-    if not ages_1 or not ages_2:
-        return []
-
-    min_diff = min(abs(a1 - a2) for a1 in ages_1 for a2 in ages_2)
-
-    return _classify_numeric_difference(
+    return _classify_numeric_inconsistency(
+        _ages_in_years(r1),
+        _ages_in_years(r2),
         feature="patient_age",
-        min_diff=min_diff,
         units="years",
         moderate_threshold=thresholds.age_moderate,
         strong_threshold=thresholds.age_strong,
@@ -156,16 +177,10 @@ def _check_height(
     thresholds: InconsistencyThresholds,
 ) -> list[Inconsistency]:
     """Check for height inconsistencies (in cm)."""
-    if not r1.patient_height_values or not r2.patient_height_values:
-        return []
-
-    vals_1 = [v.value for v in r1.patient_height_values]
-    vals_2 = [v.value for v in r2.patient_height_values]
-    min_diff = min(abs(v1 - v2) for v1 in vals_1 for v2 in vals_2)
-
-    return _classify_numeric_difference(
+    return _classify_numeric_inconsistency(
+        [v.value for v in r1.patient_height_values],
+        [v.value for v in r2.patient_height_values],
         feature="patient_height",
-        min_diff=min_diff,
         units="cm",
         moderate_threshold=thresholds.height_moderate,
         strong_threshold=thresholds.height_strong,
@@ -178,20 +193,47 @@ def _check_weight(
     thresholds: InconsistencyThresholds,
 ) -> list[Inconsistency]:
     """Check for weight inconsistencies (in kg)."""
-    if not r1.patient_weight_values or not r2.patient_weight_values:
-        return []
-
-    vals_1 = [v.value for v in r1.patient_weight_values]
-    vals_2 = [v.value for v in r2.patient_weight_values]
-    min_diff = min(abs(v1 - v2) for v1 in vals_1 for v2 in vals_2)
-
-    return _classify_numeric_difference(
+    return _classify_numeric_inconsistency(
+        [v.value for v in r1.patient_weight_values],
+        [v.value for v in r2.patient_weight_values],
         feature="patient_weight",
-        min_diff=min_diff,
         units="kg",
         moderate_threshold=thresholds.weight_moderate,
         strong_threshold=thresholds.weight_strong,
     )
+
+
+def _classify_set_overlap_inconsistency(
+    values_1: list,
+    values_2: list,
+    *,
+    feature: str,
+    severity: InconsistencySeverity,
+    label: str,
+) -> list[Inconsistency]:
+    """Shared shape for multi-valued string-attribute checks.
+
+    Lower-cases the values on both sides; returns no inconsistencies
+    when either side is empty or the lower-cased sets overlap.
+    Otherwise emits a single inconsistency at ``severity`` describing
+    the disjoint sets.
+    """
+    if not values_1 or not values_2:
+        return []
+
+    set_1 = {v.value.lower() for v in values_1}
+    set_2 = {v.value.lower() for v in values_2}
+
+    if set_1 & set_2:
+        return []
+
+    return [
+        Inconsistency(
+            feature=feature,
+            severity=severity,
+            description=f"{label} mismatch: {sorted(set_1)} vs {sorted(set_2)}",
+        )
+    ]
 
 
 def _check_sex(r1: Report, r2: Report) -> list[Inconsistency]:
@@ -200,23 +242,13 @@ def _check_sex(r1: Report, r2: Report) -> list[Inconsistency]:
     Any mismatch in recorded patient sex is a strong inconsistency.
     Missing values (empty lists) do not produce inconsistencies.
     """
-    if not r1.patient_sex_values or not r2.patient_sex_values:
-        return []
-
-    sexes_1 = {v.value.lower() for v in r1.patient_sex_values}
-    sexes_2 = {v.value.lower() for v in r2.patient_sex_values}
-
-    # If any overlap exists, no inconsistency
-    if sexes_1 & sexes_2:
-        return []
-
-    return [
-        Inconsistency(
-            feature="patient_sex",
-            severity=InconsistencySeverity.STRONG,
-            description=f"Sex mismatch: {sorted(sexes_1)} vs {sorted(sexes_2)}",
-        )
-    ]
+    return _classify_set_overlap_inconsistency(
+        r1.patient_sex_values,
+        r2.patient_sex_values,
+        feature="patient_sex",
+        severity=InconsistencySeverity.STRONG,
+        label="Sex",
+    )
 
 
 def _check_country(r1: Report, r2: Report) -> list[Inconsistency]:
@@ -228,25 +260,13 @@ def _check_country(r1: Report, r2: Report) -> list[Inconsistency]:
     still surfaced for reviewer awareness. Missing values on either
     side do not produce an inconsistency.
     """
-    if not r1.country_of_origin_values or not r2.country_of_origin_values:
-        return []
-
-    countries_1 = {v.value.lower() for v in r1.country_of_origin_values}
-    countries_2 = {v.value.lower() for v in r2.country_of_origin_values}
-
-    if countries_1 & countries_2:
-        return []
-
-    return [
-        Inconsistency(
-            feature="patient_country",
-            severity=InconsistencySeverity.MINOR,
-            description=(
-                f"Country mismatch: {sorted(countries_1)} vs "
-                f"{sorted(countries_2)}"
-            ),
-        )
-    ]
+    return _classify_set_overlap_inconsistency(
+        r1.country_of_origin_values,
+        r2.country_of_origin_values,
+        feature="patient_country",
+        severity=InconsistencySeverity.MINOR,
+        label="Country",
+    )
 
 
 # ---------------------------------------------------------------------------
