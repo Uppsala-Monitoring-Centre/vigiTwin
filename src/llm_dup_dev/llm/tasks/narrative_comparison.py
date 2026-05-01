@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from llm_dup_dev.models.enums import NarrativeConsistency
 
+from .._response_parsing import parse_structured_response
 from ..models import LLMRequest, LLMResponse
 from ..protocols import LLMClient
 
@@ -201,21 +202,8 @@ def compare_narratives(
         max_tokens=max_tokens,
     )
     response: LLMResponse = llm_client.generate(request)
-
-    if response.parsed is None:
-        raise ValueError(
-            f"Narrative comparison for pair {pair_id} failed: LLM did not "
-            f"return structured output.  Raw text: {response.raw_text!r}"
-        )
-
-    if isinstance(response.parsed, NarrativeVerdict):
-        return response.parsed
-
-    # If the backend returned a dict (some providers do), try to parse it.
-    if isinstance(response.parsed, dict):
-        return NarrativeVerdict.model_validate(response.parsed)
-
-    raise ValueError(
-        f"Narrative comparison for pair {pair_id}: unexpected parsed type "
-        f"{type(response.parsed).__name__}.  Expected NarrativeVerdict."
+    return parse_structured_response(
+        response,
+        NarrativeVerdict,
+        context_label=f"Narrative comparison for pair {pair_id}",
     )

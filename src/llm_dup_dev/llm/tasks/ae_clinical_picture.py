@@ -69,7 +69,8 @@ from llm_dup_dev.models.pair_features import (
 )
 from llm_dup_dev.models.report import Report
 
-from ..models import LLMRequest, LLMResponse
+from .._response_parsing import parse_structured_response
+from ..models import LLMRequest
 from ..protocols import LLMClient
 
 # Provenance string used on every Inconsistency emitted by this task.
@@ -487,27 +488,6 @@ def collapse_subordinate_findings(
 # ------------------------------------------------------------------
 
 
-def _verdict_from_response(
-    pair_id: str, response: LLMResponse
-) -> AEClinicalPictureVerdict:
-    """Coerce the parsed LLM response into an AEClinicalPictureVerdict."""
-    if response.parsed is None:
-        raise ValueError(
-            f"AE clinical-picture assessment for pair {pair_id} failed: "
-            f"LLM did not return structured output. Raw text: "
-            f"{response.raw_text!r}"
-        )
-    if isinstance(response.parsed, AEClinicalPictureVerdict):
-        return response.parsed
-    if isinstance(response.parsed, dict):
-        return AEClinicalPictureVerdict.model_validate(response.parsed)
-    raise ValueError(
-        f"AE clinical-picture assessment for pair {pair_id}: unexpected "
-        f"parsed type {type(response.parsed).__name__}. Expected "
-        f"AEClinicalPictureVerdict."
-    )
-
-
 def _llm_finding_to_inconsistency(
     finding: AEInconsistencyFindingLLM,
     *,
@@ -627,5 +607,9 @@ def assess_ae_clinical_picture(
         r1, r2, temperature=temperature, max_tokens=max_tokens
     )
     response = llm_client.generate(request)
-    verdict = _verdict_from_response(pair_id, response)
+    verdict = parse_structured_response(
+        response,
+        AEClinicalPictureVerdict,
+        context_label=f"AE clinical-picture assessment for pair {pair_id}",
+    )
     return _build_result_from_verdict(verdict)

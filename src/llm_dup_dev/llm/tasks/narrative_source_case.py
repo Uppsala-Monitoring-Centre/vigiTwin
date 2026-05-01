@@ -36,6 +36,7 @@ from llm_dup_dev.models.narrative_source_case import (
     SourceType,
 )
 
+from .._response_parsing import parse_structured_response
 from ..models import LLMRequest, LLMResponse
 from ..protocols import LLMClient
 
@@ -226,22 +227,9 @@ def extract_source_case(
         max_tokens=max_tokens,
     )
     response: LLMResponse = llm_client.generate(request)
-
-    if response.parsed is None:
-        raise ValueError(
-            f"Source/case extraction for report {report_id} failed: LLM did "
-            f"not return structured output.  Raw text: {response.raw_text!r}"
-        )
-
-    if isinstance(response.parsed, NarrativeSourceCase):
-        extraction = response.parsed
-    elif isinstance(response.parsed, dict):
-        extraction = NarrativeSourceCase.model_validate(response.parsed)
-    else:
-        raise ValueError(
-            f"Source/case extraction for report {report_id}: unexpected "
-            f"parsed type {type(response.parsed).__name__}.  Expected "
-            f"NarrativeSourceCase."
-        )
-
+    extraction = parse_structured_response(
+        response,
+        NarrativeSourceCase,
+        context_label=f"Source/case extraction for report {report_id}",
+    )
     return _post_normalize(extraction)

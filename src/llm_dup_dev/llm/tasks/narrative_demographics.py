@@ -36,6 +36,7 @@ from __future__ import annotations
 
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 
+from .._response_parsing import parse_structured_response
 from ..models import LLMRequest, LLMResponse
 from ..protocols import LLMClient
 
@@ -178,21 +179,10 @@ def extract_narrative_demographics(
         max_tokens=max_tokens,
     )
     response: LLMResponse = llm_client.generate(request)
-
-    if response.parsed is None:
-        raise ValueError(
-            f"Narrative demographics extraction for report {report_id} "
-            f"failed: LLM did not return structured output.  Raw text: "
-            f"{response.raw_text!r}"
-        )
-
-    if isinstance(response.parsed, NarrativeDemographics):
-        return response.parsed
-    if isinstance(response.parsed, dict):
-        return NarrativeDemographics.model_validate(response.parsed)
-
-    raise ValueError(
-        f"Narrative demographics extraction for report {report_id}: "
-        f"unexpected parsed type {type(response.parsed).__name__}.  "
-        f"Expected NarrativeDemographics."
+    return parse_structured_response(
+        response,
+        NarrativeDemographics,
+        context_label=(
+            f"Narrative demographics extraction for report {report_id}"
+        ),
     )

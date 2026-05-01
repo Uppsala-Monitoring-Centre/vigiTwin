@@ -86,9 +86,32 @@ each ``compute_stats``, so no API change is needed on the runner side.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
+
+_BundleT = TypeVar("_BundleT", bound=BaseModel)
+
+
+def _save_frozen_bundle(bundle: BaseModel, path: str | Path) -> None:
+    """Serialize a frozen bundle to a JSON file with ``indent=2``.
+
+    Shared by the typed ``save_frozen_*`` wrappers below so artifacts
+    stay readable in code review and diff tools.
+    """
+    Path(path).write_text(bundle.model_dump_json(indent=2))
+
+
+def _load_frozen_bundle(
+    path: str | Path, model_cls: type[_BundleT]
+) -> _BundleT:
+    """Load and validate a frozen bundle from a JSON file.
+
+    Raises Pydantic ``ValidationError`` on schema drift — surfaces
+    incompatibilities between frozen artifacts and the current code
+    loudly rather than silently.
+    """
+    return model_cls.model_validate_json(Path(path).read_text())
 
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
@@ -372,12 +395,8 @@ class FrozenSourceCaseExtractions(BaseModel):
 def save_frozen_source_case_extractions(
     bundle: FrozenSourceCaseExtractions, path: str | Path
 ) -> None:
-    """Serialize a source/case bundle to a JSON file.
-
-    Uses ``model_dump_json(indent=2)`` so the artifact is readable in
-    code review and diff tools.
-    """
-    Path(path).write_text(bundle.model_dump_json(indent=2))
+    """Serialize a source/case bundle to a JSON file."""
+    _save_frozen_bundle(bundle, path)
 
 
 def load_frozen_source_case_extractions(
@@ -387,12 +406,9 @@ def load_frozen_source_case_extractions(
 
     Raises Pydantic ``ValidationError`` if the file contents do not
     match the current ``FrozenSourceCaseExtractions`` /
-    ``NarrativeSourceCase`` schemas — surfaces drift between frozen
-    artifacts and the current code loudly rather than silently.
+    ``NarrativeSourceCase`` schemas.
     """
-    return FrozenSourceCaseExtractions.model_validate_json(
-        Path(path).read_text()
-    )
+    return _load_frozen_bundle(path, FrozenSourceCaseExtractions)
 
 
 # ------------------------------------------------------------------
@@ -430,12 +446,8 @@ class FrozenNarrativeDemographics(BaseModel):
 def save_frozen_narrative_demographics(
     bundle: FrozenNarrativeDemographics, path: str | Path
 ) -> None:
-    """Serialize a demographics bundle to a JSON file.
-
-    Uses ``model_dump_json(indent=2)`` so the artifact is readable in
-    code review and diff tools.
-    """
-    Path(path).write_text(bundle.model_dump_json(indent=2))
+    """Serialize a demographics bundle to a JSON file."""
+    _save_frozen_bundle(bundle, path)
 
 
 def load_frozen_narrative_demographics(
@@ -445,9 +457,6 @@ def load_frozen_narrative_demographics(
 
     Raises Pydantic ``ValidationError`` if the file contents do not
     match the current ``FrozenNarrativeDemographics`` /
-    ``NarrativeDemographics`` schemas — surfaces drift between frozen
-    artifacts and the current code loudly rather than silently.
+    ``NarrativeDemographics`` schemas.
     """
-    return FrozenNarrativeDemographics.model_validate_json(
-        Path(path).read_text()
-    )
+    return _load_frozen_bundle(path, FrozenNarrativeDemographics)
