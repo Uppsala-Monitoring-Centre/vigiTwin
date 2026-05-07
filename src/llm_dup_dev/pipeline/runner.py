@@ -490,6 +490,7 @@ class PipelineRunner:
                 self._llm_client,
                 report.report_id,
                 report.narrative,
+                literature_reference=report.literature_reference,
             )
         except Exception as exc:
             logger.warning(

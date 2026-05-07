@@ -108,5 +108,6 @@
     "value": "2020-05-15",
     "resolution": "day"
   },
-  "narrative": "Patient experienced somnolence and dizziness after starting pregabalin."
+  "narrative": "Patient experienced somnolence and dizziness after starting pregabalin.",
+  "literature_reference": null
 }

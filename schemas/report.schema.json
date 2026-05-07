@@ -381,6 +381,18 @@
       ],
       "default": null,
       "title": "Narrative"
+    },
+    "literature_reference": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Literature Reference"
     }
   },
   "required": [

@@ -309,6 +309,31 @@ Inconsistencies for the resolution rule.
 
 ------
 
+### Literature reference (optional)
+
+```
+literature_reference: "Smith J et al. NEJM 2023;389:1234. PMID 12345678"
+```
+
+A structured citation / source descriptor for literature reports — for
+example a journal citation, registry name, study or case-series label,
+or an explicit DOI / PMID / trial-registration ID. Populated by the
+secure-side report loader when the source database carries a distinct
+literature-reference field separate from the free-text narrative.
+
+This field is **optional** (defaults to `null`). When present it is
+passed alongside the narrative into the per-report narrative
+source/case extractor (see § Derived Narrative Signals) as supplemental
+source-identifying metadata, helping the extractor recover stable
+identifiers and decide whether the source is multi-patient (case
+series, registry, multi-arm study) or single-patient. When absent the
+extractor falls back to its narrative-only behavior. The field is
+**input** to the source/case extractor, not part of its output: the
+`NarrativeSourceCase` and `FrozenSourceCaseExtractions` schemas are
+unchanged.
+
+------
+
 ## Representation Principles
 
 ### Set semantics
