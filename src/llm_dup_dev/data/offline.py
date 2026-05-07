@@ -312,11 +312,48 @@ class FrozenStatsProvider:
             )
 
         scope = self._select_scope(bundle, country, year)
+
+        # Broader-context counts feed the hierarchical-backoff smoother
+        # in ``compute_probability`` for drug-set / AE-set marginals.
+        # Only populate levels that are *strictly broader* than the
+        # primary scope so that smoothing is not applied with identical
+        # data twice:
+        #   - primary = country-year → country and global both broader
+        #   - primary = country      → only global is broader
+        #   - primary = global       → no broader level
+        is_country_year_primary = country is not None and year is not None
+        is_country_primary = country is not None and year is None
+        country_stats = (
+            bundle.country_stats if is_country_year_primary else None
+        )
+        global_stats = (
+            bundle.global_stats
+            if (is_country_year_primary or is_country_primary)
+            else None
+        )
         return FrequencyStats(
             N_total=scope.N_total,
             N_drugs=scope.N_drugs,
             N_AEs=scope.N_AEs,
             N_drugs_AEs=scope.N_drugs_AEs,
+            N_total_country=(
+                country_stats.N_total if country_stats is not None else None
+            ),
+            N_drugs_country=(
+                country_stats.N_drugs if country_stats is not None else None
+            ),
+            N_AEs_country=(
+                country_stats.N_AEs if country_stats is not None else None
+            ),
+            N_total_global=(
+                global_stats.N_total if global_stats is not None else None
+            ),
+            N_drugs_global=(
+                global_stats.N_drugs if global_stats is not None else None
+            ),
+            N_AEs_global=(
+                global_stats.N_AEs if global_stats is not None else None
+            ),
         )
 
     # ------------------------------------------------------------------

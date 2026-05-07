@@ -1,5 +1,5 @@
 {
-  "description": "Pre-computed database statistics for a report pair's shared clinical context.\n\nThese must be provided by the secure repo's data extraction layer.\nAll counts are within the determined reporting context.",
+  "description": "Pre-computed database statistics for a report pair's shared clinical context.\n\nThese must be provided by the secure repo's data extraction layer.\nThe primary counts (``N_total``, ``N_drugs``, ``N_AEs``,\n``N_drugs_AEs``) are within the determined reporting context.\n\nThe optional broader-context fields (``N_*_country`` and\n``N_*_global``) are used by ``compute_probability`` for hierarchical\nbackoff smoothing of drug-set / AE-set marginal probabilities. When\na feature appears only in the candidate pair, the leave-pair-out\nestimate in the primary context collapses to zero; the broader\ncounts let the estimate fall back through country and global priors\ninstead of being silently dropped. Implementations should populate\nthese when available; missing levels are skipped and a small floor\nis used at the bottom of the ladder.",
   "properties": {
     "N_total": {
       "title": "N Total",
@@ -16,6 +16,78 @@
     "N_drugs_AEs": {
       "title": "N Drugs Aes",
       "type": "integer"
+    },
+    "N_total_country": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Total Country"
+    },
+    "N_drugs_country": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Drugs Country"
+    },
+    "N_AEs_country": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Aes Country"
+    },
+    "N_total_global": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Total Global"
+    },
+    "N_drugs_global": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Drugs Global"
+    },
+    "N_AEs_global": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Aes Global"
     }
   },
   "required": [

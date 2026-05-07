@@ -274,8 +274,11 @@ class TestCountryScope:
             country="US",
             year=None,
         )
+        # Primary = country; only global is strictly broader. Country-level
+        # broader fields stay None to avoid double-applying smoothing.
         assert stats == FrequencyStats(
-            N_total=1200, N_drugs=50, N_AEs=80, N_drugs_AEs=12
+            N_total=1200, N_drugs=50, N_AEs=80, N_drugs_AEs=12,
+            N_total_global=5000, N_drugs_global=200, N_AEs_global=300,
         )
 
     def test_end_to_end_country(
@@ -310,8 +313,11 @@ class TestCountryYearScope:
             country="US",
             year=2021,
         )
+        # Primary = country-year; both country and global are strictly broader.
         assert stats == FrequencyStats(
-            N_total=300, N_drugs=15, N_AEs=22, N_drugs_AEs=4
+            N_total=300, N_drugs=15, N_AEs=22, N_drugs_AEs=4,
+            N_total_country=1200, N_drugs_country=50, N_AEs_country=80,
+            N_total_global=5000, N_drugs_global=200, N_AEs_global=300,
         )
 
     def test_end_to_end_country_year(
