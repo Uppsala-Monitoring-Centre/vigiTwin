@@ -120,7 +120,10 @@ def main(argv: list[str] | None = None) -> int:
             continue
         logger.info("extracting source/case for %s", report.report_id)
         extractions[report.report_id] = extract_source_case(
-            client, report.report_id, report.narrative
+            client,
+            report.report_id,
+            report.narrative,
+            literature_reference=report.literature_reference,
         )
 
     bundle = FrozenSourceCaseExtractions(extractions=extractions)

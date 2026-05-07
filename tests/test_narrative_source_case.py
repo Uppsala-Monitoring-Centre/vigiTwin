@@ -18,6 +18,7 @@ from llm_dup_dev.models.narrative_source_case import (
     SourceIdentifierType,
     SourceType,
 )
+from llm_dup_dev.models.report import Report
 
 
 @pytest.fixture
@@ -319,3 +320,121 @@ class TestExtractFailures:
         fake_client.seed_response(parsed=["not", "valid"])
         with pytest.raises(ValueError, match="unexpected parsed type"):
             extract_source_case(fake_client, "R001", "narrative")
+
+
+# ==================================================================
+# literature_reference — optional report-level supplemental input
+# ==================================================================
+
+class TestLiteratureReferenceInPrompt:
+
+    def test_present_adds_literature_reference_block(self):
+        req = build_source_case_request(
+            "Patient was treated with drug X.",
+            literature_reference="Smith J et al. NEJM 2023;389:1234. PMID 12345678",
+        )
+        assert "<literature_reference>" in req.user_prompt
+        assert "</literature_reference>" in req.user_prompt
+        start = req.user_prompt.index("<literature_reference>")
+        end = req.user_prompt.index("</literature_reference>")
+        assert "Smith J" in req.user_prompt[start:end]
+        assert "PMID 12345678" in req.user_prompt[start:end]
+        # Narrative block still present and intact.
+        assert "<source_text>" in req.user_prompt
+        assert "drug X" in req.user_prompt
+
+    def test_system_prompt_describes_literature_reference(self):
+        req = build_source_case_request(
+            "n", literature_reference="some citation",
+        )
+        sp = req.system_prompt.lower()
+        assert "<literature_reference>" in sp
+        assert "supporting evidence" in sp or "supporting" in sp
+
+    def test_absent_keeps_prompt_unchanged(self):
+        """Without a literature_reference the user prompt is byte-identical
+        to the prior narrative-only build, so existing snapshot/substring
+        callers are not perturbed."""
+        narrative = "Patient was treated with drug X."
+        without = build_source_case_request(narrative).user_prompt
+        with_none = build_source_case_request(
+            narrative, literature_reference=None,
+        ).user_prompt
+        with_blank = build_source_case_request(
+            narrative, literature_reference="   ",
+        ).user_prompt
+        assert with_none == without
+        assert with_blank == without
+        assert "<literature_reference>" not in without
+
+    def test_lit_ref_alone_substitutes_not_available_for_narrative(self):
+        req = build_source_case_request(
+            "", literature_reference="Doe J. JAMA 2024;331:1.",
+        )
+        assert "<literature_reference>" in req.user_prompt
+        assert "<source_text>" in req.user_prompt
+        # Empty narrative slot is filled with the placeholder, not blank.
+        start = req.user_prompt.index("<source_text>")
+        end = req.user_prompt.index("</source_text>")
+        assert "Not available" in req.user_prompt[start:end]
+
+
+class TestLiteratureReferenceShortCircuit:
+
+    def test_lit_ref_alone_does_not_short_circuit(self, fake_client):
+        seeded = NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.PMID, value="12345678",
+                ),
+            ],
+        )
+        fake_client.seed_response(seeded)
+        result = extract_source_case(
+            fake_client,
+            "R001",
+            narrative="",
+            literature_reference="Smith J. NEJM 2023. PMID 12345678",
+        )
+        assert result.source_type == SourceType.LITERATURE
+        assert len(fake_client.requests) == 1
+
+    def test_both_empty_still_short_circuits(self, fake_client):
+        result = extract_source_case(
+            fake_client,
+            "R001",
+            narrative=None,
+            literature_reference=None,
+        )
+        assert result.source_type == SourceType.UNKNOWN
+        assert fake_client.requests == []
+
+    def test_both_whitespace_still_short_circuits(self, fake_client):
+        result = extract_source_case(
+            fake_client,
+            "R001",
+            narrative="   \n  ",
+            literature_reference="   ",
+        )
+        assert result.source_type == SourceType.UNKNOWN
+        assert fake_client.requests == []
+
+
+# ==================================================================
+# Report model — backwards compatibility for the new optional field
+# ==================================================================
+
+class TestReportLiteratureReferenceField:
+
+    def test_missing_key_loads_as_none(self):
+        report = Report.model_validate({"report_id": "R001"})
+        assert report.literature_reference is None
+
+    def test_explicit_value_round_trips(self):
+        original = Report(
+            report_id="R001",
+            literature_reference="Smith J. NEJM 2023.",
+        )
+        loaded = Report.model_validate_json(original.model_dump_json())
+        assert loaded.literature_reference == "Smith J. NEJM 2023."

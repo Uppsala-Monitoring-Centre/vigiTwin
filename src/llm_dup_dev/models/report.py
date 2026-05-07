@@ -161,3 +161,11 @@ class Report(BaseModel):
 
     # Narrative text (used for LLM-based consistency assessment)
     narrative: str | None = None
+
+    # Optional structured citation / source descriptor for literature reports
+    # (e.g. "Smith J et al. NEJM 2023;389:1234. PMID 12345678"). Populated by
+    # the secure-side report loader when the source DB carries a distinct
+    # literature-reference field; absent in older frozen data and synthetic
+    # fixtures, in which case the narrative-source-case task falls back to
+    # its pre-existing narrative-only behavior.
+    literature_reference: str | None = None

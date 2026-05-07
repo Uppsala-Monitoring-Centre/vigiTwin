@@ -111,7 +111,21 @@ Both may be null when evidence is weak.  single_patient_source is NOT \
 automatically the negation of multi_patient_source.
 - Attach a short verbatim evidence snippet from the narrative for every \
 non-null field when practical.
-- Keep notes brief; they are for human review, not downstream logic.\
+- Keep notes brief; they are for human review, not downstream logic.
+
+When a <literature_reference>...</literature_reference> block accompanies \
+the narrative, treat it as supplemental source-identifying metadata, not \
+as part of the case description.  It may contain explicit identifiers \
+(DOI, PMID, NCT/EudraCT, study name, protocol number) or implicit ones \
+(journal + year + author hinting at a publication, registry name, \
+case-series label).  It often signals whether the source is multi-patient \
+(case series, registry, multi-arm study) or single-patient (single case \
+report).  Use it as supporting evidence: extract identifiers it makes \
+verbatim explicit, and let it tip the multi_patient_source / \
+single_patient_source booleans when the narrative alone is ambiguous.  \
+Do not invent identifiers from vague or partial matches, and do not let \
+the literature reference override clear narrative evidence about the \
+case-within-source label.\
 """
 
 _USER_PROMPT_TEMPLATE = """\
@@ -128,6 +142,30 @@ The narrative is missing or empty.  Return an extraction with \
 source_type = 'unknown' and all other fields null / empty.\
 """
 
+_USER_PROMPT_WITH_LIT_REF = """\
+<source_text>
+{narrative}
+</source_text>
+
+<literature_reference>
+{literature_reference}
+</literature_reference>
+
+Extract the source and case identification metadata described in the \
+system prompt from the text above.  Use the literature reference as \
+supporting evidence for source identifiers (DOI, PMID, study name, \
+trial registration, protocol number, article_reference) and for whether \
+the source is multi-patient (case series, registry, multi-arm trial) or \
+single-patient (single case report).  Do not over-weight vague or \
+partial matches.  Return strictly structured JSON.\
+"""
+
+_NARRATIVE_NOT_AVAILABLE = "Not available"
+
+
+def _has_text(value: str | None) -> bool:
+    return bool(value and value.strip())
+
 
 # ------------------------------------------------------------------
 # Request builder
@@ -136,6 +174,7 @@ source_type = 'unknown' and all other fields null / empty.\
 def build_source_case_request(
     narrative: str | None,
     *,
+    literature_reference: str | None = None,
     temperature: float = 0.0,
     max_tokens: int | None = None,
 ) -> LLMRequest:
@@ -143,13 +182,26 @@ def build_source_case_request(
 
     Exposed separately so callers can inspect the request before sending
     (e.g. for logging, batching, or offline freezing workflows).
+
+    When ``literature_reference`` is supplied (non-empty after stripping),
+    a separate ``<literature_reference>`` block is appended to the user
+    prompt as supplemental source-identifying metadata.  When it is
+    absent, the prompt is byte-identical to the prior narrative-only
+    version.
     """
-    has_content = bool(narrative and narrative.strip())
-    user_prompt = (
-        _USER_PROMPT_TEMPLATE.format(narrative=narrative)
-        if has_content
-        else _USER_PROMPT_MISSING
-    )
+    has_narrative = _has_text(narrative)
+    has_lit_ref = _has_text(literature_reference)
+
+    if has_lit_ref:
+        user_prompt = _USER_PROMPT_WITH_LIT_REF.format(
+            narrative=narrative if has_narrative else _NARRATIVE_NOT_AVAILABLE,
+            literature_reference=literature_reference,
+        )
+    elif has_narrative:
+        user_prompt = _USER_PROMPT_TEMPLATE.format(narrative=narrative)
+    else:
+        user_prompt = _USER_PROMPT_MISSING
+
     return LLMRequest(
         system_prompt=_SYSTEM_PROMPT,
         user_prompt=user_prompt,
@@ -215,6 +267,7 @@ def extract_source_case(
     report_id: str,
     narrative: str | None,
     *,
+    literature_reference: str | None = None,
     temperature: float = 0.0,
     max_tokens: int | None = None,
 ) -> NarrativeSourceCase:
@@ -227,9 +280,15 @@ def extract_source_case(
     report_id : str
         Identifier of the report (for logging / diagnostics).
     narrative : str or None
-        The narrative text.  Empty / whitespace / None triggers a short-
-        circuit: no LLM call is made and an empty
-        :class:`NarrativeSourceCase` is returned.
+        The narrative text.  Short-circuits to an empty
+        :class:`NarrativeSourceCase` only when both ``narrative`` and
+        ``literature_reference`` are missing / whitespace.
+    literature_reference : str or None
+        Optional structured citation / source descriptor (DOI, PMID,
+        journal citation, study/registry label, etc.) carried alongside
+        the narrative on literature reports.  When provided it is added
+        as a separate prompt block; when missing, the prompt is
+        identical to the prior narrative-only version.
     temperature : float
         Sampling temperature.  Defaults to 0.0.
     max_tokens : int or None
@@ -246,11 +305,12 @@ def extract_source_case(
         If the LLM response does not contain a valid parsed
         :class:`NarrativeSourceCase`.
     """
-    if not (narrative and narrative.strip()):
+    if not _has_text(narrative) and not _has_text(literature_reference):
         return NarrativeSourceCase(source_type=SourceType.UNKNOWN)
 
     request = build_source_case_request(
         narrative,
+        literature_reference=literature_reference,
         temperature=temperature,
         max_tokens=max_tokens,
     )

@@ -175,7 +175,10 @@ from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
 extractions = {}
 for report in unique_reports_in_batch:
     extractions[report.report_id] = extract_source_case(
-        llm_client, report.report_id, report.narrative
+        llm_client,
+        report.report_id,
+        report.narrative,
+        literature_reference=report.literature_reference,
     )
 
 bundle = FrozenSourceCaseExtractions(extractions=extractions)
@@ -312,6 +315,15 @@ class SqlReportLoader:
           omitted (None), the dev-side fallback derivation is applied.
           Use the standard PartialDate resolution convention (year /
           month / day).
+        - literature_reference (str or None) — a structured citation /
+          source descriptor for literature reports (journal citation,
+          registry/study label, DOI / PMID / NCT). When supplied it is
+          passed alongside the narrative into the per-report
+          source/case extractor as supplemental source-identifying
+          metadata; when omitted (None), the extractor falls back to
+          narrative-only behavior. This is an input field on the Report
+          contract — the source/case extractor's output schema is
+          unchanged.
 
         Use empty lists for missing/unknown attributes.
         Do NOT store uncertainty values (e.g. "unknown") as valid values.
@@ -343,6 +355,7 @@ class SqlReportLoader:
 | `report_date_values` | Structured | Set `resolution` to "day", "month", or "year" based on available precision |
 | `reported_overall_ae_onset_date` | Narrative extraction (e.g. `CASE EVENT DATE: YYYYMMDD` on US reports) | Optional `PartialDate`. When supplied it overrides the derived overall AE onset date in clinical-date inconsistency detection. Leave as `None` to fall back to dev-side derivation. |
 | `narrative` | Free-text narrative from the report | Used by narrative analysis (future); set to `None` if unavailable |
+| `literature_reference` | Optional structured citation / source descriptor for literature reports (journal citation, registry/study label, DOI / PMID / NCT) | Optional `str`. When supplied, passed alongside the narrative into the per-report source/case extractor as supplemental source-identifying metadata. Leave as `None` when unavailable. |
 
 See `schemas/report.schema.json` for the full JSON schema and `examples/report_example.json` for a concrete example.
 
