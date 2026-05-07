@@ -13,8 +13,11 @@ modules (:mod:`llm_dup_dev.feature_generation.matching`,
 
 The comparator is deliberately conservative:
 
-- A shared source identifier requires both sides to populate it, with
-  matching type and matching normalized value.
+- Each report may carry several typed source identifiers (DOI, study
+  name, NCT, etc.). Two reports share a source iff their identifier
+  lists intersect on at least one ``(type, normalized_value)`` tuple
+  with a non-UNKNOWN type. The first matching tuple, ordered by a fixed
+  type preference, is surfaced on the assessment.
 - Two case-within-source identifiers count as *comparable* only when
   they belong to the same non-unknown family and both carry non-empty
   normalized values.  Otherwise the pair is marked uncomparable rather
@@ -30,11 +33,14 @@ See: docs/data_contracts.md § Derived Narrative Signals
 
 from __future__ import annotations
 
+import re
+
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
     SourceCaseAssessment,
     SourceCaseVerdict,
+    SourceIdentifier,
     SourceIdentifierType,
 )
 
@@ -65,6 +71,105 @@ def normalize_doi(s: str) -> str:
             value = value[len(prefix):].lstrip()
             break
     return value.rstrip(_DOI_TRAILING_PUNCT).strip()
+
+
+_STUDY_NAME_LEADING_PREFIXES: tuple[str, ...] = (
+    "study name:",
+    "study:",
+    "trial name:",
+    "trial:",
+)
+_STUDY_NAME_TRAILING_TOKENS: tuple[str, ...] = (
+    "registry study",
+    "trial study",
+    "study",
+    "trial",
+    "registry",
+)
+
+
+def normalize_study_name(s: str) -> str:
+    """Canonicalize a study/trial name (e.g. "EpcoReal", "PARADIGM-HF").
+
+    - lowercase, collapse internal whitespace, strip surrounding quotes
+      and outer punctuation;
+    - drop a leading ``study name:`` / ``study:`` / ``trial:`` if the
+      model preserved it;
+    - drop a single trailing token ``study`` / ``trial`` /
+      ``registry`` (also the two-word combinations ``trial study`` and
+      ``registry study``) so "EpcoReal Study" and "EpcoReal" collapse.
+
+    Hyphens and digits inside the name (``paradigm-hf``, ``keynote-001``)
+    are preserved. Idempotent.
+    """
+    value = s.strip().strip("\"'`“”‘’").strip()
+    if not value:
+        return ""
+    value = value.lower()
+    for prefix in _STUDY_NAME_LEADING_PREFIXES:
+        if value.startswith(prefix):
+            value = value[len(prefix):].lstrip()
+            break
+    value = re.sub(r"\s+", " ", value).strip(" \t.,;:")
+    for token in _STUDY_NAME_TRAILING_TOKENS:
+        if value.endswith(" " + token):
+            value = value[: -(len(token) + 1)].rstrip(" \t.,;:")
+            break
+    return value
+
+
+_TRIAL_REG_LEADING_PREFIXES: tuple[str, ...] = (
+    "clinicaltrials.gov:",
+    "clinicaltrials.gov",
+    "clinical trials.gov:",
+    "registry id:",
+    "trial registration:",
+    "trial registration number:",
+)
+
+
+def normalize_trial_registration(s: str) -> str:
+    """Canonicalize a trial-registry ID (NCT, EudraCT, ISRCTN, …).
+
+    - strip surrounding whitespace and punctuation;
+    - drop common leading labels (``clinicaltrials.gov:``,
+      ``trial registration:``, ``registry id:``);
+    - uppercase the result;
+    - collapse internal whitespace to a single space.
+
+    Hyphens and digits are preserved (e.g. ``EUDRACT 2020-001234-12``).
+    Idempotent.
+    """
+    value = s.strip().strip(".,;:()[]")
+    if not value:
+        return ""
+    lowered = value.lower()
+    for prefix in _TRIAL_REG_LEADING_PREFIXES:
+        if lowered.startswith(prefix):
+            value = value[len(prefix):].lstrip(" \t:")
+            break
+    value = re.sub(r"\s+", " ", value).strip()
+    return value.upper()
+
+
+def normalize_pmid(s: str) -> str:
+    """Canonicalize a PubMed ID — keep only digits."""
+    digits = re.sub(r"\D+", "", s)
+    return digits
+
+
+def normalize_protocol_number(s: str) -> str:
+    """Canonicalize a sponsor protocol number.
+
+    Uppercases the value, strips surrounding whitespace and outer
+    punctuation, and collapses internal whitespace. Hyphens and slashes
+    are preserved (``GS-US-565-1234``). Idempotent.
+    """
+    value = s.strip().strip(".,;:()[]")
+    if not value:
+        return ""
+    value = re.sub(r"\s+", " ", value).strip()
+    return value.upper()
 
 
 _FAMILY_ALIASES: dict[str, CaseIdentifierFamily] = {
@@ -126,14 +231,61 @@ def normalize_case_identifier_value(s: str) -> str:
     return upper
 
 
+_SOURCE_ID_NORMALIZERS = {
+    SourceIdentifierType.DOI: normalize_doi,
+    SourceIdentifierType.PMID: normalize_pmid,
+    SourceIdentifierType.TRIAL_REGISTRATION: normalize_trial_registration,
+    SourceIdentifierType.PROTOCOL_NUMBER: normalize_protocol_number,
+    SourceIdentifierType.STUDY_NAME: normalize_study_name,
+}
+
+
 def _normalize_source_identifier_value(
     value: str,
     id_type: SourceIdentifierType | None,
 ) -> str:
-    """Light normalization of a source identifier for equality comparison."""
-    if id_type == SourceIdentifierType.DOI:
-        return normalize_doi(value)
+    """Light normalization of a source identifier for equality comparison.
+
+    Dispatches per type. ``LINKED_CASE`` and ``ARTICLE_REFERENCE`` use the
+    default lowercase-and-strip rule because their raw form is already the
+    intended comparable string. ``UNKNOWN`` / ``None`` fall through to the
+    same default.
+    """
+    if id_type is None:
+        return value.strip().lower()
+    normalizer = _SOURCE_ID_NORMALIZERS.get(id_type)
+    if normalizer is not None:
+        return normalizer(value)
     return value.strip().lower()
+
+
+# Order of preference for which matching identifier to surface on the
+# pair-level assessment when several types match across two reports. More
+# specific identifiers come first.
+_IDENTIFIER_PREFERENCE: tuple[SourceIdentifierType, ...] = (
+    SourceIdentifierType.DOI,
+    SourceIdentifierType.PMID,
+    SourceIdentifierType.TRIAL_REGISTRATION,
+    SourceIdentifierType.LINKED_CASE,
+    SourceIdentifierType.PROTOCOL_NUMBER,
+    SourceIdentifierType.STUDY_NAME,
+    SourceIdentifierType.ARTICLE_REFERENCE,
+)
+
+
+def _normalized_identifier_set(
+    extraction: NarrativeSourceCase,
+) -> set[tuple[SourceIdentifierType, str]]:
+    """Build the set of comparable ``(type, normalized_value)`` tuples."""
+    out: set[tuple[SourceIdentifierType, str]] = set()
+    for ident in extraction.source_identifiers:
+        if ident.type == SourceIdentifierType.UNKNOWN:
+            continue
+        normalized = _normalize_source_identifier_value(ident.value, ident.type)
+        if not normalized:
+            continue
+        out.add((ident.type, normalized))
+    return out
 
 
 # ==================================================================
@@ -144,21 +296,25 @@ def are_source_identifiers_comparable(
     a: NarrativeSourceCase,
     b: NarrativeSourceCase,
 ) -> bool:
-    """Return True iff both extractions have comparable source identifiers.
+    """Return True iff both extractions carry an identifier type in common.
 
-    "Comparable" means: both sides have a non-empty ``source_identifier``,
-    both sides have a non-null, non-UNKNOWN ``source_identifier_type``,
-    and the two types are equal.
+    "Comparable" means: each side carries at least one non-UNKNOWN
+    identifier, and the two sides share at least one type. Whether the
+    actual values match is decided separately by :func:`_shared_source`.
     """
-    if not (a.source_identifier and b.source_identifier):
+    types_a = {
+        ident.type
+        for ident in a.source_identifiers
+        if ident.type != SourceIdentifierType.UNKNOWN
+    }
+    types_b = {
+        ident.type
+        for ident in b.source_identifiers
+        if ident.type != SourceIdentifierType.UNKNOWN
+    }
+    if not types_a or not types_b:
         return False
-    if a.source_identifier_type is None or b.source_identifier_type is None:
-        return False
-    if a.source_identifier_type == SourceIdentifierType.UNKNOWN:
-        return False
-    if b.source_identifier_type == SourceIdentifierType.UNKNOWN:
-        return False
-    return a.source_identifier_type == b.source_identifier_type
+    return bool(types_a & types_b)
 
 
 def are_case_identifiers_comparable(
@@ -195,16 +351,27 @@ def _shared_source(
     a: NarrativeSourceCase,
     b: NarrativeSourceCase,
 ) -> tuple[str, SourceIdentifierType] | None:
-    """Return the normalized shared source identifier and type, if any."""
-    if not are_source_identifiers_comparable(a, b):
+    """Return one normalized shared ``(value, type)`` from the intersection.
+
+    When several types match across the two reports, the most specific
+    one (per :data:`_IDENTIFIER_PREFERENCE`) is surfaced.
+    """
+    set_a = _normalized_identifier_set(a)
+    set_b = _normalized_identifier_set(b)
+    intersection = set_a & set_b
+    if not intersection:
         return None
-    id_type = a.source_identifier_type
-    assert id_type is not None  # guaranteed by are_source_identifiers_comparable
-    va = _normalize_source_identifier_value(a.source_identifier or "", id_type)
-    vb = _normalize_source_identifier_value(b.source_identifier or "", id_type)
-    if va and va == vb:
-        return va, id_type
-    return None
+    by_type: dict[SourceIdentifierType, str] = {}
+    for id_type, value in intersection:
+        # If somehow two normalized values for the same type both match
+        # (e.g. duplicate entries that survived dedup), keep the first.
+        by_type.setdefault(id_type, value)
+    for preferred in _IDENTIFIER_PREFERENCE:
+        if preferred in by_type:
+            return by_type[preferred], preferred
+    # Defensive fallback: any element of the intersection.
+    id_type, value = next(iter(intersection))
+    return value, id_type
 
 
 def compare_source_case(

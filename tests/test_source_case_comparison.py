@@ -9,11 +9,16 @@ from llm_dup_dev.feature_generation.source_case_comparison import (
     normalize_case_identifier_family,
     normalize_case_identifier_value,
     normalize_doi,
+    normalize_pmid,
+    normalize_protocol_number,
+    normalize_study_name,
+    normalize_trial_registration,
 )
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
     SourceCaseVerdict,
+    SourceIdentifier,
     SourceIdentifierType,
     SourceType,
 )
@@ -66,6 +71,89 @@ class TestNormalizeCaseIdentifierValue:
         assert once == twice
 
 
+class TestNormalizeStudyName:
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("EpcoReal", "epcoreal"),
+        ("EPCOREAL", "epcoreal"),
+        ("EpcoReal Study", "epcoreal"),
+        ("EpcoReal Trial", "epcoreal"),
+        ("EpcoReal Registry Study", "epcoreal"),
+        ("PARADIGM-HF", "paradigm-hf"),
+        ("KEYNOTE-001", "keynote-001"),
+        ("STUDY NAME: EpcoReal", "epcoreal"),
+        ("Trial: PARADIGM-HF Study", "paradigm-hf"),
+        ('"EpcoReal"', "epcoreal"),
+        ("  EpcoReal  ", "epcoreal"),
+        ("", ""),
+    ])
+    def test_variants(self, raw, expected):
+        assert normalize_study_name(raw) == expected
+
+    def test_idempotent(self):
+        once = normalize_study_name("EpcoReal Study")
+        twice = normalize_study_name(once)
+        assert once == twice
+
+
+class TestNormalizeTrialRegistration:
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("NCT01234567", "NCT01234567"),
+        ("nct01234567", "NCT01234567"),
+        ("ClinicalTrials.gov: NCT01234567", "NCT01234567"),
+        ("EudraCT 2020-001234-12", "EUDRACT 2020-001234-12"),
+        ("Trial registration: NCT01234567", "NCT01234567"),
+        ("ISRCTN12345678", "ISRCTN12345678"),
+        ("  nct01234567  ", "NCT01234567"),
+        ("", ""),
+    ])
+    def test_variants(self, raw, expected):
+        assert normalize_trial_registration(raw) == expected
+
+    def test_idempotent(self):
+        once = normalize_trial_registration("ClinicalTrials.gov: nct01234567")
+        twice = normalize_trial_registration(once)
+        assert once == twice
+
+
+class TestNormalizePmid:
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("12345678", "12345678"),
+        ("PMID 12345678", "12345678"),
+        ("PMID: 12345678", "12345678"),
+        ("pubmed 12345678", "12345678"),
+        ("not-a-pmid", ""),
+        ("", ""),
+    ])
+    def test_variants(self, raw, expected):
+        assert normalize_pmid(raw) == expected
+
+    def test_idempotent(self):
+        once = normalize_pmid("PMID: 12345678")
+        twice = normalize_pmid(once)
+        assert once == twice
+
+
+class TestNormalizeProtocolNumber:
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("GS-US-565-1234", "GS-US-565-1234"),
+        ("gs-us-565-1234", "GS-US-565-1234"),
+        ("MK-1234-001", "MK-1234-001"),
+        ("  gs-us-565-1234  ", "GS-US-565-1234"),
+        ("", ""),
+    ])
+    def test_variants(self, raw, expected):
+        assert normalize_protocol_number(raw) == expected
+
+    def test_idempotent(self):
+        once = normalize_protocol_number("  gs-us-565-1234  ")
+        twice = normalize_protocol_number(once)
+        assert once == twice
+
+
 class TestNormalizeCaseIdentifierFamily:
 
     @pytest.mark.parametrize("raw,expected", [
@@ -97,12 +185,16 @@ def _lit(
     case_surface: str | None = None,
 ) -> NarrativeSourceCase:
     """Compact constructor for test extractions."""
+    identifiers = (
+        [SourceIdentifier(type=SourceIdentifierType.DOI, value=doi)]
+        if doi
+        else []
+    )
     return NarrativeSourceCase(
         source_type=SourceType.LITERATURE if doi else SourceType.UNKNOWN,
         multi_patient_source=multi,
         single_patient_source=single,
-        source_identifier=doi,
-        source_identifier_type=SourceIdentifierType.DOI if doi else None,
+        source_identifiers=identifiers,
         case_identifier_within_source=case_surface,
         case_identifier_family=case_family,
         case_identifier_value_normalized=case_value,
@@ -119,8 +211,9 @@ class TestSourceIdentifierComparability:
     def test_different_types_not_comparable(self):
         a = _lit(doi="10.a/b")
         b = NarrativeSourceCase(
-            source_identifier="AB-1",
-            source_identifier_type=SourceIdentifierType.LINKED_CASE,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.LINKED_CASE, value="AB-1"),
+            ],
         )
         assert are_source_identifiers_comparable(a, b) is False
 
@@ -131,12 +224,14 @@ class TestSourceIdentifierComparability:
 
     def test_unknown_type_not_comparable(self):
         a = NarrativeSourceCase(
-            source_identifier="X",
-            source_identifier_type=SourceIdentifierType.UNKNOWN,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.UNKNOWN, value="X"),
+            ],
         )
         b = NarrativeSourceCase(
-            source_identifier="X",
-            source_identifier_type=SourceIdentifierType.UNKNOWN,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.UNKNOWN, value="X"),
+            ],
         )
         assert are_source_identifiers_comparable(a, b) is False
 
@@ -273,14 +368,22 @@ class TestCompareSourceCase:
         a = NarrativeSourceCase(
             source_type=SourceType.SUMMARY_CASE,
             single_patient_source=True,
-            source_identifier="AB-123456789",
-            source_identifier_type=SourceIdentifierType.LINKED_CASE,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.LINKED_CASE,
+                    value="AB-123456789",
+                ),
+            ],
         )
         b = NarrativeSourceCase(
             source_type=SourceType.SUMMARY_CASE,
             single_patient_source=True,
-            source_identifier="AB-123456789",
-            source_identifier_type=SourceIdentifierType.LINKED_CASE,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.LINKED_CASE,
+                    value="AB-123456789",
+                ),
+            ],
         )
         result = compare_source_case(a, b)
         assert result.verdict == SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT
@@ -343,18 +446,141 @@ class TestCompareSourceCase:
         """Defensive: compare_source_case renormalizes DOIs in case the
         extraction stage did not."""
         a = NarrativeSourceCase(
-            source_identifier="DOI: 10.ABC/Def",
-            source_identifier_type=SourceIdentifierType.DOI,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI, value="DOI: 10.ABC/Def",
+                ),
+            ],
             single_patient_source=True,
         )
         b = NarrativeSourceCase(
-            source_identifier="https://doi.org/10.abc/def",
-            source_identifier_type=SourceIdentifierType.DOI,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI,
+                    value="https://doi.org/10.abc/def",
+                ),
+            ],
             single_patient_source=True,
         )
         result = compare_source_case(a, b)
         assert result.verdict == SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT
         assert result.shared_source_identifier == "10.abc/def"
+
+    # -- multi-identifier scenarios ---------------------------------
+
+    def test_shared_study_name_multi_patient(self):
+        """EpcoReal-style: two reports each cite 'EpcoReal' (no DOI yet),
+        both indicate a multi-patient source with no per-case label."""
+        a = NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EpcoReal Study",
+                ),
+            ],
+        )
+        b = NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EPCOREAL",
+                ),
+            ],
+        )
+        # Surface forms differ; the post-parse normalizer collapses both to
+        # 'epcoreal' so the comparator sees the shared identifier.
+        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        result = compare_source_case(_post_normalize(a), _post_normalize(b))
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.shared_source_identifier == "epcoreal"
+        assert result.shared_source_identifier_type == SourceIdentifierType.STUDY_NAME
+
+    def test_match_on_one_of_several_identifiers(self):
+        """A carries DOI + study_name; B carries only study_name. They share
+        the study_name and the comparator surfaces it."""
+        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        a = _post_normalize(NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.DOI, value="10.A/b"),
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EpcoReal",
+                ),
+            ],
+        ))
+        b = _post_normalize(NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EpcoReal",
+                ),
+            ],
+        ))
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.shared_source_identifier_type == SourceIdentifierType.STUDY_NAME
+        assert result.shared_source_identifier == "epcoreal"
+
+    def test_preference_order_doi_wins_over_study_name(self):
+        """When both DOI and study_name match, DOI is surfaced."""
+        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        a = _post_normalize(NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.DOI, value="10.A/b"),
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EpcoReal",
+                ),
+            ],
+        ))
+        b = _post_normalize(NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.DOI, value="10.A/b"),
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EpcoReal",
+                ),
+            ],
+        ))
+        result = compare_source_case(a, b)
+        assert result.shared_source_identifier_type == SourceIdentifierType.DOI
+        assert result.shared_source_identifier == "10.a/b"
+
+    def test_same_type_different_values_no_match(self):
+        """Two reports each have a study_name, but they differ — no shared
+        source. With both multi-patient flags set, falls back to
+        MULTI_PATIENT_CONTEXT_NO_LINK."""
+        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        a = _post_normalize(NarrativeSourceCase(
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME, value="EpcoReal",
+                ),
+            ],
+        ))
+        b = _post_normalize(NarrativeSourceCase(
+            multi_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME, value="PARADIGM-HF",
+                ),
+            ],
+        ))
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK
 
     def test_case_1_vs_linked_case_not_comparable(self):
         """Case 6 (explicit): same DOI, one side 'Case 1', other side a

@@ -34,6 +34,7 @@ from .narrative_source_case import (
     NarrativeSourceCase,
     SourceCaseAssessment,
     SourceCaseVerdict,
+    SourceIdentifier,
     SourceIdentifierType,
     SourceType,
 )
@@ -76,6 +77,7 @@ __all__ = [
     "NarrativeSourceCase",
     "SourceCaseAssessment",
     "SourceCaseVerdict",
+    "SourceIdentifier",
     "SourceIdentifierType",
     "SourceType",
     # ReportPair layer

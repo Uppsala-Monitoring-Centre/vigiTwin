@@ -34,6 +34,7 @@ from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
     EvidenceSpan,
     NarrativeSourceCase,
+    SourceIdentifier,
     SourceIdentifierType,
     SourceType,
 )
@@ -558,8 +559,12 @@ def _sample_bundle() -> FrozenSourceCaseExtractions:
             "R002": NarrativeSourceCase(
                 source_type=SourceType.LITERATURE,
                 multi_patient_source=True,
-                source_identifier="10.1234/abc.2024.567",
-                source_identifier_type=SourceIdentifierType.DOI,
+                source_identifiers=[
+                    SourceIdentifier(
+                        type=SourceIdentifierType.DOI,
+                        value="10.1234/abc.2024.567",
+                    ),
+                ],
                 case_identifier_within_source="Case 2",
                 case_identifier_type="case",
                 case_identifier_family=CaseIdentifierFamily.CASE,
@@ -578,8 +583,12 @@ class TestFrozenSourceCaseExtractions:
         )
         assert restored == bundle
         r002 = restored.extractions["R002"]
-        assert r002.source_identifier == "10.1234/abc.2024.567"
-        assert r002.source_identifier_type == SourceIdentifierType.DOI
+        assert r002.source_identifiers == [
+            SourceIdentifier(
+                type=SourceIdentifierType.DOI,
+                value="10.1234/abc.2024.567",
+            ),
+        ]
         assert r002.case_identifier_family == CaseIdentifierFamily.CASE
 
     def test_save_load_roundtrip_via_file(self, tmp_path):

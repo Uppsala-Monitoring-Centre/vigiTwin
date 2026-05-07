@@ -22,6 +22,7 @@ from llm_dup_dev.models.narrative_demographics import (
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
+    SourceIdentifier,
     SourceIdentifierType,
 )
 from llm_dup_dev.models.enums import (
@@ -648,8 +649,11 @@ class TestFrozenSourceCaseExtractions:
         # (``Case 2``) → ``compare_source_case`` returns
         # ``SAME_SOURCE_SAME_CASE``, which is in ``_SHARED_SOURCE_VERDICTS``.
         shared = NarrativeSourceCase(
-            source_identifier="10.a/b",
-            source_identifier_type=SourceIdentifierType.DOI,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI, value="10.a/b",
+                ),
+            ],
             multi_patient_source=True,
             case_identifier_within_source="Case 2",
             case_identifier_family=CaseIdentifierFamily.CASE,

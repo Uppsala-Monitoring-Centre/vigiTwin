@@ -46,10 +46,20 @@ class SourceIdentifierType(str, Enum):
     underlying case. It is classified here as a *source* identifier, not a
     *case-within-source* identifier, because its defining property is that
     sibling reports carry the identical string.
+
+    ``study_name``, ``trial_registration``, ``pmid``, and ``protocol_number``
+    cover named studies (e.g. "EpcoReal", "PARADIGM-HF"), trial-registry IDs
+    (NCT, EudraCT, ISRCTN), PubMed IDs, and sponsor protocol numbers. A
+    single narrative may carry several of these simultaneously; each is
+    represented as a separate :class:`SourceIdentifier` entry.
     """
 
     DOI = "doi"
+    PMID = "pmid"
+    TRIAL_REGISTRATION = "trial_registration"
     LINKED_CASE = "linked_case"
+    PROTOCOL_NUMBER = "protocol_number"
+    STUDY_NAME = "study_name"
     ARTICLE_REFERENCE = "article_reference"
     UNKNOWN = "unknown"
 
@@ -97,6 +107,27 @@ class EvidenceSpan(BaseModel):
     )
 
 
+class SourceIdentifier(BaseModel):
+    """One typed identifier that ties this report to a shared underlying source.
+
+    A narrative may yield zero, one, or several such identifiers (e.g. a
+    paper that carries both a DOI and a study name). The deterministic
+    comparator treats two reports as sharing a source when their identifier
+    lists intersect on at least one ``(type, normalized_value)`` tuple.
+    """
+
+    type: SourceIdentifierType = Field(
+        description="Kind of identifier (DOI, study name, NCT, etc.)."
+    )
+    value: str = Field(
+        description=(
+            "Surface form copied from the narrative. Post-parse "
+            "normalization canonicalizes it per type so downstream "
+            "comparison can match across small surface variations."
+        ),
+    )
+
+
 class NarrativeSourceCase(BaseModel):
     """Structured source / case signals extracted from one report narrative.
 
@@ -126,17 +157,19 @@ class NarrativeSourceCase(BaseModel):
         ),
     )
 
-    source_identifier: str | None = Field(
-        default=None,
+    source_identifiers: list[SourceIdentifier] = Field(
+        default_factory=list,
         description=(
-            "Stable identifier of the underlying source, when present. For "
-            "literature this should be a DOI (normalized to lowercase, "
-            "without protocol prefix). For summary-case-like contexts it "
-            "may be a 'Linked case: ...' string that appears identically "
-            "across sibling reports."
+            "All stable identifiers the narrative provides for the "
+            "underlying source. Examples include DOI, PubMed ID, trial "
+            "registry ID (NCT/EudraCT/ISRCTN), sponsor protocol number, "
+            "study name (e.g. 'EpcoReal'), and the verbatim 'Linked "
+            "case: ...' string used by some summary-case sources. Empty "
+            "when the narrative does not clearly reference any. Values "
+            "are canonicalized per type by deterministic post-parse "
+            "normalization."
         ),
     )
-    source_identifier_type: SourceIdentifierType | None = None
 
     case_identifier_within_source: str | None = Field(
         default=None,

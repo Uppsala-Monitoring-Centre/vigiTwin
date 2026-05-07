@@ -597,10 +597,14 @@
       "type": "string"
     },
     "SourceIdentifierType": {
-      "description": "Kind of identifier that would link sibling reports to the same source.\n\n``linked_case`` covers strings like ``\"Linked case: AB-123456789\"`` that\nare expected to appear verbatim across reports sharing the same\nunderlying case. It is classified here as a *source* identifier, not a\n*case-within-source* identifier, because its defining property is that\nsibling reports carry the identical string.",
+      "description": "Kind of identifier that would link sibling reports to the same source.\n\n``linked_case`` covers strings like ``\"Linked case: AB-123456789\"`` that\nare expected to appear verbatim across reports sharing the same\nunderlying case. It is classified here as a *source* identifier, not a\n*case-within-source* identifier, because its defining property is that\nsibling reports carry the identical string.\n\n``study_name``, ``trial_registration``, ``pmid``, and ``protocol_number``\ncover named studies (e.g. \"EpcoReal\", \"PARADIGM-HF\"), trial-registry IDs\n(NCT, EudraCT, ISRCTN), PubMed IDs, and sponsor protocol numbers. A\nsingle narrative may carry several of these simultaneously; each is\nrepresented as a separate :class:`SourceIdentifier` entry.",
       "enum": [
         "doi",
+        "pmid",
+        "trial_registration",
         "linked_case",
+        "protocol_number",
+        "study_name",
         "article_reference",
         "unknown"
       ],

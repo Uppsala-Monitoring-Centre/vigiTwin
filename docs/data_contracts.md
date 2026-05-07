@@ -727,6 +727,8 @@ Narrative text on a Report is part of the raw Report contract — it originates 
 
 The first such artifact is `NarrativeSourceCase`, defined in [`src/llm_dup_dev/models/narrative_source_case.py`](../src/llm_dup_dev/models/narrative_source_case.py). It captures source / case identification signals extracted from a single narrative by the LLM task [`llm_dup_dev.llm.tasks.narrative_source_case`](../src/llm_dup_dev/llm/tasks/narrative_source_case.py). The extractor is report-level: one narrative in, one structured record out. No database access is required.
 
+`NarrativeSourceCase.source_identifiers` is a list of typed `(type, value)` entries — a single narrative may carry several stable identifiers at once (e.g. DOI **and** named study **and** trial-registration ID). `SourceIdentifierType` covers `doi`, `pmid`, `trial_registration` (NCT / EudraCT / ISRCTN), `study_name` (e.g. "EpcoReal", "PARADIGM-HF"), `protocol_number`, `linked_case` (the verbatim "Linked case: ..." string used by some summary-case sources), and `article_reference`. The deterministic comparator treats two reports as sharing a source when their identifier lists intersect on at least one `(type, normalized_value)` tuple, so sibling reports that happen to cite different identifiers from the same set still link up. When several types match, the most specific (DOI > PMID > trial registration > linked case > protocol number > study name > article reference) is surfaced on the assessment.
+
 Key properties:
 
 - **Report-level LLM only.** The LLM is invoked once per narrative. Pair-level reasoning over two extractions is deterministic and non-LLM-based, in [`feature_generation/source_case_comparison.py`](../src/llm_dup_dev/feature_generation/source_case_comparison.py).
