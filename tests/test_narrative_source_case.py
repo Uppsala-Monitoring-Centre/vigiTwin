@@ -14,6 +14,7 @@ from llm_dup_dev.llm.tasks.narrative_source_case import (
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
+    SourceIdentifier,
     SourceIdentifierType,
     SourceType,
 )
@@ -106,8 +107,11 @@ class TestExtractHappyPath:
         seeded = NarrativeSourceCase(
             source_type=SourceType.LITERATURE,
             multi_patient_source=True,
-            source_identifier="10.1234/abc",
-            source_identifier_type=SourceIdentifierType.DOI,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI, value="10.1234/abc",
+                ),
+            ],
             case_identifier_within_source="Case 2",
             case_identifier_family=CaseIdentifierFamily.CASE,
             case_identifier_value_normalized="2",
@@ -115,24 +119,140 @@ class TestExtractHappyPath:
         fake_client.seed_response(seeded)
         result = extract_source_case(fake_client, "R001", "Some narrative text.")
         assert result.source_type == SourceType.LITERATURE
-        assert result.source_identifier == "10.1234/abc"
+        assert result.source_identifiers == [
+            SourceIdentifier(type=SourceIdentifierType.DOI, value="10.1234/abc"),
+        ]
         assert len(fake_client.requests) == 1
 
     def test_post_normalizes_doi_prefix(self, fake_client):
         fake_client.seed_response(NarrativeSourceCase(
-            source_identifier="DOI: 10.XXXX/ABC.",
-            source_identifier_type=SourceIdentifierType.DOI,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI, value="DOI: 10.XXXX/ABC.",
+                ),
+            ],
         ))
         result = extract_source_case(fake_client, "R001", "narrative")
-        assert result.source_identifier == "10.xxxx/abc"
+        assert result.source_identifiers == [
+            SourceIdentifier(type=SourceIdentifierType.DOI, value="10.xxxx/abc"),
+        ]
 
     def test_post_normalizes_doi_with_url(self, fake_client):
         fake_client.seed_response(NarrativeSourceCase(
-            source_identifier="https://doi.org/10.ABC/Def",
-            source_identifier_type=SourceIdentifierType.DOI,
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI,
+                    value="https://doi.org/10.ABC/Def",
+                ),
+            ],
         ))
         result = extract_source_case(fake_client, "R001", "narrative")
-        assert result.source_identifier == "10.abc/def"
+        assert result.source_identifiers == [
+            SourceIdentifier(type=SourceIdentifierType.DOI, value="10.abc/def"),
+        ]
+
+    def test_post_normalizes_study_name_strips_trailing_token(self, fake_client):
+        """Looser normalization drops trailing 'study' / 'trial' so EpcoReal
+        and EpcoReal Study collapse to the same canonical value."""
+        fake_client.seed_response(NarrativeSourceCase(
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EpcoReal Study",
+                ),
+            ],
+        ))
+        result = extract_source_case(fake_client, "R001", "narrative")
+        assert result.source_identifiers == [
+            SourceIdentifier(
+                type=SourceIdentifierType.STUDY_NAME, value="epcoreal",
+            ),
+        ]
+
+    def test_post_normalizes_trial_registration(self, fake_client):
+        fake_client.seed_response(NarrativeSourceCase(
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.TRIAL_REGISTRATION,
+                    value="ClinicalTrials.gov: nct01234567",
+                ),
+            ],
+        ))
+        result = extract_source_case(fake_client, "R001", "narrative")
+        assert result.source_identifiers == [
+            SourceIdentifier(
+                type=SourceIdentifierType.TRIAL_REGISTRATION,
+                value="NCT01234567",
+            ),
+        ]
+
+    def test_post_normalizes_pmid_keeps_digits_only(self, fake_client):
+        fake_client.seed_response(NarrativeSourceCase(
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.PMID,
+                    value="PMID: 12345678",
+                ),
+            ],
+        ))
+        result = extract_source_case(fake_client, "R001", "narrative")
+        assert result.source_identifiers == [
+            SourceIdentifier(type=SourceIdentifierType.PMID, value="12345678"),
+        ]
+
+    def test_post_normalizes_protocol_number(self, fake_client):
+        fake_client.seed_response(NarrativeSourceCase(
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.PROTOCOL_NUMBER,
+                    value="  gs-us-565-1234  ",
+                ),
+            ],
+        ))
+        result = extract_source_case(fake_client, "R001", "narrative")
+        assert result.source_identifiers == [
+            SourceIdentifier(
+                type=SourceIdentifierType.PROTOCOL_NUMBER,
+                value="GS-US-565-1234",
+            ),
+        ]
+
+    def test_post_normalize_dedupes_identifiers(self, fake_client):
+        """Two entries that normalize to the same (type, value) collapse to one."""
+        fake_client.seed_response(NarrativeSourceCase(
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME, value="EpcoReal",
+                ),
+                SourceIdentifier(
+                    type=SourceIdentifierType.STUDY_NAME,
+                    value="EPCOREAL Trial",
+                ),
+            ],
+        ))
+        result = extract_source_case(fake_client, "R001", "narrative")
+        assert result.source_identifiers == [
+            SourceIdentifier(
+                type=SourceIdentifierType.STUDY_NAME, value="epcoreal",
+            ),
+        ]
+
+    def test_post_normalize_drops_empty_after_normalization(self, fake_client):
+        """A PMID that contains no digits normalizes to '' and is dropped."""
+        fake_client.seed_response(NarrativeSourceCase(
+            source_identifiers=[
+                SourceIdentifier(
+                    type=SourceIdentifierType.PMID, value="not-a-pmid",
+                ),
+                SourceIdentifier(
+                    type=SourceIdentifierType.DOI, value="10.1/x",
+                ),
+            ],
+        ))
+        result = extract_source_case(fake_client, "R001", "narrative")
+        assert result.source_identifiers == [
+            SourceIdentifier(type=SourceIdentifierType.DOI, value="10.1/x"),
+        ]
 
     def test_post_normalizes_case_value_with_prefix(self, fake_client):
         fake_client.seed_response(NarrativeSourceCase(
@@ -172,12 +292,15 @@ class TestExtractHappyPath:
     def test_accepts_dict_payload(self, fake_client):
         fake_client.seed_response({
             "source_type": "literature",
-            "source_identifier": "10.ABC/def",
-            "source_identifier_type": "doi",
+            "source_identifiers": [
+                {"type": "doi", "value": "10.ABC/def"},
+            ],
         })
         result = extract_source_case(fake_client, "R001", "narrative")
         assert result.source_type == SourceType.LITERATURE
-        assert result.source_identifier == "10.abc/def"
+        assert result.source_identifiers == [
+            SourceIdentifier(type=SourceIdentifierType.DOI, value="10.abc/def"),
+        ]
 
 
 # ==================================================================

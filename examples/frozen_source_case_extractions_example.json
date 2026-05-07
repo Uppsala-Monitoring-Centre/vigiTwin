@@ -4,8 +4,7 @@
       "source_type": "spontaneous_or_other",
       "multi_patient_source": false,
       "single_patient_source": true,
-      "source_identifier": null,
-      "source_identifier_type": null,
+      "source_identifiers": [],
       "case_identifier_within_source": null,
       "case_identifier_type": null,
       "case_identifier_family": null,
@@ -23,8 +22,12 @@
       "source_type": "literature",
       "multi_patient_source": true,
       "single_patient_source": null,
-      "source_identifier": "10.1234/abc.2024.567",
-      "source_identifier_type": "doi",
+      "source_identifiers": [
+        {
+          "type": "doi",
+          "value": "10.1234/abc.2024.567"
+        }
+      ],
       "case_identifier_within_source": "Case 2",
       "case_identifier_type": "case",
       "case_identifier_family": "case",
@@ -32,7 +35,7 @@
       "likely_report_specific_identifiers": [],
       "evidence": [
         {
-          "field": "source_identifier",
+          "field": "source_identifiers",
           "quote": "doi: 10.1234/abc.2024.567"
         },
         {

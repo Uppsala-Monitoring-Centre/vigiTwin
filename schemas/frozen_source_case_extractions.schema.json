@@ -66,29 +66,13 @@
           "description": "Whether the narrative indicates the source describes a single patient or case. Intentionally *not* the negation of multi_patient_source: both may be null when evidence is weak.",
           "title": "Single Patient Source"
         },
-        "source_identifier": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Stable identifier of the underlying source, when present. For literature this should be a DOI (normalized to lowercase, without protocol prefix). For summary-case-like contexts it may be a 'Linked case: ...' string that appears identically across sibling reports.",
-          "title": "Source Identifier"
-        },
-        "source_identifier_type": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SourceIdentifierType"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "source_identifiers": {
+          "description": "All stable identifiers the narrative provides for the underlying source. Examples include DOI, PubMed ID, trial registry ID (NCT/EudraCT/ISRCTN), sponsor protocol number, study name (e.g. 'EpcoReal'), and the verbatim 'Linked case: ...' string used by some summary-case sources. Empty when the narrative does not clearly reference any. Values are canonicalized per type by deterministic post-parse normalization.",
+          "items": {
+            "$ref": "#/$defs/SourceIdentifier"
+          },
+          "title": "Source Identifiers",
+          "type": "array"
         },
         "case_identifier_within_source": {
           "anyOf": [
@@ -166,11 +150,35 @@
       "title": "NarrativeSourceCase",
       "type": "object"
     },
+    "SourceIdentifier": {
+      "description": "One typed identifier that ties this report to a shared underlying source.\n\nA narrative may yield zero, one, or several such identifiers (e.g. a\npaper that carries both a DOI and a study name). The deterministic\ncomparator treats two reports as sharing a source when their identifier\nlists intersect on at least one ``(type, normalized_value)`` tuple.",
+      "properties": {
+        "type": {
+          "$ref": "#/$defs/SourceIdentifierType",
+          "description": "Kind of identifier (DOI, study name, NCT, etc.)."
+        },
+        "value": {
+          "description": "Surface form copied from the narrative. Post-parse normalization canonicalizes it per type so downstream comparison can match across small surface variations.",
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "SourceIdentifier",
+      "type": "object"
+    },
     "SourceIdentifierType": {
-      "description": "Kind of identifier that would link sibling reports to the same source.\n\n``linked_case`` covers strings like ``\"Linked case: AB-123456789\"`` that\nare expected to appear verbatim across reports sharing the same\nunderlying case. It is classified here as a *source* identifier, not a\n*case-within-source* identifier, because its defining property is that\nsibling reports carry the identical string.",
+      "description": "Kind of identifier that would link sibling reports to the same source.\n\n``linked_case`` covers strings like ``\"Linked case: AB-123456789\"`` that\nare expected to appear verbatim across reports sharing the same\nunderlying case. It is classified here as a *source* identifier, not a\n*case-within-source* identifier, because its defining property is that\nsibling reports carry the identical string.\n\n``study_name``, ``trial_registration``, ``pmid``, and ``protocol_number``\ncover named studies (e.g. \"EpcoReal\", \"PARADIGM-HF\"), trial-registry IDs\n(NCT, EudraCT, ISRCTN), PubMed IDs, and sponsor protocol numbers. A\nsingle narrative may carry several of these simultaneously; each is\nrepresented as a separate :class:`SourceIdentifier` entry.",
       "enum": [
         "doi",
+        "pmid",
+        "trial_registration",
         "linked_case",
+        "protocol_number",
+        "study_name",
         "article_reference",
         "unknown"
       ],

@@ -2,8 +2,12 @@
   "source_type": "literature",
   "multi_patient_source": true,
   "single_patient_source": null,
-  "source_identifier": "10.1234/abc.2024.567",
-  "source_identifier_type": "doi",
+  "source_identifiers": [
+    {
+      "type": "doi",
+      "value": "10.1234/abc.2024.567"
+    }
+  ],
   "case_identifier_within_source": "Case 2",
   "case_identifier_type": "case",
   "case_identifier_family": "case",
@@ -13,7 +17,7 @@
   ],
   "evidence": [
     {
-      "field": "source_identifier",
+      "field": "source_identifiers",
       "quote": "doi: 10.1234/abc.2024.567"
     },
     {

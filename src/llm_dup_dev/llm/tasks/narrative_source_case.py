@@ -25,13 +25,14 @@ Usage::
 from __future__ import annotations
 
 from llm_dup_dev.feature_generation.source_case_comparison import (
+    _normalize_source_identifier_value,
     normalize_case_identifier_family,
     normalize_case_identifier_value,
-    normalize_doi,
 )
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
+    SourceIdentifier,
     SourceIdentifierType,
     SourceType,
 )
@@ -59,15 +60,35 @@ comparisons between reports.
 
 Three categories of identifier are tracked:
 
-1. Source identifier — identifies the shared underlying source across \
-multiple reports.  Examples:
-   - a DOI for a literature article (preferred form, normalize to \
-lowercase without protocol prefix);
-   - a "Linked case: XXXXXXX-X" string that appears identically in \
-sibling reports from the same underlying case.
-   Populate source_identifier and source_identifier_type only when the \
-narrative gives reasonably clear support that the identifier refers to \
-the shared source.
+1. Source identifiers — identifiers that tie this report to the shared \
+underlying source across multiple sibling reports.  This field is a \
+LIST: emit every such identifier the narrative provides, not just one.  \
+Each entry has a type and a value.
+
+   Valid types and one example each:
+   - doi               -> "10.1234/abc.2024.567"
+   - pmid              -> "PMID 12345678"
+   - trial_registration -> "NCT01234567", "EudraCT 2020-001234-12", \
+"ISRCTN12345678"
+   - study_name        -> "EpcoReal", "PARADIGM-HF", "KEYNOTE-001"
+   - protocol_number   -> "GS-US-565-1234", "MK-1234-001"
+   - linked_case       -> "Linked case: AB-123456789" (the verbatim \
+string that appears identically in sibling reports from the same \
+underlying case)
+   - article_reference -> a free-text citation when no more specific \
+identifier is available
+   The 'unknown' type is reserved and should not be emitted alongside a \
+real value.
+
+   Worked example.  If the narrative opens with \
+"STUDY NAME: EpcoReal: A multi-country, prospective observational study \
+of epcoritamab in NHL ...", emit at minimum \
+{type: "study_name", value: "EpcoReal"} (and any NCT / EudraCT / DOI \
+that also appears).  Set multi_patient_source = true.
+
+   Do NOT include identifiers that are specific to this single report \
+(see category 3 below).  Leave the list empty when the narrative does \
+not clearly reference a sibling-shared identifier.
 
 2. Case-within-source identifier — a label for the patient/case inside \
 a multi-patient source.  Examples: "Case 2", "Patient B", "Subject-01", \
@@ -81,11 +102,10 @@ normalized value (e.g. "Case 2" -> "2", "Patient B" -> "B", \
 report and would not recur across reports from the same source (e.g. \
 "Other Identification Number 48392", internal tracking numbers).  Put \
 these in likely_report_specific_identifiers.  Never put them in \
-source_identifier.
+source_identifiers.
 
 Other guidance:
 
-- Prefer DOI over any other identifier for literature.
 - multi_patient_source and single_patient_source are independent booleans.  \
 Both may be null when evidence is weak.  single_patient_source is NOT \
 automatically the negation of multi_patient_source.
@@ -152,11 +172,19 @@ def _post_normalize(extraction: NarrativeSourceCase) -> NarrativeSourceCase:
     """
     updates: dict[str, object] = {}
 
-    if (
-        extraction.source_identifier
-        and extraction.source_identifier_type == SourceIdentifierType.DOI
-    ):
-        updates["source_identifier"] = normalize_doi(extraction.source_identifier)
+    if extraction.source_identifiers:
+        normalized: list[SourceIdentifier] = []
+        seen: set[tuple[SourceIdentifierType, str]] = set()
+        for ident in extraction.source_identifiers:
+            value = _normalize_source_identifier_value(ident.value, ident.type)
+            if not value:
+                continue
+            key = (ident.type, value)
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(SourceIdentifier(type=ident.type, value=value))
+        updates["source_identifiers"] = normalized
 
     if extraction.case_identifier_family is None and extraction.case_identifier_type:
         family = normalize_case_identifier_family(extraction.case_identifier_type)
