@@ -11,9 +11,12 @@ from llm_dup_dev.feature_generation.matching import (
     MatchResult,
 )
 from llm_dup_dev.feature_generation.probability import (
+    MARGINAL_FLOOR,
     SMOOTHING_PSEUDOCOUNT,
     FrequencyStats,
     _clinical_date_domain_sizes,
+    _marginal_with_backoff,
+    _smoothed_marginal,
     compute_probability,
     leave_pair_out_probability,
 )
@@ -1115,8 +1118,11 @@ class TestLeavePairOutIntegration:
         assert len(ae_feats) == 1
         assert ae_feats[0].method == "leave_pair_out"
 
-        # Verify the actual value: marginal leave-pair-out = (200-2)/(1000-2) = 198/998
-        expected = (200 - 2) / (1000 - 2)
+        # Smoothed leave-pair-out (no broader stats): primary level is
+        # (198 + alpha*MARGINAL_FLOOR) / (998 + alpha). With plentiful
+        # data this is within ~1% of the previous bare marginal 198/998.
+        m = SMOOTHING_PSEUDOCOUNT
+        expected = (198 + m * MARGINAL_FLOOR) / (998 + m)
         assert ae_feats[0].p_f == pytest.approx(expected)
 
     def test_drug_feature_uses_leave_pair_out_when_anchor_aes(self):
@@ -1139,12 +1145,12 @@ class TestLeavePairOutIntegration:
         assert len(drug_feats) == 1
         assert drug_feats[0].method == "leave_pair_out"
 
-        # Verify the actual value: marginal leave-pair-out = (200-2)/(1000-2) = 198/998
-        expected = (200 - 2) / (1000 - 2)
+        m = SMOOTHING_PSEUDOCOUNT
+        expected = (198 + m * MARGINAL_FLOOR) / (998 + m)
         assert drug_feats[0].p_f == pytest.approx(expected)
 
     def test_description_shows_leave_pair_out_counts(self):
-        """Description should show marginal leave-pair-out formula."""
+        """Description should show the smoothed leave-pair-out trace."""
         match = MatchResult(
             matching_drugs=["drug_a"],
             matching_AEs=["ae_a"],
@@ -1160,4 +1166,232 @@ class TestLeavePairOutIntegration:
         result = compute_probability(match, anchor, stats, config)
         ae_feat = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"][0]
 
-        assert "(200-2)/(1000-2)" in ae_feat.description
+        # Description carries primary counts and the backoff trace.
+        assert "200/1000 primary" in ae_feat.description
+        assert "smoothed leave-pair-out" in ae_feat.description
+        assert "primary" in ae_feat.description
+
+
+class TestMarginalBackoff:
+    """Regression coverage for the hierarchical leave-pair-out smoother.
+
+    Targets the edge case where ``N_drug_AE == N_drug == N_AE`` so the
+    leave-pair-out count for a feature collapses to zero — without
+    backoff the contribution would be silently dropped.
+    """
+
+    def _match(self):
+        return MatchResult(
+            matching_drugs=["drug_a"],
+            matching_AEs=["ae_a"],
+            demographic_matches=[],
+        )
+
+    def _anchor_drugs(self, n_drugs=25, n_aes=200, n_drugs_aes=3):
+        return AnchorPopulation(
+            N_drugs=n_drugs, N_AEs=n_aes, N_drugs_AEs=n_drugs_aes,
+            type=AnchorType.DRUGS, N_anchor=n_drugs,
+        )
+
+    def _anchor_aes(self, n_drugs=200, n_aes=25, n_drugs_aes=3):
+        return AnchorPopulation(
+            N_drugs=n_drugs, N_AEs=n_aes, N_drugs_AEs=n_drugs_aes,
+            type=AnchorType.AES, N_anchor=n_aes,
+        )
+
+    # ---- Helper-level checks -----------------------------------------
+
+    def test_smoothed_marginal_collapses_to_prior_when_context_empty(self):
+        # n_total=2 → n_total_excl=0; smoothed estimate equals the prior.
+        assert _smoothed_marginal(2, 2, p_prior=0.123, alpha=10) == pytest.approx(0.123)
+
+    def test_smoothed_marginal_recovers_bare_marginal_with_zero_alpha(self):
+        # alpha=0 short-circuits to the bare leave-pair-out marginal.
+        assert _smoothed_marginal(202, 1002, p_prior=0.5, alpha=0) == pytest.approx(
+            (202 - 2) / (1002 - 2)
+        )
+
+    def test_marginal_with_backoff_returns_positive_with_no_broader_stats(self):
+        # All broader fields None: floor + primary smoothing still yields > 0.
+        p, trace = _marginal_with_backoff(
+            n_feature=2, n_total=1000,
+            n_feature_country=None, n_total_country=None,
+            n_feature_global=None, n_total_global=None,
+        )
+        assert p > 0
+        # Primary numerator collapses to 0 → result equals
+        # alpha*floor / (n_total_excl + alpha).
+        m = SMOOTHING_PSEUDOCOUNT
+        assert p == pytest.approx((m * MARGINAL_FLOOR) / (998 + m))
+        assert "floor" in trace
+        assert "primary" in trace
+        assert "country" not in trace
+        assert "global" not in trace
+
+    def test_marginal_with_backoff_uses_country_prior_when_global_missing(self):
+        p, trace = _marginal_with_backoff(
+            n_feature=2, n_total=1000,
+            n_feature_country=8, n_total_country=5000,
+            n_feature_global=None, n_total_global=None,
+        )
+        m = SMOOTHING_PSEUDOCOUNT
+        # Floor → country (smoothed) → primary (smoothed).
+        country_p = (6 + m * MARGINAL_FLOOR) / (4998 + m)
+        primary_p = (0 + m * country_p) / (998 + m)
+        assert p == pytest.approx(primary_p)
+        assert "country" in trace
+        assert "global" not in trace
+
+    def test_marginal_with_backoff_floor_uses_global_total_when_available(self):
+        p, _ = _marginal_with_backoff(
+            n_feature=2, n_total=10,
+            n_feature_country=None, n_total_country=None,
+            n_feature_global=2, n_total_global=1_000_002,
+        )
+        # Floor = 1 / (1_000_002 - 2) = 1e-6
+        m = SMOOTHING_PSEUDOCOUNT
+        floor = 1.0 / max(1_000_002 - 2, 1)
+        # Global feature count collapses too → smoothed global = alpha*floor/(N+alpha).
+        global_p = (0 + m * floor) / ((1_000_002 - 2) + m)
+        primary_p = (0 + m * global_p) / ((10 - 2) + m)
+        assert p == pytest.approx(primary_p)
+
+    # ---- compute_probability integration -----------------------------
+
+    def test_normal_case_with_broader_stats_close_to_bare_marginal(self):
+        """Plentiful data: smoothed value ~ matches the previous bare marginal."""
+        stats = FrequencyStats(
+            N_total=1000, N_drugs=25, N_AEs=200, N_drugs_AEs=3,
+            N_total_country=5000, N_drugs_country=120, N_AEs_country=900,
+            N_total_global=1_000_000, N_drugs_global=20_000, N_AEs_global=180_000,
+        )
+        result = compute_probability(
+            self._match(), self._anchor_drugs(), stats, DomainSizeConfig()
+        )
+        ae_feat = next(
+            fp for fp in result.feature_probabilities if fp.feature == "ae_set"
+        )
+        # Smoothed value should be within 5% of the bare marginal 198/998.
+        bare = (200 - 2) / (1000 - 2)
+        assert ae_feat.p_f == pytest.approx(bare, rel=0.05)
+        # Trace mentions every applied level.
+        assert "country" in ae_feat.description
+        assert "global" in ae_feat.description
+
+    def test_edge_case_ae_only_in_pair_uses_country_prior(self):
+        """Pair-only AE set: previously dropped; now backs off to country."""
+        stats = FrequencyStats(
+            N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
+            N_total_country=5000, N_drugs_country=120, N_AEs_country=8,
+            N_total_global=1_000_000, N_drugs_global=20_000, N_AEs_global=50,
+        )
+        result = compute_probability(
+            self._match(), self._anchor_drugs(n_aes=2, n_drugs_aes=2),
+            stats, DomainSizeConfig(),
+        )
+        ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
+        # Previously this contribution was OMITTED; now it must be present.
+        assert len(ae_feats) == 1
+        assert ae_feats[0].p_f > 0
+
+        # Verify the value matches the explicit ladder.
+        m = SMOOTHING_PSEUDOCOUNT
+        floor = 1.0 / max(1_000_000 - 2, 1)
+        p_global = (max(0, 50 - 2) + m * floor) / (max(0, 1_000_000 - 2) + m)
+        p_country = (max(0, 8 - 2) + m * p_global) / (max(0, 5000 - 2) + m)
+        p_primary = (max(0, 2 - 2) + m * p_country) / (max(0, 1000 - 2) + m)
+        assert ae_feats[0].p_f == pytest.approx(p_primary)
+
+    def test_edge_case_drug_only_in_pair_symmetric(self):
+        """Mirror of the AE-only case, with anchor=AES and drug-set rare."""
+        stats = FrequencyStats(
+            N_total=1000, N_drugs=2, N_AEs=25, N_drugs_AEs=2,
+            N_total_country=5000, N_drugs_country=8, N_AEs_country=120,
+            N_total_global=1_000_000, N_drugs_global=50, N_AEs_global=20_000,
+        )
+        result = compute_probability(
+            self._match(), self._anchor_aes(n_drugs=2, n_drugs_aes=2),
+            stats, DomainSizeConfig(),
+        )
+        drug_feats = [
+            fp for fp in result.feature_probabilities if fp.feature == "drug_set"
+        ]
+        assert len(drug_feats) == 1
+        assert drug_feats[0].p_f > 0
+
+        m = SMOOTHING_PSEUDOCOUNT
+        floor = 1.0 / max(1_000_000 - 2, 1)
+        p_global = (max(0, 50 - 2) + m * floor) / (max(0, 1_000_000 - 2) + m)
+        p_country = (max(0, 8 - 2) + m * p_global) / (max(0, 5000 - 2) + m)
+        p_primary = (max(0, 2 - 2) + m * p_country) / (max(0, 1000 - 2) + m)
+        assert drug_feats[0].p_f == pytest.approx(p_primary)
+
+    def test_no_broader_stats_falls_back_to_floor(self):
+        """Pair-only AE with no broader stats: floor keeps p_f non-zero."""
+        stats = FrequencyStats(
+            N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
+        )
+        result = compute_probability(
+            self._match(), self._anchor_drugs(n_aes=2, n_drugs_aes=2),
+            stats, DomainSizeConfig(),
+        )
+        ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
+        assert len(ae_feats) == 1
+        assert ae_feats[0].p_f > 0
+
+        # Direct check: only the floor and primary level are applied.
+        m = SMOOTHING_PSEUDOCOUNT
+        expected = (m * MARGINAL_FLOOR) / (998 + m)
+        assert ae_feats[0].p_f == pytest.approx(expected)
+
+    def test_global_only_uses_global_derived_floor(self):
+        """No country level (e.g., reporting context = COUNTRY): floor = 1/N_global."""
+        stats = FrequencyStats(
+            N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
+            N_total_global=1_000_002, N_drugs_global=20_000, N_AEs_global=2,
+        )
+        result = compute_probability(
+            self._match(), self._anchor_drugs(n_aes=2, n_drugs_aes=2),
+            stats, DomainSizeConfig(),
+        )
+        ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
+        assert len(ae_feats) == 1
+        assert ae_feats[0].p_f > 0
+
+        m = SMOOTHING_PSEUDOCOUNT
+        floor = 1.0 / max(1_000_002 - 2, 1)
+        # Global feature collapses too (N_AEs_global=2 → excl 0).
+        p_global = (m * floor) / ((1_000_002 - 2) + m)
+        p_primary = (m * p_global) / (998 + m)
+        assert ae_feats[0].p_f == pytest.approx(p_primary)
+
+    @pytest.mark.parametrize(
+        "n_drugs, n_aes, n_drugs_aes, n_total",
+        [
+            (2, 2, 2, 1000),       # original edge case
+            (3, 200, 3, 1000),     # tiny drug count
+            (200, 3, 3, 1000),     # tiny AE count
+            (1, 1, 1, 100),        # below 2 (defensive: count < pair size)
+            (200, 200, 50, 5000),  # plentiful
+        ],
+    )
+    def test_positivity_invariant(
+        self, n_drugs, n_aes, n_drugs_aes, n_total
+    ):
+        """drug_set and ae_set p_f are always strictly positive when matched."""
+        stats = FrequencyStats(
+            N_total=n_total, N_drugs=n_drugs, N_AEs=n_aes, N_drugs_AEs=n_drugs_aes,
+        )
+        # Anchor=DRUGS_AES would suppress both contributions; pick anchors
+        # that leave both drug_set and ae_set as additional features in
+        # one or the other configuration.
+        for anchor in (
+            self._anchor_drugs(n_drugs=n_drugs, n_aes=n_aes, n_drugs_aes=n_drugs_aes),
+            self._anchor_aes(n_drugs=n_drugs, n_aes=n_aes, n_drugs_aes=n_drugs_aes),
+        ):
+            result = compute_probability(
+                self._match(), anchor, stats, DomainSizeConfig()
+            )
+            for fp in result.feature_probabilities:
+                if fp.feature in ("drug_set", "ae_set"):
+                    assert fp.p_f > 0, f"{fp.feature} got p_f={fp.p_f} (anchor={anchor.type})"

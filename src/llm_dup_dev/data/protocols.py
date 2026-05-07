@@ -132,6 +132,20 @@ class StatsProvider(Protocol):
 
     These counts depend on the reporting context (country+year / country / global)
     which is determined by the pipeline before calling this provider.
+
+    Implementations *should* additionally populate the optional
+    broader-context fields on the returned ``FrequencyStats`` when the
+    data source has them: ``N_total_country`` / ``N_drugs_country`` /
+    ``N_AEs_country`` (when the primary scope is country-year, populate
+    these from country-level counts) and ``N_total_global`` /
+    ``N_drugs_global`` / ``N_AEs_global`` (whenever the primary scope is
+    country-year or country, populate these from global counts). These
+    feed the hierarchical-backoff smoother for drug-set / AE-set
+    marginals — without them, a feature that exists only in the
+    candidate pair degrades to a small floor probability rather than a
+    data-driven country/global prior. Only set fields that are strictly
+    broader than the primary scope (otherwise smoothing would be
+    applied twice with identical data); leave the rest as ``None``.
     """
 
     def compute_stats(
@@ -158,6 +172,8 @@ class StatsProvider(Protocol):
         Returns
         -------
         FrequencyStats
-            Database-level counts within the reporting context.
+            Database-level counts within the reporting context. Should
+            also populate optional broader-context fields when
+            available; see the class docstring for details.
         """
         ...
