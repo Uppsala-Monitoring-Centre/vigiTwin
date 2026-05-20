@@ -3,6 +3,7 @@
 from llm_dup_dev.run_manifest.builder import build_run_manifest
 from llm_dup_dev.run_manifest.models import (
     SCHEMA_VERSION,
+    DatasetRef,
     DevPackageInfo,
     RunManifest,
 )
@@ -14,6 +15,7 @@ from llm_dup_dev.run_manifest.writer import (
 
 __all__ = [
     "RunManifest",
+    "DatasetRef",
     "DevPackageInfo",
     "SCHEMA_VERSION",
     "build_run_manifest",

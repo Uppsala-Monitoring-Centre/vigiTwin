@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.run_manifest._git import try_git_commit
-from llm_dup_dev.run_manifest.models import DevPackageInfo, RunManifest
+from llm_dup_dev.run_manifest.models import DatasetRef, DevPackageInfo, RunManifest
 
 if TYPE_CHECKING:
     from llm_dup_dev.pipeline.runner import PipelineRunner
@@ -99,6 +99,7 @@ def build_run_manifest(
     input_paths: dict[str, Any] | None = None,
     output_paths: dict[str, Any] | None = None,
     secure_context: dict[str, Any] | None = None,
+    dataset_ref: DatasetRef | None = None,
     run_id: str | None = None,
     run_name: str | None = None,
     notes: str | None = None,
@@ -178,5 +179,6 @@ def build_run_manifest(
         llm_config=resolved_llm_config,
         output_paths=dict(output_paths or {}),
         secure_context=dict(secure_context) if secure_context is not None else None,
+        dataset_ref=dataset_ref,
         notes=notes,
     )
