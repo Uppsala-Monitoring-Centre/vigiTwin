@@ -72,6 +72,20 @@ class TestBuildRequest:
         req = build_narrative_demographics_request("N")
         assert "evidence" in req.system_prompt.lower()
 
+    def test_system_prompt_forbids_imputation_from_descriptors(self):
+        req = build_narrative_demographics_request("N")
+        sp = req.system_prompt.lower()
+        assert "never impute" in sp or "do not impute" in sp
+        assert any(
+            descriptor in sp
+            for descriptor in ("adult", "elderly", "child", "infant")
+        )
+
+    def test_system_prompt_requires_explicit_numeric_age(self):
+        req = build_narrative_demographics_request("N")
+        sp = req.system_prompt.lower()
+        assert "explicit numeric value" in sp or "explicit number" in sp
+
 
 # ==================================================================
 # extract_narrative_demographics — short-circuit
