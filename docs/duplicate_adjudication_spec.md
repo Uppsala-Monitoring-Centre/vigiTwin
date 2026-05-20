@@ -159,8 +159,8 @@ After identifying matching features between the two reports, the evidential stre
 
 The features that contribute to the composite matching probability are:
 
-- **Drug set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed marginal with country / global backoff)
-- **AE set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed marginal with country / global backoff)
+- **Drug set** — when not part of the anchor definition (leave-pair-out marginal at the narrowest scope with extra-pair evidence; primary → country → global → floor)
+- **AE set** — when not part of the anchor definition (leave-pair-out marginal at the narrowest scope with extra-pair evidence; primary → country → global → floor)
 - **Patient demographics** — age, sex, height, weight (domain-size based)
 - **Clinical dates** — unique dates matching across drug start/end, AE onset, and overall AE onset fields (domain-size based)
 
@@ -342,40 +342,37 @@ Higher measurement precision increases domain size and therefore increases the e
 
 ##### Drug Sets and Adverse Event Sets
 
-For drug sets and adverse event sets, the probability is estimated as a **leave-pair-out Bayesian-smoothed marginal** of the feature in the primary reporting context, with **hierarchical backoff** through broader contexts (country, global) and a small floor at the bottom of the ladder. This avoids self-inclusion bias from the two focal reports and prevents zero-probability pathologies when the focal pair is the only occurrence of the feature in the primary context.
+For drug sets and adverse event sets, the probability is estimated as a **leave-pair-out marginal** of the feature, evaluated at the narrowest reporting scope that contains evidence of the feature *outside* the two focal reports. The scopes are tried in order — **primary → country → global** — and a per-report **floor** is used only when no scope has any extra-pair occurrence. This avoids self-inclusion bias from the two focal reports and prevents zero-probability pathologies when the focal pair is the only occurrence of the feature in the primary context.
 
 Drug sets and AE sets are evaluated only when they are **not part of the anchor definition**, to avoid double-counting anchor information.
 
-###### Single-level smoothed marginal
+###### Leave-pair-out ratio
 
-For a given context with \(n_{\text{total}}\) reports of which \(n_{\text{feature}}\) match the feature, the leave-pair-out smoothed marginal given a prior \(p_{\text{prior}}\) is:
+For a given scope with \(n_{\text{total}}\) reports of which \(n_{\text{feature}}\) match the feature, the leave-pair-out marginal is the bare ratio after removing the two focal reports from both numerator and denominator:
 
 $$
-\hat{p}(p_{\text{prior}}) \;=\; \frac{\max(0,\; n_{\text{feature}} - 2) \;+\; m \cdot p_{\text{prior}}}{\max(0,\; n_{\text{total}} - 2) \;+\; m}
+\hat{p} \;=\; \frac{n_{\text{feature}} - 2}{n_{\text{total}} - 2}
 $$
 
-where \(m = 10\) is a smoothing pseudo-count (configurable via `AnchorConfig.smoothing_pseudocount`). The \(-2\) subtraction is **leave-pair-out**: the two focal reports are removed from both numerator and denominator so they cannot inflate their own evidence.
+This is defined and informative only when \(n_{\text{feature}} > 2\) (i.e. at least one report outside the focal pair carries the feature) and \(n_{\text{total}} > 2\).
 
-###### Hierarchical backoff ladder
+###### First-level-with-evidence cascade
 
-The estimate walks four levels **bottom-up**, feeding each level's output as the prior for the next:
+Walk the scopes from narrowest to broadest and return the bare LPO ratio at the **first scope where the feature has any extra-pair evidence**:
 
-1. **Floor.** If the global total is available, \(p_{\text{floor}} = 1 / \max(N_{\text{total}}^{\text{global}} - 2,\; 1)\). Otherwise \(p_{\text{floor}} = 10^{-6}\) (a fixed "one-in-a-million" constant, `MARGINAL_FLOOR`).
-2. **Global** (when global counts are available): \(p_{\text{global}} \;=\; \hat{p}(p_{\text{floor}})\) using \(N_{\text{feature}}^{\text{global}}\) and \(N_{\text{total}}^{\text{global}}\).
-3. **Country** (when country counts are available): \(p_{\text{country}} \;=\; \hat{p}(p_{\text{global}})\) using \(N_{\text{feature}}^{\text{country}}\) and \(N_{\text{total}}^{\text{country}}\).
-4. **Primary** (the reporting context determined for the pair — always applied): \(p_F \;=\; \hat{p}(p_{\text{country}})\) using \(N_{\text{feature}}\) and \(N_{\text{total}}\).
+1. **Primary** (the reporting context determined for the pair): if \(n_{\text{feature}} > 2\) and \(n_{\text{total}} > 2\), use \(p_F = (n_{\text{feature}} - 2) / (n_{\text{total}} - 2)\).
+2. **Country** (when country counts are supplied and primary had no extra-pair evidence): if \(N_{\text{feature}}^{\text{country}} > 2\) and \(N_{\text{total}}^{\text{country}} > 2\), use \(p_F = (N_{\text{feature}}^{\text{country}} - 2) / (N_{\text{total}}^{\text{country}} - 2)\).
+3. **Global** (when global counts are supplied and country had no extra-pair evidence): if \(N_{\text{feature}}^{\text{global}} > 2\) and \(N_{\text{total}}^{\text{global}} > 2\), use \(p_F = (N_{\text{feature}}^{\text{global}} - 2) / (N_{\text{total}}^{\text{global}} - 2)\).
+4. **Floor** (no scope has extra-pair evidence): \(p_F = 1 / \max(N_{\text{total}}^{\text{global}} - 2,\; 1)\) when the global total is available, else \(p_F = 10^{-6}\) (`MARGINAL_FLOOR`).
 
-Levels whose counts are not supplied by the data layer are skipped; the previous level's prior is carried forward unchanged. The primary level is always applied.
-
-Note that **leave-pair-out is applied at every nesting level**, not only the primary, because the focal pair sits inside country-year ⊂ country ⊂ global and would otherwise still influence the broader-context estimate.
+Scopes whose counts are not supplied by the data layer are skipped. The \(-2\) leave-pair-out subtraction is applied at whichever scope is used: the focal pair sits inside country-year ⊂ country ⊂ global, so it is removed from numerator and denominator at whatever level the cascade lands on.
 
 ###### Design Rationale
 
-- **Leave-pair-out at every level** prevents the focal pair from inflating its own evidence at any layer of the ladder.
-- **Bayesian smoothing** prevents zero probabilities when the leave-pair-out count in the primary context is zero (i.e. the focal pair is the only occurrence). Without smoothing the contribution would be undefined; with the ladder, the estimate is pulled toward the broader-context prior instead of being silently dropped.
-- **Hierarchical backoff** keeps rare features informative: when a feature appears nowhere else in the country-year context but is observed elsewhere in the country or globally, the country and global priors regularise the estimate at a clinically sensible rate.
-- **The floor** guarantees a strictly positive probability even when every broader context is also empty or unavailable. With the global-derived floor, a feature seen only in the focal pair lands at roughly the per-report rate of the database (\(\sim 1/N_{\text{total}}^{\text{global}}\)); with the constant fallback it lands at \(10^{-6}\), contributing roughly 6 to \(L_{\text{match}}\) instead of vanishing.
-- **\(m = 10\)** provides moderate regularisation: with \(\sim 23\) or more leave-pair-out reports the data dominates, with very few the prior dominates.
+- **Leave-pair-out at every used scope** prevents the focal pair from inflating its own evidence.
+- **Bare LPO ratio (no Bayesian smoothing)** is the natural estimate once extra-pair evidence exists at some scope. An earlier recursive Bayesian-smoothed ladder pulled each level's posterior toward the level below by a factor \(\alpha / (n_{\text{total}} + \alpha)\); for a feature unique to the focal pair globally this drove the estimate to \(\sim 10^{-16}\), ten orders of magnitude **below** the intended per-report floor — over-weighting the feature as duplicate evidence (\(+16\) to \(L_{\text{match}}\) instead of \(+6\)).
+- **Narrow-first cascade** uses the most specific evidence available: country-year primary rates are the right unit for the duplicate-pair likelihood; broader scopes are consulted only when primary is silent.
+- **The floor** guarantees a strictly positive probability when no scope contains evidence outside the focal pair. With the global-derived floor, a feature seen only in the focal pair lands at roughly the per-report rate of the database (\(\sim 1/N_{\text{total}}^{\text{global}}\)); with the constant fallback it lands at \(10^{-6}\), contributing roughly 6 to \(L_{\text{match}}\) instead of vanishing.
 
 ###### Worked Example
 
@@ -384,24 +381,17 @@ Suppose the matching drug set is rare, the focal pair is the only country-year o
 - Primary (country-year): \(N_{\text{drugs}} = 2\), \(N_{\text{total}} = 1{,}000\) (only the focal pair has these drugs in this country-year).
 - Country: \(N_{\text{drugs}}^{\text{country}} = 5\), \(N_{\text{total}}^{\text{country}} = 10{,}000\).
 - Global: \(N_{\text{drugs}}^{\text{global}} = 80\), \(N_{\text{total}}^{\text{global}} = 1{,}000{,}000\).
-- Pseudo-count \(m = 10\).
 
-Walking the ladder bottom-up:
+Walking the cascade:
+
+- Primary: \(N_{\text{drugs}} = 2\) → no extra-pair evidence, skip.
+- Country: \(N_{\text{drugs}}^{\text{country}} = 5 > 2\), so
 
 $$
-p_{\text{floor}} = \frac{1}{\max(1{,}000{,}000 - 2,\; 1)} \;\approx\; 1.0 \times 10^{-6}
-$$
-$$
-p_{\text{global}} = \frac{\max(0,\, 80 - 2) + 10 \cdot 1.0 \times 10^{-6}}{\max(0,\, 1{,}000{,}000 - 2) + 10} \;\approx\; 7.8 \times 10^{-5}
-$$
-$$
-p_{\text{country}} = \frac{\max(0,\, 5 - 2) + 10 \cdot 7.8 \times 10^{-5}}{\max(0,\, 10{,}000 - 2) + 10} \;\approx\; 3.0 \times 10^{-4}
-$$
-$$
-p_F = \frac{\max(0,\, 2 - 2) + 10 \cdot 3.0 \times 10^{-4}}{\max(0,\, 1{,}000 - 2) + 10} \;\approx\; 3.0 \times 10^{-6}
+p_F = \frac{5 - 2}{10{,}000 - 2} \;\approx\; 3.0 \times 10^{-4}
 $$
 
-Despite the primary leave-pair-out count being zero, the smoothing carries the country-level estimate \(\sim 3 \times 10^{-4}\) forward and produces a final \(p_F\) of order \(10^{-6}\) (a few times the floor), reflecting that the drug set is rare but not entirely unseen. Without the backoff the primary alone would give \((0 + 0)/(998 + 10) = 0\), which would silently drop the contribution.
+The country scope captures the fact that the drug set is rare but not vanishingly so; the global scope is never consulted. If the drug set had been unique to the focal pair at the country level as well (\(N_{\text{drugs}}^{\text{country}} = 2\)) but observed 80 times globally, the cascade would have fallen through to global and yielded \((80-2)/(1{,}000{,}000-2) \approx 7.8 \times 10^{-5}\). If unique at every scope, it would have landed at the floor \(1/(1{,}000{,}000 - 2) \approx 1.0 \times 10^{-6}\) — never below.
 
 This logic applies symmetrically to the AE set (with the AE-set counts at each level) and the same formula is used regardless of which of drugs / AEs forms the anchor.
 

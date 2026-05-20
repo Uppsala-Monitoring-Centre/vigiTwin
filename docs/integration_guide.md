@@ -750,7 +750,6 @@ config = PipelineConfig(
     ),
     anchor=AnchorConfig(
         threshold=50,
-        smoothing_pseudocount=10,  # Bayesian pseudo-count m for leave-pair-out AE/drug scoring
     ),
     epsilon=1e-15,
 )

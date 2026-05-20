@@ -94,14 +94,13 @@ class FrequencyStats(BaseModel):
     ``N_drugs_AEs``) are within the determined reporting context.
 
     The optional broader-context fields (``N_*_country`` and
-    ``N_*_global``) are used by ``compute_probability`` for hierarchical
-    backoff smoothing of drug-set / AE-set marginal probabilities. When
-    a feature appears only in the candidate pair, the leave-pair-out
-    estimate in the primary context collapses to zero; the broader
-    counts let the estimate fall back through country and global priors
-    instead of being silently dropped. Implementations should populate
-    these when available; missing levels are skipped and a small floor
-    is used at the bottom of the ladder.
+    ``N_*_global``) are used by ``compute_probability`` for the
+    first-level-with-evidence backoff cascade on drug-set / AE-set
+    marginal probabilities. When a feature appears only in the focal
+    pair within the primary context, the cascade tries the country
+    and then the global scope before falling back to a per-report
+    floor. Implementations should populate these when available;
+    missing levels are skipped.
     """
 
     N_total: int  # total reports in the reporting context
@@ -109,7 +108,7 @@ class FrequencyStats(BaseModel):
     N_AEs: int  # reports containing all matching AEs
     N_drugs_AEs: int  # reports containing both
 
-    # Optional broader-context counts for hierarchical backoff smoothing.
+    # Optional broader-context counts for the marginal backoff cascade.
     # Populate these when the data source has access to country and/or
     # global statistics; leave as None to fall back to the floor.
     N_total_country: int | None = None
@@ -124,18 +123,12 @@ class FrequencyStats(BaseModel):
 # Constants
 # ---------------------------------------------------------------------------
 
-#: Pseudo-count for Bayesian smoothing of anchor-conditional probabilities.
-#: Controls how strongly the estimate is pulled toward the prior p0 when
-#: the leave-pair-out sample is small. Configurable via
-#: ``AnchorConfig.smoothing_pseudocount`` in ``PipelineConfig``.
-SMOOTHING_PSEUDOCOUNT: int = 10
-
-#: Last-resort floor probability for the bottom of the marginal-backoff
-#: ladder, used when no broader-context counts are available. Picks a
-#: rate of ~one-in-a-million so a feature that exists only in the
-#: candidate pair still contributes ~6 to L_match instead of being
-#: silently dropped. When global counts are available, the floor is
-#: derived as ``1 / max(N_total_global - 2, 1)`` instead.
+#: Last-resort floor for the marginal-backoff cascade, used only when no
+#: scope (primary / country / global) supplies extra-pair evidence and
+#: no global total is available to derive a per-report floor. Picks a
+#: rate of ~one-in-a-million so the feature still contributes ~6 to
+#: L_match instead of being silently dropped. When the global total is
+#: available, the floor is ``1 / max(N_total_global - 2, 1)`` instead.
 MARGINAL_FLOOR: float = 1e-6
 
 
@@ -151,7 +144,6 @@ def compute_probability(
     config: DomainSizeConfig,
     reporting_context_level: ReportingContextLevel = ReportingContextLevel.GLOBAL,
     epsilon: float = 1e-15,
-    smoothing_pseudocount: int = SMOOTHING_PSEUDOCOUNT,
 ) -> ProbabilityResult:
     """Compute the composite matching probability and L_match.
 
@@ -163,7 +155,8 @@ def compute_probability(
 
     Drug/AE set frequencies are excluded when they form part of the
     anchor (to avoid double-counting). When included, they are estimated
-    using a hierarchical leave-pair-out Bayesian smoother (see ``_marginal_with_backoff``).
+    using a first-level-with-evidence leave-pair-out cascade (see
+    ``_marginal_with_backoff``).
 
     Report date is excluded from the probability computation — it is
     matched for evidence display purposes only.
@@ -183,10 +176,6 @@ def compute_probability(
         size (540 days for country-year, 3650 days otherwise).
     epsilon : float
         Small constant for numerical stability.
-    smoothing_pseudocount : int
-        Bayesian pseudo-count m for leave-pair-out smoothing. Defaults to
-        ``SMOOTHING_PSEUDOCOUNT`` (10); pass ``config.anchor.smoothing_pseudocount``
-        from ``PipelineConfig`` to use the configured value.
 
     Returns
     -------
@@ -198,9 +187,8 @@ def compute_probability(
 
     # Drug set probability — excluded if anchor uses drugs.
     # When the anchor is AEs, the drug set is an additional feature whose
-    # marginal probability is estimated with a hierarchical
-    # leave-pair-out smoother (primary context, with country and global
-    # as broader-context priors when available, floor at the bottom).
+    # marginal probability is estimated using a first-level-with-evidence
+    # leave-pair-out cascade (primary → country → global → floor).
     if (
         anchor.type not in (AnchorType.DRUGS, AnchorType.DRUGS_AES)
         and match_result.matching_drugs
@@ -212,7 +200,6 @@ def compute_probability(
             stats.N_total_country,
             stats.N_drugs_global,
             stats.N_total_global,
-            alpha=smoothing_pseudocount,
         )
         feature_probs.append(
             FeatureProbability(
@@ -220,7 +207,7 @@ def compute_probability(
                 p_f=p_drugs,
                 method="leave_pair_out",
                 description=(
-                    f"Drug set: smoothed leave-pair-out "
+                    f"Drug set: leave-pair-out "
                     f"({stats.N_drugs}/{stats.N_total} primary; {trace})"
                 ),
             )
@@ -241,7 +228,6 @@ def compute_probability(
             stats.N_total_country,
             stats.N_AEs_global,
             stats.N_total_global,
-            alpha=smoothing_pseudocount,
         )
         feature_probs.append(
             FeatureProbability(
@@ -249,7 +235,7 @@ def compute_probability(
                 p_f=p_aes,
                 method="leave_pair_out",
                 description=(
-                    f"AE set: smoothed leave-pair-out "
+                    f"AE set: leave-pair-out "
                     f"({stats.N_AEs}/{stats.N_total} primary; {trace})"
                 ),
             )
@@ -349,53 +335,6 @@ def compute_probability(
 # ---------------------------------------------------------------------------
 
 
-def _leave_pair_out_marginal(
-    n_feature_in_context: int,
-    n_total_in_context: int,
-) -> float | None:
-    """Leave-pair-out marginal prevalence of a feature in the context.
-
-    Computes (N_feature - 2) / (N_total - 2), removing the two focal
-    reports from both numerator and denominator.
-
-    Returns None if n_total_in_context <= 2 (cannot compute a meaningful
-    frequency).
-    """
-    denom = n_total_in_context - 2
-    if denom <= 0:
-        return None
-    numer = max(0, n_feature_in_context - 2)
-    return numer / denom
-
-
-def _smoothed_marginal(
-    n_feature: int,
-    n_total: int,
-    p_prior: float,
-    alpha: int,
-) -> float:
-    """Single-level Bayesian-smoothed leave-pair-out marginal.
-
-    Computes::
-
-        n_feature_excl = max(0, n_feature - 2)
-        n_total_excl   = max(0, n_total - 2)
-        p              = (n_feature_excl + alpha * p_prior) / (n_total_excl + alpha)
-
-    The leave-pair-out subtraction is applied at every nesting level
-    because the candidate pair sits inside country-year ⊂ country ⊂
-    global. If ``n_total_excl + alpha`` would be zero (only possible
-    when ``alpha == 0`` and the context is empty after exclusion), the
-    prior is returned unchanged.
-    """
-    n_feature_excl = max(0, n_feature - 2)
-    n_total_excl = max(0, n_total - 2)
-    denom = n_total_excl + alpha
-    if denom <= 0:
-        return p_prior
-    return (n_feature_excl + alpha * p_prior) / denom
-
-
 def _marginal_with_backoff(
     n_feature: int,
     n_total: int,
@@ -403,60 +342,47 @@ def _marginal_with_backoff(
     n_total_country: int | None,
     n_feature_global: int | None,
     n_total_global: int | None,
-    *,
-    alpha: int = SMOOTHING_PSEUDOCOUNT,
 ) -> tuple[float, str]:
-    """Hierarchical leave-pair-out marginal with country → global backoff.
+    """First-level-with-evidence leave-pair-out marginal.
 
-    Replaces the bare ``_leave_pair_out_marginal`` call site for drug-set
-    and AE-set probabilities. Walks the ladder bottom-up — floor →
-    global → country → primary — feeding each level's smoothed estimate
-    as the prior for the next, so that a feature seen only in the
-    candidate pair still gets a non-zero, principled probability via the
-    broader contexts.
+    Walks scopes from narrowest to broadest (primary → country →
+    global) and returns the bare leave-pair-out ratio at the first
+    scope where the feature is observed in at least one report
+    outside the focal pair (``n_feature > 2``). When no scope has
+    extra-pair evidence, falls back to a per-report floor:
+    ``1 / (n_total_global - 2)`` if the global total is available,
+    else ``MARGINAL_FLOOR``.
 
-    Levels whose counts are ``None`` are skipped (the previous-prior is
-    carried forward unchanged). The primary level is always applied.
-
-    The floor is ``1 / max(n_total_global - 2, 1)`` when global counts
-    are available, else ``MARGINAL_FLOOR``.
+    Smoothing was removed deliberately: once extra-pair evidence
+    exists at any scope the bare LPO ratio is the natural estimate,
+    and the previous recursive Bayesian cascade drove unique-pair
+    features to ~10⁻¹⁶ (far below the intended floor) because each
+    level multiplied the prior by ``α / (N_total + α)``.
 
     Returns
     -------
     (p, trace)
         ``p`` is a strictly positive float. ``trace`` is a short
-        diagnostic string describing which levels were applied (e.g.
-        ``"floor=1e-6 → global → country → primary"``), suitable for
-        embedding in a ``FeatureProbability.description``.
+        diagnostic string describing which branch fired (e.g.
+        ``"lpo@country"`` or ``"floor=1/(N_total_global-2)"``),
+        suitable for embedding in ``FeatureProbability.description``.
     """
-    # Floor: prefer global-derived rate when available.
-    if n_total_global is not None and n_total_global > 0:
-        floor = 1.0 / max(n_total_global - 2, 1)
-        floor_label = f"floor=1/{max(n_total_global - 2, 1)}"
-    else:
-        floor = MARGINAL_FLOOR
-        floor_label = f"floor={MARGINAL_FLOOR:g}"
+    scopes = (
+        ("primary", n_feature, n_total),
+        ("country", n_feature_country, n_total_country),
+        ("global", n_feature_global, n_total_global),
+    )
+    for label, n_f, n_t in scopes:
+        if n_f is None or n_t is None:
+            continue
+        if n_t <= 2:
+            continue
+        if n_f > 2:
+            return (n_f - 2) / (n_t - 2), f"lpo@{label}"
 
-    p_prior = floor
-    parts: list[str] = [floor_label]
-
-    # Walk bottom-up through the broader contexts.
-    if n_feature_global is not None and n_total_global is not None:
-        p_prior = _smoothed_marginal(
-            n_feature_global, n_total_global, p_prior, alpha
-        )
-        parts.append("global")
-
-    if n_feature_country is not None and n_total_country is not None:
-        p_prior = _smoothed_marginal(
-            n_feature_country, n_total_country, p_prior, alpha
-        )
-        parts.append("country")
-
-    p = _smoothed_marginal(n_feature, n_total, p_prior, alpha)
-    parts.append("primary")
-
-    return p, " → ".join(parts)
+    if n_total_global is not None and n_total_global > 2:
+        return 1.0 / (n_total_global - 2), f"floor=1/(N_total_global-2)"
+    return MARGINAL_FLOOR, f"floor={MARGINAL_FLOOR:g}"
 
 
 def _empirical_frequency(count: int, total: int) -> float | None:

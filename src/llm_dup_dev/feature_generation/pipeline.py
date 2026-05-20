@@ -133,7 +133,6 @@ def generate_pair_features(
         config=config.domain_sizes,
         reporting_context_level=reporting_context.level,
         epsilon=config.epsilon,
-        smoothing_pseudocount=config.anchor.smoothing_pseudocount,
     )
 
     # Step 5: Detect inconsistencies

@@ -275,7 +275,7 @@ class TestCountryScope:
             year=None,
         )
         # Primary = country; only global is strictly broader. Country-level
-        # broader fields stay None to avoid double-applying smoothing.
+        # broader fields stay None to avoid consulting the same data twice.
         assert stats == FrequencyStats(
             N_total=1200, N_drugs=50, N_AEs=80, N_drugs_AEs=12,
             N_total_global=5000, N_drugs_global=200, N_AEs_global=300,

@@ -313,11 +313,11 @@ class FrozenStatsProvider:
 
         scope = self._select_scope(bundle, country, year)
 
-        # Broader-context counts feed the hierarchical-backoff smoother
-        # in ``compute_probability`` for drug-set / AE-set marginals.
-        # Only populate levels that are *strictly broader* than the
-        # primary scope so that smoothing is not applied with identical
-        # data twice:
+        # Broader-context counts feed the first-level-with-evidence
+        # backoff cascade in ``compute_probability`` for drug-set /
+        # AE-set marginals. Only populate levels that are *strictly
+        # broader* than the primary scope so that the same data is not
+        # consulted twice:
         #   - primary = country-year → country and global both broader
         #   - primary = country      → only global is broader
         #   - primary = global       → no broader level

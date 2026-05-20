@@ -12,11 +12,9 @@ from llm_dup_dev.feature_generation.matching import (
 )
 from llm_dup_dev.feature_generation.probability import (
     MARGINAL_FLOOR,
-    SMOOTHING_PSEUDOCOUNT,
     FrequencyStats,
     _clinical_date_domain_sizes,
     _marginal_with_backoff,
-    _smoothed_marginal,
     compute_probability,
 )
 from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
@@ -935,11 +933,10 @@ class TestLeavePairOutIntegration:
         assert len(ae_feats) == 1
         assert ae_feats[0].method == "leave_pair_out"
 
-        # Smoothed leave-pair-out (no broader stats): primary level is
-        # (198 + alpha*MARGINAL_FLOOR) / (998 + alpha). With plentiful
-        # data this is within ~1% of the previous bare marginal 198/998.
-        m = SMOOTHING_PSEUDOCOUNT
-        expected = (198 + m * MARGINAL_FLOOR) / (998 + m)
+        # Bare leave-pair-out at the primary scope: 198/998. No
+        # smoothing — the primary scope has extra-pair evidence so the
+        # cascade returns the raw LPO ratio.
+        expected = 198 / 998
         assert ae_feats[0].p_f == pytest.approx(expected)
 
     def test_drug_feature_uses_leave_pair_out_when_anchor_aes(self):
@@ -962,12 +959,11 @@ class TestLeavePairOutIntegration:
         assert len(drug_feats) == 1
         assert drug_feats[0].method == "leave_pair_out"
 
-        m = SMOOTHING_PSEUDOCOUNT
-        expected = (198 + m * MARGINAL_FLOOR) / (998 + m)
+        expected = 198 / 998
         assert drug_feats[0].p_f == pytest.approx(expected)
 
     def test_description_shows_leave_pair_out_counts(self):
-        """Description should show the smoothed leave-pair-out trace."""
+        """Description should show the LPO cascade trace."""
         match = MatchResult(
             matching_drugs=["drug_a"],
             matching_AEs=["ae_a"],
@@ -983,18 +979,19 @@ class TestLeavePairOutIntegration:
         result = compute_probability(match, anchor, stats, config)
         ae_feat = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"][0]
 
-        # Description carries primary counts and the backoff trace.
+        # Description carries primary counts and the cascade trace.
         assert "200/1000 primary" in ae_feat.description
-        assert "smoothed leave-pair-out" in ae_feat.description
-        assert "primary" in ae_feat.description
+        assert "leave-pair-out" in ae_feat.description
+        assert "lpo@primary" in ae_feat.description
 
 
 class TestMarginalBackoff:
-    """Regression coverage for the hierarchical leave-pair-out smoother.
+    """Regression coverage for the first-level-with-evidence LPO cascade.
 
-    Targets the edge case where ``N_drug_AE == N_drug == N_AE`` so the
-    leave-pair-out count for a feature collapses to zero — without
-    backoff the contribution would be silently dropped.
+    Targets the edge case where ``N_feature == 2`` at the primary scope
+    (the feature is observed only in the focal pair locally) — the
+    cascade must back off to country, then global, then a per-report
+    floor, and must never return zero.
     """
 
     def _match(self):
@@ -1018,65 +1015,67 @@ class TestMarginalBackoff:
 
     # ---- Helper-level checks -----------------------------------------
 
-    def test_smoothed_marginal_collapses_to_prior_when_context_empty(self):
-        # n_total=2 → n_total_excl=0; smoothed estimate equals the prior.
-        assert _smoothed_marginal(2, 2, p_prior=0.123, alpha=10) == pytest.approx(0.123)
-
-    def test_smoothed_marginal_recovers_bare_marginal_with_zero_alpha(self):
-        # alpha=0 short-circuits to the bare leave-pair-out marginal.
-        assert _smoothed_marginal(202, 1002, p_prior=0.5, alpha=0) == pytest.approx(
-            (202 - 2) / (1002 - 2)
-        )
-
-    def test_marginal_with_backoff_returns_positive_with_no_broader_stats(self):
-        # All broader fields None: floor + primary smoothing still yields > 0.
+    def test_returns_floor_when_no_scope_has_extra_pair_evidence(self):
+        """All broader stats None and primary pair-only → MARGINAL_FLOOR."""
         p, trace = _marginal_with_backoff(
             n_feature=2, n_total=1000,
             n_feature_country=None, n_total_country=None,
             n_feature_global=None, n_total_global=None,
         )
-        assert p > 0
-        # Primary numerator collapses to 0 → result equals
-        # alpha*floor / (n_total_excl + alpha).
-        m = SMOOTHING_PSEUDOCOUNT
-        assert p == pytest.approx((m * MARGINAL_FLOOR) / (998 + m))
+        assert p == pytest.approx(MARGINAL_FLOOR)
         assert "floor" in trace
-        assert "primary" in trace
-        assert "country" not in trace
-        assert "global" not in trace
 
-    def test_marginal_with_backoff_uses_country_prior_when_global_missing(self):
+    def test_uses_country_lpo_when_primary_pair_only_and_country_has_evidence(self):
         p, trace = _marginal_with_backoff(
             n_feature=2, n_total=1000,
             n_feature_country=8, n_total_country=5000,
             n_feature_global=None, n_total_global=None,
         )
-        m = SMOOTHING_PSEUDOCOUNT
-        # Floor → country (smoothed) → primary (smoothed).
-        country_p = (6 + m * MARGINAL_FLOOR) / (4998 + m)
-        primary_p = (0 + m * country_p) / (998 + m)
-        assert p == pytest.approx(primary_p)
-        assert "country" in trace
-        assert "global" not in trace
+        assert p == pytest.approx((8 - 2) / (5000 - 2))
+        assert "lpo@country" in trace
 
-    def test_marginal_with_backoff_floor_uses_global_total_when_available(self):
-        p, _ = _marginal_with_backoff(
+    def test_falls_through_to_global_lpo_when_only_global_has_evidence(self):
+        p, trace = _marginal_with_backoff(
+            n_feature=2, n_total=1000,
+            n_feature_country=2, n_total_country=5000,
+            n_feature_global=50, n_total_global=1_000_000,
+        )
+        assert p == pytest.approx((50 - 2) / (1_000_000 - 2))
+        assert "lpo@global" in trace
+
+    def test_floor_uses_global_total_when_no_scope_has_evidence(self):
+        p, trace = _marginal_with_backoff(
             n_feature=2, n_total=10,
             n_feature_country=None, n_total_country=None,
             n_feature_global=2, n_total_global=1_000_002,
         )
-        # Floor = 1 / (1_000_002 - 2) = 1e-6
-        m = SMOOTHING_PSEUDOCOUNT
-        floor = 1.0 / max(1_000_002 - 2, 1)
-        # Global feature count collapses too → smoothed global = alpha*floor/(N+alpha).
-        global_p = (0 + m * floor) / ((1_000_002 - 2) + m)
-        primary_p = (0 + m * global_p) / ((10 - 2) + m)
-        assert p == pytest.approx(primary_p)
+        assert p == pytest.approx(1.0 / (1_000_002 - 2))
+        assert "N_total_global" in trace
+
+    def test_primary_lpo_used_when_primary_has_extra_pair_evidence(self):
+        """Even if broader scopes have more occurrences, primary wins when it has any."""
+        p, trace = _marginal_with_backoff(
+            n_feature=3, n_total=1000,
+            n_feature_country=120, n_total_country=5000,
+            n_feature_global=20_000, n_total_global=1_000_000,
+        )
+        assert p == pytest.approx((3 - 2) / (1000 - 2))
+        assert "lpo@primary" in trace
+
+    def test_skips_scope_with_n_total_too_small(self):
+        """A scope with n_total <= 2 is skipped (no LPO room)."""
+        p, trace = _marginal_with_backoff(
+            n_feature=2, n_total=2,             # primary too small
+            n_feature_country=8, n_total_country=5000,
+            n_feature_global=50, n_total_global=1_000_000,
+        )
+        assert p == pytest.approx((8 - 2) / (5000 - 2))
+        assert "lpo@country" in trace
 
     # ---- compute_probability integration -----------------------------
 
-    def test_normal_case_with_broader_stats_close_to_bare_marginal(self):
-        """Plentiful data: smoothed value ~ matches the previous bare marginal."""
+    def test_normal_case_returns_bare_primary_lpo(self):
+        """Plentiful primary evidence: returns exactly 198/998."""
         stats = FrequencyStats(
             N_total=1000, N_drugs=25, N_AEs=200, N_drugs_AEs=3,
             N_total_country=5000, N_drugs_country=120, N_AEs_country=900,
@@ -1088,15 +1087,11 @@ class TestMarginalBackoff:
         ae_feat = next(
             fp for fp in result.feature_probabilities if fp.feature == "ae_set"
         )
-        # Smoothed value should be within 5% of the bare marginal 198/998.
-        bare = (200 - 2) / (1000 - 2)
-        assert ae_feat.p_f == pytest.approx(bare, rel=0.05)
-        # Trace mentions every applied level.
-        assert "country" in ae_feat.description
-        assert "global" in ae_feat.description
+        assert ae_feat.p_f == pytest.approx((200 - 2) / (1000 - 2))
+        assert "lpo@primary" in ae_feat.description
 
-    def test_edge_case_ae_only_in_pair_uses_country_prior(self):
-        """Pair-only AE set: previously dropped; now backs off to country."""
+    def test_edge_case_ae_only_in_pair_uses_country_lpo(self):
+        """Pair-only AE in primary: cascade picks country bare LPO."""
         stats = FrequencyStats(
             N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
             N_total_country=5000, N_drugs_country=120, N_AEs_country=8,
@@ -1107,17 +1102,9 @@ class TestMarginalBackoff:
             stats, DomainSizeConfig(),
         )
         ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
-        # Previously this contribution was OMITTED; now it must be present.
         assert len(ae_feats) == 1
-        assert ae_feats[0].p_f > 0
-
-        # Verify the value matches the explicit ladder.
-        m = SMOOTHING_PSEUDOCOUNT
-        floor = 1.0 / max(1_000_000 - 2, 1)
-        p_global = (max(0, 50 - 2) + m * floor) / (max(0, 1_000_000 - 2) + m)
-        p_country = (max(0, 8 - 2) + m * p_global) / (max(0, 5000 - 2) + m)
-        p_primary = (max(0, 2 - 2) + m * p_country) / (max(0, 1000 - 2) + m)
-        assert ae_feats[0].p_f == pytest.approx(p_primary)
+        assert ae_feats[0].p_f == pytest.approx((8 - 2) / (5000 - 2))
+        assert "lpo@country" in ae_feats[0].description
 
     def test_edge_case_drug_only_in_pair_symmetric(self):
         """Mirror of the AE-only case, with anchor=AES and drug-set rare."""
@@ -1134,17 +1121,28 @@ class TestMarginalBackoff:
             fp for fp in result.feature_probabilities if fp.feature == "drug_set"
         ]
         assert len(drug_feats) == 1
-        assert drug_feats[0].p_f > 0
+        assert drug_feats[0].p_f == pytest.approx((8 - 2) / (5000 - 2))
+        assert "lpo@country" in drug_feats[0].description
 
-        m = SMOOTHING_PSEUDOCOUNT
-        floor = 1.0 / max(1_000_000 - 2, 1)
-        p_global = (max(0, 50 - 2) + m * floor) / (max(0, 1_000_000 - 2) + m)
-        p_country = (max(0, 8 - 2) + m * p_global) / (max(0, 5000 - 2) + m)
-        p_primary = (max(0, 2 - 2) + m * p_country) / (max(0, 1000 - 2) + m)
-        assert drug_feats[0].p_f == pytest.approx(p_primary)
+    def test_unique_to_pair_everywhere_lands_at_global_floor(self):
+        """Feature unique to focal pair at every scope → floor = 1/(N_global-2)."""
+        stats = FrequencyStats(
+            N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
+            N_total_country=5000, N_drugs_country=120, N_AEs_country=2,
+            N_total_global=1_000_000, N_drugs_global=20_000, N_AEs_global=2,
+        )
+        result = compute_probability(
+            self._match(), self._anchor_drugs(n_aes=2, n_drugs_aes=2),
+            stats, DomainSizeConfig(),
+        )
+        ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
+        assert len(ae_feats) == 1
+        assert ae_feats[0].p_f == pytest.approx(1.0 / (1_000_000 - 2))
+        # Critical regression: must be ~1e-6, not the old cascade's ~1e-16.
+        assert ae_feats[0].p_f > 1e-7
 
-    def test_no_broader_stats_falls_back_to_floor(self):
-        """Pair-only AE with no broader stats: floor keeps p_f non-zero."""
+    def test_no_broader_stats_falls_back_to_constant_floor(self):
+        """Pair-only AE with no broader stats: MARGINAL_FLOOR keeps p_f non-zero."""
         stats = FrequencyStats(
             N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
         )
@@ -1154,15 +1152,10 @@ class TestMarginalBackoff:
         )
         ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
         assert len(ae_feats) == 1
-        assert ae_feats[0].p_f > 0
-
-        # Direct check: only the floor and primary level are applied.
-        m = SMOOTHING_PSEUDOCOUNT
-        expected = (m * MARGINAL_FLOOR) / (998 + m)
-        assert ae_feats[0].p_f == pytest.approx(expected)
+        assert ae_feats[0].p_f == pytest.approx(MARGINAL_FLOOR)
 
     def test_global_only_uses_global_derived_floor(self):
-        """No country level (e.g., reporting context = COUNTRY): floor = 1/N_global."""
+        """No country level: feature pair-only globally → floor = 1/(N_global-2)."""
         stats = FrequencyStats(
             N_total=1000, N_drugs=25, N_AEs=2, N_drugs_AEs=2,
             N_total_global=1_000_002, N_drugs_global=20_000, N_AEs_global=2,
@@ -1173,14 +1166,7 @@ class TestMarginalBackoff:
         )
         ae_feats = [fp for fp in result.feature_probabilities if fp.feature == "ae_set"]
         assert len(ae_feats) == 1
-        assert ae_feats[0].p_f > 0
-
-        m = SMOOTHING_PSEUDOCOUNT
-        floor = 1.0 / max(1_000_002 - 2, 1)
-        # Global feature collapses too (N_AEs_global=2 → excl 0).
-        p_global = (m * floor) / ((1_000_002 - 2) + m)
-        p_primary = (m * p_global) / (998 + m)
-        assert ae_feats[0].p_f == pytest.approx(p_primary)
+        assert ae_feats[0].p_f == pytest.approx(1.0 / (1_000_002 - 2))
 
     @pytest.mark.parametrize(
         "n_drugs, n_aes, n_drugs_aes, n_total",
