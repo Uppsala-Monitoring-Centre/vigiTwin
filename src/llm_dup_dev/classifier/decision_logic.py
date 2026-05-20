@@ -8,7 +8,7 @@ Two layered internal labels are produced:
 * an ``IndependenceAssessment`` capturing whether the matching evidence
   is strong enough to reject the null hypothesis that the two reports
   are independent draws from the comparison population
-  (``NON_INDEPENDENT`` / ``INDEPENDENT`` / ``ABSTAIN``);
+  (``NON_INDEPENDENT`` / ``INDEPENDENT``);
 * when independence has been rejected, a ``DuplicateRelationship``
   sub-label that uses the inconsistency signals to distinguish a
   likely-duplicate case from one that is linked by something other
@@ -17,7 +17,7 @@ Two layered internal labels are produced:
 
 These are mapped by ``ClassificationResult.final_label`` to the
 user-facing labels ``Duplicates`` / ``Otherwise_related`` /
-``Unrelated`` / ``Abstain``.
+``Unrelated``.
 
 Inconsistencies are combined into a single weighted score::
 

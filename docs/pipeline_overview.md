@@ -1,6 +1,6 @@
 # Duplicate Adjudication Pipeline Overview
 
-This document gives a high-level overview of the **duplicate adjudication pipeline** for pharmacovigilance reports. The pipeline operates on **report pairs** that have already been flagged as suspected duplicates by an upstream candidate-generation method (e.g. vigiMatch). For each pair it produces a final classification of **Duplicates**, **Otherwise related**, **Unrelated**, or **Abstain**.
+This document gives a high-level overview of the **duplicate adjudication pipeline** for pharmacovigilance reports. The pipeline operates on **report pairs** that have already been flagged as suspected duplicates by an upstream candidate-generation method (e.g. vigiMatch). For each pair it produces a final classification of **Duplicates**, **Otherwise related**, or **Unrelated**.
 
 The pipeline is primarily a transparent rule-based decision logic operating on structured features, with optional LLM-assisted narrative analysis. It combines three complementary kinds of evidence:
 
@@ -10,20 +10,19 @@ The pipeline is primarily a transparent rule-based decision logic operating on s
 
 The matching evidence is anchored in a **comparison population** (the *anchor population*) defined by the shared clinical context of the two reports. The expected number of report pairs within that population that would share the observed feature pattern by chance is approximated using a birthday-problem-style collision calculation; small expected counts produce strong evidence in favour of the duplicate hypothesis.
 
-The combined evidence is then fed into a transparent decision logic that classifies each report pair into one of four user-facing categories:
+The combined evidence is then fed into a transparent decision logic that classifies each report pair into one of three user-facing categories:
 
 - **Duplicates** — the pair very likely describes the same clinical case
 - **Otherwise related** — different individuals or different events but meaningful clinical overlap remains (e.g. two patients in the same clinical study)
 - **Unrelated** — the matching evidence is too weak to reject the independence null
-- **Abstain** — insufficient evidence to commit to a label
 
 > **Internal vs user-facing labels.** Internally the decision logic
 > produces two layered labels: an **independence assessment**
-> (`Non-independent / Independent / Abstain`) driven by the matching
-> evidence, plus, when independence is rejected, a **duplicate
-> relationship** sub-label (`Duplicates / Otherwise related / Abstain`)
-> driven by the inconsistency signals. These are mapped to the
-> user-facing labels above by `ClassificationResult.final_label`. The
+> (`Non-independent / Independent`) driven by the matching evidence,
+> plus, when independence is rejected, a **duplicate relationship**
+> sub-label (`Duplicates / Otherwise related`) driven by the
+> inconsistency signals. These are mapped to the user-facing labels
+> above by `ClassificationResult.final_label`. The
 > two-layer split exists because a small expected-collision count is
 > evidence against independence but not specifically for the
 > same-individual hypothesis (same reporter, same study, etc. can also
@@ -58,7 +57,6 @@ subgraph Output["Final classification"]
 M["Duplicates"]
 N["Otherwise related"]
 O["Unrelated"]
-P["Abstain"]
 end
 
 
@@ -88,7 +86,6 @@ J --> K
 K --> M
 K --> N
 K --> O
-K --> P
 ```
 
 For full details of each component, see [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md).

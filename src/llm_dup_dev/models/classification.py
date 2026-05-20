@@ -30,9 +30,9 @@ class ClassificationResult(BaseModel):
       study).
 
     Use ``final_label`` for the user-facing label
-    (``Duplicates`` / ``Otherwise_related`` / ``Unrelated`` / ``Abstain``);
-    downstream consumers should depend on this rather than on the raw
-    internal fields.
+    (``Duplicates`` / ``Otherwise_related`` / ``Unrelated``); downstream
+    consumers should depend on this rather than on the raw internal
+    fields.
     """
 
     pair_id: str
@@ -49,7 +49,12 @@ class ClassificationResult(BaseModel):
             Non-independent + Duplicates         → Duplicates
             Non-independent + Otherwise_related  → Otherwise_related
             Independent                          → Unrelated
-            Abstain                              → Abstain
+            Abstain                              → Abstain (defensive)
+
+        The decision logic only ever emits ``NON_INDEPENDENT`` or
+        ``INDEPENDENT``; the ``Abstain`` arms below are a defensive
+        backstop for future abstain paths or malformed states and are
+        not produced by the standard rarity-zone / shared-source logic.
         """
         if self.independence_assessment == IndependenceAssessment.ABSTAIN:
             return "Abstain"
