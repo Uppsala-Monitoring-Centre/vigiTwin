@@ -4,7 +4,7 @@ This document specifies the method used by the **duplicate adjudication
 pipeline** to classify candidate report pairs that have already been flagged
 as suspected duplicates by an upstream candidate-generation method (e.g.
 vigiMatch). For each pair the pipeline produces a final classification of
-**Duplicates**, **Otherwise related**, **Unrelated**, or **Abstain**.
+**Duplicates**, **Otherwise related**, or **Unrelated**.
 
 The method is primarily a transparent rule-based decision logic operating on
 structured features, with optional LLM-assisted narrative analysis. It draws
@@ -29,15 +29,15 @@ can all produce a small expected-collision count without the reports
 describing the same patient. The pipeline therefore distinguishes two
 internal layers (see § Decision logic):
 
-* an **independence assessment** (`Non-independent / Independent /
-  Abstain`) driven by the rarity-based matching evidence, and
+* an **independence assessment** (`Non-independent / Independent`)
+  driven by the rarity-based matching evidence, and
 * when independence has been rejected, a **duplicate relationship**
-  sub-label (`Duplicates / Otherwise related / Abstain`) driven by the
+  sub-label (`Duplicates / Otherwise related`) driven by the
   inconsistency signals.
 
 The user-facing output remains `Duplicates / Otherwise related /
-Unrelated / Abstain` and is produced by combining the two internal
-layers (see `ClassificationResult.final_label`).
+Unrelated` and is produced by combining the two internal layers (see
+`ClassificationResult.final_label`).
 
 ## Evidence components
 
@@ -940,11 +940,11 @@ Internally, the decision logic produces two layered labels:
 * an **independence assessment** — whether the matching evidence is
   strong enough to reject the null that the two reports are independent
   draws from the comparison population
-  (`Non-independent / Independent / Abstain`); and
+  (`Non-independent / Independent`); and
 * when independence has been rejected, a **duplicate relationship**
   sub-label that uses the inconsistency signals to distinguish a
   likely-duplicate case from one linked by something other than being
-  the same individual (`Duplicates / Otherwise related / Abstain`).
+  the same individual (`Duplicates / Otherwise related`).
 
 These map to the user-facing label vocabulary as follows:
 
@@ -953,7 +953,6 @@ These map to the user-facing label vocabulary as follows:
 | Non-independent | Duplicates | **Duplicates** |
 | Non-independent | Otherwise related | **Otherwise related** |
 | Independent | — | **Unrelated** |
-| Abstain | — | **Abstain** |
 
 The two-layer split is deliberate: a low expected-collision count is
 evidence *against independence*, not specifically *for same individual*.

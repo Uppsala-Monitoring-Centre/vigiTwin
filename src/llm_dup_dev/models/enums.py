@@ -20,10 +20,9 @@ The pipeline produces two layered outputs:
   same individual case (``Otherwise_related``).
 
 These two are combined by ``ClassificationResult.final_label`` into the
-user-facing labels ``Duplicates`` / ``Otherwise_related`` / ``Unrelated``
-/ ``Abstain``. Downstream consumers (eval framework, review HTML,
-secure repo) should depend on ``final_label`` rather than on the raw
-internal enums.
+user-facing labels ``Duplicates`` / ``Otherwise_related`` / ``Unrelated``.
+Downstream consumers (eval framework, review HTML, secure repo) should
+depend on ``final_label`` rather than on the raw internal enums.
 
 The "independence assessment" framing replaces an earlier
 "same-individual assessment" framing. The shift is deliberate: a low
@@ -154,6 +153,11 @@ class IndependenceAssessment(str, Enum):
     downstream consumers should depend on the final label rather than
     on this raw enum.
 
+    ``ABSTAIN`` is reserved for future abstain paths and currently
+    unused — the decision logic only ever assigns ``NON_INDEPENDENT`` or
+    ``INDEPENDENT``. The value is kept so ``final_label`` can map it
+    defensively if a future code path produces one.
+
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
@@ -194,7 +198,12 @@ class DuplicateRelationship(str, Enum):
     on the weighted inconsistency score ``w_tot``.
 
     Mirrors the user-facing label vocabulary (``Duplicates`` /
-    ``Otherwise_related`` / ``Abstain``).
+    ``Otherwise_related``).
+
+    ``ABSTAIN`` is reserved for future abstain paths and currently
+    unused — the decision logic only ever assigns ``DUPLICATES`` or
+    ``OTHERWISE_RELATED``. The value is kept so ``final_label`` can map
+    it defensively if a future code path produces one.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """

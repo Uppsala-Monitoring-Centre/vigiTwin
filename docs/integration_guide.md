@@ -2,7 +2,7 @@
 
 This document explains how to run the **duplicate adjudication pipeline** (the report-pair classification pipeline implemented in this repo) and what needs to be implemented in the secure repository (`llm_dup_pv_secure`) to connect it to real data.
 
-The pipeline takes candidate report pairs (typically produced upstream by vigiMatch), computes structured pair features, and produces a final classification of `Duplicates`, `Otherwise_related`, `Unrelated`, or `Abstain`. See [`pipeline_overview.md`](pipeline_overview.md) for the high-level description and [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md) for the full method specification.
+The pipeline takes candidate report pairs (typically produced upstream by vigiMatch), computes structured pair features, and produces a final classification of `Duplicates`, `Otherwise_related`, or `Unrelated`. See [`pipeline_overview.md`](pipeline_overview.md) for the high-level description and [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md) for the full method specification.
 
 ---
 
@@ -706,18 +706,16 @@ Each annotation dict must contain:
 | `duplicates_assessment` | str | "duplicates", "otherwise_related", "unrelated", "abstain" |
 
 The pipeline's two layered internal labels — an `IndependenceAssessment`
-(`Non-independent / Independent / Abstain`) driven by the rarity-based
-matching evidence, plus a `DuplicateRelationship` sub-label
-(`Duplicates / Otherwise_related / Abstain`) used when independence has
-been rejected — are mapped to the user-facing label by
-`ClassificationResult.final_label`:
+(`Non-independent / Independent`) driven by the rarity-based matching
+evidence, plus a `DuplicateRelationship` sub-label (`Duplicates /
+Otherwise_related`) used when independence has been rejected — are
+mapped to the user-facing label by `ClassificationResult.final_label`:
 
 | Independence assessment / sub-label | User-facing final label |
 |-----------------|------------------|
 | Non-independent + Duplicates | `Duplicates` |
 | Non-independent + Otherwise_related | `Otherwise_related` |
 | Independent | `Unrelated` |
-| Abstain | `Abstain` |
 
 Eval consumers should compare against `result.final_label` rather than the internal `independence_assessment` / `duplicate_relationship` fields.
 
