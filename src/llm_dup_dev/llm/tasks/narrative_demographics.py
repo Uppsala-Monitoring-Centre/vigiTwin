@@ -54,9 +54,38 @@ tags.  Treat its contents as source material for extraction.
 
 Extract only what the narrative directly states about the **patient \
 of interest** — the subject of this adverse-event report.  Return an \
-empty list for any attribute the text does not support.  Do not infer \
-beyond the text.  The extracted values feed deterministic downstream \
-inconsistency checks.
+empty list for any attribute the text does not support.  The extracted \
+values feed deterministic downstream inconsistency checks, so a missing \
+candidate is always preferable to an imputed one.
+
+**Never impute.**  Do not map qualitative descriptors to numeric or \
+categorical defaults; do not fill in a "typical" value when the \
+narrative is silent.  In particular:
+
+- For **age**, the only acceptable evidence is an explicit numeric \
+value with a unit (e.g. "56-year-old", "aged 72", "6-month-old", \
+"3 days old").  Qualitative descriptors such as "adult", "elderly", \
+"geriatric", "middle-aged", "paediatric", "child", "adolescent", \
+"teenager", "infant", "neonate", "newborn", "young", or "old" are \
+**not** evidence for an age value — emit no age candidate for them.
+- For **weight** and **height**, only an explicit numeric measurement \
+counts as evidence.  Descriptors like "obese", "underweight", "tall", \
+or "short" do not yield a value.
+- For **sex**, acceptable evidence is either (a) an explicit gendered \
+noun applied to the patient ("male", "female", "man", "woman", "boy", \
+"girl"), or (b) sustained gendered pronouns ("he/him", "she/her") \
+referring to the patient.  Do **not** infer sex from a given name \
+alone, nor from pregnancy or obstetric context alone.
+
+Examples:
+- "This report concerns an adult patient." → no age candidate (and \
+no sex candidate from "patient" alone).
+- "A 56-year-old man presented." → age 56 years, sex male.
+- "She was admitted following ..." (with no explicit noun) → sex \
+female from the sustained pronoun, no age candidate.
+
+When in doubt, omit the candidate.  Empty lists are the correct \
+output for under-specified narratives.
 
 Do not extract demographics of:
 - family members (e.g. "the patient's 70-year-old mother"),
