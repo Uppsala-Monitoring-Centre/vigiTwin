@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from llm_dup_dev.run_manifest._redaction import redact_secrets
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 
 
 class DevPackageInfo(BaseModel):
@@ -27,6 +27,24 @@ class DevPackageInfo(BaseModel):
 
     name: str = "llm-dup-dev"
     version: str | None = None
+
+
+class DatasetRef(BaseModel):
+    """Pointer from a run manifest to its parent dataset manifest.
+
+    ``dataset_id`` is the authoritative join key (matches
+    ``DatasetManifest.dataset_id``). The database / MedDRA fields are
+    duplicated here so that a copied or archived run folder remains
+    self-describing even when the parent dataset manifest is unavailable;
+    ``relative_path`` is advisory only — the dev repo does not enforce a
+    folder layout.
+    """
+
+    dataset_id: str
+    relative_path: str | None = None
+    database_name: str | None = None
+    database_snapshot: str | None = None
+    meddra_version: str | None = None
 
 
 class RunManifest(BaseModel):
@@ -53,6 +71,7 @@ class RunManifest(BaseModel):
     output_paths: dict[str, Any] = Field(default_factory=dict)
 
     secure_context: dict[str, Any] | None = None
+    dataset_ref: DatasetRef | None = None
     notes: str | None = None
 
     @model_validator(mode="after")

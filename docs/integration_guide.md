@@ -802,7 +802,8 @@ Secure deployments should save **one `run_manifest.yaml` per run folder**. The c
 
 - The manifest must record **effective configuration** — the values that the pipeline actually used after defaults and overrides — not a hand-written intent file.
 - The manifest must **not contain secrets**. The utility redacts obvious secret-looking keys (`api_key`, `secret`, `token`, `password`, `connection_string`, …) and warns, but the call site should never pass them in the first place.
-- Deployment-specific metadata (secure repo commit, dataset snapshot, SQL loader version, Azure OpenAI deployment name, notebook/script name, command-line invocation) goes into `secure_context: dict[str, Any]`. The dev repo defines the field but does not prescribe its keys.
+- Deployment-specific metadata (secure repo commit, SQL loader version, Azure OpenAI deployment name, notebook/script name, command-line invocation) goes into `secure_context: dict[str, Any]`. The dev repo defines the field but does not prescribe its keys.
+- Data provenance (source database name + snapshot, MedDRA version, extraction timestamp) is *not* a `secure_context` key — it has first-class typed fields. See [Dataset manifests](#dataset-manifests) below. A run manifest references its dataset manifest via `dataset_ref`.
 
 ### Usage
 
@@ -811,7 +812,11 @@ import sys
 from pathlib import Path
 
 from llm_dup_dev.pipeline.runner import PipelineRunner
-from llm_dup_dev.run_manifest import build_run_manifest, write_run_manifest
+from llm_dup_dev.run_manifest import (
+    DatasetRef,
+    build_run_manifest,
+    write_run_manifest,
+)
 
 runner = PipelineRunner(
     report_loader=loader,
@@ -836,11 +841,17 @@ manifest = build_run_manifest(
     },
     secure_context={
         "secure_repo_commit": secure_sha,
-        "dataset_snapshot": "vigibase_2026Q1",
         "sql_loader_version": "2.3.1",
         "notebook": "eval_run_2026-04-27.ipynb",
         "invocation": " ".join(sys.argv),
     },
+    dataset_ref=DatasetRef(
+        dataset_id=dataset_manifest.dataset_id,
+        relative_path="../dataset_manifest.yaml",
+        database_name="VigiBase",
+        database_snapshot="2026Q1",
+        meddra_version="27.0",
+    ),
     notes="Quarterly eval refresh",
 )
 write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
@@ -854,7 +865,7 @@ write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
 
 | Field | Type | Source | Meaning |
 |---|---|---|---|
-| `schema_version` | str | constant | Bump when the manifest layout changes incompatibly. Currently `"1.0"`. |
+| `schema_version` | str | constant | Bump when the manifest layout changes incompatibly. Currently `"1.1"`. |
 | `created_at` | datetime (UTC) | auto / caller | When the manifest was built. |
 | `run_id` | str | auto / caller | Stable identifier for this run. Defaults to a 12-char hex token. |
 | `run_name` | str \| null | caller | Optional human-readable label. |
@@ -867,7 +878,8 @@ write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
 | `feature_flags` | dict | runner / caller | When built from a runner: `ae_clinical_picture_mode`, `has_llm_client`, `has_frozen_source_case`, `has_frozen_narrative_demographics`. Caller-supplied keys merge on top. |
 | `llm_config` | dict \| null | caller | Non-secret LLM info (deployment, model, temperature, max_tokens). Secret-looking keys are auto-redacted. |
 | `output_paths` | dict | caller | Free-form. Suggested keys: `results_dir`, `review_html_dir`, `eval_summary`. |
-| `secure_context` | dict \| null | caller | Deployment-specific metadata. The dev repo does not prescribe keys; suggested values: `secure_repo_commit`, `dataset_snapshot`, `sql_loader_version`, `azure_deployment`, `notebook`, `invocation`. |
+| `secure_context` | dict \| null | caller | Deployment-specific metadata. The dev repo does not prescribe keys; suggested values: `secure_repo_commit`, `sql_loader_version`, `azure_deployment`, `notebook`, `invocation`. Do **not** put `database_name`, `database_snapshot`, or `meddra_version` here — use `dataset_ref` instead. |
+| `dataset_ref` | object \| null | caller | Pointer to the parent dataset manifest. `dataset_id` is the authoritative join key; `database_name`, `database_snapshot`, `meddra_version` are duplicated for at-a-glance comparison. See [Dataset manifests](#dataset-manifests). |
 | `notes` | str \| null | caller | Free-form prose. |
 
 ### Secret redaction
@@ -877,6 +889,81 @@ Keys in `llm_config` and `secure_context` whose names contain any of the followi
 ### Schema-version policy
 
 Bump `schema_version` only when the manifest's layout changes in a way that breaks downstream consumers (renamed fields, removed fields, type changes). Adding new optional fields does not require a bump.
+
+---
+
+## Dataset manifests
+
+A **dataset manifest** records the provenance of a *validation set* — the source database (name + snapshot/version) and the MedDRA version used to extract its reports and frequency statistics. It lives once at the root of the validation set folder. Each run under that folder carries a `dataset_ref` on its `run_manifest.yaml` linking back via `dataset_id`.
+
+Why both files: the dataset manifest is the canonical record (one per validation set, no duplication); the `dataset_ref` keeps each run folder self-describing when copied or archived in isolation.
+
+### Validation set folder layout
+
+The dev repo does not enforce a layout — secure-side scripts choose paths. The expected shape:
+
+```
+validation_sets/
+└── vs_2026Q1/
+    ├── dataset_manifest.yaml          ← canonical provenance
+    ├── run_2026-04-27_baseline/
+    │   ├── run_manifest.yaml          ← dataset_ref → dataset_manifest
+    │   └── …
+    └── run_2026-04-28_new_thresholds/
+        ├── run_manifest.yaml          ← same dataset_id
+        └── …
+```
+
+### Usage
+
+```python
+from datetime import datetime, timezone
+from pathlib import Path
+
+from llm_dup_dev.dataset_manifest import (
+    DatasetSnapshot,
+    build_dataset_manifest,
+    write_dataset_manifest,
+)
+
+vs_dir = Path("validation_sets/vs_2026Q1")
+
+dataset_manifest = build_dataset_manifest(
+    dataset_snapshot=DatasetSnapshot(
+        database_name="VigiBase",
+        database_snapshot="2026Q1",
+        meddra_version="27.0",
+        extracted_at=datetime.now(timezone.utc),
+    ),
+    dataset_name="vs_2026Q1",
+    secure_context={"secure_repo_commit": secure_sha},
+    notes="Quarterly validation set",
+)
+write_dataset_manifest(vs_dir, dataset_manifest, formats=("yaml", "json"))
+
+# Then, when launching each run under vs_dir, pass a DatasetRef pointing to
+# this manifest via build_run_manifest(..., dataset_ref=DatasetRef(...)).
+```
+
+### Manifest fields
+
+| Field | Type | Source | Meaning |
+|---|---|---|---|
+| `schema_version` | str | constant | Currently `"1.0"`. |
+| `created_at` | datetime (UTC) | auto / caller | When the manifest was built. |
+| `dataset_id` | str | auto / caller | Stable join key. Defaults to a 12-char hex token; every run under the validation set references this id via `dataset_ref.dataset_id`. |
+| `dataset_name` | str \| null | caller | Optional human-readable label for the validation set. |
+| `dataset_snapshot.database_name` | str | caller | Source database (e.g. `"VigiBase"`). |
+| `dataset_snapshot.database_snapshot` | str | caller | Snapshot/version tag — opaque to the dev repo (e.g. `"2026Q1"`, a date string). |
+| `dataset_snapshot.meddra_version` | str | caller | MedDRA version used to extract reports and stats (e.g. `"27.0"`). |
+| `dataset_snapshot.extracted_at` | datetime | caller | When reports were pulled from the DB. |
+| `dev_package.*`, `dev_git_commit` | … | auto | Same semantics as on `RunManifest`. |
+| `secure_context` | dict \| null | caller | Deployment-specific metadata, same redaction rules as on `RunManifest`. |
+| `notes` | str \| null | caller | Free-form prose. |
+
+### Migration
+
+Existing validation sets predating this contract have no `dataset_manifest.yaml`, and their run manifests have `dataset_ref=None`. That `None` is the explicit signal that the dataset's provenance is unknown.
 
 ---
 

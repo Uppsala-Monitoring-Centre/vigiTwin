@@ -23,6 +23,7 @@ from llm_dup_dev.run_manifest import (
     JSON_FILENAME,
     SCHEMA_VERSION,
     YAML_FILENAME,
+    DatasetRef,
     RunManifest,
     build_run_manifest,
     write_run_manifest,
@@ -278,3 +279,39 @@ def test_explicit_created_at_and_run_id() -> None:
     manifest = build_run_manifest(run_id="custom-1", created_at=when)
     assert manifest.run_id == "custom-1"
     assert manifest.created_at == when
+
+
+def test_schema_version_is_1_1() -> None:
+    """Adding ``dataset_ref`` is an additive change — schema version bumped to 1.1."""
+    assert SCHEMA_VERSION == "1.1"
+
+
+def test_dataset_ref_default_none() -> None:
+    manifest = build_run_manifest()
+    assert manifest.dataset_ref is None
+
+
+def test_dataset_ref_round_trip(tmp_path) -> None:
+    ref = DatasetRef(
+        dataset_id="ds-abc123",
+        relative_path="../dataset_manifest.yaml",
+        database_name="VigiBase",
+        database_snapshot="2026Q1",
+        meddra_version="27.0",
+    )
+    manifest = build_run_manifest(dataset_ref=ref)
+
+    assert manifest.dataset_ref is not None
+    assert manifest.dataset_ref.dataset_id == "ds-abc123"
+    assert manifest.dataset_ref.meddra_version == "27.0"
+
+    paths = write_run_manifest(tmp_path, manifest, formats=("yaml", "json"))
+    yaml_payload = yaml.safe_load(paths["yaml"].read_text())
+    assert yaml_payload["dataset_ref"]["dataset_id"] == "ds-abc123"
+    assert yaml_payload["dataset_ref"]["database_snapshot"] == "2026Q1"
+    assert yaml_payload["dataset_ref"]["meddra_version"] == "27.0"
+
+    restored = RunManifest.model_validate_json(paths["json"].read_text())
+    assert restored.dataset_ref is not None
+    assert restored.dataset_ref.dataset_id == "ds-abc123"
+    assert restored.dataset_ref.database_name == "VigiBase"
