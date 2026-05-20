@@ -163,7 +163,7 @@ def compute_probability(
 
     Drug/AE set frequencies are excluded when they form part of the
     anchor (to avoid double-counting). When included, they are estimated
-    using leave-pair-out Bayesian smoothing (see ``leave_pair_out_probability``).
+    using a hierarchical leave-pair-out Bayesian smoother (see ``_marginal_with_backoff``).
 
     Report date is excluded from the probability computation — it is
     matched for evidence display purposes only.
@@ -459,77 +459,10 @@ def _marginal_with_backoff(
     return p, " → ".join(parts)
 
 
-def leave_pair_out_probability(
-    n_anchor: int,
-    k_anchor_and_feature: int,
-    n_feature_in_context: int,
-    n_total_in_context: int,
-    smoothing_pseudocount: int = SMOOTHING_PSEUDOCOUNT,
-) -> float | None:
-    """Bayesian-smoothed, leave-pair-out conditional probability.
-
-    Estimates P(feature | anchor, context) for a candidate pair, removing
-    the two focal reports from the anchor counts to avoid self-inclusion
-    bias, then applying Bayesian smoothing toward a prior.
-
-    Formula::
-
-        n_other  = max(0, n_anchor - 2)
-        k_other  = max(0, k_anchor_and_feature - 2)
-        p0       = n_feature_in_context / n_total_in_context
-        p_hat    = (k_other + m * p0) / (n_other + m)
-
-    where m = smoothing_pseudocount (default SMOOTHING_PSEUDOCOUNT = 10).
-
-    Parameters
-    ----------
-    n_anchor : int
-        Number of reports in the relevant context that match the anchor
-        (e.g. reports with the matching drug set when anchor is DRUGS).
-    k_anchor_and_feature : int
-        Number of those anchor reports that *also* have the additional
-        feature (e.g. reports with both matching drugs AND matching AEs).
-    n_feature_in_context : int
-        Number of reports in the relevant context with the additional
-        feature, **without** conditioning on the anchor.  Used to compute
-        the prior p0.
-    n_total_in_context : int
-        Total reports in the relevant context.  Used to compute the
-        prior p0.
-    smoothing_pseudocount : int
-        Bayesian pseudo-count m. Defaults to ``SMOOTHING_PSEUDOCOUNT`` (10).
-        Configurable via ``AnchorConfig.smoothing_pseudocount`` in
-        ``PipelineConfig``.
-
-    Returns
-    -------
-    float or None
-        The smoothed probability estimate, or None if ``n_total_in_context``
-        is non-positive (cannot compute a meaningful prior).
-    """
-    if n_total_in_context <= 0:
-        return None
-
-    m = smoothing_pseudocount
-
-    # Leave-pair-out: remove the two focal reports from anchor counts
-    n_other = max(0, n_anchor - 2)
-    k_other = max(0, k_anchor_and_feature - 2)
-
-    # Prior: marginal prevalence of the feature in the relevant context,
-    # NOT conditioned on the anchor.
-    p0 = n_feature_in_context / n_total_in_context
-
-    # Bayesian-smoothed estimate
-    p_hat = (k_other + m * p0) / (n_other + m)
-
-    return p_hat
-
-
 def _empirical_frequency(count: int, total: int) -> float | None:
     """General utility: empirical relative frequency, or None if inputs are invalid.
 
-    Not used for drug/AE set probabilities (which use ``leave_pair_out_probability``
+    Not used for drug/AE set probabilities (which use ``_marginal_with_backoff``
     instead), but kept as a utility for any caller that needs a simple ratio.
     """
     if total <= 0 or count < 0:
