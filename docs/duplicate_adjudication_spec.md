@@ -159,8 +159,8 @@ After identifying matching features between the two reports, the evidential stre
 
 The features that contribute to the composite matching probability are:
 
-- **Drug set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed frequency)
-- **AE set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed frequency)
+- **Drug set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed marginal with country / global backoff)
+- **AE set** — when not part of the anchor definition (leave-pair-out Bayesian-smoothed marginal with country / global backoff)
 - **Patient demographics** — age, sex, height, weight (domain-size based)
 - **Clinical dates** — unique dates matching across drug start/end, AE onset, and overall AE onset fields (domain-size based)
 
@@ -342,68 +342,68 @@ Higher measurement precision increases domain size and therefore increases the e
 
 ##### Drug Sets and Adverse Event Sets
 
-For drug sets and adverse event sets, the probability is estimated using a **leave-pair-out Bayesian-smoothed** conditional frequency within the anchor population. This avoids self-inclusion bias from the two focal reports and prevents zero-probability pathologies for rare combinations.
+For drug sets and adverse event sets, the probability is estimated as a **leave-pair-out Bayesian-smoothed marginal** of the feature in the primary reporting context, with **hierarchical backoff** through broader contexts (country, global) and a small floor at the bottom of the ladder. This avoids self-inclusion bias from the two focal reports and prevents zero-probability pathologies when the focal pair is the only occurrence of the feature in the primary context.
 
 Drug sets and AE sets are evaluated only when they are **not part of the anchor definition**, to avoid double-counting anchor information.
 
-###### Leave-Pair-Out Estimation
+###### Single-level smoothed marginal
 
-When evaluating an additional matching feature \(F\) (e.g. the drug set) within an anchor population \(A\) (e.g. the AE set), for a candidate pair where both reports match on \(F\):
-
-1. **Remove the focal pair** from the anchor counts:
+For a given context with \(n_{\text{total}}\) reports of which \(n_{\text{feature}}\) match the feature, the leave-pair-out smoothed marginal given a prior \(p_{\text{prior}}\) is:
 
 $$
-n_{\text{other}} = \max(0,\; n_{\text{anchor}} - 2)
-$$
-$$
-k_{\text{other}} = \max(0,\; k_{\text{anchor+feature}} - 2)
+\hat{p}(p_{\text{prior}}) \;=\; \frac{\max(0,\; n_{\text{feature}} - 2) \;+\; m \cdot p_{\text{prior}}}{\max(0,\; n_{\text{total}} - 2) \;+\; m}
 $$
 
-where \(n_{\text{anchor}}\) is the number of reports in the relevant context matching the anchor, and \(k_{\text{anchor+feature}}\) is the number of those also matching the additional feature.
+where \(m = 10\) is a smoothing pseudo-count (configurable via `AnchorConfig.smoothing_pseudocount`). The \(-2\) subtraction is **leave-pair-out**: the two focal reports are removed from both numerator and denominator so they cannot inflate their own evidence.
 
-2. **Compute the prior** from the broader context (without conditioning on the anchor):
+###### Hierarchical backoff ladder
 
-$$
-p_0 = \frac{N_{\text{feature in context}}}{N_{\text{total in context}}}
-$$
+The estimate walks four levels **bottom-up**, feeding each level's output as the prior for the next:
 
-For example, if the anchor is the AE set and the additional feature is the drug set, then \(p_0\) is the prevalence of the drug set in the relevant context (country/year or global), **not** among only reports with those AEs.
+1. **Floor.** If the global total is available, \(p_{\text{floor}} = 1 / \max(N_{\text{total}}^{\text{global}} - 2,\; 1)\). Otherwise \(p_{\text{floor}} = 10^{-6}\) (a fixed "one-in-a-million" constant, `MARGINAL_FLOOR`).
+2. **Global** (when global counts are available): \(p_{\text{global}} \;=\; \hat{p}(p_{\text{floor}})\) using \(N_{\text{feature}}^{\text{global}}\) and \(N_{\text{total}}^{\text{global}}\).
+3. **Country** (when country counts are available): \(p_{\text{country}} \;=\; \hat{p}(p_{\text{global}})\) using \(N_{\text{feature}}^{\text{country}}\) and \(N_{\text{total}}^{\text{country}}\).
+4. **Primary** (the reporting context determined for the pair — always applied): \(p_F \;=\; \hat{p}(p_{\text{country}})\) using \(N_{\text{feature}}\) and \(N_{\text{total}}\).
 
-3. **Apply Bayesian smoothing**:
+Levels whose counts are not supplied by the data layer are skipped; the previous level's prior is carried forward unchanged. The primary level is always applied.
 
-$$
-\hat{p}(F \mid A, \text{context}) = \frac{k_{\text{other}} + m \cdot p_0}{n_{\text{other}} + m}
-$$
-
-where \(m = 10\) is a smoothing pseudo-count.
+Note that **leave-pair-out is applied at every nesting level**, not only the primary, because the focal pair sits inside country-year ⊂ country ⊂ global and would otherwise still influence the broader-context estimate.
 
 ###### Design Rationale
 
-- **Leave-pair-out** prevents the focal pair from inflating its own evidence. Without this correction, the two reports being evaluated contribute to the count that is supposed to measure how common their shared feature is among *other* reports.
-- **Bayesian smoothing** prevents zero probabilities when the leave-pair-out count is zero (i.e. no other reports in the anchor share the feature), which would otherwise cause undefined log-probability values. The prior \(p_0\) pulls the estimate toward the marginal prevalence.
-- **\(m = 10\)** provides moderate regularisation: with 23 or more leave-pair-out reports, the data dominates; with very few, the prior dominates.
+- **Leave-pair-out at every level** prevents the focal pair from inflating its own evidence at any layer of the ladder.
+- **Bayesian smoothing** prevents zero probabilities when the leave-pair-out count in the primary context is zero (i.e. the focal pair is the only occurrence). Without smoothing the contribution would be undefined; with the ladder, the estimate is pulled toward the broader-context prior instead of being silently dropped.
+- **Hierarchical backoff** keeps rare features informative: when a feature appears nowhere else in the country-year context but is observed elsewhere in the country or globally, the country and global priors regularise the estimate at a clinically sensible rate.
+- **The floor** guarantees a strictly positive probability even when every broader context is also empty or unavailable. With the global-derived floor, a feature seen only in the focal pair lands at roughly the per-report rate of the database (\(\sim 1/N_{\text{total}}^{\text{global}}\)); with the constant fallback it lands at \(10^{-6}\), contributing roughly 6 to \(L_{\text{match}}\) instead of vanishing.
+- **\(m = 10\)** provides moderate regularisation: with \(\sim 23\) or more leave-pair-out reports the data dominates, with very few the prior dominates.
 
 ###### Worked Example
 
-Suppose:
-- Anchor = matching AE set, \(n_{\text{anchor}} = 25\)
-- Additional feature = matching drug set, \(k_{\text{anchor+feature}} = 3\) (3 of the 25 anchor reports also have the matching drugs)
-- The focal pair are among those 3
-- Drug set prevalence in context: \(N_{\text{drugs}} = 200\), \(N_{\text{total}} = 10{,}000\)
+Suppose the matching drug set is rare, the focal pair is the only country-year occurrence, and the data layer supplies broader-context counts:
 
-Then:
+- Primary (country-year): \(N_{\text{drugs}} = 2\), \(N_{\text{total}} = 1{,}000\) (only the focal pair has these drugs in this country-year).
+- Country: \(N_{\text{drugs}}^{\text{country}} = 5\), \(N_{\text{total}}^{\text{country}} = 10{,}000\).
+- Global: \(N_{\text{drugs}}^{\text{global}} = 80\), \(N_{\text{total}}^{\text{global}} = 1{,}000{,}000\).
+- Pseudo-count \(m = 10\).
+
+Walking the ladder bottom-up:
 
 $$
-n_{\text{other}} = 25 - 2 = 23, \quad k_{\text{other}} = 3 - 2 = 1
+p_{\text{floor}} = \frac{1}{\max(1{,}000{,}000 - 2,\; 1)} \;\approx\; 1.0 \times 10^{-6}
 $$
 $$
-p_0 = \frac{200}{10{,}000} = 0.02
+p_{\text{global}} = \frac{\max(0,\, 80 - 2) + 10 \cdot 1.0 \times 10^{-6}}{\max(0,\, 1{,}000{,}000 - 2) + 10} \;\approx\; 7.8 \times 10^{-5}
 $$
 $$
-\hat{p} = \frac{1 + 10 \times 0.02}{23 + 10} = \frac{1.2}{33} \approx 0.0364
+p_{\text{country}} = \frac{\max(0,\, 5 - 2) + 10 \cdot 7.8 \times 10^{-5}}{\max(0,\, 10{,}000 - 2) + 10} \;\approx\; 3.0 \times 10^{-4}
+$$
+$$
+p_F = \frac{\max(0,\, 2 - 2) + 10 \cdot 3.0 \times 10^{-4}}{\max(0,\, 1{,}000 - 2) + 10} \;\approx\; 3.0 \times 10^{-6}
 $$
 
-This logic applies symmetrically: if the anchor is the drug set and the additional feature is the AE set, the same formula is used with the AE set's marginal prevalence as \(p_0\).
+Despite the primary leave-pair-out count being zero, the smoothing carries the country-level estimate \(\sim 3 \times 10^{-4}\) forward and produces a final \(p_F\) of order \(10^{-6}\) (a few times the floor), reflecting that the drug set is rare but not entirely unseen. Without the backoff the primary alone would give \((0 + 0)/(998 + 10) = 0\), which would silently drop the contribution.
+
+This logic applies symmetrically to the AE set (with the AE-set counts at each level) and the same formula is used regardless of which of drugs / AEs forms the anchor.
 
 ---
 
