@@ -216,11 +216,16 @@ def _shared_source_override(
       ``Inconsistency`` for these verdicts respectively, but the sub-label
       is pinned regardless of ``w_tot``.
     * ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE`` →
-      ``DUPLICATES`` unless ``w_tot`` already crosses the (strictest)
-      weak-zone threshold, in which case the pair is downgraded to
-      ``OTHERWISE_RELATED``. These verdicts emit no source-case
-      inconsistency, so ``w_tot`` is free of source-case contribution by
-      construction and the comparison is apples-to-apples.
+      ``DUPLICATES`` unless ``w_tot`` already crosses the medium-zone
+      threshold (default 3.0), in which case the pair is downgraded
+      to ``OTHERWISE_RELATED``. The threshold is shared with the
+      medium L_match zone: a reliable shared-source verdict warrants
+      the same inconsistency tolerance as moderate rarity evidence,
+      so a single strong inconsistency (or equivalent accumulated
+      severity) is needed to demote. These verdicts emit no
+      source-case inconsistency, so ``w_tot`` is free of source-case
+      contribution by construction and the comparison is
+      apples-to-apples.
     """
     verdict = assessment.verdict
     ident_str = _format_shared_identifier(assessment)
@@ -240,10 +245,10 @@ def _shared_source_override(
         )
 
     # SAME_SOURCE_SINGLE_PATIENT or SAME_SOURCE_SAME_CASE
-    if w_tot < thresholds.w_tot_weak_zone:
+    if w_tot < thresholds.w_tot_med_zone:
         explanation = (
             f"Shared-source override ({verdict.value}{ident_str}); "
-            f"w_tot={w_tot:.1f} < {thresholds.w_tot_weak_zone:.1f}."
+            f"w_tot={w_tot:.1f} < {thresholds.w_tot_med_zone:.1f}."
         )
         return _duplicates(
             pair_id=features.pair_id,
@@ -253,7 +258,7 @@ def _shared_source_override(
 
     explanation = (
         f"Shared-source override ({verdict.value}{ident_str}) but "
-        f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f}; "
+        f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f}; "
         f"downgraded to Otherwise_related."
     )
     return _otherwise_related(

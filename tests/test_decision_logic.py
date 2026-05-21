@@ -477,12 +477,70 @@ class TestSharedSourceOverride:
 
     def test_same_source_same_case_downgrades_when_other_decisive(self):
         """Positive verdict + decisive non-source-case inconsistency
-        → Otherwise_related (w_tot crosses weak-zone)."""
+        → Otherwise_related (w_tot crosses medium-zone threshold)."""
         f = _make_features(
             L_match=0.0,
-            decisive=1,  # w_tot = 100, well past weak-zone threshold 1.0
+            decisive=1,  # w_tot = 100, well past medium-zone threshold 3.0
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_tolerates_one_moderate(self):
+        """A single moderate inconsistency (w_tot=1.0) is below the
+        medium-zone threshold (3.0) and must NOT demote the pair."""
+        f = _make_features(
+            L_match=0.0,
+            moderate=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_tolerates_two_moderates(self):
+        """Two moderate inconsistencies (w_tot=2.0) remain below the
+        medium-zone threshold (3.0)."""
+        f = _make_features(
+            L_match=0.0,
+            moderate=2,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_demotes_on_one_strong(self):
+        """A single strong inconsistency (w_tot=3.0) is enough to
+        demote: 3.0 is NOT < 3.0, so the override branch falls through
+        to Otherwise_related."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_demotes_on_moderate_plus_strong(self):
+        """Moderate + strong (w_tot=4.0) crosses the medium-zone
+        threshold and demotes."""
+        f = _make_features(
+            L_match=0.0,
+            moderate=1,
+            strong=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
             ),
         )
         result = classify(f, THRESHOLDS)
