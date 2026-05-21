@@ -1088,12 +1088,12 @@ The override fires whenever `features.source_case_assessment.verdict` is one of 
 
 | Verdict | Sub-label mapping |
 |---|---|
-| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_weak_zone` → `Otherwise_related` |
-| `SAME_SOURCE_SAME_CASE`      | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_weak_zone` → `Otherwise_related` |
+| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_med_zone` → `Otherwise_related` |
+| `SAME_SOURCE_SAME_CASE`      | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_med_zone` → `Otherwise_related` |
 | `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise_related` (pinned) |
 | `SAME_SOURCE_CASE_UNCOMPARABLE` | `Otherwise_related` (pinned) |
 
-The two "positive" verdicts default to `Duplicates`, but are downgraded to `Otherwise_related` when any non-source-case signal already pushes \(w_{\text{tot}}\) past the strictest (weak-zone) threshold. The two "negative" verdicts are pinned to `Otherwise_related`:
+The two "positive" verdicts default to `Duplicates`, but are downgraded to `Otherwise_related` when non-source-case signals accumulate enough severity to push \(w_{\text{tot}}\) past the medium-zone threshold (default `3.0`). The threshold is shared with the medium L_match zone by design: a reliable shared-source verdict warrants the same inconsistency tolerance as moderate rarity evidence, so a single strong inconsistency — or equivalent accumulated severity (three moderates, one strong + one moderate, …) — is needed to demote. A single moderate or a handful of minors is therefore tolerated. Decisive inconsistencies continue to demote via their large weight (`w_decisive = 100`). The two "negative" verdicts are pinned to `Otherwise_related`:
 
 - `SAME_SOURCE_DIFFERENT_CASE` emits a **decisive** `Inconsistency` (synthesized by `feature_generation/source_case_inconsistency.py`) — two reports sharing a DOI but carrying different comparable case labels clearly aren't the same individual, but they are linked by the shared source.
 - `SAME_SOURCE_CASE_UNCOMPARABLE` emits a **moderate** `Inconsistency` — enough to default the sub-label to `Otherwise_related` so that two reports sharing a DOI for a multi-patient article are not flagged as duplicates when case labels can't be safely compared.
