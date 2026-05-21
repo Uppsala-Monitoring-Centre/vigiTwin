@@ -600,3 +600,150 @@ class TestCompareSourceCase:
         result = compare_source_case(a, b)
         assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
         assert result.case_identifiers_comparable is False
+
+
+# ==================================================================
+# ARTICLE_REFERENCE fuzzy fallback
+# ==================================================================
+
+def _article(value: str, *, single: bool = True) -> NarrativeSourceCase:
+    """Build a literature extraction carrying one article_reference."""
+    return NarrativeSourceCase(
+        source_type=SourceType.LITERATURE,
+        single_patient_source=single,
+        source_identifiers=[
+            SourceIdentifier(
+                type=SourceIdentifierType.ARTICLE_REFERENCE, value=value,
+            ),
+        ],
+    )
+
+
+class TestArticleReferenceFuzzyMatch:
+    """The token-set fallback recovers near-duplicate citations that
+    differ only in punctuation, accents, or page-range / supplement
+    abbreviation style. Strict equality already covers identical
+    citations; these tests cover the otherwise-lost cases.
+    """
+
+    # Real example from validation set (UMC IDs 31143056 / 31203076):
+    # same Movement Disorder 2019;34 supplement-2 abstract, citations
+    # differ only in '(2)' vs '(suppl 2)' and 's136-s137' vs 's136-7'.
+    _CITATION_A = (
+        "garcia alvarado n, lópez ariztegui n, morales casado mi, "
+        "segundo rodríguez jc, schoendorff ortega c, almansa castillo r "
+        "et al. sudden alopecia secondary to levodopa treatment. "
+        "movement disorder. 2019;34(2):s136-s137."
+    )
+    _CITATION_B = (
+        "garcia alvarado n, lópez ariztegui n, morales casado mi, "
+        "segundo rodríguez jc, schoendorff ortega c, almansa castillo r, "
+        "et al.. sudden alopecia secondary to levodopa treatment. "
+        "movement disorder. 2019;34 (suppl 2):s136-7"
+    )
+
+    def test_real_movement_disorder_abstract_matches(self):
+        result = compare_source_case(
+            _article(self._CITATION_A),
+            _article(self._CITATION_B),
+        )
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT
+        assert (
+            result.shared_source_identifier_type
+            == SourceIdentifierType.ARTICLE_REFERENCE
+        )
+        assert result.shared_source_identifier is not None
+
+    def test_unrelated_papers_same_journal_year_do_not_match(self):
+        """Two distinct articles in the same journal and year must NOT
+        clear the token-set gates — title and author tokens diverge."""
+        a = _article(
+            "smith j, jones k. efficacy of drug x in chronic disease. "
+            "journal of pharmacology. 2020;15(4):112-118."
+        )
+        b = _article(
+            "brown p, lee m. adverse effects of drug y in elderly patients. "
+            "journal of pharmacology. 2020;15(4):200-209."
+        )
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.NO_DECISIVE_SIGNAL
+
+    def test_year_mismatch_blocks_otherwise_similar_citations(self):
+        """Identical title and authors but different years must not match —
+        the year-equality gate prevents fold-together of unrelated
+        same-titled abstracts from different conferences."""
+        a = _article(
+            "smith j, jones k. efficacy of drug x in chronic disease. "
+            "journal of pharmacology. 2019;15(4):112-118."
+        )
+        b = _article(
+            "smith j, jones k. efficacy of drug x in chronic disease. "
+            "journal of pharmacology. 2021;17(2):200-205."
+        )
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.NO_DECISIVE_SIGNAL
+
+    def test_year_missing_on_one_side_falls_back_to_token_overlap(self):
+        """When one citation lacks a parseable year, the year-equality
+        gate is skipped and the Jaccard / shared-token gates decide on
+        their own."""
+        a = _article(
+            "garcia alvarado n, lópez ariztegui n. sudden alopecia "
+            "secondary to levodopa treatment. movement disorder. "
+            "2019;34(2):s136-s137."
+        )
+        b = _article(
+            "garcia alvarado n, lópez ariztegui n. sudden alopecia "
+            "secondary to levodopa treatment. movement disorder, suppl 2, "
+            "pp s136-s137."
+        )
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT
+
+    def test_strict_doi_match_still_preferred_over_article_reference(self):
+        """When DOI matches via strict equality, ARTICLE_REFERENCE fuzzy
+        fallback never runs — preserves the existing preference order."""
+        a = NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            single_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.DOI, value="10.x/y"),
+                SourceIdentifier(
+                    type=SourceIdentifierType.ARTICLE_REFERENCE,
+                    value=self._CITATION_A,
+                ),
+            ],
+        )
+        b = NarrativeSourceCase(
+            source_type=SourceType.LITERATURE,
+            single_patient_source=True,
+            source_identifiers=[
+                SourceIdentifier(type=SourceIdentifierType.DOI, value="10.x/y"),
+                SourceIdentifier(
+                    type=SourceIdentifierType.ARTICLE_REFERENCE,
+                    value=self._CITATION_B,
+                ),
+            ],
+        )
+        result = compare_source_case(a, b)
+        assert (
+            result.shared_source_identifier_type
+            == SourceIdentifierType.DOI
+        )
+        assert result.shared_source_identifier == "10.x/y"
+
+    def test_short_citation_does_not_clear_min_shared_tokens(self):
+        """A citation with too few non-noise tokens cannot match anything,
+        even an identical-looking short string. Guards the
+        min-shared-tokens floor against trivial accidental matches."""
+        a = _article("nature. 2020;1:2.")
+        b = _article("nature. 2020;1:2.")
+        # Strict equality still matches identical short citations
+        # (this is the fast path, not the fuzzy fallback).
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT
+        # But a near-miss short citation does NOT clear the fuzzy gates.
+        c = _article("nature. 2020;1:2.")
+        d = _article("nature. 2020;1:3.")
+        result2 = compare_source_case(c, d)
+        assert result2.verdict == SourceCaseVerdict.NO_DECISIVE_SIGNAL

@@ -128,6 +128,8 @@ class NarrativeComparison(BaseModel):
 
     left_text: str | None = None
     right_text: str | None = None
+    left_literature_reference: str | None = None
+    right_literature_reference: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +355,20 @@ class FreqStatsVM(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class SourceCaseAssessmentVM(BaseModel):
+    """Compact view of the pair-level source/case verdict.
+
+    Mirrors the fields of
+    :class:`llm_dup_dev.models.narrative_source_case.SourceCaseAssessment`
+    that the classifier consumes via the shared-source override.
+    """
+
+    verdict: str
+    shared_source_identifier: str | None = None
+    shared_source_identifier_type: str | None = None
+    reasoning: str | None = None
+
+
 class DecisionSummaryVM(BaseModel):
     """Compact decision summary for prediction/evaluation pages.
 
@@ -367,7 +383,7 @@ class DecisionSummaryVM(BaseModel):
     clinical_date_counts: ClinicalDateCountsVM | None = None
     ae_clinical_picture_counts: AEClinicalPictureCountsVM | None = None
     ae_clinical_picture_status: str | None = None
-    narrative_consistency: str | None = None
+    source_case: SourceCaseAssessmentVM | None = None
     duplicate_relationship: str | None = None
     # See ClassificationSummaryVM.penalty_summary.
     penalty_summary: str | None = None

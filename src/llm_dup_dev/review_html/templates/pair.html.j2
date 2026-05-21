@@ -237,6 +237,32 @@ tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
 .annotation-disagree { color: #721c24; font-weight: 700; font-size: 13px; }
 .annotation-no-pipeline { color: #586069; font-size: 13px; }
 
+/* --- Source/case verdict badge --- */
+.verdict-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #e7e1f5;
+    color: #4527a0;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+/* --- Literature reference above narrative column --- */
+.narrative-citation {
+    background: #fffbe6;
+    border: 1px solid #f0e0a0;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 12px;
+    margin-bottom: 6px;
+}
+.narrative-citation-label {
+    font-weight: 600;
+    color: #5d4d00;
+    margin-right: 6px;
+}
+
 /* --- Decision summary panel --- */
 .decision-summary {
     background: #f1f3f5;
@@ -427,9 +453,19 @@ details.debug-section pre {
         <dt style="font-size: 0.85em; padding-left: 8px;">AE clinical-picture</dt>
         <dd style="font-size: 0.85em; color: #586069;">not assessed</dd>
         {% endif %}
-        {% if vm.decision_summary.narrative_consistency %}
-        <dt>Narrative</dt>
-        <dd>{{ vm.decision_summary.narrative_consistency }}</dd>
+        {% if vm.decision_summary.source_case %}
+        {%- set sc = vm.decision_summary.source_case %}
+        <dt>Source/case</dt>
+        <dd>
+            <span class="verdict-badge">{{ sc.verdict }}</span>
+            {% if sc.shared_source_identifier %}
+            · {{ sc.shared_source_identifier_type or 'source_identifier' }}
+            = <code>{{ sc.shared_source_identifier }}</code>
+            {% endif %}
+            {% if sc.reasoning %}
+            <div style="font-size: 0.85em; color: #586069;">{{ sc.reasoning }}</div>
+            {% endif %}
+        </dd>
         {% endif %}
         <dt>Explanation</dt>
         <dd>{{ vm.decision_summary.explanation }}</dd>
@@ -578,16 +614,30 @@ details.debug-section pre {
 {% endif %}
 
 {# ── Narratives ── #}
-{% if vm.narratives.left_text or vm.narratives.right_text %}
+{% if vm.narratives.left_text or vm.narratives.right_text
+      or vm.narratives.left_literature_reference
+      or vm.narratives.right_literature_reference %}
 <div class="section">
     <h2>Narratives</h2>
     <div class="narrative-grid">
         <div>
             <div class="narrative-col-header">Report 1: {{ vm.report_1_id }}</div>
+            {% if vm.narratives.left_literature_reference %}
+            <div class="narrative-citation">
+                <span class="narrative-citation-label">Literature reference:</span>
+                {{ vm.narratives.left_literature_reference }}
+            </div>
+            {% endif %}
             <div class="narrative-col">{{ vm.narratives.left_text or '--' }}</div>
         </div>
         <div>
             <div class="narrative-col-header">Report 2: {{ vm.report_2_id }}</div>
+            {% if vm.narratives.right_literature_reference %}
+            <div class="narrative-citation">
+                <span class="narrative-citation-label">Literature reference:</span>
+                {{ vm.narratives.right_literature_reference }}
+            </div>
+            {% endif %}
             <div class="narrative-col">{{ vm.narratives.right_text or '--' }}</div>
         </div>
     </div>
