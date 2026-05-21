@@ -34,6 +34,8 @@ See: docs/data_contracts.md § Derived Narrative Signals
 from __future__ import annotations
 
 import re
+import unicodedata
+from datetime import date
 
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,
@@ -259,6 +261,119 @@ def _normalize_source_identifier_value(
     return value.strip().lower()
 
 
+# ------------------------------------------------------------------
+# ARTICLE_REFERENCE fuzzy matching
+# ------------------------------------------------------------------
+#
+# Citations are intrinsically noisy: punctuation, abbreviations
+# ("Suppl 2" vs "(2)"), accent encoding, page-range styles
+# ("S136-S137" vs "S136-7"). Two citations of the same article often
+# fail strict equality even after lowercase + strip. To recover those
+# matches without becoming a false-positive vector for unrelated papers
+# in the same journal/year, we compare token sets with conservative
+# gates: high Jaccard similarity, a minimum number of shared
+# non-noise tokens, and (when both sides carry one) year equality.
+
+_ARTICLE_REF_NOISE_TOKENS: frozenset[str] = frozenset({
+    "et", "al", "vol", "volume", "suppl", "supplement",
+    "no", "issue", "iss", "pp", "pages", "page", "doi",
+})
+
+_ARTICLE_REF_MIN_SHARED_TOKENS: int = 8
+_ARTICLE_REF_MIN_JACCARD: float = 0.85
+
+
+def _article_ref_token_set(value: str) -> tuple[frozenset[str], str | None]:
+    """Tokenize an ``ARTICLE_REFERENCE`` value for fuzzy comparison.
+
+    Returns ``(tokens, year)``:
+
+    - lowercase + NFKD-fold (so ``lópez`` → ``lopez``);
+    - every non-alphanumeric character becomes whitespace;
+    - tokens shorter than 2 characters and tokens in the citation noise
+      vocabulary are dropped;
+    - ``year`` is the first 4-digit token in [1800, current_year+1] or
+      ``None`` when no plausible year is present.
+    """
+    folded = unicodedata.normalize("NFKD", value)
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    folded = folded.lower()
+    folded = re.sub(r"[^0-9a-z]+", " ", folded)
+    raw_tokens = folded.split()
+
+    year: str | None = None
+    year_max = date.today().year + 1
+    tokens: set[str] = set()
+    for tok in raw_tokens:
+        if len(tok) < 2:
+            continue
+        if tok in _ARTICLE_REF_NOISE_TOKENS:
+            continue
+        if year is None and len(tok) == 4 and tok.isdigit():
+            year_int = int(tok)
+            if 1800 <= year_int <= year_max:
+                year = tok
+        tokens.add(tok)
+    return frozenset(tokens), year
+
+
+def _article_refs_match(a_value: str, b_value: str) -> bool:
+    """Return True iff two ``ARTICLE_REFERENCE`` values likely cite the same article.
+
+    Requires Jaccard token-set similarity above
+    :data:`_ARTICLE_REF_MIN_JACCARD`, at least
+    :data:`_ARTICLE_REF_MIN_SHARED_TOKENS` shared non-noise tokens, and
+    — when both sides carry a plausible 4-digit year — year equality.
+    """
+    tokens_a, year_a = _article_ref_token_set(a_value)
+    tokens_b, year_b = _article_ref_token_set(b_value)
+    if not tokens_a or not tokens_b:
+        return False
+    if year_a is not None and year_b is not None and year_a != year_b:
+        return False
+    shared = tokens_a & tokens_b
+    if len(shared) < _ARTICLE_REF_MIN_SHARED_TOKENS:
+        return False
+    union = tokens_a | tokens_b
+    jaccard = len(shared) / len(union)
+    return jaccard >= _ARTICLE_REF_MIN_JACCARD
+
+
+def _shared_article_reference(
+    a: NarrativeSourceCase,
+    b: NarrativeSourceCase,
+) -> str | None:
+    """Find a fuzzy-matching ``ARTICLE_REFERENCE`` pair across the two extractions.
+
+    Returns the normalized form of the shorter raw value on a hit, or
+    ``None``. Used as a fallback after the strict identifier-set
+    intersection has failed to produce any match (DOI / PMID / etc. are
+    always tried first).
+    """
+    a_refs = [
+        ident.value
+        for ident in a.source_identifiers
+        if ident.type == SourceIdentifierType.ARTICLE_REFERENCE and ident.value
+    ]
+    b_refs = [
+        ident.value
+        for ident in b.source_identifiers
+        if ident.type == SourceIdentifierType.ARTICLE_REFERENCE and ident.value
+    ]
+    if not a_refs or not b_refs:
+        return None
+    for av in a_refs:
+        for bv in b_refs:
+            if _article_refs_match(av, bv):
+                # Surface the shorter normalized form as the shared
+                # identifier so the explanation string stays readable.
+                shorter = av if len(av) <= len(bv) else bv
+                return _normalize_source_identifier_value(
+                    shorter, SourceIdentifierType.ARTICLE_REFERENCE
+                )
+    return None
+
+
 # Order of preference for which matching identifier to surface on the
 # pair-level assessment when several types match across two reports. More
 # specific identifiers come first.
@@ -355,23 +470,32 @@ def _shared_source(
 
     When several types match across the two reports, the most specific
     one (per :data:`_IDENTIFIER_PREFERENCE`) is surfaced.
+
+    If strict equality finds nothing, falls back to a conservative
+    token-set comparison of ``ARTICLE_REFERENCE`` values to recover
+    citations that differ only in punctuation, accents, or
+    abbreviation style.
     """
     set_a = _normalized_identifier_set(a)
     set_b = _normalized_identifier_set(b)
     intersection = set_a & set_b
-    if not intersection:
-        return None
-    by_type: dict[SourceIdentifierType, str] = {}
-    for id_type, value in intersection:
-        # If somehow two normalized values for the same type both match
-        # (e.g. duplicate entries that survived dedup), keep the first.
-        by_type.setdefault(id_type, value)
-    for preferred in _IDENTIFIER_PREFERENCE:
-        if preferred in by_type:
-            return by_type[preferred], preferred
-    # Defensive fallback: any element of the intersection.
-    id_type, value = next(iter(intersection))
-    return value, id_type
+    if intersection:
+        by_type: dict[SourceIdentifierType, str] = {}
+        for id_type, value in intersection:
+            # If somehow two normalized values for the same type both match
+            # (e.g. duplicate entries that survived dedup), keep the first.
+            by_type.setdefault(id_type, value)
+        for preferred in _IDENTIFIER_PREFERENCE:
+            if preferred in by_type:
+                return by_type[preferred], preferred
+        # Defensive fallback: any element of the intersection.
+        id_type, value = next(iter(intersection))
+        return value, id_type
+
+    fuzzy = _shared_article_reference(a, b)
+    if fuzzy is not None:
+        return fuzzy, SourceIdentifierType.ARTICLE_REFERENCE
+    return None
 
 
 def compare_source_case(

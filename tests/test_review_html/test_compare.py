@@ -513,6 +513,155 @@ class TestClinicalDateCountsInViewModels:
 
 
 # ===================================================================
+# Decision summary: source_case row + dropped narrative_consistency
+# ===================================================================
+
+
+class TestDecisionSummarySourceCase:
+    """The Decision summary must surface source_case_assessment (the
+    classifier consumes it via the shared-source override) and must
+    no longer surface narrative_consistency (which the classifier
+    does not consult)."""
+
+    def _classification(self):
+        from llm_dup_dev.models.classification import ClassificationResult
+        from llm_dup_dev.models.enums import (
+            DuplicateRelationship,
+            IndependenceAssessment,
+        )
+        return ClassificationResult(
+            pair_id="R001__R002",
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            explanation="test",
+        )
+
+    def _features_with_assessment(self, report_a, report_b, assessment):
+        stats = FrequencyStats(
+            N_total=100_000, N_drugs=48, N_AEs=200, N_drugs_AEs=12
+        )
+        return generate_pair_features(
+            r1=report_a, r2=report_b, stats=stats,
+            narrative_consistency=NarrativeConsistency.NEUTRAL,
+            source_case_assessment=assessment,
+        )
+
+    def test_source_case_populated_when_assessment_present(
+        self, report_a, report_b,
+    ):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseAssessment, SourceCaseVerdict, SourceIdentifierType,
+        )
+        asm = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            shared_source_identifier="10.abc/def",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+            reasoning="Shared DOI and single-patient narrative.",
+        )
+        features = self._features_with_assessment(report_a, report_b, asm)
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=self._classification(),
+        )
+        sc = vm.decision_summary.source_case
+        assert sc is not None
+        assert sc.verdict == "same_source_single_patient"
+        assert sc.shared_source_identifier == "10.abc/def"
+        assert sc.shared_source_identifier_type == "doi"
+        assert "single-patient" in sc.reasoning.lower()
+
+    def test_source_case_absent_when_not_assessed(
+        self, report_a, report_b,
+    ):
+        """NOT_ASSESSED suppresses the panel row entirely."""
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseAssessment, SourceCaseVerdict,
+        )
+        asm = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.NOT_ASSESSED,
+            reasoning="One or both extractions missing.",
+        )
+        features = self._features_with_assessment(report_a, report_b, asm)
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=self._classification(),
+        )
+        assert vm.decision_summary.source_case is None
+
+    def test_no_decisive_signal_still_surfaced(
+        self, report_a, report_b,
+    ):
+        """A comparator pass that found nothing actionable is still useful
+        information for reviewers, so the row is shown."""
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseAssessment, SourceCaseVerdict,
+        )
+        asm = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.NO_DECISIVE_SIGNAL,
+            reasoning="No decisive source or case signal from the narratives.",
+        )
+        features = self._features_with_assessment(report_a, report_b, asm)
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=self._classification(),
+        )
+        sc = vm.decision_summary.source_case
+        assert sc is not None
+        assert sc.verdict == "no_decisive_signal"
+        assert sc.shared_source_identifier is None
+
+    def test_decision_summary_has_no_narrative_consistency_field(
+        self, report_a, report_b,
+    ):
+        """narrative_consistency is unused by the classifier and was
+        dropped from the Decision summary view model."""
+        features = self._features_with_assessment(report_a, report_b, None)
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=self._classification(),
+        )
+        assert not hasattr(vm.decision_summary, "narrative_consistency")
+
+
+# ===================================================================
+# NarrativeComparison: literature_reference surfacing
+# ===================================================================
+
+
+class TestNarrativeLiteratureReference:
+    """The Narratives section now carries the raw literature_reference
+    string from each Report alongside the narrative text."""
+
+    def test_literature_reference_propagates_when_present(
+        self, report_a, report_b,
+    ):
+        report_a_with = report_a.model_copy(
+            update={"literature_reference": "Author N. Title. Journal. 2020;1(2):3-4."}
+        )
+        report_b_with = report_b.model_copy(
+            update={"literature_reference": "Author N. Title. Journal. 2020;1 (suppl 2):3-4"}
+        )
+        vm = build_pair_view_model(
+            report_a_with, report_b_with, pair_id="R001__R002",
+        )
+        assert vm.narratives.left_literature_reference == (
+            "Author N. Title. Journal. 2020;1(2):3-4."
+        )
+        assert vm.narratives.right_literature_reference == (
+            "Author N. Title. Journal. 2020;1 (suppl 2):3-4"
+        )
+
+    def test_literature_reference_none_when_absent(
+        self, report_a, report_b,
+    ):
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+        )
+        assert vm.narratives.left_literature_reference is None
+        assert vm.narratives.right_literature_reference is None
+
+
+# ===================================================================
 # _format_penalty_summary
 # ===================================================================
 

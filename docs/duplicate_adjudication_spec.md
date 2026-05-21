@@ -1052,6 +1052,34 @@ In other words, decisive inconsistencies preclude a `Duplicates` verdict — the
 
 ---
 
+### How the source/case verdict is computed
+
+The shared-source override below consumes a precomputed `features.source_case_assessment.verdict`. That verdict is produced upstream in two stages, both summarized here; full schemas live in [`data_contracts.md § Derived Narrative Signals`](data_contracts.md).
+
+**Stage 1 — per-narrative extraction.** Each report's narrative is processed by the LLM task `llm_dup_dev.llm.tasks.narrative_source_case`, producing a `NarrativeSourceCase` record. The record carries (a) a list of typed source identifiers — `doi`, `pmid`, `trial_registration`, `study_name`, `protocol_number`, `linked_case`, `article_reference` — each post-normalized by the type-specific normalizer in `feature_generation/source_case_comparison.py`, (b) the `single_patient_source` / `multi_patient_source` booleans the narrative supports, and (c) an optional case-within-source identifier with a typed family (`case` / `patient` / `pt` / `subject`). The extractor is conservative: fields are null whenever the narrative does not give clear support.
+
+**Stage 2 — deterministic pair-level comparison.** `feature_generation/source_case_comparison.compare_source_case` takes two `NarrativeSourceCase` records and decides which of seven verdicts applies. No LLM is involved at this stage. The logic has two parts:
+
+1. **Shared-source detection.** Each side is reduced to a set of `(type, normalized_value)` tuples. If those sets intersect on at least one non-`unknown` type, the most specific shared type (DOI > PMID > trial registration > linked case > protocol number > study name > article reference) is surfaced as `shared_source_identifier`. When strict equality finds nothing, a conservative token-set fallback is tried over `ARTICLE_REFERENCE` pairs only — citations that differ only in punctuation, accents, or supplement / page-range abbreviation style (e.g. `34(2):S136-S137` vs `34 (Suppl 2):S136-7`) are recovered when their lowercase NFKD-folded alphanumeric tokens, minus a small noise vocabulary (`et`, `al`, `vol`, `suppl`, `no`, `iss`, `pp`, …), share Jaccard ≥ 0.85, ≥ 8 non-noise tokens, and an equal 4-digit year when both sides carry one. Strict DOI/PMID/etc. matches always win over this fallback by virtue of the preference order.
+
+2. **Verdict selection.** Given the outcome of step 1 and the `single_patient_source` / `multi_patient_source` / case-identifier signals on each side, exactly one verdict is emitted:
+
+    | Pre-condition | Verdict |
+    |---|---|
+    | Either extraction missing | `NOT_ASSESSED` |
+    | Shared source identifier found, and either side has `single_patient_source=True` | `SAME_SOURCE_SINGLE_PATIENT` |
+    | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **agree** | `SAME_SOURCE_SAME_CASE` |
+    | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **differ** | `SAME_SOURCE_DIFFERENT_CASE` |
+    | Shared source identifier found, but case identifiers are missing on one side, of incompatible family, or otherwise not safely comparable | `SAME_SOURCE_CASE_UNCOMPARABLE` |
+    | No shared source identifier, but both sides report `multi_patient_source=True` | `MULTI_PATIENT_CONTEXT_NO_LINK` |
+    | Otherwise | `NO_DECISIVE_SIGNAL` |
+
+    Two case identifiers are considered *comparable* iff both carry a non-null non-`unknown` family of the same value (`case` vs `case`, `patient` vs `patient`, …) and both have non-empty normalized values; the comparator never treats family-mismatched or family-missing identifiers as evidence of different individuals.
+
+The verdict, the surfaced `shared_source_identifier` (with its type), and short prose `reasoning` are stored on `PairFeatures.source_case_assessment`. The four `SAME_SOURCE_*` verdicts feed the override described next; the three advisory verdicts (`MULTI_PATIENT_CONTEXT_NO_LINK`, `NO_DECISIVE_SIGNAL`, `NOT_ASSESSED`) do not, and the pair is adjudicated through the ordinary rarity-zone logic.
+
+---
+
 ### Shared-source override
 
 A reliable shared source identifier derived from the narratives is itself evidence against independence: if two reports both quote the same DOI (or other stable source identifier), they cannot be treated as independent draws from the comparison population regardless of how rare the matched clinical features are. This case is handled through a dedicated override path in `classifier/decision_logic.py`, separate from the rarity-based \(L_{\text{match}}\) framework.

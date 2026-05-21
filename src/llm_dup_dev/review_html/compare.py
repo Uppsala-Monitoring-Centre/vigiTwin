@@ -36,6 +36,7 @@ from llm_dup_dev.feature_generation.narrative_demographics import (
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
+from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import (
     AdverseEvent,
@@ -69,6 +70,7 @@ from .models import (
     InconsistencyVM,
     NarrativeComparison,
     PairViewModel,
+    SourceCaseAssessmentVM,
     SubfieldStatus,
 )
 from .normalize import (
@@ -739,6 +741,34 @@ def _build_classification_summary(
     )
 
 
+def _build_source_case_vm(
+    features: PairFeatures | None,
+) -> SourceCaseAssessmentVM | None:
+    """Project the pair's source/case assessment for the Decision summary.
+
+    Returns ``None`` when no assessment is attached or the verdict is
+    ``NOT_ASSESSED`` (i.e. the comparator never ran), so the panel row
+    is suppressed entirely. ``NO_DECISIVE_SIGNAL`` is still surfaced
+    because it represents a real comparator pass that found nothing
+    actionable — useful to display.
+    """
+    if features is None or features.source_case_assessment is None:
+        return None
+    asm = features.source_case_assessment
+    if asm.verdict == SourceCaseVerdict.NOT_ASSESSED:
+        return None
+    return SourceCaseAssessmentVM(
+        verdict=asm.verdict.value,
+        shared_source_identifier=asm.shared_source_identifier,
+        shared_source_identifier_type=(
+            asm.shared_source_identifier_type.value
+            if asm.shared_source_identifier_type is not None
+            else None
+        ),
+        reasoning=asm.reasoning or None,
+    )
+
+
 def _build_decision_summary(
     features: PairFeatures | None,
     classification: ClassificationResult | None,
@@ -783,9 +813,7 @@ def _build_decision_summary(
         ae_clinical_picture_status=(
             features.ae_clinical_picture_status.value if features else None
         ),
-        narrative_consistency=(
-            features.narrative_consistency.value if features else None
-        ),
+        source_case=_build_source_case_vm(features),
         duplicate_relationship=(
             classification.duplicate_relationship.value
             if classification.duplicate_relationship
@@ -1049,6 +1077,8 @@ def build_pair_view_model(
     narratives = NarrativeComparison(
         left_text=report_1.narrative,
         right_text=report_2.narrative,
+        left_literature_reference=report_1.literature_reference,
+        right_literature_reference=report_2.literature_reference,
     )
 
     # --- optional sections ---
