@@ -212,9 +212,13 @@ def _shared_source_override(
     Sub-label mapping:
 
     * ``SAME_SOURCE_DIFFERENT_CASE`` / ``SAME_SOURCE_CASE_UNCOMPARABLE``
-      → ``OTHERWISE_RELATED``. The comparator emits a decisive / moderate
-      ``Inconsistency`` for these verdicts respectively, but the sub-label
-      is pinned regardless of ``w_tot``.
+      → ``OTHERWISE_RELATED``. The sub-label is pinned regardless of
+      ``w_tot``. ``SAME_SOURCE_DIFFERENT_CASE`` additionally emits a
+      decisive ``Inconsistency`` (informational — does not affect this
+      pin); ``SAME_SOURCE_CASE_UNCOMPARABLE`` emits no inconsistency,
+      since it represents absence of comparable evidence rather than a
+      discrepancy, and the pin alone guarantees the conservative
+      outcome.
     * ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE`` →
       ``DUPLICATES`` unless ``w_tot`` already crosses the medium-zone
       threshold (default 3.0), in which case the pair is downgraded
