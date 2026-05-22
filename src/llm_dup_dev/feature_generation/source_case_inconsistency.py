@@ -2,25 +2,29 @@
 
 The pair-level deterministic comparator in
 :mod:`llm_dup_dev.feature_generation.source_case_comparison` produces a
-:class:`SourceCaseAssessment` with one of several verdicts.  Two of
-those verdicts translate directly into entries in the unified
-:class:`Inconsistency` master list so the weighted inconsistency score
-``w_tot`` reflects them the same way AE clinical-picture findings do:
+:class:`SourceCaseAssessment` with one of several verdicts.  Only one
+of those verdicts translates into an entry in the unified
+:class:`Inconsistency` master list:
 
 * ``SAME_SOURCE_DIFFERENT_CASE`` — a **decisive** inconsistency (two
   reports share a source identifier but carry different, safely
   comparable case-within-source labels).
-* ``SAME_SOURCE_CASE_UNCOMPARABLE`` — a **moderate** inconsistency
-  (two reports share a source identifier for a multi-patient source
-  but case labels are missing or not safely comparable).  Defaulting
-  to moderate ensures that pairs sharing a DOI for a multi-patient
-  article land on ``Otherwise_related`` rather than ``Duplicates``
-  under the shared-source override path.
 
-All other verdicts yield no synthesized rows — either they carry no
-evidence against independence (``SINGLE_PATIENT`` / ``SAME_CASE``) or
-they are advisory only (``MULTI_PATIENT_CONTEXT_NO_LINK`` /
-``NO_DECISIVE_SIGNAL`` / ``NOT_ASSESSED``).
+All other verdicts yield no synthesized rows.  In particular,
+``SAME_SOURCE_CASE_UNCOMPARABLE`` represents *absence of comparable
+evidence* (a shared source identifier without safely comparable case
+labels), not a discrepancy — synthesizing a moderate inconsistency
+for it would mislabel "we cannot tell" as "we found a moderate
+mismatch" and inflate ``w_tot`` accordingly.  The shared-source
+override in :mod:`llm_dup_dev.classifier.decision_logic` pins the
+sub-label to ``Otherwise_related`` deterministically for this verdict
+regardless of ``w_tot``, so the conservative outcome is guaranteed
+without an Inconsistency row.
+
+The remaining verdicts likewise emit nothing — ``SINGLE_PATIENT`` /
+``SAME_CASE`` carry no evidence against independence, and
+``MULTI_PATIENT_CONTEXT_NO_LINK`` / ``NO_DECISIVE_SIGNAL`` /
+``NOT_ASSESSED`` are advisory only.
 
 See: docs/duplicate_adjudication_spec.md § Decision logic
 """
@@ -52,8 +56,9 @@ def source_case_findings(
     Returns
     -------
     list[Inconsistency]
-        Zero or one synthesized rows — the source/case component never
-        emits more than a single inconsistency per pair.
+        Zero or one synthesized rows.  A row is emitted only for
+        ``SAME_SOURCE_DIFFERENT_CASE``; every other verdict yields the
+        empty list.
     """
     if assessment is None:
         return []
@@ -65,12 +70,6 @@ def source_case_findings(
         description = (
             "Same source identifier but different comparable "
             "case-within-source identifiers."
-        )
-    elif verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE:
-        severity = InconsistencySeverity.MODERATE
-        description = (
-            "Same source identifier but case identifiers are missing "
-            "or not safely comparable."
         )
     else:
         return []

@@ -245,9 +245,12 @@ class TestSourceCaseAssessmentIntegration:
         # Counts reflect it
         assert features.inconsistency_counts.decisive >= 1
 
-    def test_same_source_uncomparable_adds_moderate(
+    def test_same_source_uncomparable_adds_no_findings(
         self, report_a, report_b, stats_similar, default_config
     ):
+        # SAME_SOURCE_CASE_UNCOMPARABLE represents absence of comparable
+        # evidence rather than a discrepancy — no Inconsistency row is
+        # synthesized and the assessment alone drives the override.
         assessment = SourceCaseAssessment(
             verdict=SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
             shared_source_identifier="10.xyz/abc",
@@ -265,8 +268,11 @@ class TestSourceCaseAssessmentIntegration:
             i for i in features.inconsistencies
             if i.source == "narrative_source_case"
         ]
-        assert len(src_rows) == 1
-        assert src_rows[0].severity == InconsistencySeverity.MODERATE
+        assert src_rows == []
+        # Counts should not have been bumped by this verdict.
+        assert features.inconsistency_counts.moderate == 0
+        # Raw assessment still preserved for the decision logic to branch on.
+        assert features.source_case_assessment == assessment
 
     def test_positive_verdict_adds_no_findings(
         self, report_a, report_b, stats_similar, default_config
