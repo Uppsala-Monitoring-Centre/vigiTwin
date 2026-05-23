@@ -563,13 +563,13 @@ class TestSharedSourceOverride:
         _assert_otherwise_related(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
-    def test_same_source_case_uncomparable_forces_otherwise_related(self):
-        """SAME_SOURCE_CASE_UNCOMPARABLE → Otherwise_related pinned,
+    def test_same_source_uncomparable_case_forces_otherwise_related(self):
+        """SAME_SOURCE_UNCOMPARABLE_CASE → Otherwise_related pinned,
         even with L=0 and no other inconsistencies."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
-                SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             ),
         )
         result = classify(f, THRESHOLDS)

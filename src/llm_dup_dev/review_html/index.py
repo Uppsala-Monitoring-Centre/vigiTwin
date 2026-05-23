@@ -31,7 +31,50 @@ from .models import (
     IndexInconsistencyItem,
     InconsistencyVM,
     PairViewModel,
+    SourceCaseAssessmentVM,
 )
+
+
+# Source/case verdicts that are hidden on the batch-index row.
+# ``NOT_ASSESSED`` is already dropped upstream by
+# ``compare._build_source_case_vm``; ``NO_DECISIVE_SIGNAL`` is a real
+# comparator pass with no actionable outcome — useful on the pair page
+# but noise on the index. Keep this set narrow so we surface every
+# actionable verdict.
+_HIDDEN_INDEX_VERDICTS: frozenset[str] = frozenset({"no_decisive_signal"})
+
+
+# Short, human-friendly labels for the verdict badge on the index row.
+# The labels make the single-patient-source vs multi-patient-source
+# distinction explicit so reviewers can tell apart "same source, same
+# individual" from "same source, different individuals" at a glance.
+_SOURCE_CASE_SHORT_LABEL: dict[str, str] = {
+    "same_source_single_patient":    "Same single-pt. source",
+    "same_source_same_case":         "Multi-pt. source, same individual",
+    "same_source_different_case":    "Multi-pt. source, diff. individuals",
+    "same_source_uncomparable_case": "Multi-pt. source, individual ?",
+    "multi_patient_context_no_link": "Multi-pt. context, no shared source",
+}
+
+
+def _index_source_case(
+    vm: PairViewModel,
+) -> SourceCaseAssessmentVM | None:
+    """Return a copy of the source/case VM for the index row, or ``None``.
+
+    Filters verdicts that should not appear on the index and attaches a
+    compact ``short_label``. Returns ``None`` when no actionable verdict
+    is available.
+    """
+    if vm.decision_summary is None:
+        return None
+    sc = vm.decision_summary.source_case
+    if sc is None or sc.verdict in _HIDDEN_INDEX_VERDICTS:
+        return None
+    short = _SOURCE_CASE_SHORT_LABEL.get(sc.verdict)
+    if short is None:
+        return None
+    return sc.model_copy(update={"short_label": short})
 
 
 def build_batch_index_item(
@@ -94,6 +137,7 @@ def build_batch_index_item(
             if vm.features_summary
             else None
         ),
+        source_case=_index_source_case(vm),
     )
 
 

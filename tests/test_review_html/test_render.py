@@ -1089,3 +1089,152 @@ class TestAEClinicalPictureRendering:
         html = render_pair(vm)
         assert "ae-cp-status-not_assessed" in html
         assert "no_llm_client" in html
+
+
+# ---------------------------------------------------------------------------
+# Source/case verdict surface on the batch index
+# ---------------------------------------------------------------------------
+
+
+def _features_with_source_case(verdict, **kwargs):
+    """Build features carrying a SourceCaseAssessment with the given verdict."""
+    from llm_dup_dev.models.narrative_source_case import SourceCaseAssessment
+
+    feats = _make_features()
+    feats.source_case_assessment = SourceCaseAssessment(
+        verdict=verdict, **kwargs,
+    )
+    return feats
+
+
+class TestIndexSourceCaseSurface:
+    def test_short_label_populated_for_same_source_same_case(
+        self, report_a, report_b,
+    ):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseVerdict,
+            SourceIdentifierType,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        feats = _features_with_source_case(
+            SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            shared_source_identifier="10.1000/example",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+            reasoning="matching case ID",
+        )
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats, classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+
+        assert item.source_case is not None
+        assert item.source_case.verdict == "same_source_same_case"
+        assert item.source_case.short_label == (
+            "Multi-pt. source, same individual"
+        )
+        assert item.source_case.shared_source_identifier == "10.1000/example"
+        assert item.source_case.shared_source_identifier_type == "doi"
+
+    def test_no_decisive_signal_filtered_out_on_index(
+        self, report_a, report_b,
+    ):
+        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        feats = _features_with_source_case(SourceCaseVerdict.NO_DECISIVE_SIGNAL)
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats, classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+
+        assert item.source_case is None
+        # The pair page still receives the verdict — the filter is only
+        # applied on the index side.
+        assert vm.decision_summary is not None
+        assert vm.decision_summary.source_case is not None
+        assert vm.decision_summary.source_case.verdict == "no_decisive_signal"
+
+    def test_not_assessed_filtered_upstream(self, report_a, report_b):
+        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        feats = _features_with_source_case(SourceCaseVerdict.NOT_ASSESSED)
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats, classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+
+        assert item.source_case is None
+        assert vm.decision_summary is not None
+        assert vm.decision_summary.source_case is None
+
+    def test_renamed_uncomparable_case_short_label(self, report_a, report_b):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseVerdict,
+            SourceIdentifierType,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        feats = _features_with_source_case(
+            SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            shared_source_identifier="NCT01234567",
+            shared_source_identifier_type=SourceIdentifierType.TRIAL_REGISTRATION,
+        )
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats, classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+
+        assert item.source_case is not None
+        assert item.source_case.verdict == "same_source_uncomparable_case"
+        assert item.source_case.short_label == "Multi-pt. source, individual ?"
+
+    def test_render_index_surfaces_badge_and_identifier(
+        self, report_a, report_b,
+    ):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseVerdict,
+            SourceIdentifierType,
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        feats = _features_with_source_case(
+            SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            shared_source_identifier="10.1000/single",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+        )
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=feats, classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        html = render_index([item])
+
+        assert 'class="verdict-badge"' in html
+        assert "Same single-pt. source" in html
+        # Identifier and its type appear inside a <code> tag.
+        assert "doi=10.1000/single" in html
+        # Raw verdict surfaces as a tooltip on the badge.
+        assert 'title="same_source_single_patient"' in html
+
+    def test_render_index_omits_badge_when_no_source_case(
+        self, report_a, report_b,
+    ):
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        # No source_case_assessment attached -> badge absent.
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_make_features(),
+            classification=_make_classification(),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        html = render_index([item])
+
+        assert item.source_case is None
+        assert 'class="verdict-badge"' not in html

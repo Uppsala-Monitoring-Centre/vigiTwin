@@ -44,6 +44,19 @@ a:hover { text-decoration: underline; }
 .label-Unrelated { background: #721c24; color: #fff; }
 .label-Abstain { background: #e2e3e5; color: #383d41; }
 
+/* Source/case verdict badge (mirrors the pair-page style). */
+.verdict-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #e7e1f5;
+    color: #4527a0;
+    font-size: 12px;
+    font-weight: 600;
+}
+.source-case-line { margin-top: 3px; }
+.source-case-line code { font-size: 11px; }
+
 /* Severity badges for inline inconsistency items */
 .inc-minor,
 .inc-moderate,
@@ -133,7 +146,19 @@ a:hover { text-decoration: underline; }
                 <td>{{ loop.index }}</td>
                 <td><a href="{{ item.filename }}">{{ item.pair_id }}</a></td>
                 {% if has_context %}
-                <td>{{ item.context_label or '--' }}</td>
+                <td>
+                    {{ item.context_label or '--' }}
+                    {% if item.source_case %}
+                    <div class="source-case-line">
+                        <span class="verdict-badge" title="{{ item.source_case.verdict }}">
+                            {{ item.source_case.short_label }}
+                        </span>
+                        {% if item.source_case.shared_source_identifier %}
+                        <code>{{ item.source_case.shared_source_identifier_type or 'id' }}={{ item.source_case.shared_source_identifier }}</code>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </td>
                 {% endif %}
                 {% if has_anchor %}
                 <td>{{ item.anchor_label | safe if item.anchor_label else '--' }}</td>

@@ -76,7 +76,10 @@ def render_index(items: list[BatchIndexItem]) -> str:
         has_penalty=any(item.penalty_text is not None for item in items),
         has_anchor=any(item.anchor_label is not None for item in items),
         has_anchor_n=any(item.anchor_n is not None for item in items),
-        has_context=any(item.context_label is not None for item in items),
+        has_context=any(
+            item.context_label is not None or item.source_case is not None
+            for item in items
+        ),
         has_matching_features=any(
             item.matching_features is not None for item in items
         ),

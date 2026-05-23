@@ -86,7 +86,7 @@ class SourceCaseVerdict(str, Enum):
     SAME_SOURCE_SINGLE_PATIENT = "same_source_single_patient"
     SAME_SOURCE_SAME_CASE = "same_source_same_case"
     SAME_SOURCE_DIFFERENT_CASE = "same_source_different_case"
-    SAME_SOURCE_CASE_UNCOMPARABLE = "same_source_case_uncomparable"
+    SAME_SOURCE_UNCOMPARABLE_CASE = "same_source_uncomparable_case"
     MULTI_PATIENT_CONTEXT_NO_LINK = "multi_patient_context_no_link"
     NO_DECISIVE_SIGNAL = "no_decisive_signal"
     NOT_ASSESSED = "not_assessed"

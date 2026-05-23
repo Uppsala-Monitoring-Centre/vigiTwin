@@ -367,6 +367,10 @@ class SourceCaseAssessmentVM(BaseModel):
     shared_source_identifier: str | None = None
     shared_source_identifier_type: str | None = None
     reasoning: str | None = None
+    # Human-friendly compact label for the verdict, used by the batch
+    # index row. ``None`` on the pair page (which displays the raw
+    # ``verdict`` value in a badge).
+    short_label: str | None = None
 
 
 class DecisionSummaryVM(BaseModel):
@@ -471,3 +475,8 @@ class BatchIndexItem(BaseModel):
     # colour-bin CSS class. None when N_anchor < 2.
     anchor_penalty: float | None = None
     anchor_penalty_class: str | None = None
+    # Compact source/case verdict surface for the index row. Carries the
+    # short label, raw verdict (for tooltips) and the shared source
+    # identifier when present. ``None`` when the verdict is absent,
+    # ``NOT_ASSESSED``, or hidden on the index (``NO_DECISIVE_SIGNAL``).
+    source_case: SourceCaseAssessmentVM | None = None

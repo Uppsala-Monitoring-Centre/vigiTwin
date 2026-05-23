@@ -343,7 +343,7 @@ class TestCompareSourceCase:
         )
         b = _lit(doi="10.a/b", multi=True)  # no case identifier
         result = compare_source_case(a, b)
-        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
 
     def test_same_doi_case_families_differ(self):
         """Same DOI, 'Case 1' vs 'Patient B' — mismatch-but-not-different."""
@@ -358,7 +358,7 @@ class TestCompareSourceCase:
             case_surface="Patient B",
         )
         result = compare_source_case(a, b)
-        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
         assert result.case_identifiers_comparable is False
 
     # -- linked_case (summary-case-like) ----------------------------
@@ -495,7 +495,7 @@ class TestCompareSourceCase:
         # 'epcoreal' so the comparator sees the shared identifier.
         from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
         result = compare_source_case(_post_normalize(a), _post_normalize(b))
-        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
         assert result.shared_source_identifier == "epcoreal"
         assert result.shared_source_identifier_type == SourceIdentifierType.STUDY_NAME
 
@@ -525,7 +525,7 @@ class TestCompareSourceCase:
             ],
         ))
         result = compare_source_case(a, b)
-        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
         assert result.shared_source_identifier_type == SourceIdentifierType.STUDY_NAME
         assert result.shared_source_identifier == "epcoreal"
 
@@ -598,7 +598,7 @@ class TestCompareSourceCase:
             case_surface="Linked case: XXXXXXX-X",
         )
         result = compare_source_case(a, b)
-        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE
+        assert result.verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
         assert result.case_identifiers_comparable is False
 
 
