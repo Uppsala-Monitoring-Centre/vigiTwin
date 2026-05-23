@@ -573,7 +573,7 @@ def compare_source_case(
             )
 
         return SourceCaseAssessment(
-            verdict=SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+            verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             shared_source_identifier=shared_value,
             shared_source_identifier_type=shared_type,
             case_identifiers_compared=case_compared,

@@ -11,7 +11,7 @@ of those verdicts translates into an entry in the unified
   comparable case-within-source labels).
 
 All other verdicts yield no synthesized rows.  In particular,
-``SAME_SOURCE_CASE_UNCOMPARABLE`` represents *absence of comparable
+``SAME_SOURCE_UNCOMPARABLE_CASE`` represents *absence of comparable
 evidence* (a shared source identifier without safely comparable case
 labels), not a discrepancy — synthesizing a moderate inconsistency
 for it would mislabel "we cannot tell" as "we found a moderate

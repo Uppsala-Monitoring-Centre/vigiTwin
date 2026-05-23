@@ -21,7 +21,7 @@ class TestNoFindings:
     @pytest.mark.parametrize("verdict", [
         SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
         SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
-        SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+        SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
         SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
         SourceCaseVerdict.NO_DECISIVE_SIGNAL,
         SourceCaseVerdict.NOT_ASSESSED,
@@ -30,11 +30,11 @@ class TestNoFindings:
         assert source_case_findings(SourceCaseAssessment(verdict=verdict)) == []
 
     def test_uncomparable_with_shared_identifier_yields_empty(self):
-        # SAME_SOURCE_CASE_UNCOMPARABLE represents absence of comparable
+        # SAME_SOURCE_UNCOMPARABLE_CASE represents absence of comparable
         # evidence, not a discrepancy — no row is synthesized even when a
         # shared source identifier is recorded on the assessment.
         assessment = SourceCaseAssessment(
-            verdict=SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+            verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             shared_source_identifier="10.xyz/abc",
             shared_source_identifier_type=SourceIdentifierType.DOI,
         )

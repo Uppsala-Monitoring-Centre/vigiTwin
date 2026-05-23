@@ -76,7 +76,7 @@ _SHARED_SOURCE_VERDICTS = frozenset({
     SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
     SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
     SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
-    SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+    SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
 })
 
 
@@ -211,11 +211,11 @@ def _shared_source_override(
 
     Sub-label mapping:
 
-    * ``SAME_SOURCE_DIFFERENT_CASE`` / ``SAME_SOURCE_CASE_UNCOMPARABLE``
+    * ``SAME_SOURCE_DIFFERENT_CASE`` / ``SAME_SOURCE_UNCOMPARABLE_CASE``
       → ``OTHERWISE_RELATED``. The sub-label is pinned regardless of
       ``w_tot``. ``SAME_SOURCE_DIFFERENT_CASE`` additionally emits a
       decisive ``Inconsistency`` (informational — does not affect this
-      pin); ``SAME_SOURCE_CASE_UNCOMPARABLE`` emits no inconsistency,
+      pin); ``SAME_SOURCE_UNCOMPARABLE_CASE`` emits no inconsistency,
       since it represents absence of comparable evidence rather than a
       discrepancy, and the pin alone guarantees the conservative
       outcome.
@@ -236,7 +236,7 @@ def _shared_source_override(
 
     if verdict in (
         SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
-        SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+        SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
     ):
         explanation = (
             f"Shared-source override ({verdict.value}{ident_str}); "

@@ -1070,7 +1070,7 @@ The shared-source override below consumes a precomputed `features.source_case_as
     | Shared source identifier found, and either side has `single_patient_source=True` | `SAME_SOURCE_SINGLE_PATIENT` |
     | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **agree** | `SAME_SOURCE_SAME_CASE` |
     | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **differ** | `SAME_SOURCE_DIFFERENT_CASE` |
-    | Shared source identifier found, but case identifiers are missing on one side, of incompatible family, or otherwise not safely comparable | `SAME_SOURCE_CASE_UNCOMPARABLE` |
+    | Shared source identifier found, but case identifiers are missing on one side, of incompatible family, or otherwise not safely comparable | `SAME_SOURCE_UNCOMPARABLE_CASE` |
     | No shared source identifier, but both sides report `multi_patient_source=True` | `MULTI_PATIENT_CONTEXT_NO_LINK` |
     | Otherwise | `NO_DECISIVE_SIGNAL` |
 
@@ -1091,12 +1091,12 @@ The override fires whenever `features.source_case_assessment.verdict` is one of 
 | `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_med_zone` → `Otherwise_related` |
 | `SAME_SOURCE_SAME_CASE`      | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_med_zone` → `Otherwise_related` |
 | `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise_related` (pinned) |
-| `SAME_SOURCE_CASE_UNCOMPARABLE` | `Otherwise_related` (pinned) |
+| `SAME_SOURCE_UNCOMPARABLE_CASE` | `Otherwise_related` (pinned) |
 
 The two "positive" verdicts default to `Duplicates`, but are downgraded to `Otherwise_related` when non-source-case signals accumulate enough severity to push \(w_{\text{tot}}\) past the medium-zone threshold (default `3.0`). The threshold is shared with the medium L_match zone by design: a reliable shared-source verdict warrants the same inconsistency tolerance as moderate rarity evidence, so a single strong inconsistency — or equivalent accumulated severity (three moderates, one strong + one moderate, …) — is needed to demote. A single moderate or a handful of minors is therefore tolerated. Decisive inconsistencies continue to demote via their large weight (`w_decisive = 100`). The two "negative" verdicts are pinned to `Otherwise_related`:
 
 - `SAME_SOURCE_DIFFERENT_CASE` emits a **decisive** `Inconsistency` (synthesized by `feature_generation/source_case_inconsistency.py`) — two reports sharing a DOI but carrying different comparable case labels clearly aren't the same individual, but they are linked by the shared source. The pin to `Otherwise_related` is driven by the override; the decisive row is informational and audit-facing.
-- `SAME_SOURCE_CASE_UNCOMPARABLE` emits **no** `Inconsistency`. The verdict represents *absence of comparable evidence* (a shared source identifier without safely comparable case labels), not a discrepancy, so synthesizing one would mislabel "we cannot tell" as a moderate mismatch and inflate \(w_{\text{tot}}\). The override pin to `Otherwise_related` is what guarantees the conservative outcome — two reports sharing a DOI for a multi-patient article are not flagged as duplicates when case labels can't be safely compared.
+- `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency`. The verdict represents *absence of comparable evidence* (a shared source identifier without safely comparable case labels), not a discrepancy, so synthesizing one would mislabel "we cannot tell" as a moderate mismatch and inflate \(w_{\text{tot}}\). The override pin to `Otherwise_related` is what guarantees the conservative outcome — two reports sharing a DOI for a multi-patient article are not flagged as duplicates when case labels can't be safely compared.
 
 Advisory verdicts (`MULTI_PATIENT_CONTEXT_NO_LINK`, `NO_DECISIVE_SIGNAL`, `NOT_ASSESSED`) do **not** trigger the override — they fall through to the ordinary rarity-zone logic.
 

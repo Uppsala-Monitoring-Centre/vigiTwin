@@ -248,11 +248,11 @@ class TestSourceCaseAssessmentIntegration:
     def test_same_source_uncomparable_adds_no_findings(
         self, report_a, report_b, stats_similar, default_config
     ):
-        # SAME_SOURCE_CASE_UNCOMPARABLE represents absence of comparable
+        # SAME_SOURCE_UNCOMPARABLE_CASE represents absence of comparable
         # evidence rather than a discrepancy — no Inconsistency row is
         # synthesized and the assessment alone drives the override.
         assessment = SourceCaseAssessment(
-            verdict=SourceCaseVerdict.SAME_SOURCE_CASE_UNCOMPARABLE,
+            verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             shared_source_identifier="10.xyz/abc",
             shared_source_identifier_type=SourceIdentifierType.DOI,
         )
