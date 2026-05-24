@@ -188,6 +188,29 @@ class EvalSummary:
     """Aggregated evaluation results for one experiment run.
 
     See the module docstring for the rationale behind the binary views.
+
+    Abstain accounting
+    ------------------
+    Two abstain counters are reported:
+
+    * ``n_abstained`` — pairs excluded because the *human annotation* is
+      Abstain (always excluded from scoring regardless of mode).
+    * ``n_pipeline_abstained`` — pairs where the *pipeline* output is
+      Abstain. How these are handled depends on the ``AbstainMode``
+      passed to ``evaluate()``:
+
+      - ``DECIDED_ONLY``: excluded from scoring (not counted in
+        ``n_pairs``).
+      - ``ABSTAIN_AS_DUPLICATE``: remapped to ``Duplicates`` and scored.
+      - ``ABSTAIN_AS_NONDUPLICATE``: remapped to ``Otherwise_related``
+        and scored.
+
+    The abstention rate is ``n_pipeline_abstained / (n_pairs +
+    n_pipeline_abstained)`` in DECIDED_ONLY mode, or simply
+    ``n_pipeline_abstained / n_pairs`` in the remapping modes.
+    Stratification by same-source status requires the full
+    ``PairFeatures`` objects (available to callers via the pipeline
+    runner) and is outside the scope of this summary.
     """
 
     experiment_id: str
@@ -206,6 +229,10 @@ class EvalSummary:
     # Duplicates as the positive class. Recall = fraction of actual
     # duplicates caught.
     duplicates_vs_nonduplicates: BinaryMetrics
+
+    # Pipeline abstains: pairs where the pipeline output was Abstain.
+    # Handling depends on the AbstainMode passed to evaluate().
+    n_pipeline_abstained: int = 0
 
     # Metadata (frozen experiment config for reproducibility)
     config_snapshot: Optional[dict] = None

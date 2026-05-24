@@ -48,13 +48,15 @@ class ClassificationResult(BaseModel):
         Mapping:
             Non-independent + Duplicates         → Duplicates
             Non-independent + Otherwise_related  → Otherwise_related
+            Non-independent + Abstain            → Abstain
             Independent                          → Unrelated
-            Abstain                              → Abstain (defensive)
+            Abstain (assessment)                 → Abstain (defensive)
 
-        The decision logic only ever emits ``NON_INDEPENDENT`` or
-        ``INDEPENDENT``; the ``Abstain`` arms below are a defensive
-        backstop for future abstain paths or malformed states and are
-        not produced by the standard rarity-zone / shared-source logic.
+        The rarity-zone path emits only ``NON_INDEPENDENT`` or
+        ``INDEPENDENT``. The shared-source override path additionally
+        emits ``NON_INDEPENDENT + DuplicateRelationship.ABSTAIN`` for
+        epistemically underdetermined same-source scenarios.
+        ``IndependenceAssessment.ABSTAIN`` is a defensive backstop.
         """
         if self.independence_assessment == IndependenceAssessment.ABSTAIN:
             return "Abstain"

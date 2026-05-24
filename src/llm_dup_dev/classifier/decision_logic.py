@@ -13,11 +13,11 @@ Two layered internal labels are produced:
   sub-label that uses the inconsistency signals to distinguish a
   likely-duplicate case from one that is linked by something other
   than being the same individual case (``DUPLICATES`` /
-  ``OTHERWISE_RELATED``).
+  ``OTHERWISE_RELATED`` / ``ABSTAIN``).
 
 These are mapped by ``ClassificationResult.final_label`` to the
 user-facing labels ``Duplicates`` / ``Otherwise_related`` /
-``Unrelated``.
+``Unrelated`` / ``Abstain``.
 
 Inconsistencies are combined into a single weighted score::
 
@@ -49,10 +49,45 @@ forces the failing-zone branch, which combined with the zone logic
 yields ``Otherwise_related`` whenever ``L_match > lmatch_weak`` and
 ``Independent`` otherwise — with no separate override.
 
+Abstain (same-source ambiguity)
+--------------------------------
+The ``Abstain`` outcome is reserved exclusively for epistemically
+underdetermined same-source scenarios where:
+
+* non-independence is established (same source identifier confirmed), but
+* the available structured and narrative evidence is insufficient to
+  safely resolve whether the two reports describe the same individual.
+
+``Abstain`` is *not* generic uncertainty — it is a specific claim that
+the latent information required to decide (e.g. the full publication
+text, patient-level identifiers) is not present in the structured data.
+
+It is produced only by the shared-source override path and only for the
+following verdicts:
+
+* ``SAME_SOURCE_SINGLE_PATIENT`` — when ``w_tot ≥ w_tot_med_zone``
+  (substantial inconsistencies that are more plausibly explained by
+  extraction differences, reporting variation, or partial information
+  than by distinct patients).
+* ``SAME_SOURCE_SAME_CASE`` — same rule as SINGLE_PATIENT.
+* ``SAME_SOURCE_UNCOMPARABLE_CASE`` — when the pair is neither
+  convincingly the same individual (which requires compelling
+  patient-specific evidence ``L_patient > lmatch_med`` with essentially
+  zero inconsistencies, ``w_tot < w_tot_weak_zone``) nor convincingly a
+  different individual (``w_tot ≥ w_tot_weak_zone``). See
+  :func:`_l_patient` for the patient-specific log-evidence definition.
+  Note the lower Otherwise_related gate (``w_tot_weak_zone``) vs the
+  SINGLE_PATIENT / SAME_CASE gate (``w_tot_med_zone``): literature /
+  summary-case demographics are more deliberate than ad-hoc reports,
+  so smaller inconsistencies carry more weight as evidence of
+  different patients.
+
 See: docs/duplicate_adjudication_spec.md § Decision logic
 """
 
 from __future__ import annotations
+
+import math
 
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
@@ -78,6 +113,14 @@ _SHARED_SOURCE_VERDICTS = frozenset({
     SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
     SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
 })
+
+
+# Feature contributions to drop when computing the patient-specific
+# log-evidence (``L_patient``) used by the SAME_SOURCE_UNCOMPARABLE_CASE
+# Duplicates branch. Drugs and adverse events overlap by construction
+# within a multi-patient publication / shared study context, so they are
+# weak identifiers of patient identity in that setting.
+_NON_PATIENT_SPECIFIC_FEATURES = frozenset({"drug_set", "ae_set"})
 
 
 def classify(
@@ -209,66 +252,158 @@ def _shared_source_override(
 ) -> ClassificationResult:
     """Reject independence based on a reliable shared source identifier.
 
-    Sub-label mapping:
+    Sub-label mapping by verdict:
 
-    * ``SAME_SOURCE_DIFFERENT_CASE`` / ``SAME_SOURCE_UNCOMPARABLE_CASE``
-      → ``OTHERWISE_RELATED``. The sub-label is pinned regardless of
-      ``w_tot``. ``SAME_SOURCE_DIFFERENT_CASE`` additionally emits a
-      decisive ``Inconsistency`` (informational — does not affect this
-      pin); ``SAME_SOURCE_UNCOMPARABLE_CASE`` emits no inconsistency,
-      since it represents absence of comparable evidence rather than a
-      discrepancy, and the pin alone guarantees the conservative
-      outcome.
-    * ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE`` →
-      ``DUPLICATES`` unless ``w_tot`` already crosses the medium-zone
-      threshold (default 3.0), in which case the pair is downgraded
-      to ``OTHERWISE_RELATED``. The threshold is shared with the
-      medium L_match zone: a reliable shared-source verdict warrants
-      the same inconsistency tolerance as moderate rarity evidence,
-      so a single strong inconsistency (or equivalent accumulated
-      severity) is needed to demote. These verdicts emit no
-      source-case inconsistency, so ``w_tot`` is free of source-case
-      contribution by construction and the comparison is
-      apples-to-apples.
+    ``SAME_SOURCE_DIFFERENT_CASE``
+        Pinned to ``OTHERWISE_RELATED`` regardless of ``w_tot``. A
+        decisive inconsistency is also emitted by the feature-generation
+        layer (informational; does not affect this pin).
+
+    ``SAME_SOURCE_UNCOMPARABLE_CASE``
+        The source is confirmed shared but case identifiers are missing
+        or incomparable. UNCOMPARABLE_CASE specifically covers
+        literature / summary-case publications where reported
+        demographics are deliberate, so a discrepancy more likely
+        reflects a different patient than an extraction artefact.
+        Patient identity is decided from ``L_patient`` (see
+        :func:`_l_patient` — patient-specific log-evidence excluding
+        drug-set / AE-set contributions, which are weak identifiers in
+        a multi-patient publication context) together with ``w_tot``:
+
+        * ``w_tot ≥ w_tot_weak_zone`` — any moderate-or-stronger
+          inconsistency (or three accumulated minors) clears the bar.
+          A single minor (e.g. a one-year age difference) is still
+          tolerated. → ``OTHERWISE_RELATED``.
+        * ``L_patient > lmatch_med`` (with ``w_tot < w_tot_weak_zone``
+          implied) — compelling patient-specific concordance (e.g.
+          matching sex + exact age) with essentially zero
+          inconsistencies → ``DUPLICATES``.
+        * Otherwise — neither convincingly the same nor convincingly
+          different individuals → ``ABSTAIN``.
+
+        Note that this branch uses ``w_tot_weak_zone`` as the
+        Otherwise_related gate, lower than the ``w_tot_med_zone`` used
+        for SINGLE_PATIENT / SAME_CASE. The two verdicts differ
+        conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed
+        single-patient identity claim, so inconsistencies are more
+        plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so
+        small inconsistencies in a curated publication carry more
+        weight as evidence of different patients.
+
+    ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE``
+        Default to ``DUPLICATES``, but are raised to ``ABSTAIN`` when
+        ``w_tot ≥ w_tot_med_zone``. The rationale: for a genuinely
+        single-patient source (or one where the same case ID is
+        confirmed), substantial inconsistencies are more plausibly
+        extraction artefacts, reporting differences, or partial
+        information than evidence of distinct individuals — so the
+        pair is epistemically underdetermined rather than confidently
+        Otherwise_related. The threshold is shared with the medium
+        L_match zone (default 3.0): a single strong inconsistency, or
+        equivalent accumulated severity, is required to leave the
+        Duplicates branch. A single moderate or a handful of minors is
+        tolerated. Decisive inconsistencies demote via their large
+        weight (``w_decisive = 100``).
     """
     verdict = assessment.verdict
     ident_str = _format_shared_identifier(assessment)
 
-    if verdict in (
-        SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
-        SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
-    ):
-        explanation = (
-            f"Shared-source override ({verdict.value}{ident_str}); "
-            f"sub-label pinned to Otherwise_related."
-        )
+    if verdict == SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE:
         return _otherwise_related(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
-            explanation=explanation,
+            explanation=(
+                f"Shared-source override ({verdict.value}{ident_str}); "
+                f"sub-label pinned to Otherwise_related."
+            ),
+        )
+
+    if verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE:
+        counts = features.inconsistency_counts
+        # Branch B: inconsistencies clear the weak-zone bar → Otherwise_related.
+        # UNCOMPARABLE_CASE specifically covers literature / summary-case
+        # publications, where reported demographics are deliberate and a
+        # discrepancy more likely reflects a different patient than an
+        # extraction artefact. The bar is set lower than for SINGLE_PATIENT /
+        # SAME_CASE (which keep w_tot_med_zone): any moderate-or-stronger
+        # inconsistency, or three accumulated minors, is enough to indicate
+        # different individuals. A single minor (e.g. one-year age diff) is
+        # still tolerated.
+        if w_tot >= thresholds.w_tot_weak_zone:
+            return _otherwise_related(
+                pair_id=features.pair_id,
+                reason=IndependenceReason.SHARED_SOURCE,
+                explanation=(
+                    f"Shared-source override ({verdict.value}{ident_str}); "
+                    f"w_tot={w_tot:.1f} >= {thresholds.w_tot_weak_zone:.1f} "
+                    f"(minor={counts.minor}, moderate={counts.moderate}, "
+                    f"strong={counts.strong}, decisive={counts.decisive}); "
+                    f"inconsistencies indicate different individuals."
+                ),
+            )
+
+        # Branch A: compelling patient-specific evidence (w_tot < w_tot_weak_zone
+        # is implied by branch B having failed) → Duplicates. L_patient excludes
+        # drug-set / AE-set contributions (which overlap by construction within
+        # a multi-patient source), so the evidence must come from patient-
+        # specific features (demographics + clinical-date coincidences).
+        l_patient = _l_patient(features)
+        if l_patient > thresholds.lmatch_med:
+            return _duplicates(
+                pair_id=features.pair_id,
+                reason=IndependenceReason.SHARED_SOURCE,
+                explanation=(
+                    f"Shared-source override ({verdict.value}{ident_str}); "
+                    f"L_patient={l_patient:.2f} > {thresholds.lmatch_med:.1f} "
+                    f"and w_tot={w_tot:.1f} < {thresholds.w_tot_weak_zone:.1f}; "
+                    f"compelling patient-specific evidence with minimal "
+                    f"inconsistency."
+                ),
+            )
+
+        # Branch C: neither convincingly same nor convincingly different —
+        # identity indeterminate, abstain.
+        return _abstain(
+            pair_id=features.pair_id,
+            reason=IndependenceReason.SHARED_SOURCE,
+            explanation=(
+                f"Shared-source override ({verdict.value}{ident_str}); "
+                f"L_patient={l_patient:.2f} (threshold "
+                f"{thresholds.lmatch_med:.1f}), w_tot={w_tot:.1f} "
+                f"(threshold {thresholds.w_tot_weak_zone:.1f}); "
+                f"identity indeterminate — multi-patient source without "
+                f"comparable case identifiers and insufficient patient-"
+                f"specific evidence."
+            ),
         )
 
     # SAME_SOURCE_SINGLE_PATIENT or SAME_SOURCE_SAME_CASE
     if w_tot < thresholds.w_tot_med_zone:
-        explanation = (
-            f"Shared-source override ({verdict.value}{ident_str}); "
-            f"w_tot={w_tot:.1f} < {thresholds.w_tot_med_zone:.1f}."
-        )
         return _duplicates(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
-            explanation=explanation,
+            explanation=(
+                f"Shared-source override ({verdict.value}{ident_str}); "
+                f"w_tot={w_tot:.1f} < {thresholds.w_tot_med_zone:.1f}."
+            ),
         )
 
-    explanation = (
-        f"Shared-source override ({verdict.value}{ident_str}) but "
-        f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f}; "
-        f"downgraded to Otherwise_related."
-    )
-    return _otherwise_related(
+    # w_tot >= w_tot_med_zone: substantial inconsistencies, but for a
+    # confirmed single-patient / same-case source these are more plausibly
+    # extraction artefacts or reporting differences than evidence of distinct
+    # individuals. Epistemically underdetermined → Abstain.
+    return _abstain(
         pair_id=features.pair_id,
         reason=IndependenceReason.SHARED_SOURCE,
-        explanation=explanation,
+        explanation=(
+            f"Shared-source override ({verdict.value}{ident_str}); "
+            f"w_tot={w_tot:.1f} >= {thresholds.w_tot_med_zone:.1f} "
+            f"(strong={features.inconsistency_counts.strong}, "
+            f"moderate={features.inconsistency_counts.moderate}, "
+            f"decisive={features.inconsistency_counts.decisive}); "
+            f"abstained — inconsistencies may reflect extraction or "
+            f"reporting differences rather than distinct individuals."
+        ),
     )
 
 
@@ -282,6 +417,49 @@ def _format_shared_identifier(assessment: SourceCaseAssessment) -> str:
         else "source_identifier"
     )
     return f", {id_type}={assessment.shared_source_identifier}"
+
+
+# ---------------------------------------------------------------------------
+# Patient-specific log-evidence
+# ---------------------------------------------------------------------------
+
+
+def _l_patient(features: PairFeatures) -> float:
+    """Patient-specific log-evidence score for the UNCOMPARABLE_CASE branch.
+
+    Defined as the sum of ``-log10(p_f)`` over the entries of
+    ``features.probability.feature_contributions`` whose ``feature`` name
+    is *not* in :data:`_NON_PATIENT_SPECIFIC_FEATURES` (i.e. excluding
+    ``drug_set`` and ``ae_set``). Two deliberate departures from the
+    standard ``L_match``:
+
+    * Drug-set and AE-set contributions are dropped. Drugs and AEs
+      overlap by construction in a multi-patient publication / shared
+      study context, so they are weak identifiers of patient identity
+      in that setting.
+    * The anchor (``N_pairs``) penalty is **not** included. The anchor
+      population was the comparison universe for the full ``L_match``
+      (e.g. "all reports on drug X"); for ``UNCOMPARABLE_CASE`` the
+      relevant comparison universe is the unknown small set of K
+      patients within the shared publication, so the anchor penalty
+      would correct for a multiple-testing scenario that does not
+      apply. Dropping it yields a pure measure of patient-specific
+      concordance strength on the log10 scale — the same scale as the
+      per-feature ``(+X.X)`` chips already shown in the review HTML.
+
+    Returns ``0.0`` when ``feature_contributions`` is empty (e.g. on
+    offline / fixture paths that skip probability decomposition); the
+    Duplicates branch then cannot fire and the pair falls into Abstain
+    or Otherwise_related, which is the desired conservative default.
+    """
+    total = 0.0
+    for fc in features.probability.feature_contributions:
+        if fc.feature in _NON_PATIENT_SPECIFIC_FEATURES:
+            continue
+        if fc.p_f <= 0:
+            continue
+        total += -math.log10(fc.p_f)
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +514,27 @@ def _otherwise_related(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
         duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+        independence_reason=reason,
+        explanation=explanation,
+    )
+
+
+def _abstain(
+    pair_id: str,
+    explanation: str,
+    reason: IndependenceReason,
+) -> ClassificationResult:
+    """Build a Non-independent / Abstain result (user-facing label: Abstain).
+
+    Represents an epistemically underdetermined same-source scenario:
+    non-independence is established (same source identifier confirmed)
+    but the available evidence is insufficient to safely resolve whether
+    the two reports describe the same individual.
+    """
+    return ClassificationResult(
+        pair_id=pair_id,
+        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+        duplicate_relationship=DuplicateRelationship.ABSTAIN,
         independence_reason=reason,
         explanation=explanation,
     )

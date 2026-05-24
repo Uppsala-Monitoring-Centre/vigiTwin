@@ -18,9 +18,12 @@ def summary_to_text(summary: EvalSummary) -> str:
     """
     Plain-text summary suitable for terminal output or log files.
     """
+    abstain_detail = f"annotation abstains: {summary.n_abstained}"
+    if summary.n_pipeline_abstained:
+        abstain_detail += f", pipeline abstains: {summary.n_pipeline_abstained}"
     lines = [
         f"=== Experiment: {summary.experiment_id} ===",
-        f"Pairs evaluated: {summary.n_pairs}  (abstained: {summary.n_abstained})",
+        f"Pairs evaluated: {summary.n_pairs}  ({abstain_detail})",
         "",
         "--- Reference: 3x3 Confusion ---",
         _format_confusion_text(summary.final_confusion),
@@ -41,10 +44,13 @@ def summary_to_markdown(summary: EvalSummary) -> str:
     """
     Markdown-formatted summary suitable for notebooks or documentation.
     """
+    abstain_detail = f"annotation abstains: {summary.n_abstained}"
+    if summary.n_pipeline_abstained:
+        abstain_detail += f", pipeline abstains: {summary.n_pipeline_abstained}"
     lines = [
         f"## Experiment: {summary.experiment_id}",
         "",
-        f"**Pairs evaluated:** {summary.n_pairs} (abstained: {summary.n_abstained})",
+        f"**Pairs evaluated:** {summary.n_pairs} ({abstain_detail})",
         "",
         "### Reference: 3x3 Confusion",
         "",

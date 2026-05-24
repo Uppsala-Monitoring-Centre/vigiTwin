@@ -3,7 +3,7 @@ Compare pipeline outputs against eval set annotations.
 
 This module is the main entry point called from the secure repo.
 It accepts pipeline results and human annotations (as lists of dicts),
-filters out Abstain cases, and produces an EvalSummary with aggregate metrics.
+handles abstain cases, and produces an EvalSummary with aggregate metrics.
 
 Annotations use a single ``duplicates_assessment`` field with values:
     duplicates, otherwise_related, unrelated, abstain
@@ -13,13 +13,26 @@ Pipeline results provide a ``final_label`` with values:
 
 Label normalisation happens internally so that both sides are compared
 in lower-case form.
+
+Abstain handling
+----------------
+Two kinds of abstain must be distinguished:
+
+* *Annotation abstains* — human annotators marked a pair as Abstain
+  because the true label is ambiguous or unknown. These are excluded from
+  scoring in all modes (they provide no ground truth to compare against).
+
+* *Pipeline abstains* — the pipeline returned Abstain for an
+  epistemically underdetermined same-source scenario. How these are
+  treated is controlled by the ``abstain_mode`` argument to
+  ``evaluate()``; see :class:`~.labels.AbstainMode` for the three modes.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .labels import FINAL_LABELS, is_abstain, normalise_label
+from .labels import FINAL_LABELS, AbstainMode, is_abstain, normalise_label
 from .metrics import (
     BinaryMetrics,
     EvalSummary,
@@ -83,6 +96,7 @@ def evaluate(
     eval_annotations: list[dict[str, Any]],
     experiment_id: str = "unnamed",
     config_snapshot: dict | None = None,
+    abstain_mode: AbstainMode = AbstainMode.DECIDED_ONLY,
 ) -> EvalSummary:
     """
     Compare pipeline results against human annotations and compute metrics.
@@ -93,6 +107,7 @@ def evaluate(
         Each dict must contain:
         - "pair_id"     : identifier matching the eval set
         - "final_label" : "Duplicates" | "Otherwise_related" | "Unrelated"
+                          | "Abstain"
 
     eval_annotations : list of dict
         Each dict must contain:
@@ -105,6 +120,18 @@ def evaluate(
 
     config_snapshot : dict, optional
         Frozen experiment configuration for reproducibility.
+
+    abstain_mode : AbstainMode
+        Controls how pipeline-produced Abstain results are handled.
+        See :class:`~.labels.AbstainMode` for details.
+
+        - ``DECIDED_ONLY`` (default): pairs where the pipeline abstained
+          are excluded from scoring. ``n_pipeline_abstained`` is reported
+          but not counted in ``n_pairs``.
+        - ``ABSTAIN_AS_DUPLICATE``: pipeline abstains are remapped to
+          ``Duplicates`` before scoring.
+        - ``ABSTAIN_AS_NONDUPLICATE``: pipeline abstains are remapped to
+          ``Otherwise_related`` before scoring.
 
     Returns
     -------
@@ -120,7 +147,8 @@ def evaluate(
     pred_final: list[str] = []
     actual_final: list[str] = []
 
-    n_abstained = 0
+    n_abstained = 0          # annotation abstains (always excluded)
+    n_pipeline_abstained = 0  # pipeline abstains (mode-dependent handling)
 
     for result in pipeline_results:
         pid = result["pair_id"]
@@ -130,13 +158,25 @@ def evaluate(
 
         assessment = ann["duplicates_assessment"]
 
-        # Skip Abstain annotations
+        # Annotation abstains are always excluded — they provide no ground
+        # truth to compare against.
         if is_abstain(assessment):
             n_abstained += 1
             continue
 
+        pipeline_label = result["final_label"]
+
+        if is_abstain(pipeline_label):
+            n_pipeline_abstained += 1
+            if abstain_mode == AbstainMode.DECIDED_ONLY:
+                continue  # exclude from scoring
+            elif abstain_mode == AbstainMode.ABSTAIN_AS_DUPLICATE:
+                pipeline_label = "Duplicates"
+            else:  # ABSTAIN_AS_NONDUPLICATE
+                pipeline_label = "Otherwise_related"
+
         # Normalise both labels to the canonical FINAL_LABELS vocabulary
-        pred_final.append(normalise_label(result["final_label"]))
+        pred_final.append(normalise_label(pipeline_label))
         actual_final.append(normalise_label(assessment))
 
     cm = confusion_matrix(pred_final, actual_final, FINAL_LABELS)
@@ -147,6 +187,7 @@ def evaluate(
         experiment_id=experiment_id,
         n_pairs=len(pred_final),
         n_abstained=n_abstained,
+        n_pipeline_abstained=n_pipeline_abstained,
         final_confusion=cm,
         nonduplicates_vs_duplicates=bin_primary,
         duplicates_vs_nonduplicates=bin_complement,

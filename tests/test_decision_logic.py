@@ -32,6 +32,7 @@ from llm_dup_dev.models.narrative_source_case import (
 )
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
+    FeatureContribution,
     InconsistencyCounts,
     PairFeatures,
     ProbabilityEstimate,
@@ -50,8 +51,15 @@ def _make_features(
     decisive: int = 0,
     pair_id: str = "test_pair",
     source_case_assessment: SourceCaseAssessment | None = None,
+    feature_contributions: list[FeatureContribution] | None = None,
 ) -> PairFeatures:
-    """Build a minimal PairFeatures for decision logic testing."""
+    """Build a minimal PairFeatures for decision logic testing.
+
+    ``feature_contributions`` populates ``ProbabilityEstimate.feature_contributions``
+    so tests can exercise the patient-specific ``L_patient`` decomposition
+    used by the SAME_SOURCE_UNCOMPARABLE_CASE Duplicates branch. Default
+    is an empty list (no decomposition available).
+    """
     return PairFeatures(
         pair_id=pair_id,
         reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
@@ -59,7 +67,11 @@ def _make_features(
             N_drugs=100, N_AEs=100, N_drugs_AEs=50,
             type=AnchorType.DRUGS_AES, N_anchor=50,
         ),
-        probability=ProbabilityEstimate(p_joint=1e-5, expected_collisions=0.01),
+        probability=ProbabilityEstimate(
+            p_joint=1e-5,
+            expected_collisions=0.01,
+            feature_contributions=feature_contributions or [],
+        ),
         L_match=L_match,
         inconsistency_counts=InconsistencyCounts(
             moderate=moderate, strong=strong, decisive=decisive,
@@ -67,6 +79,31 @@ def _make_features(
         narrative_consistency=NarrativeConsistency.NEUTRAL,
         source_case_assessment=source_case_assessment,
     )
+
+
+def _fc(feature: str, p_f: float) -> FeatureContribution:
+    """Concise FeatureContribution builder for tests."""
+    return FeatureContribution(
+        feature=feature, p_f=p_f, method="domain_size",
+    )
+
+
+# Fixture contribution bundles used in the UNCOMPARABLE_CASE tests below.
+# Values come from the plan's worked-example table:
+#   sex p_f=0.5  → -log10 ≈ 0.30
+#   age p_f=1/80 → -log10 ≈ 1.90
+# Sum (sex + age) ≈ 2.20 — just clears lmatch_med = 2.0.
+_SEX_PLUS_AGE_CONTRIBS = [
+    _fc("patient_sex", 0.5),
+    _fc("patient_age", 1.0 / 80.0),
+]
+_SEX_ONLY_CONTRIBS = [_fc("patient_sex", 0.5)]
+# Drug/AE contributions with extreme p_f — full L_match would be enormous,
+# but L_patient must remain 0 because these features are excluded.
+_DRUG_AE_ONLY_CONTRIBS = [
+    _fc("drug_set", 1e-10),
+    _fc("ae_set", 1e-10),
+]
 
 
 def _assessment(
@@ -98,6 +135,12 @@ def _assert_independent(result):
     assert result.independence_assessment == IndependenceAssessment.INDEPENDENT
     assert result.duplicate_relationship is None
     assert result.final_label == "Unrelated"
+
+
+def _assert_abstain(result):
+    assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
+    assert result.duplicate_relationship == DuplicateRelationship.ABSTAIN
+    assert result.final_label == "Abstain"
 
 
 # Default thresholds: strong=3.0, med=2.0, weak=1.0, w_m=1, w_s=3
@@ -477,7 +520,8 @@ class TestSharedSourceOverride:
 
     def test_same_source_same_case_downgrades_when_other_decisive(self):
         """Positive verdict + decisive non-source-case inconsistency
-        → Otherwise_related (w_tot crosses medium-zone threshold)."""
+        → Abstain (w_tot crosses medium-zone threshold; single-patient-
+        source inconsistencies abstain rather than Otherwise_related)."""
         f = _make_features(
             L_match=0.0,
             decisive=1,  # w_tot = 100, well past medium-zone threshold 3.0
@@ -486,7 +530,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_abstain(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_tolerates_one_moderate(self):
@@ -518,9 +562,11 @@ class TestSharedSourceOverride:
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_demotes_on_one_strong(self):
-        """A single strong inconsistency (w_tot=3.0) is enough to
-        demote: 3.0 is NOT < 3.0, so the override branch falls through
-        to Otherwise_related."""
+        """A single strong inconsistency (w_tot=3.0) crosses the
+        medium-zone threshold: 3.0 is NOT < 3.0, so the pair is
+        abstained (not Otherwise_related) for a same-case verdict.
+        Inconsistencies on a confirmed single-patient/same-case source
+        are more plausibly artefacts than evidence of distinct patients."""
         f = _make_features(
             L_match=0.0,
             strong=1,
@@ -529,12 +575,13 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_abstain(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_demotes_on_moderate_plus_strong(self):
         """Moderate + strong (w_tot=4.0) crosses the medium-zone
-        threshold and demotes."""
+        threshold and abstains (not Otherwise_related) for a
+        single-patient verdict."""
         f = _make_features(
             L_match=0.0,
             moderate=1,
@@ -544,7 +591,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_abstain(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_different_case_forces_otherwise_related(self):
@@ -563,11 +610,32 @@ class TestSharedSourceOverride:
         _assert_otherwise_related(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
-    def test_same_source_uncomparable_case_forces_otherwise_related(self):
-        """SAME_SOURCE_UNCOMPARABLE_CASE → Otherwise_related pinned,
-        even with L=0 and no other inconsistencies."""
+    # SAME_SOURCE_UNCOMPARABLE_CASE has a three-way rule. The dedicated
+    # test class TestUncomparableCaseThreeWayRule below covers branches
+    # A (Duplicates), B (Otherwise_related), and C (Abstain) in depth.
+    # The two tests below act as smoke tests for the override-path entry.
+
+    def test_same_source_uncomparable_case_no_evidence_abstains(self):
+        """UNCOMPARABLE_CASE smoke test: no feature contributions, no
+        inconsistencies → falls through branch (A), past branch (B), to
+        branch (C) Abstain."""
         f = _make_features(
             L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_source_uncomparable_case_otherwise_related_on_decisive(self):
+        """UNCOMPARABLE_CASE smoke test: decisive inconsistency
+        (w_tot=100) lands in branch (B) Otherwise_related, regardless
+        of any patient-specific evidence that might exist."""
+        f = _make_features(
+            L_match=0.0,
+            decisive=1,
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             ),
@@ -630,3 +698,373 @@ class TestSharedSourceOverride:
         result = classify(f, THRESHOLDS)
         assert "same_source_single_patient" in result.explanation
         assert "10.1234/abc" in result.explanation
+
+
+# ===================================================================
+# Abstain outcome — shared-source override path
+# ===================================================================
+
+class TestAbstainOutcome:
+    """Abstain is produced by the shared-source override for epistemically
+    underdetermined same-source scenarios."""
+
+    def test_single_patient_strong_inconsistency_abstains(self):
+        """SAME_SOURCE_SINGLE_PATIENT + w_tot=3.0 (≥ 3.0) → Abstain,
+        not Otherwise_related. Inconsistencies on a single-patient source
+        are more plausibly extraction/reporting artefacts."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_same_case_strong_inconsistency_abstains(self):
+        """SAME_SOURCE_SAME_CASE + w_tot=3.0 (≥ 3.0) → Abstain."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+    def test_uncomparable_case_no_inconsistency_abstains(self):
+        """SAME_SOURCE_UNCOMPARABLE_CASE + w_tot=0 → Abstain.
+        Absence of inconsistency is insufficient evidence of patient
+        identity in a multi-patient publication context."""
+        f = _make_features(
+            L_match=4.0,  # high L_match does not override the abstain
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+    def test_abstain_explanation_contains_w_tot(self):
+        """Abstain explanation includes the w_tot value for auditability."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+                identifier="10.5678/xyz",
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert "w_tot=3.0" in result.explanation
+        assert "3.0" in result.explanation  # threshold
+        assert result.final_label == "Abstain"
+
+    def test_abstain_explanation_uncomparable_mentions_multi_patient(self):
+        """UNCOMPARABLE_CASE abstain explanation mentions multi-patient context."""
+        f = _make_features(
+            L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+                identifier="10.1234/abc",
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert "multi-patient" in result.explanation
+        assert result.final_label == "Abstain"
+
+    def test_abstain_is_non_independent(self):
+        """Abstain always has independence_assessment = NON_INDEPENDENT
+        (same-source non-independence established)."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
+        assert result.duplicate_relationship == DuplicateRelationship.ABSTAIN
+
+
+# ===================================================================
+# UNCOMPARABLE_CASE three-way rule (Duplicates / Otherwise_related / Abstain)
+# ===================================================================
+
+class TestUncomparableCaseThreeWayRule:
+    """SAME_SOURCE_UNCOMPARABLE_CASE applies a three-way rule based on the
+    patient-specific log-evidence ``L_patient`` (excluding drug/AE-set
+    contributions) and ``w_tot``:
+
+        if w_tot >= w_tot_med_zone:                          → Otherwise_related
+        elif L_patient > lmatch_med and w_tot < w_tot_weak_zone: → Duplicates
+        else:                                                → Abstain
+
+    Defaults: lmatch_med=2.0, w_tot_weak_zone=1.0, w_tot_med_zone=3.0.
+    """
+
+    # ---------- Branch A: Duplicates ----------
+
+    def test_branch_a_sex_plus_age_clears_bar(self):
+        """sex (p_f=0.5) + age (p_f=1/80) → L_patient ≈ 2.20 > 2.0,
+        w_tot=0 < 1.0 → Duplicates."""
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_branch_a_explanation_surfaces_l_patient(self):
+        """The (A) explanation must surface L_patient for auditability."""
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+                identifier="10.1/abc",
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert "L_patient=" in result.explanation
+        assert "compelling patient-specific" in result.explanation
+        assert "10.1/abc" in result.explanation
+
+    # ---------- Branch A negatives ----------
+
+    def test_branch_a_drops_on_one_moderate_inconsistency(self):
+        """Same L_patient ≈ 2.20, but moderate=1 → w_tot=1.0 ≥ 1.0
+        → branch (B) Otherwise_related. (Under the literature/summary-
+        case rationale, a moderate inconsistency is meaningful evidence
+        of a different patient, even if patient-specific positives also
+        line up.)"""
+        f = _make_features(
+            L_match=0.0,
+            moderate=1,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+
+    def test_branch_a_tolerates_one_minor_inconsistency(self):
+        """One minor inconsistency (w_tot=0.4 < 1.0) does not trigger
+        branch (B); L_patient still ≈ 2.20 > 2.0 → Duplicates.
+        Represents e.g. a 1-year off-by-one age stamp surviving as a
+        Duplicates classification when the rest of the evidence is
+        strong."""
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        # Inject one minor inconsistency directly.
+        from llm_dup_dev.models.pair_features import InconsistencyCounts
+        f.inconsistency_counts = InconsistencyCounts(minor=1)
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+
+    def test_branch_a_drops_on_sex_only(self):
+        """sex only → L_patient ≈ 0.30, NOT > 2.0 → Abstain (not Duplicates)."""
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_ONLY_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+    def test_branch_a_drug_ae_contributions_do_not_count(self):
+        """drug_set p_f=1e-10 + ae_set p_f=1e-10 (full L_match would be huge)
+        → L_patient = 0 (those features are excluded) → Abstain.
+        Proves the multi-patient noise-floor exclusion is effective."""
+        f = _make_features(
+            L_match=10.0,  # huge L_match — must not influence the decision
+            feature_contributions=_DRUG_AE_ONLY_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+    # ---------- Branch B: Otherwise_related ----------
+
+    def test_branch_b_strong_inconsistency_overrides_patient_evidence(self):
+        """w_tot=3.0 ≥ 3.0 → Otherwise_related, even if L_patient is
+        very high. (B) is checked before (A)."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+
+    def test_branch_b_decisive_inconsistency(self):
+        """Decisive inconsistency (w_tot=100) → Otherwise_related."""
+        f = _make_features(
+            L_match=0.0,
+            decisive=1,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+
+    def test_branch_b_three_year_age_diff_triggers_otherwise_related(self):
+        """3-year age difference → moderate inconsistency (w_tot=1.0) →
+        Otherwise_related. In a literature / summary-case context, a
+        3-year reported age difference is meaningful evidence of a
+        different patient and should not Abstain."""
+        f = _make_features(
+            L_match=0.0,
+            moderate=1,  # 3-year diff produces one moderate (age_moderate=2.0)
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+
+    def test_branch_b_three_minors_accumulate_to_otherwise_related(self):
+        """Three minor inconsistencies (w_tot=1.2) ≥ 1.0 → Otherwise_related.
+        Even small individual discrepancies, when they accumulate, indicate
+        a different patient in a curated-publication context."""
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        from llm_dup_dev.models.pair_features import InconsistencyCounts
+        f.inconsistency_counts = InconsistencyCounts(minor=3)
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+
+    # ---------- Branch C: Abstain (fallback) ----------
+
+    def test_branch_c_no_evidence_no_inconsistency(self):
+        """Empty feature_contributions and no inconsistencies → branch (C)."""
+        f = _make_features(
+            L_match=0.0,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+    def test_branch_c_explanation_surfaces_both_quantities(self):
+        """The (C) explanation must surface L_patient and w_tot."""
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_ONLY_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+                identifier="10.1/abc",
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert "L_patient=" in result.explanation
+        assert "w_tot=" in result.explanation
+        assert "indeterminate" in result.explanation
+
+
+# ===================================================================
+# _l_patient helper — focused unit test
+# ===================================================================
+
+class TestLPatientHelper:
+    """The patient-specific log-evidence helper must:
+    1. Sum -log10(p_f) over patient-specific features only.
+    2. Skip drug_set / ae_set entries.
+    3. Skip zero/negative p_f defensively.
+    4. Return 0 on empty input.
+    5. Not subtract any anchor penalty.
+    """
+
+    def test_returns_zero_on_empty_contributions(self):
+        from llm_dup_dev.classifier.decision_logic import _l_patient
+        f = _make_features(L_match=0.0, feature_contributions=[])
+        assert _l_patient(f) == 0.0
+
+    def test_excludes_drug_and_ae_set_features(self):
+        from llm_dup_dev.classifier.decision_logic import _l_patient
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_DRUG_AE_ONLY_CONTRIBS,
+        )
+        assert _l_patient(f) == 0.0
+
+    def test_sums_patient_specific_contributions(self):
+        from llm_dup_dev.classifier.decision_logic import _l_patient
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+        )
+        # -log10(0.5) + -log10(1/80) ≈ 0.30103 + 1.90309 = 2.20412
+        assert abs(_l_patient(f) - 2.20412) < 1e-4
+
+    def test_mixed_contributions_only_patient_specific_count(self):
+        """Drug/AE entries must be ignored even when interleaved with
+        patient-specific ones."""
+        from llm_dup_dev.classifier.decision_logic import _l_patient
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=[
+                _fc("drug_set", 1e-10),       # excluded
+                _fc("patient_sex", 0.5),      # 0.30103
+                _fc("ae_set", 1e-10),         # excluded
+                _fc("patient_age", 1.0/80.0),  # 1.90309
+                _fc("clinical_date", 1.0/540.0),  # 2.73239
+            ],
+        )
+        expected = 0.30103 + 1.90309 + 2.73239
+        assert abs(_l_patient(f) - expected) < 1e-3
+
+    def test_skips_nonpositive_p_f(self):
+        from llm_dup_dev.classifier.decision_logic import _l_patient
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=[
+                _fc("patient_sex", 0.0),    # skipped (defensive)
+                _fc("patient_age", -1.0),   # skipped (defensive)
+                _fc("patient_weight", 0.5),  # contributes 0.30103
+            ],
+        )
+        assert abs(_l_patient(f) - 0.30103) < 1e-4
+
+    def test_does_not_apply_anchor_penalty(self):
+        """L_patient must be the bare sum of -log10(p_f), with no
+        N_pairs penalty subtraction. Verify against a hand-computed sum."""
+        from llm_dup_dev.classifier.decision_logic import _l_patient
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=[_fc("patient_age", 0.01)],  # -log10 = 2.0
+        )
+        # If we mistakenly subtracted log10(N_pairs) for N_anchor=50, we
+        # would get 2.0 - log10(50*49/2) ≈ 2.0 - 3.09 = -1.09 → clamped to 0.
+        # The correct result is 2.0.
+        assert abs(_l_patient(f) - 2.0) < 1e-6

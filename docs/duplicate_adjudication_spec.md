@@ -934,7 +934,7 @@ Internally, the decision logic produces two layered labels:
 * when independence has been rejected, a **duplicate relationship**
   sub-label that uses the inconsistency signals to distinguish a
   likely-duplicate case from one linked by something other than being
-  the same individual (`Duplicates / Otherwise related`).
+  the same individual (`Duplicates / Otherwise related / Abstain`).
 
 These map to the user-facing label vocabulary as follows:
 
@@ -942,6 +942,7 @@ These map to the user-facing label vocabulary as follows:
 |---|---|---|
 | Non-independent | Duplicates | **Duplicates** |
 | Non-independent | Otherwise related | **Otherwise related** |
+| Non-independent | Abstain | **Abstain** |
 | Independent | — | **Unrelated** |
 
 The two-layer split is deliberate: a low expected-collision count is
@@ -953,6 +954,16 @@ handled by the inconsistency component once independence has been
 rejected. The mapping above is implemented by
 `ClassificationResult.final_label` and is the only label that downstream
 consumers (eval, review HTML, secure repo) should rely on.
+
+The **Abstain** label is not generic uncertainty. It represents a specific
+epistemic state: non-independence is established (a reliable shared source
+identifier is present), but the available structured evidence is
+insufficient to safely determine whether the two reports describe the same
+individual. It is produced exclusively by the shared-source override path
+for scenarios where latent unavailable information (e.g. the full
+publication text, in-house patient identifiers) may be required to resolve
+the question definitively. See § Shared-source override for per-verdict
+details.
 
 ---
 
@@ -1088,15 +1099,74 @@ The override fires whenever `features.source_case_assessment.verdict` is one of 
 
 | Verdict | Sub-label mapping |
 |---|---|
-| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_med_zone` → `Otherwise_related` |
-| `SAME_SOURCE_SAME_CASE`      | `Duplicates` unless \(w_{\text{tot}} \geq\) `w_tot_med_zone` → `Otherwise_related` |
+| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_med_zone`; else `Abstain` |
+| `SAME_SOURCE_SAME_CASE`      | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_med_zone`; else `Abstain` |
 | `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise_related` (pinned) |
-| `SAME_SOURCE_UNCOMPARABLE_CASE` | `Otherwise_related` (pinned) |
+| `SAME_SOURCE_UNCOMPARABLE_CASE` | three-way rule — see below |
 
-The two "positive" verdicts default to `Duplicates`, but are downgraded to `Otherwise_related` when non-source-case signals accumulate enough severity to push \(w_{\text{tot}}\) past the medium-zone threshold (default `3.0`). The threshold is shared with the medium L_match zone by design: a reliable shared-source verdict warrants the same inconsistency tolerance as moderate rarity evidence, so a single strong inconsistency — or equivalent accumulated severity (three moderates, one strong + one moderate, …) — is needed to demote. A single moderate or a handful of minors is therefore tolerated. Decisive inconsistencies continue to demote via their large weight (`w_decisive = 100`). The two "negative" verdicts are pinned to `Otherwise_related`:
+#### SAME_SOURCE_SINGLE_PATIENT and SAME_SOURCE_SAME_CASE
 
-- `SAME_SOURCE_DIFFERENT_CASE` emits a **decisive** `Inconsistency` (synthesized by `feature_generation/source_case_inconsistency.py`) — two reports sharing a DOI but carrying different comparable case labels clearly aren't the same individual, but they are linked by the shared source. The pin to `Otherwise_related` is driven by the override; the decisive row is informational and audit-facing.
-- `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency`. The verdict represents *absence of comparable evidence* (a shared source identifier without safely comparable case labels), not a discrepancy, so synthesizing one would mislabel "we cannot tell" as a moderate mismatch and inflate \(w_{\text{tot}}\). The override pin to `Otherwise_related` is what guarantees the conservative outcome — two reports sharing a DOI for a multi-patient article are not flagged as duplicates when case labels can't be safely compared.
+These verdicts default to `Duplicates`. When non-source-case inconsistency signals push \(w_{\text{tot}}\) to or past `w_tot_med_zone` (default `3.0`), the pair is **Abstained** rather than classified as `Otherwise_related`. The rationale: for a genuinely single-patient source (or one where the same case identifier is confirmed), substantial inconsistencies are more plausibly caused by extraction artefacts, secondary-source corruption, reporting differences, or partial information than by the reports describing distinct individuals. The pair is therefore epistemically underdetermined — the inconsistency evidence does not safely establish different individuals — and an explicit `Abstain` is preferable to a false `Otherwise_related` classification.
+
+The threshold is shared with the medium L_match zone by design: a single strong inconsistency (or equivalent accumulated severity: three moderates, one strong + one moderate, …) is required to reach the threshold. A single moderate or a handful of minors is tolerated. Decisive inconsistencies trigger the threshold via their large weight (`w_decisive = 100`).
+
+#### SAME_SOURCE_DIFFERENT_CASE
+
+No change. Pinned to `Otherwise_related` regardless of \(w_{\text{tot}}\). Two reports sharing a DOI but carrying different comparable case labels clearly identify different individuals within the same multi-patient source. `feature_generation/source_case_inconsistency.py` synthesizes a **decisive** `Inconsistency` row (informational, audit-facing; the pin is what enforces the outcome).
+
+#### SAME_SOURCE_UNCOMPARABLE_CASE
+
+The shared source is confirmed, but case identifiers are missing or not safely comparable. UNCOMPARABLE_CASE specifically covers literature and summary-case publications, where reported demographics are deliberate and a discrepancy is more likely to reflect a different patient than an extraction artefact. A three-way rule is applied:
+
+| Branch | Condition | Outcome |
+|---|---|---|
+| B | \(w_{\text{tot}} \geq\) `w_tot_weak_zone` | `Otherwise_related` |
+| A | \(L_{\text{patient}} > \) `lmatch_med` (with \(w_{\text{tot}} <\) `w_tot_weak_zone` implied) | `Duplicates` |
+| C | otherwise | `Abstain` |
+
+Branch B is checked first so any inconsistency above the weak-zone bar reaches `Otherwise_related` regardless of patient-specific positive evidence.
+
+Note the lower Otherwise_related gate here (`w_tot_weak_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_med_zone`, default 3.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
+
+| Age difference | Severity | \(w_{\text{tot}}\) | Outcome |
+|---|---|---|---|
+| 0 (exact match) | none | 0.0 | (driven by branch A — typically Duplicates if L\_patient clears) |
+| 1 year | minor | 0.4 | Abstain or Duplicates (depending on branch A) |
+| 3 years | moderate | 1.0 | **Otherwise_related** |
+| 5 years | strong | 3.0 | Otherwise_related |
+
+##### Patient-specific log-evidence \(L_{\text{patient}}\)
+
+\(L_{\text{patient}}\) is the sum of \(-\log_{10}(p_f)\) over the per-feature contributions in `PairFeatures.probability.feature_contributions`, **excluding** `drug_set` and `ae_set` and **without** the anchor (\(N_{\text{pairs}}\)) penalty:
+
+$$
+L_{\text{patient}} = \sum_{f \in F_{\text{patient}}} -\log_{10}(p_f)
+$$
+
+where \(F_{\text{patient}} = \{\texttt{patient\_sex}, \texttt{patient\_age}, \texttt{patient\_height}, \texttt{patient\_weight}, \texttt{clinical\_date}\}\).
+
+Two deliberate departures from the standard \(L_{\text{match}}\):
+
+- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`_NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `classifier/decision_logic.py`).
+- **Anchor penalty dropped.** The anchor population was the comparison universe for the full \(L_{\text{match}}\) (e.g. "all reports on drug X"). For `UNCOMPARABLE_CASE` the relevant comparison universe is the unknown small set of K patients within the shared publication, not the anchor. Keeping the anchor penalty would apply a multiple-testing correction that does not match the actual comparison universe. Dropping it yields a pure measure of patient-specific concordance strength on the \(\log_{10}\) scale — the same scale as the per-feature `(+X.X)` contribution chips already shown in the review HTML.
+
+##### Threshold calibration
+
+The branch A bar is set at `lmatch_med` (default 2.0) so that intuitively informative concordances qualify:
+
+| Matched features | \(-\log_{10}(p_f)\) | Sum | Clears 2.0? |
+|---|---|---|---|
+| sex only | 0.30 | 0.30 | no |
+| age only (1/80) | 1.90 | 1.90 | no |
+| sex + age | 0.30 + 1.90 | 2.20 | **yes** |
+| age + weight (1/40) | 1.90 + 1.60 | 3.50 | yes |
+| sex + age + clinical date (drug start, 1/540) | 0.30 + 1.90 + 2.73 | 4.93 | yes |
+
+The branch A inconsistency gate is `w_tot < w_tot_weak_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. A single moderate inconsistency (\(w_{\text{tot}} = 1.0\)) is enough to drop branch A and fall through to Abstain. The asymmetry between the branch A gate (`< w_tot_weak_zone`) and the branch B gate (`\geq w_tot_med_zone`) is intentional: in a multi-patient publication even small inconsistencies are not noise, so it is easy to drop out of `Duplicates` but harder to confidently land in `Otherwise_related`.
+
+Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represents *absence of comparable evidence*, not a discrepancy), so \(w_{\text{tot}}\) reflects only non-source-case signals and the comparison is apples-to-apples.
+
+---
 
 Advisory verdicts (`MULTI_PATIENT_CONTEXT_NO_LINK`, `NO_DECISIVE_SIGNAL`, `NOT_ASSESSED`) do **not** trigger the override — they fall through to the ordinary rarity-zone logic.
 
