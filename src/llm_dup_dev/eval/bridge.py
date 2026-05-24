@@ -11,6 +11,7 @@ The pipeline's final_label maps directly to the annotation vocabulary:
     Duplicates         ↔ duplicates
     Otherwise_related  ↔ otherwise_related
     Unrelated          ↔ unrelated
+    Abstain            — handled per AbstainMode (see evaluate())
 
 Label normalisation is handled by the comparison module.
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 from typing import Any, Sequence
 
 from llm_dup_dev.eval.comparison import evaluate
+from llm_dup_dev.eval.labels import AbstainMode
 from llm_dup_dev.eval.metrics import EvalSummary
 from llm_dup_dev.pipeline.runner import BatchResult, PairResult
 
@@ -42,6 +44,7 @@ def evaluate_results(
     eval_annotations: list[dict[str, Any]],
     experiment_id: str = "unnamed",
     config_snapshot: dict | None = None,
+    abstain_mode: AbstainMode = AbstainMode.DECIDED_ONLY,
 ) -> EvalSummary:
     """Evaluate a list of PairResult objects against human annotations.
 
@@ -58,6 +61,9 @@ def evaluate_results(
         Label for this experiment run.
     config_snapshot : dict, optional
         Frozen experiment configuration.
+    abstain_mode : AbstainMode
+        Controls how pipeline-produced Abstain results are treated.
+        See :class:`~llm_dup_dev.eval.labels.AbstainMode`.
 
     Returns
     -------
@@ -69,6 +75,7 @@ def evaluate_results(
         eval_annotations=eval_annotations,
         experiment_id=experiment_id,
         config_snapshot=config_snapshot,
+        abstain_mode=abstain_mode,
     )
 
 
@@ -77,6 +84,7 @@ def evaluate_batch(
     eval_annotations: list[dict[str, Any]],
     experiment_id: str = "unnamed",
     config_snapshot: dict | None = None,
+    abstain_mode: AbstainMode = AbstainMode.DECIDED_ONLY,
 ) -> EvalSummary:
     """Evaluate a BatchResult against human annotations.
 
@@ -90,6 +98,9 @@ def evaluate_batch(
         Label for this experiment run.
     config_snapshot : dict, optional
         Frozen experiment configuration.
+    abstain_mode : AbstainMode
+        Controls how pipeline-produced Abstain results are treated.
+        See :class:`~llm_dup_dev.eval.labels.AbstainMode`.
 
     Returns
     -------
@@ -100,4 +111,5 @@ def evaluate_batch(
         eval_annotations=eval_annotations,
         experiment_id=experiment_id,
         config_snapshot=config_snapshot,
+        abstain_mode=abstain_mode,
     )

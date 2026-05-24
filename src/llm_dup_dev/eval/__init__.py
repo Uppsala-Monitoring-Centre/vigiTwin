@@ -10,14 +10,19 @@ Usage (legacy dict interface, from the secure repo)::
 
 Usage (new typed interface)::
 
-    from llm_dup_dev.eval import evaluate_batch, summary_to_text
+    from llm_dup_dev.eval import evaluate_batch, summary_to_text, AbstainMode
 
-    summary = evaluate_batch(batch_result, eval_annotations, experiment_id="v2")
+    summary = evaluate_batch(
+        batch_result, eval_annotations,
+        experiment_id="v2",
+        abstain_mode=AbstainMode.DECIDED_ONLY,
+    )
     print(summary_to_text(summary))
 """
 
 from .bridge import evaluate_batch, evaluate_results, to_eval_dict
 from .comparison import evaluate
+from .labels import AbstainMode
 from .metrics import BinaryMetrics, ConfusionMatrix, EvalSummary
 from .report import summary_to_markdown, summary_to_text
 
@@ -28,6 +33,8 @@ __all__ = [
     "evaluate_batch",
     "evaluate_results",
     "to_eval_dict",
+    # Abstain mode control
+    "AbstainMode",
     # Metrics
     "EvalSummary",
     "BinaryMetrics",

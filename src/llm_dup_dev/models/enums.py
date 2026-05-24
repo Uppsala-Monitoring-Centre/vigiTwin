@@ -153,10 +153,12 @@ class IndependenceAssessment(str, Enum):
     downstream consumers should depend on the final label rather than
     on this raw enum.
 
-    ``ABSTAIN`` is reserved for future abstain paths and currently
-    unused — the decision logic only ever assigns ``NON_INDEPENDENT`` or
-    ``INDEPENDENT``. The value is kept so ``final_label`` can map it
-    defensively if a future code path produces one.
+    The rarity-zone path assigns only ``NON_INDEPENDENT`` or
+    ``INDEPENDENT``. The shared-source override path additionally
+    assigns ``NON_INDEPENDENT`` paired with
+    ``DuplicateRelationship.ABSTAIN`` for epistemically underdetermined
+    same-source scenarios. ``IndependenceAssessment.ABSTAIN`` itself is
+    kept as a defensive backstop but is not emitted by standard paths.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
@@ -174,8 +176,9 @@ class IndependenceReason(str, Enum):
     ``RARITY_*`` values correspond to the four L_match zones of the
     rarity-based branch; ``SHARED_SOURCE`` is set by the shared-source
     override path (when a reliable shared source identifier has been
-    derived from the narratives). ``ABSTAIN`` is reserved for future
-    abstain paths and currently unused.
+    derived from the narratives). ``ABSTAIN`` is a defensive backstop
+    for paths not covered by the above; it is not emitted by any
+    standard code path.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
@@ -198,12 +201,14 @@ class DuplicateRelationship(str, Enum):
     on the weighted inconsistency score ``w_tot``.
 
     Mirrors the user-facing label vocabulary (``Duplicates`` /
-    ``Otherwise_related``).
+    ``Otherwise_related`` / ``Abstain``).
 
-    ``ABSTAIN`` is reserved for future abstain paths and currently
-    unused — the decision logic only ever assigns ``DUPLICATES`` or
-    ``OTHERWISE_RELATED``. The value is kept so ``final_label`` can map
-    it defensively if a future code path produces one.
+    ``ABSTAIN`` is emitted by the shared-source override path for
+    epistemically underdetermined same-source scenarios: non-independence
+    is established (same source identifier confirmed) but the available
+    evidence is insufficient to safely determine whether the reports
+    describe the same individual. It maps to the user-facing label
+    ``Abstain`` via ``ClassificationResult.final_label``.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """

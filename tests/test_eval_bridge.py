@@ -1,6 +1,7 @@
 """Tests for the eval bridge between new pipeline output and eval framework."""
 
 from llm_dup_dev.eval.bridge import evaluate_batch, evaluate_results, to_eval_dict
+from llm_dup_dev.eval.labels import AbstainMode
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AnchorType,
@@ -243,3 +244,119 @@ class TestEvaluateBatch:
         batch = BatchResult()
         summary = evaluate_batch(batch, [])
         assert summary.n_pairs == 0
+
+
+# ===================================================================
+# Pipeline Abstain handling — AbstainMode
+# ===================================================================
+
+class TestPipelineAbstainHandling:
+    """Pipeline-produced Abstain results are handled per AbstainMode."""
+
+    def _make_abstain_pipeline_result(self) -> PairResult:
+        return _make_pair_result(
+            "p_abstain",
+            IndependenceAssessment.NON_INDEPENDENT,
+            DuplicateRelationship.ABSTAIN,
+        )
+
+    def test_decided_only_excludes_pipeline_abstain(self):
+        """DECIDED_ONLY: pipeline abstain excluded from n_pairs,
+        counted in n_pipeline_abstained."""
+        results = [
+            _make_duplicates("p1"),
+            self._make_abstain_pipeline_result(),
+        ]
+        annotations = [
+            _make_annotation("p1", "duplicates"),
+            _make_annotation("p_abstain", "duplicates"),
+        ]
+        summary = evaluate_results(
+            results, annotations, abstain_mode=AbstainMode.DECIDED_ONLY
+        )
+        assert summary.n_pairs == 1
+        assert summary.n_pipeline_abstained == 1
+
+    def test_decided_only_is_default(self):
+        """DECIDED_ONLY is the default mode."""
+        results = [self._make_abstain_pipeline_result()]
+        annotations = [_make_annotation("p_abstain", "duplicates")]
+        summary = evaluate_results(results, annotations)
+        assert summary.n_pipeline_abstained == 1
+        assert summary.n_pairs == 0
+
+    def test_abstain_as_duplicate_counts_in_n_pairs(self):
+        """ABSTAIN_AS_DUPLICATE: pipeline abstain remapped to Duplicates,
+        counted in n_pairs."""
+        results = [self._make_abstain_pipeline_result()]
+        annotations = [_make_annotation("p_abstain", "duplicates")]
+        summary = evaluate_results(
+            results, annotations, abstain_mode=AbstainMode.ABSTAIN_AS_DUPLICATE
+        )
+        assert summary.n_pairs == 1
+        assert summary.n_pipeline_abstained == 1
+        # Remapped to Duplicates vs actual Duplicates → TP in complement view
+        assert summary.duplicates_vs_nonduplicates.true_positives == 1
+
+    def test_abstain_as_nonduplicate_counts_in_n_pairs(self):
+        """ABSTAIN_AS_NONDUPLICATE: pipeline abstain remapped to
+        Otherwise_related, counted in n_pairs."""
+        results = [self._make_abstain_pipeline_result()]
+        annotations = [_make_annotation("p_abstain", "unrelated")]
+        summary = evaluate_results(
+            results, annotations, abstain_mode=AbstainMode.ABSTAIN_AS_NONDUPLICATE
+        )
+        assert summary.n_pairs == 1
+        assert summary.n_pipeline_abstained == 1
+        # Remapped to Otherwise_related vs actual Unrelated → TP in primary view
+        # (both collapse to Non_duplicates)
+        assert summary.nonduplicates_vs_duplicates.true_positives == 1
+
+    def test_no_pipeline_abstains_yields_zero(self):
+        """n_pipeline_abstained is 0 when no pipeline abstains present."""
+        results = [_make_duplicates("p1")]
+        annotations = [_make_annotation("p1", "duplicates")]
+        summary = evaluate_results(results, annotations)
+        assert summary.n_pipeline_abstained == 0
+
+    def test_annotation_abstain_does_not_increment_pipeline_count(self):
+        """n_pipeline_abstained is only incremented for pipeline abstains,
+        not annotation abstains."""
+        results = [_make_duplicates("p1")]
+        annotations = [_make_annotation("p1", "abstain")]
+        summary = evaluate_results(results, annotations)
+        assert summary.n_abstained == 1
+        assert summary.n_pipeline_abstained == 0
+
+    def test_both_abstain_types_independent(self):
+        """Both annotation and pipeline abstains can occur simultaneously."""
+        results = [
+            _make_duplicates("p1"),
+            self._make_abstain_pipeline_result(),
+        ]
+        annotations = [
+            _make_annotation("p1", "abstain"),  # annotation abstain
+            _make_annotation("p_abstain", "duplicates"),  # pipeline abstain
+        ]
+        summary = evaluate_results(results, annotations)
+        assert summary.n_abstained == 1
+        assert summary.n_pipeline_abstained == 1
+        assert summary.n_pairs == 0  # both excluded in DECIDED_ONLY mode
+
+    def test_abstain_mode_batch_passthrough(self):
+        """evaluate_batch passes abstain_mode through correctly."""
+        batch = BatchResult(
+            results=[
+                _make_duplicates("p1"),
+                self._make_abstain_pipeline_result(),
+            ]
+        )
+        annotations = [
+            _make_annotation("p1", "duplicates"),
+            _make_annotation("p_abstain", "duplicates"),
+        ]
+        summary = evaluate_batch(
+            batch, annotations, abstain_mode=AbstainMode.ABSTAIN_AS_DUPLICATE
+        )
+        assert summary.n_pipeline_abstained == 1
+        assert summary.n_pairs == 2

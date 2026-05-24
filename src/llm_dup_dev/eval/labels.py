@@ -2,12 +2,48 @@
 Canonical label constants for the duplicate-detection pipeline and eval set.
 
 Both the pipeline (decision_logic.classify) and the human-annotated eval set
-use the same three-class vocabulary. This module defines the shared constants
-and provides helpers for normalisation and Abstain detection.
+use the same three-class decided vocabulary (Duplicates / Otherwise_related /
+Unrelated). Pipeline output may additionally carry the value ``Abstain`` for
+epistemically underdetermined same-source scenarios.
+
+``AbstainMode`` controls how pipeline abstains are handled during evaluation.
 """
 
-# --- Final classification labels ---
-# Used by both classify() output and eval set "duplicates_assessment" column.
+from enum import Enum
+
+
+class AbstainMode(str, Enum):
+    """Controls how pipeline-produced ``Abstain`` results are treated during eval.
+
+    Pipeline abstains are produced exclusively for epistemically
+    underdetermined same-source scenarios — they are not generic
+    uncertainty. The three modes answer different evaluation questions:
+
+    ``DECIDED_ONLY``
+        Exclude pairs where the pipeline abstained. Answers: "How
+        accurate is the system on pairs where it reached a decision?"
+
+    ``ABSTAIN_AS_DUPLICATE``
+        Treat all pipeline abstains as ``Duplicates``. Provides a
+        lower bound on non-duplicate recall (upper bound on duplicate
+        recall). Answers: "What is performance if we assume every
+        abstained pair is a duplicate?"
+
+    ``ABSTAIN_AS_NONDUPLICATE``
+        Treat all pipeline abstains as ``Otherwise_related``. Provides
+        an upper bound on non-duplicate recall (lower bound on duplicate
+        recall). Answers: "What is performance if we assume every
+        abstained pair is not a duplicate?"
+    """
+
+    DECIDED_ONLY = "decided_only"
+    ABSTAIN_AS_DUPLICATE = "abstain_as_duplicate"
+    ABSTAIN_AS_NONDUPLICATE = "abstain_as_nonduplicate"
+
+
+# --- Final classification labels (decided outcomes only) ---
+# Used for the 3x3 confusion matrix; Abstain pairs are excluded or
+# remapped before entering this vocabulary.
 FINAL_LABELS = ("Duplicates", "Otherwise_related", "Unrelated")
 
 # Mapping from lower-case / flexible forms to canonical labels.
@@ -33,5 +69,5 @@ def normalise_label(label: str) -> str:
 
 
 def is_abstain(label: str) -> bool:
-    """Check whether an eval-set assessment is Abstain (excluded from scoring)."""
+    """Check whether a label is Abstain (pipeline or annotation)."""
     return label.strip().lower() == "abstain"

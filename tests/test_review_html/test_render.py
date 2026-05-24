@@ -874,6 +874,32 @@ class TestAnnotationRendering:
         assert vm.annotation.normalised_label == "Abstain"
         assert vm.annotation.agrees_with_pipeline is None
 
+    def test_annotation_vm_agreement_none_when_pipeline_abstains(
+        self, report_a, report_b
+    ):
+        """When the pipeline returns Abstain, no ✓/✗ chip is shown — the
+        pipeline took no position, so the human verdict is neither a
+        match nor a mismatch. (Regression: previously the asymmetric
+        short-circuit only suppressed the chip when the annotation side
+        was Abstain.)"""
+        abstain_classification = ClassificationResult(
+            pair_id="R001__R002",
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            duplicate_relationship=DuplicateRelationship.ABSTAIN,
+            explanation="Shared-source override; identity indeterminate.",
+        )
+        for human_label in ("duplicates", "otherwise_related", "unrelated"):
+            vm = build_pair_view_model(
+                report_a, report_b, pair_id="R001__R002",
+                classification=abstain_classification,
+                annotation=_make_annotation("R001__R002", human_label),
+            )
+            assert vm.annotation is not None
+            assert vm.annotation.agrees_with_pipeline is None, (
+                f"Expected None for pipeline=Abstain + human={human_label}, "
+                f"got {vm.annotation.agrees_with_pipeline}"
+            )
+
     def test_no_annotation_vm_without_annotation(self, report_a, report_b):
         """annotation is None on the view model when no annotation supplied."""
         vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")

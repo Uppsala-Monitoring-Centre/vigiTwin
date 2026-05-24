@@ -945,8 +945,16 @@ def _build_annotation_vm(
         except ValueError:
             normalised = raw  # preserve as-is for unknown values
 
+    # Agreement is undefined when either side is Abstain: the pipeline's
+    # Abstain is a refusal to decide (not a label that can match or
+    # mismatch a human verdict), and an Abstain annotation provides no
+    # ground truth. Either case → no ✓/✗ chip.
     agrees: bool | None = None
-    if pipeline_label is not None and normalised != "Abstain":
+    if (
+        pipeline_label is not None
+        and pipeline_label != "Abstain"
+        and normalised != "Abstain"
+    ):
         agrees = normalised == pipeline_label
 
     return AnnotationVM(

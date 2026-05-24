@@ -588,7 +588,7 @@
         "same_source_single_patient",
         "same_source_same_case",
         "same_source_different_case",
-        "same_source_case_uncomparable",
+        "same_source_uncomparable_case",
         "multi_patient_context_no_link",
         "no_decisive_signal",
         "not_assessed"
