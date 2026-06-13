@@ -136,6 +136,16 @@ _AE_ONSET_MODERATE_DAYS = 30
 _ENTITY_NONE_DAYS = 7
 _ENTITY_MODERATE_DAYS = 70
 
+# Grace period for the report-date vs. overall-AE-onset impossibility check.
+# In practice we frequently see pairs where both reports list the day of
+# reporting as the AE onset, even though the AE clearly began earlier —
+# reporters often enter "today" rather than the true first-appearance date,
+# and some intake forms default to the current day. Treating such tiny gaps
+# as a decisive impossibility was vetoing duplicate classification for pairs
+# that arrive a few days apart and are otherwise highly consistent. We only
+# treat the gap as a genuine impossibility once it exceeds this window.
+_DECISIVE_IMPOSSIBILITY_GRACE_DAYS = 30
+
 
 def _classify_overall_ae_onset(diff_days: int) -> Severity:
     if diff_days == 0:
@@ -494,15 +504,14 @@ def _check_decisive_impossibility(
     other_ae_onset: PartialDate,
     other_report_id: str,
 ) -> ClinicalDateFinding | None:
-    """Check if report_date is strictly before earliest plausible AE onset.
-
-    For fully specified dates, require at least 1 day of positive separation
-    (report_date < earliest_onset - 0 days, i.e. report_date < earliest_onset).
+    """Check if report_date precedes earliest plausible AE onset by more
+    than :data:`_DECISIVE_IMPOSSIBILITY_GRACE_DAYS` days.
     """
     report_latest = latest_plausible_date(report_date)
     onset_earliest = earliest_plausible_date(other_ae_onset)
 
-    if report_latest < onset_earliest:
+    gap_days = (onset_earliest - report_latest).days
+    if gap_days > _DECISIVE_IMPOSSIBILITY_GRACE_DAYS:
         return ClinicalDateFinding(
             source_report=report_date_report_id,
             entity_type=EntityType.OVERALL_AE_ONSET,
@@ -512,7 +521,7 @@ def _check_decisive_impossibility(
             ),
             source_date=report_date,
             matched_date=other_ae_onset,
-            raw_diff_days=(onset_earliest - report_latest).days,
+            raw_diff_days=gap_days,
             raw_severity=Severity.DECISIVE,
             final_severity=Severity.DECISIVE,
             selected=True,  # decisive findings are always selected

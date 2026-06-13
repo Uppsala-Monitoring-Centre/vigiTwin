@@ -861,7 +861,9 @@ Each unique source date on a report contributes at most one counted inconsistenc
 
 **Decisive impossibility**
 
-If a report date on one report is strictly before the earliest plausible overall AE onset on the other report, a decisive inconsistency is counted. This applies even with incomplete dates — e.g. report date `1999-02-10` vs onset year `2005` is decisive because the report predates even the earliest plausible onset.
+If a report date on one report precedes the earliest plausible overall AE onset on the other report by **more than 30 days**, a decisive inconsistency is counted. This applies even with incomplete dates — e.g. report date `1999-02-10` vs onset year `2005` is decisive because the report predates even the earliest plausible onset by years.
+
+The 30-day grace window addresses an observed reporting pattern: paired reports often each list the day of reporting as the AE onset, even when the event clearly began earlier. This typically reflects data-entry imprecision — reporters entering "today" rather than the true first-appearance date, or intake forms defaulting to the current day — rather than a genuine timeline conflict. Without the grace window, otherwise highly consistent pairs that arrive a few days apart were being vetoed out of `Duplicates`. Smaller disagreements between the two reports' overall AE onset dates are still surfaced as minor/moderate findings by the overall-AE-onset vs. overall-AE-onset comparison (see the threshold table earlier in this section), so this change does not silence that signal — only the binary impossibility veto.
 
 **Symmetry and cross-direction deduplication**
 
