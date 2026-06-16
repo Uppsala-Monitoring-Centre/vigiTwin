@@ -850,10 +850,14 @@ class TestDecisiveImpossibility:
         assert result.n_decisive >= 1
 
     def test_year_month_onset_vs_earlier_report_date(self):
-        """Onset '2005-03' with report date '2005-02-15' → decisive."""
+        """Onset '2005-03' with report date '2004-12-15' → decisive.
+
+        Gap is 76 days (2004-12-15 → earliest plausible 2005-03-01),
+        comfortably outside the 30-day grace window.
+        """
         r1 = _report(
             "R1",
-            report_date="2005-02-15",
+            report_date="2004-12-15",
         )
         r2 = _report(
             "R2",
@@ -892,6 +896,52 @@ class TestDecisiveImpossibility:
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
         assert result.n_decisive == 0
+
+    def test_within_grace_period_not_decisive(self):
+        """Report date 10 days before onset → NOT decisive.
+
+        Models the common pattern where both reports list the day of
+        reporting as the AE onset and arrive a few days apart.
+        """
+        r1 = _report(
+            "R1",
+            report_date="2005-02-20",
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2005-01-01")],
+            aes=[_ae("headache", onset="2005-03-02")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_decisive == 0
+
+    def test_at_grace_boundary_not_decisive(self):
+        """Gap of exactly 30 days → NOT decisive (boundary is strict >)."""
+        r1 = _report(
+            "R1",
+            report_date="2005-01-30",
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2005-01-01")],
+            aes=[_ae("headache", onset="2005-03-01")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_decisive == 0
+
+    def test_just_past_grace_period_decisive(self):
+        """Gap of 31 days → decisive."""
+        r1 = _report(
+            "R1",
+            report_date="2005-01-29",
+        )
+        r2 = _report(
+            "R2",
+            drugs=[_drug("A", start="2005-01-01")],
+            aes=[_ae("headache", onset="2005-03-01")],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_decisive >= 1
 
     def test_no_decisive_when_onset_missing(self):
         """No overall AE onset → no decisive check possible."""
