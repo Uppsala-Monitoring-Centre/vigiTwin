@@ -21,7 +21,7 @@
       "type": "string"
     },
     "IndependenceReason": {
-      "description": "Audit trail for which branch in the decision logic fired.\n\nAttached to :class:`ClassificationResult` so downstream review can\ntell *why* a pair landed on its independence assessment. The\n``RARITY_*`` values correspond to the four L_match zones of the\nrarity-based branch; ``SHARED_SOURCE`` is set by the shared-source\noverride path (when a reliable shared source identifier has been\nderived from the narratives). ``ABSTAIN`` is a defensive backstop\nfor paths not covered by the above; it is not emitted by any\nstandard code path.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Decision logic",
+      "description": "Audit trail for which branch in the decision logic fired.\n\nAttached to :class:`ClassificationResult` so downstream review can\ntell *why* a pair landed on its independence assessment. The\n``RARITY_*`` values correspond to the four L_match zones of the\nrarity-based branch; ``SHARED_SOURCE`` is set by the shared-source\noverride path (when a reliable shared source identifier has been\nderived from the narratives) and by the multi-patient three-way\nrule that handles ``MULTI_PATIENT_CONTEXT_NO_LINK`` pairs with\n``L_match > lmatch_weak``. ``ABSTAIN`` is a defensive backstop for\npaths not covered by the above; it is not emitted by any standard\ncode path.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Decision logic",
       "enum": [
         "rarity_strong",
         "rarity_medium",
