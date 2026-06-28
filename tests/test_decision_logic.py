@@ -993,6 +993,129 @@ class TestUncomparableCaseThreeWayRule:
 
 
 # ===================================================================
+# MULTI_PATIENT_CONTEXT_NO_LINK — L_match-gated three-way dispatch
+# ===================================================================
+
+class TestMultiPatientContextNoLink:
+    """``MULTI_PATIENT_CONTEXT_NO_LINK`` is routed through the same
+    three-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` *only* when
+    ``L_match > lmatch_weak``. Below that threshold the verdict is
+    treated as advisory and the pair falls through to the standard
+    weak-threshold branch (→ Independent). The two verdicts share the
+    drug-set / AE-set inflation concern but only UNCOMPARABLE_CASE
+    carries positive shared-source evidence, so MULTI_PATIENT is gated
+    on enough matching evidence to take the override seriously."""
+
+    # ---------- Below / at the weak threshold: fall through ----------
+
+    def test_at_weak_boundary_falls_through(self):
+        """L_match exactly equal to lmatch_weak → standard zone logic
+        (Independent at the boundary). Confirms the strict ``>`` in the
+        shim, matching the rest of the zone boundaries."""
+        f = _make_features(
+            L_match=THRESHOLDS.lmatch_weak,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+        assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
+
+    # ---------- Above the weak threshold: three-way rule ----------
+
+    def test_branch_a_above_weak_duplicates(self):
+        """L_match=2.5 (above weak), w_tot=0, L_patient ≈ 2.20 > 2.0 →
+        Duplicates via Branch A. Standard zone logic would also yield
+        Duplicates here, so this confirms the override path produces
+        the same outcome when patient-specific evidence is strong."""
+        f = _make_features(
+            L_match=2.5,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_duplicates(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_branch_b_one_moderate_otherwise_related(self):
+        """The motivating case: L_match=3.3 (strong zone) with one
+        moderate inconsistency. Standard zone logic would have absorbed
+        the moderate and returned Duplicates (w_tot=1.0 < 4.0). The
+        multi-patient three-way rule tightens to w_tot_weak_zone, so
+        w_tot=1.0 ≥ 1.0 → Otherwise_related."""
+        f = _make_features(
+            L_match=3.3,
+            moderate=1,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_otherwise_related(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_branch_c_above_weak_insufficient_l_patient_abstains(self):
+        """L_match=2.5 with only sex contribution (L_patient ≈ 0.30 ≤
+        2.0) and no inconsistencies → Branch C Abstain. Standard zone
+        logic would have returned Duplicates; the override surfaces
+        the indeterminacy."""
+        f = _make_features(
+            L_match=2.5,
+            feature_contributions=_SEX_ONLY_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+
+    def test_branch_c_drug_ae_contributions_do_not_count(self):
+        """Huge drug/AE concordance must not move a no-shared-source
+        multi-patient pair into Duplicates. L_match=10.0 with only
+        drug_set / ae_set contributions → L_patient = 0 → Abstain
+        (same exclusion as UNCOMPARABLE_CASE)."""
+        f = _make_features(
+            L_match=10.0,
+            feature_contributions=_DRUG_AE_ONLY_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+    # ---------- Explanation surface ----------
+
+    def test_explanation_contains_verdict_and_no_identifier_suffix(self):
+        """Explanation must surface the verdict string and must not
+        include a shared-identifier suffix (this verdict carries
+        none)."""
+        f = _make_features(
+            L_match=3.3,
+            moderate=1,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert "multi_patient_context_no_link" in result.explanation
+        # No identifier suffix should appear (the formatter returns ""
+        # when no identifier is present).
+        assert ", doi=" not in result.explanation
+
+
+# ===================================================================
 # _l_patient helper — focused unit test
 # ===================================================================
 
