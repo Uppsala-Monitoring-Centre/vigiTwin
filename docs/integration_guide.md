@@ -755,14 +755,14 @@ config = PipelineConfig(
 )
 
 thresholds = DecisionThresholds(
-    lmatch_strong=3.0,   # strong evidence zone
-    lmatch_med=2.0,      # moderate evidence zone
-    lmatch_weak=1.0,     # weak evidence zone
-    w_moderate=1.0,      # weight for moderate inconsistencies
-    w_strong=3.0,        # weight for strong inconsistencies
-    w_tot_strong_zone=4.0,  # w_tot threshold for strong zone
-    w_tot_med_zone=3.0,     # w_tot threshold for medium zone
-    w_tot_weak_zone=1.0,    # w_tot threshold for weak zone
+    lmatch_compelling=3.0,    # compelling evidence zone
+    lmatch_intermediate=2.0,  # intermediate evidence zone
+    lmatch_limited=1.0,       # limited evidence zone
+    w_moderate=1.0,           # weight for moderate inconsistencies
+    w_strong=3.0,             # weight for strong inconsistencies
+    w_tot_compelling_zone=4.0,    # w_tot threshold for compelling zone
+    w_tot_intermediate_zone=3.0,  # w_tot threshold for intermediate zone
+    w_tot_limited_zone=1.0,       # w_tot threshold for limited zone
 )
 
 runner = PipelineRunner(
@@ -782,12 +782,12 @@ Inconsistencies are combined into a single weighted score:
 
 | L_match zone | Duplicates if... | Otherwise → |
 |---|---|---|
-| > 3.0 (strong) | `w_tot < 4` | Non-independent / Otherwise_related |
-| > 2.0 (medium) | `w_tot < 3` | Non-independent / Otherwise_related |
-| > 1.0 (weak)   | `w_tot < 1` | Non-independent / Otherwise_related |
-| ≤ 1.0          | never | Independent (Unrelated) |
+| > 3.0 (compelling)   | `w_tot < 4` | Non-independent / Otherwise_related |
+| > 2.0 (intermediate) | `w_tot < 3` | Non-independent / Otherwise_related |
+| > 1.0 (limited)      | `w_tot < 1` | Non-independent / Otherwise_related |
+| ≤ 1.0                | never | Independent (Unrelated) |
 
-Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclude `Duplicates`. The matching evidence then decides the surface label: `Otherwise_related` when `L_match > lmatch_weak` (independence still rejected), `Unrelated` otherwise.
+Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclude `Duplicates`. The matching evidence then decides the surface label: `Otherwise_related` when `L_match > lmatch_limited` (independence still rejected), `Unrelated` otherwise.
 
 ---
 

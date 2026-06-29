@@ -1185,7 +1185,7 @@ def _format_penalty_summary(
     or the view-model ``InconsistencyCountsVM``; both expose
     ``minor`` / ``moderate`` / ``strong`` integer attributes.
 
-    Returns ``None`` only when ``counts`` is missing. For the below-weak
+    Returns ``None`` only when ``counts`` is missing. For the below-limited
     branch — where the pair is always classified as ``Unrelated``
     regardless of the penalty — a notional threshold of ``0.0`` with
     operator ``>=`` is used so the breakdown is still shown for visual
@@ -1207,8 +1207,8 @@ def _format_penalty_summary(
         if cmp_match is None:
             return None
         op, threshold = cmp_match.group(1), cmp_match.group(2)
-    elif "below weak threshold" in explanation:
-        # Below-weak zone: always Unrelated regardless of penalty. Use a
+    elif "below limited threshold" in explanation:
+        # Below-limited zone: always Unrelated regardless of penalty. Use a
         # notional threshold of 0 so the row still shows the breakdown.
         op, threshold = ">=", "0.0"
     else:

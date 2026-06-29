@@ -4,7 +4,7 @@ This document specifies the method used by the **duplicate adjudication
 pipeline** to classify candidate report pairs that have already been flagged
 as suspected duplicates by an upstream candidate-generation method (e.g.
 vigiMatch). For each pair the pipeline produces a final classification of
-**Duplicates**, **Otherwise related**, or **Unrelated**.
+**Duplicates**, **Otherwise related**, **Abstain**, or **Unrelated**.
 
 The method is primarily a transparent rule-based decision logic operating on
 structured features, with optional LLM-assisted analysis of report narratives. It draws
@@ -24,18 +24,55 @@ independence, but it is not specifically evidence that the two reports
 describe the same individual: same reporter, same study, copies of the
 same case routed through different channels, or unusual shared context
 can all produce a small expected-collision count without the reports
-describing the same patient. The pipeline therefore distinguishes two
-internal layers (see § Decision logic):
+describing the same patient. The pipeline therefore separates an
+**independence assessment** (driven by the matching evidence) from a
+**duplicate relationship** sub-label (driven by the inconsistency
+signals); the next section summarizes how the two layers combine into
+the final user-facing label, and § Decision logic gives the full
+rules.
 
-* an **independence assessment** (`Non-independent / Independent`)
-  driven by the rarity-based matching evidence, and
-* when independence has been rejected, a **duplicate relationship**
-  sub-label (`Duplicates / Otherwise related`) driven by the
-  inconsistency signals.
+## How decisions are made (overview)
 
-The user-facing output remains `Duplicates / Otherwise related /
-Unrelated` and is produced by combining the two internal layers (see
-`ClassificationResult.final_label`).
+This section summarizes the decision logic at a high level, so the
+detailed chapters on rarity-based matching evidence and inconsistency
+signals can be read with the destination in mind. Full per-verdict
+rules, thresholds, and configurable parameters live in § Decision
+logic.
+
+For each pair, the algorithm dispatches between two paths:
+
+- **Shared-source override.** If narrative extraction surfaces a
+  reliable shared source identifier (DOI, PMID, trial registration,
+  …) or a shared multi-patient context, the pair cannot be treated as
+  independent regardless of the rarity-based evidence. A small set of
+  per-verdict rules then maps the pair to `Duplicates`,
+  `Otherwise related`, or `Abstain`. The `Abstain` label is reserved
+  for this path; it captures the specific epistemic state of *"shared
+  context confirmed, but the structured evidence cannot safely
+  determine whether the two reports describe the same individual"*.
+- **Rarity-based zone logic.** Otherwise, the matching evidence
+  \(L_{\text{match}}\) selects one of four decision zones (strong /
+  moderate / weak / below threshold), and the weighted inconsistency
+  score \(w_{\text{tot}}\) is compared against the zone's tolerance
+  to choose between `Duplicates`, `Otherwise related`, and
+  `Unrelated`.
+
+The tolerance for inconsistencies **scales with the strength of
+matching evidence**: in the compelling zone the inconsistency budget
+(`w_tot < 4`) accommodates a single strong inconsistency
+(`w_tot = 3`), while the intermediate (`w_tot < 3`) and limited
+(`w_tot < 1`) zones reject it. The principle: highly improbable
+matched features make occasional recording errors a more plausible
+explanation than coincidence.
+
+**Decisive inconsistencies** (e.g. an impossible clinical-date
+relationship, or distinct case identifiers under the same shared
+source) participate in \(w_{\text{tot}}\) with a deliberately large
+weight that exceeds every zone tolerance, so any decisive count
+precludes `Duplicates`. They do not by themselves overturn the
+independence assessment, so a pair with decisive inconsistencies and
+adequate matching evidence still lands in `Otherwise related` rather
+than `Unrelated`.
 
 ## Narrative-derived features
 
@@ -60,6 +97,263 @@ The `narrative_source_case` LLM task extracts:
 The extractor is conservative: fields are null whenever the narrative does not give clear support. The per-pair deterministic comparison that consumes these records and emits a verdict is described under § Shared-source override.
 
 > *(Per-pair LLM components: the AE clinical-picture assessor runs at pair level rather than per report, and is described under § AE clinical-picture inconsistency.)*
+
+## Decision logic
+
+This section gives the full per-verdict rules, thresholds, and
+configurable parameters that implement the dispatch summarized in
+§ How decisions are made (overview).
+
+The two internal layers — `Non-independent / Independent` from the
+matching evidence, and `Duplicates / Otherwise related / Abstain`
+from the inconsistency signals once independence has been rejected —
+map to the user-facing label vocabulary as follows:
+
+| Independence assessment | Duplicate relationship | User-facing final label |
+|---|---|---|
+| Non-independent | Duplicates | **Duplicates** |
+| Non-independent | Otherwise related | **Otherwise related** |
+| Non-independent | Abstain | **Abstain** |
+| Independent | — | **Unrelated** |
+
+This mapping is implemented by `ClassificationResult.final_label` and
+is the only label that downstream consumers (eval, review HTML,
+secure repo) should rely on.
+
+The **Abstain** label is not generic uncertainty. It represents a
+specific epistemic state: non-independence is established (either a
+reliable shared source identifier or a shared multi-patient context
+is present), but the available structured evidence is insufficient to
+safely determine whether the two reports describe the same
+individual. It is produced exclusively by the shared-source override
+path — covering both the `SAME_SOURCE_*` verdicts and the
+high-\(L_{\text{match}}\) branch of `MULTI_PATIENT_CONTEXT_NO_LINK` —
+for scenarios where latent unavailable information (e.g. the full
+publication text, in-house patient identifiers) may be required to
+resolve the question definitively. See § Shared-source override for
+per-verdict details.
+
+---
+
+### Inputs to the decision logic
+
+For each report pair, the following quantities are provided as inputs:
+
+**Matching evidence**
+
+$$
+L_{\text{match}}
+$$
+
+which quantifies how unlikely the observed combination of matched features would be within the anchor population.
+
+**Weighted inconsistency score**
+
+$$
+w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}} + w_d \times n_{\text{decisive}}
+$$
+
+which combines minor, moderate, strong, and decisive inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, height, weight, sex), country-of-origin inconsistencies, drug-set inconsistencies, clinical-date inconsistencies, AE clinical-picture inconsistencies, and the source/case override decisive inconsistency (when `SAME_SOURCE_DIFFERENT_CASE`). See § Inconsistency signals below for the per-feature definitions and severity ladder.
+
+The math symbols \(w_{mi}\), \(w_m\), \(w_s\), \(w_d\) correspond to the configuration parameters `w_minor`, `w_moderate`, `w_strong`, `w_decisive` respectively (see § Parameter tuning). The weights are configurable; with the current defaults (\(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\), \(w_d = 100\)) a single strong inconsistency contributes 7.5 times as much as a minor one. The decisive weight is deliberately oversized so that any decisive count always exceeds every zone tolerance (see § Decisive inconsistencies).
+
+---
+
+### Decision flow
+
+The decision logic is gated on whether the source/case assessment fires the shared-source override:
+
+1. **If the override fires** — verdict is one of `SAME_SOURCE_SINGLE_PATIENT`, `SAME_SOURCE_SAME_CASE`, `SAME_SOURCE_DIFFERENT_CASE`, `SAME_SOURCE_UNCOMPARABLE_CASE`, or — gated on \(L_{\text{match}} >\) `lmatch_limited` — `MULTI_PATIENT_CONTEXT_NO_LINK`. The verdict-specific rule under § Shared-source override determines the outcome.
+2. **Otherwise** — including the advisory verdicts `NO_DECISIVE_SIGNAL` and `NOT_ASSESSED`, and `MULTI_PATIENT_CONTEXT_NO_LINK` when \(L_{\text{match}} \leq\) `lmatch_limited` — the rarity-based zone logic under § Decision zones applies, with decisive inconsistencies handled as a special case (see § Decisive inconsistencies).
+
+The chosen branch is recorded on `ClassificationResult.independence_reason` (`shared_source` for the override path; one of `rarity_compelling` / `rarity_intermediate` / `rarity_limited` / `rarity_insufficient` for the zone paths).
+
+---
+
+### Shared-source override
+
+A reliable shared source identifier derived from the narratives is itself evidence against independence: if two reports both quote the same DOI (or other stable source identifier), they cannot be treated as independent draws from the comparison population regardless of how rare the matched clinical features are. This case is handled through a dedicated override path in `classifier/decision_logic.py`, separate from the rarity-based \(L_{\text{match}}\) framework.
+
+Per-verdict sub-label mappings (the verdict is computed upstream — see § Source/case verdict computation below):
+
+| Verdict | Sub-label mapping |
+|---|---|
+| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_intermediate_zone`; else `Abstain` |
+| `SAME_SOURCE_SAME_CASE`      | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_intermediate_zone`; else `Abstain` |
+| `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise related` (pinned) |
+| `SAME_SOURCE_UNCOMPARABLE_CASE` | three-way rule — see below |
+| `MULTI_PATIENT_CONTEXT_NO_LINK` | same three-way rule when \(L_{\text{match}} >\) `lmatch_limited`; ordinary zone logic (→ `Independent`) otherwise |
+
+#### Source/case verdict computation
+
+§ Narrative-derived features describes the upstream per-report LLM extraction that produces the `NarrativeSourceCase` record for each report. Given the two records, `feature_generation/source_case_comparison.compare_source_case` deterministically emits one of seven verdicts (no LLM is involved at this stage). Full schemas live in [`data_contracts.md § Derived Narrative Signals`](data_contracts.md).
+
+The logic has two parts:
+
+1. **Shared-source detection.** Each side is reduced to a set of `(type, normalized_value)` tuples. If those sets intersect on at least one non-`unknown` type, the most specific shared type (DOI > PMID > trial registration > linked case > protocol number > study name > article reference) is surfaced as `shared_source_identifier`. When strict equality finds nothing, a conservative token-set fallback is tried over `ARTICLE_REFERENCE` pairs only — citations that differ only in punctuation, accents, or supplement / page-range abbreviation style (e.g. `34(2):S136-S137` vs `34 (Suppl 2):S136-7`) are recovered when their lowercase NFKD-folded alphanumeric tokens, minus a small noise vocabulary (`et`, `al`, `vol`, `suppl`, `no`, `iss`, `pp`, …), share Jaccard ≥ 0.85, ≥ 8 non-noise tokens, and an equal 4-digit year when both sides carry one. Strict DOI/PMID/etc. matches always win over this fallback by virtue of the preference order.
+
+2. **Verdict selection.** Given the outcome of step 1 and the `single_patient_source` / `multi_patient_source` / case-identifier signals on each side, exactly one verdict is emitted:
+
+    | Pre-condition | Verdict |
+    |---|---|
+    | Either extraction missing | `NOT_ASSESSED` |
+    | Shared source identifier found, and either side has `single_patient_source=True` | `SAME_SOURCE_SINGLE_PATIENT` |
+    | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **agree** | `SAME_SOURCE_SAME_CASE` |
+    | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **differ** | `SAME_SOURCE_DIFFERENT_CASE` |
+    | Shared source identifier found, but case identifiers are missing on one side, of incompatible family, or otherwise not safely comparable | `SAME_SOURCE_UNCOMPARABLE_CASE` |
+    | No shared source identifier, but both sides report `multi_patient_source=True` | `MULTI_PATIENT_CONTEXT_NO_LINK` |
+    | Otherwise | `NO_DECISIVE_SIGNAL` |
+
+    Two case identifiers are considered *comparable* iff both carry a non-null non-`unknown` family of the same value (`case` vs `case`, `patient` vs `patient`, …) and both have non-empty normalized values; the comparator never treats family-mismatched or family-missing identifiers as evidence of different individuals.
+
+The verdict, the surfaced `shared_source_identifier` (with its type), and short prose `reasoning` are stored on `PairFeatures.source_case_assessment`. The four `SAME_SOURCE_*` verdicts feed the verdict-specific rules below; `MULTI_PATIENT_CONTEXT_NO_LINK` is *partially* advisory (see § Decision flow above for its L\_match-gated dispatch, and the `MULTI_PATIENT_CONTEXT_NO_LINK` subsection below for the three-way rule it can route through).
+
+#### SAME_SOURCE_SINGLE_PATIENT and SAME_SOURCE_SAME_CASE
+
+These verdicts default to `Duplicates`. When non-source-case inconsistency signals push \(w_{\text{tot}}\) to or past `w_tot_intermediate_zone` (default `3.0`), the pair is **Abstained** rather than classified as `Otherwise related`. The rationale: for a genuinely single-patient source (or one where the same case identifier is confirmed), substantial inconsistencies are more plausibly caused by extraction artefacts, secondary-source corruption, reporting differences, or partial information than by the reports describing distinct individuals. The pair is therefore epistemically underdetermined — the inconsistency evidence does not safely establish different individuals — and an explicit `Abstain` is preferable to a false `Otherwise related` classification.
+
+The threshold is shared with the medium L_match zone by design: a single strong inconsistency (or equivalent accumulated severity: three moderates, one strong + one moderate, …) is required to reach the threshold. A single moderate or a handful of minors is tolerated. Decisive inconsistencies trigger the threshold via their large weight (`w_decisive = 100`).
+
+#### SAME_SOURCE_DIFFERENT_CASE
+
+No change. Pinned to `Otherwise related` regardless of \(w_{\text{tot}}\). Two reports sharing a DOI but carrying different comparable case labels clearly identify different individuals within the same multi-patient source. `feature_generation/source_case_inconsistency.py` synthesizes a **decisive** `Inconsistency` row (informational, audit-facing; the pin is what enforces the outcome).
+
+#### SAME_SOURCE_UNCOMPARABLE_CASE
+
+The shared source is confirmed, but case identifiers are missing or not safely comparable. UNCOMPARABLE_CASE specifically covers literature and summary-case publications, where reported demographics are deliberate and a discrepancy is more likely to reflect a different patient than an extraction artefact. A three-way rule is applied:
+
+| Branch | Condition | Outcome |
+|---|---|---|
+| B | \(w_{\text{tot}} \geq\) `w_tot_limited_zone` | `Otherwise related` |
+| A | \(L_{\text{patient}} > \) `lmatch_intermediate` (with \(w_{\text{tot}} <\) `w_tot_limited_zone` implied) | `Duplicates` |
+| C | otherwise | `Abstain` |
+
+Branch B is checked first so any inconsistency above the weak-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
+
+Note the lower Otherwise related gate here (`w_tot_limited_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_intermediate_zone`, default 3.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
+
+| Age difference | Severity | \(w_{\text{tot}}\) | Outcome |
+|---|---|---|---|
+| 0 (exact match) | none | 0.0 | (driven by branch A — typically Duplicates if L\_patient clears) |
+| 1 year | minor | 0.4 | Abstain or Duplicates (depending on branch A) |
+| 3 years | moderate | 1.0 | **Otherwise related** |
+| 5 years | strong | 3.0 | Otherwise related |
+
+##### Patient-specific log-evidence \(L_{\text{patient}}\)
+
+\(L_{\text{patient}}\) is the sum of \(-\log_{10}(p_f)\) over the per-feature contributions in `PairFeatures.probability.feature_contributions`, **excluding** `drug_set` and `ae_set` and **without** the anchor (\(N_{\text{pairs}}\)) penalty (see § Probability estimation below for the per-feature contributions and the anchor penalty):
+
+$$
+L_{\text{patient}} = \sum_{f \in F_{\text{patient}}} -\log_{10}(p_f)
+$$
+
+where \(F_{\text{patient}} = \{\texttt{patient\_sex}, \texttt{patient\_age}, \texttt{patient\_height}, \texttt{patient\_weight}, \texttt{clinical\_date}\}\).
+
+Two deliberate departures from the standard \(L_{\text{match}}\):
+
+- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`_NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `classifier/decision_logic.py`).
+- **Anchor penalty dropped.** The anchor population was the comparison universe for the full \(L_{\text{match}}\) (e.g. "all reports on drug X"). For `UNCOMPARABLE_CASE` the relevant comparison universe is the unknown small set of K patients within the shared publication, not the anchor. Keeping the anchor penalty would apply a multiple-testing correction that does not match the actual comparison universe. Dropping it yields a pure measure of patient-specific concordance strength on the \(\log_{10}\) scale — the same scale as the per-feature `(+X.X)` contribution chips already shown in the review HTML.
+
+##### Threshold calibration
+
+The branch A bar is set at `lmatch_intermediate` (default 2.0) so that intuitively informative concordances qualify:
+
+| Matched features | \(-\log_{10}(p_f)\) | Sum | Clears 2.0? |
+|---|---|---|---|
+| sex only | 0.30 | 0.30 | no |
+| age only (1/80) | 1.90 | 1.90 | no |
+| sex + age | 0.30 + 1.90 | 2.20 | **yes** |
+| age + weight (1/40) | 1.90 + 1.60 | 3.50 | yes |
+| sex + age + clinical date (drug start, 1/540) | 0.30 + 1.90 + 2.73 | 4.93 | yes |
+
+The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. A single moderate inconsistency (\(w_{\text{tot}} = 1.0\)) is enough to drop branch A and fall through to Abstain. The asymmetry between the branch A gate (`< w_tot_limited_zone`) and the branch B gate (`\geq w_tot_intermediate_zone`) is intentional: in a multi-patient publication even small inconsistencies are not noise, so it is easy to drop out of `Duplicates` but harder to confidently land in `Otherwise related`.
+
+Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represents *absence of comparable evidence*, not a discrepancy), so \(w_{\text{tot}}\) reflects only non-source-case signals and the comparison is apples-to-apples.
+
+#### MULTI_PATIENT_CONTEXT_NO_LINK
+
+This verdict fires when both narratives indicate a multi-patient source (literature series, shared-study cohort, drug-shortage cluster, …) but no reliable shared source identifier links the two reports. The drug-set / AE-set inflation concern that motivates the UNCOMPARABLE_CASE three-way rule applies here as well: patients reported within the same multi-patient context tend to share drugs and AEs by construction, so a high \(L_{\text{match}}\) can be driven by features that are weak identifiers of patient identity.
+
+The dispatch is gated on the matching evidence:
+
+- **\(L_{\text{match}} > \) `lmatch_limited`** — route through the same three-way rule as `SAME_SOURCE_UNCOMPARABLE_CASE`, using `_l_patient` (drug-set / AE-set excluded) for branch A and `w_tot_limited_zone` for the branch B / branch A inconsistency gate. So a pair with high \(L_{\text{match}}\) and a single moderate inconsistency lands in `Otherwise related` rather than being absorbed into `Duplicates` by the compelling zone's looser tolerance.
+- **\(L_{\text{match}} \leq \) `lmatch_limited`** — fall through to the ordinary weak-threshold branch (→ `Independent`). Without positive shared-source evidence we do not promote a weak-matching pair into the override territory, where it would otherwise resolve to `Abstain`.
+
+Conceptually this asymmetry mirrors the underlying evidence: `UNCOMPARABLE_CASE` has a confirmed shared source identifier and so always invokes the three-way rule; `MULTI_PATIENT_CONTEXT_NO_LINK` lacks that anchor and therefore requires enough matching evidence to make the override worth applying. The chosen branch is recorded as `independence_reason = shared_source` in either case.
+
+---
+
+### Decision zones
+
+The decision space is divided into four zones based on the magnitude of \(L_{\text{match}}\). Each zone applies a progressively stricter tolerance for \(w_{\text{tot}}\):
+
+| Zone | Reason code | Condition | Duplicates if... | Otherwise |
+|---|---|---|---|---|
+| Compelling evidence | `rarity_compelling` | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Non-independent / Otherwise related |
+| Intermediate evidence | `rarity_intermediate` | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Non-independent / Otherwise related |
+| Limited evidence | `rarity_limited` | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Non-independent / Otherwise related |
+| Below threshold | `rarity_insufficient` | \(L_{\text{match}} \leq 1.0\) | never | Independent (Unrelated) |
+
+In all three non-trivial zones the matching evidence is treated as
+strong enough to reject the independence null on its own, so any pair
+in these zones is labelled `Non-independent`; the inconsistency score
+then decides whether the sub-label is `Duplicates` or `Otherwise
+related`. The zones differ only in how much inconsistency evidence is
+tolerated before the verdict is downgraded from `Duplicates`. Below the
+weak threshold the matching evidence is too weak to reject independence
+regardless of how clean the structured comparison looks.
+
+The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3, 1), and the inconsistency weights are all configurable parameters.
+
+**Examples** (using default parameters):
+
+- \(L_{\text{match}} = 4.2\), one strong inconsistency: \(w_{\text{tot}} = 3 < 4\) → **Non-independent / Duplicates**
+- \(L_{\text{match}} = 4.2\), one strong + one moderate: \(w_{\text{tot}} = 4\), not \(< 4\) → **Non-independent / Otherwise related**
+- \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Non-independent / Duplicates**
+- \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Non-independent / Otherwise related**
+- \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Non-independent / Duplicates**
+- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Non-independent / Otherwise related**
+- \(L_{\text{match}} = 0.8\): below threshold → **Independent (Unrelated)** regardless of inconsistencies
+
+---
+
+### Decisive inconsistencies
+
+Decisive inconsistencies (e.g. clinical-date impossibility, an AE clinical-picture decisive verdict, or `SAME_SOURCE_DIFFERENT_CASE` from the source/case override) participate in the zone-based logic as a term in \(w_{\text{tot}}\) with a deliberately large weight \(w_d = 100\). This is set high enough that any non-zero decisive count drives \(w_{\text{tot}}\) past every zone tolerance, so the zone's failing-branch outcome is taken. A configuration validator enforces \(w_d > \max(\text{zone thresholds})\) so this invariant is preserved if the thresholds are ever retuned.
+
+The effect is the same as an explicit override, but expressed through the ordinary weighted score — which keeps the breakdown transparent (the decisive contribution is visible in the explanation string and in the review HTML penalty column).
+
+When a decisive inconsistency is present:
+
+- \(L_{\text{match}} > 1.0\) → **Non-independent / Otherwise related**
+  (the matching evidence still rejects independence, so the pair is
+  surfaced as related but not the same case)
+- \(L_{\text{match}} \leq 1.0\) → **Independent (Unrelated)**
+  (independence cannot be rejected, so no claim about relatedness is
+  made)
+
+In other words, decisive inconsistencies preclude a `Duplicates` verdict — the reports cannot describe the same individual case — but do not by themselves overturn the independence assessment.
+
+---
+
+### Parameter tuning
+
+The following parameters define the decision behaviour and are configurable:
+
+| Parameter | Default | Role |
+|---|---|---|
+| `lmatch_compelling` | 3.0 | L\_match boundary for the compelling evidence zone |
+| `lmatch_intermediate` | 2.0 | L\_match boundary for the intermediate evidence zone |
+| `lmatch_limited` | 1.0 | L\_match boundary for the limited evidence zone |
+| `w_minor` | 0.4 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
+| `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
+| `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
+| `w_decisive` | 100 | Weight per decisive inconsistency in \(w_{\text{tot}}\); see § Decisive inconsistencies for the validator invariant |
+| `w_tot_compelling_zone` | 4.0 | Strict upper bound on \(w_{\text{tot}}\) for `Duplicates` in the compelling zone (\(w_{\text{tot}} <\) this value) |
+| `w_tot_intermediate_zone` | 3.0 | Strict upper bound on \(w_{\text{tot}}\) for `Duplicates` in the intermediate zone (\(w_{\text{tot}} <\) this value) |
+| `w_tot_limited_zone` | 1.0 | Strict upper bound on \(w_{\text{tot}}\) for `Duplicates` in the limited zone (\(w_{\text{tot}} <\) this value) |
+
+These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behaviour.
 
 ## Rarity-based matching evidence
 
@@ -528,9 +822,9 @@ Four levels of inconsistency severity are defined:
 | strong   | difference that strongly suggests different individuals |
 | decisive | hard contradiction that precludes a `Duplicates` verdict |
 
-Inconsistencies in structured data (age, sex, height, weight, country of origin, drug set) span the minor, moderate, and strong severities — the exact mapping per feature is defined in the Features subsection below. Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see Decision logic below).
+Inconsistencies in structured data (age, sex, height, weight, country of origin, drug set) span the minor, moderate, and strong severities — the exact mapping per feature is defined in the Features subsection below. Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see § Decision logic above).
 
-Decisive inconsistencies come from three sources: the clinical-date impossibility rule (when one report's report date predates the other report's earliest plausible overall AE onset by more than 30 days — see § Clinical date inconsistencies), the AE clinical-picture assessor's decisive verdict (no shared / compatible AEs at the case level), and the source/case override (`SAME_SOURCE_DIFFERENT_CASE`, where two reports share a source identifier but carry different comparable case labels). When present, they preclude a `Duplicates` verdict; the surrounding matching evidence then determines whether the pair is surfaced as `Otherwise related` (when independence is still rejected) or `Unrelated` (otherwise) — see § Decision logic.
+Decisive inconsistencies come from three sources: the clinical-date impossibility rule (when one report's report date predates the other report's earliest plausible overall AE onset by more than 30 days — see § Clinical date inconsistencies), the AE clinical-picture assessor's decisive verdict (no shared / compatible AEs at the case level), and the source/case override (`SAME_SOURCE_DIFFERENT_CASE`, where two reports share a source identifier but carry different comparable case labels). When present, they preclude a `Duplicates` verdict; the surrounding matching evidence then determines whether the pair is surfaced as `Otherwise related` (when independence is still rejected) or `Unrelated` (otherwise) — see § Decision logic above.
 
 ------
 
@@ -636,43 +930,28 @@ Clinical-date inconsistencies are detected by a dedicated rule-based module (`fe
 
 ##### Compared entities
 
-- **Overall AE onset date** (one per report — highest priority; either an explicitly reported case-level date or, when absent, a derived value)
+- **Overall AE onset date** (one per report — highest priority; either an explicitly reported case-level date or, when absent, a derived value — see *Overall AE onset date* below)
 - **Drug start dates** (matched by normalized substance name)
 - **AE onset dates** (matched by normalized PT name)
 - **Drug end dates** — downgrade-only evidence, never primary inconsistency sources
 
-##### Counterpart selection — alignment across repeated entries
+The module exposes its results on `PairFeatures` via two fields: the bucketed counts (`n_minor` / `n_moderate` / `n_strong` / `n_decisive`) on `clinical_date_inconsistency_counts`, and the individual selected findings on `clinical_date_findings` for human review.
 
-The same normalized drug substance may appear on a single report with multiple distinct start dates (for example, re-challenge regimens or different dosing periods), and the same MedDRA PT may appear with several distinct onset dates. Comparing all cross-pairs would produce spurious "strong" findings whenever the reports disagree on which regimen is primary.
-
-Instead, for each matched entity (one normalized drug substance or one PT appearing on both reports), counterpart dates are chosen as follows:
-
-1. **Group by normalized entity.** All drug start dates for one substance on one report form a group; likewise for AE onsets on one PT.
-2. **Deduplicate exact-duplicate date values within a report.** Two rows for the same substance with the same start date collapse into one slot. When two rows share a date value but differ in drug role, a non-concomitant role dominates over a concomitant one for that slot — so a drug that is both suspected and concomitant at the same date is not penalised with the concomitant-drug downgrade.
-3. **Compute a minimum-cost one-to-one alignment** between the two reports' date lists for that entity. The alignment cost is the interval-aware minimum possible day difference used by the severity thresholds. Ties are broken deterministically.
-4. **Emit candidate findings only from aligned pairs.** Leftover unmatched dates (on the larger side) do **not** generate additional findings — they are simply absent from the comparison, consistent with the missing-data rule.
-
-Drug **role is ignored** when choosing counterparts: alignment minimises date distance only. The source-side role is retained, however, so the concomitant-drug downgrade still applies per direction when the source entry is concomitant.
-
-After alignment, the downstream pipeline (classification, downgrades, source-date bucketing, cross-direction deduplication) is unchanged. Cross-direction deduplication uses a **pair-aware** key — `(entity_label, {source_date, matched_date})` — so that when an entity produces several aligned pairs (for example, two regimen start-date pairs for the same drug), each pair is deduplicated independently instead of collapsing all pairs into one.
-
-##### Overall AE onset date — explicit vs. derived
+##### Overall AE onset date
 
 The pipeline uses a single canonical "effective" overall AE onset date per report, resolved as follows:
 
 1. If `Report.reported_overall_ae_onset_date` is present (an explicit case-level date supplied by the loader, e.g. extracted from a `CASE EVENT DATE: YYYYMMDD` narrative pattern on US reports), it is used as-is — its `PartialDate` resolution is trusted.
-2. Otherwise, the derivation rule below produces a fallback value.
+2. Otherwise, the fallback derivation below produces a value.
 
 This logic is encapsulated in `effective_overall_ae_onset_date(report)` in `feature_generation/clinical_date_inconsistencies.py`; downstream consumers should call it rather than the derivation directly.
 
-##### Overall AE onset date derivation (fallback)
-
-The goal is to pick the earliest AE onset date and only refrain from
-doing so when there is *clear evidence* that an early onset is
-incompatible with the suspected drugs. The rule deliberately errs on
-the side of keeping early AE onsets — coarse-resolution drug start
-dates or re-challenge regimens should not cause a plausibly valid AE
-onset to be rejected.
+The fallback derivation aims to pick the earliest AE onset date and
+only refrains from doing so when there is *clear evidence* that an
+early onset is incompatible with the suspected drugs. The rule
+deliberately errs on the side of keeping early AE onsets —
+coarse-resolution drug start dates or re-challenge regimens should
+not cause a plausibly valid AE onset to be rejected.
 
 For each report:
 
@@ -704,9 +983,26 @@ Consequences:
 If no AE onset is compatible with every suspected substance, the
 derivation returns missing.
 
+##### Counterpart selection — alignment across repeated entries
+
+The same normalized drug substance may appear on a single report with multiple distinct start dates (for example, re-challenge regimens or different dosing periods), and the same MedDRA PT may appear with several distinct onset dates. Comparing all cross-pairs would produce spurious "strong" findings whenever the reports disagree on which regimen is primary.
+
+Instead, for each matched entity (one normalized drug substance or one PT appearing on both reports), counterpart dates are chosen as follows:
+
+1. **Group by normalized entity.** All drug start dates for one substance on one report form a group; likewise for AE onsets on one PT.
+2. **Deduplicate exact-duplicate date values within a report.** Two rows for the same substance with the same start date collapse into one slot. When two rows share a date value but differ in drug role, a non-concomitant role dominates over a concomitant one for that slot — so a drug that is both suspected and concomitant at the same date is not penalised with the concomitant-drug downgrade.
+3. **Compute a minimum-cost one-to-one alignment** between the two reports' date lists for that entity. The alignment cost is the interval-aware minimum possible day difference used by the severity thresholds. Ties are broken deterministically.
+4. **Emit candidate findings only from aligned pairs.** Leftover unmatched dates (on the larger side) do **not** generate additional findings — they are simply absent from the comparison, consistent with the missing-data rule.
+
+Drug **role is ignored** when choosing counterparts: alignment minimises date distance only. The source-side role is retained, however, so the concomitant-drug downgrade still applies per direction when the source entry is concomitant.
+
+After alignment, the downstream pipeline (classification, downgrades, source-date bucketing, cross-direction deduplication) is unchanged. Cross-direction deduplication uses a **pair-aware** key — `(entity_label, {source_date, matched_date})` — so that when an entity produces several aligned pairs (for example, two regimen start-date pairs for the same drug), each pair is deduplicated independently instead of collapsing all pairs into one.
+
 ##### Severity thresholds
 
-Overall AE onset date (tighter):
+Three comparison axes each carry their own severity table.
+
+*Overall AE onset date vs. overall AE onset date* (tighter, because this is the case-level signal):
 
 | Difference | Severity |
 | ---------- | -------- |
@@ -715,7 +1011,7 @@ Overall AE onset date (tighter):
 | 8–30 days | moderate |
 | > 30 days | strong |
 
-Drug start dates and AE onset dates (capped at moderate):
+*Per-entity drug start dates and AE onset dates* (capped at moderate):
 
 | Difference | Severity |
 | ---------- | -------- |
@@ -724,6 +1020,17 @@ Drug start dates and AE onset dates (capped at moderate):
 | ≥ 70 days | moderate |
 
 Per-entity drug start and AE onset mismatches never escalate to *strong*: a single regimen or PT-level disagreement is too noisy on its own to constitute strong evidence. Case-level temporal disagreement is captured by the overall AE onset date thresholds above.
+
+*Report date vs. overall AE onset date* (decisive impossibility):
+
+| Difference (report date precedes earliest plausible overall AE onset by…) | Severity |
+| ---------- | -------- |
+| ≤ 30 days | none (grace) |
+| > 30 days | decisive |
+
+This applies even with incomplete dates — e.g. report date `1999-02-10` vs onset year `2005` is decisive because the report predates even the earliest plausible onset by years.
+
+The 30-day grace window addresses an observed reporting pattern: paired reports often each list the day of reporting as the AE onset, even when the event clearly began earlier. This typically reflects data-entry imprecision — reporters entering "today" rather than the true first-appearance date, or intake forms defaulting to the current day — rather than a genuine timeline conflict. Without the grace window, otherwise highly consistent pairs that arrive a few days apart were being vetoed out of `Duplicates`. Smaller disagreements between the two reports' overall AE onset dates are still surfaced as minor/moderate findings by the overall-AE-onset vs. overall-AE-onset comparison above, so this grace window does not silence that signal — only the binary impossibility veto.
 
 ##### Incomplete dates
 
@@ -735,27 +1042,11 @@ Partial dates are converted to intervals (`[earliest, latest]` plausible date). 
 
 2. *Concomitant drug downgrade*: for concomitant-drug start date mismatches, severity is reduced by one step (moderate → minor, minor → ignored). Because per-entity drug start severity is capped at moderate, a two-step downgrade would always wipe concomitant findings out entirely; a single-step downgrade keeps concomitant moderates contributing as minor inconsistencies.
 
-##### One inconsistency per source date
+##### Deduplication
 
-Each unique source date on a report contributes at most one counted inconsistency. When multiple entities share the same date, priority determines which is counted: overall AE onset > suspected-drug start > AE onset > concomitant-drug start. If the highest-priority entity has no inconsistency, a lower-priority entity may contribute.
+*Within direction (one inconsistency per source date):* each unique source date on a report contributes at most one counted inconsistency. When multiple entities share the same date, priority determines which is counted: overall AE onset > suspected-drug start > AE onset > concomitant-drug start. If the highest-priority entity has no inconsistency, a lower-priority entity may contribute.
 
-##### Decisive impossibility
-
-If a report date on one report precedes the earliest plausible overall AE onset on the other report by **more than 30 days**, a decisive inconsistency is counted. This applies even with incomplete dates — e.g. report date `1999-02-10` vs onset year `2005` is decisive because the report predates even the earliest plausible onset by years.
-
-The 30-day grace window addresses an observed reporting pattern: paired reports often each list the day of reporting as the AE onset, even when the event clearly began earlier. This typically reflects data-entry imprecision — reporters entering "today" rather than the true first-appearance date, or intake forms defaulting to the current day — rather than a genuine timeline conflict. Without the grace window, otherwise highly consistent pairs that arrive a few days apart were being vetoed out of `Duplicates`. Smaller disagreements between the two reports' overall AE onset dates are still surfaced as minor/moderate findings by the overall-AE-onset vs. overall-AE-onset comparison (see the threshold table earlier in this section), so this change does not silence that signal — only the binary impossibility veto.
-
-##### Symmetry and cross-direction deduplication
-
-The comparison is evaluated from both directions (report 1 → report 2 and report 2 → report 1), with source-date bucketing applied independently per report. After bucketing, a cross-direction deduplication step ensures that each entity (e.g. the same drug on both reports) produces at most one counted inconsistency. When both directions yield a finding for the same entity, the one with the lower final severity is kept — this honours direction-specific downgrades conservatively.
-
-##### Integration with the decision logic
-
-Clinical-date inconsistency counts are merged into the main `inconsistency_counts` on `PairFeatures` and thus contribute to the weighted inconsistency score $w_{\text{tot}}$ used by the decision logic. The separate `clinical_date_inconsistency_counts` field is retained for auditability and detailed reporting.
-
-##### Output
-
-The module produces `ClinicalDateInconsistencyCounts` with `n_minor`, `n_moderate`, `n_strong`, `n_decisive`, exposed on `PairFeatures.clinical_date_inconsistency_counts`. Individual selected findings are exposed on `PairFeatures.clinical_date_findings` for human review.
+*Across directions (symmetric evaluation):* the comparison is evaluated from both directions (report 1 → report 2 and report 2 → report 1), with the within-direction dedup above applied independently per direction. A cross-direction step then ensures that each entity (e.g. the same drug on both reports) produces at most one counted inconsistency. When both directions yield a finding for the same entity, the one with the lower final severity is kept — this honours direction-specific downgrades conservatively.
 
 ------
 
@@ -864,301 +1155,4 @@ For example:
 - strong matching evidence may outweigh a single strong inconsistency
 - multiple strong inconsistencies may indicate that reports describe different patients
 - moderate inconsistencies may be tolerated when matching evidence is strong
-
-## Decision logic
-
-The final adjudication of a report pair is determined by jointly evaluating:
-
-- the strength of the **rarity-based matching evidence** (\(L_{\text{match}}\)), and
-- the presence and severity of **detected inconsistencies**.
-
-The decision logic balances positive evidence (the matched features being
-unlikely under an *independence* null) against contradictory evidence
-(detected inconsistencies).
-
-Internally, the decision logic produces two layered labels:
-
-* an **independence assessment** — whether the matching evidence is
-  strong enough to reject the null that the two reports are independent
-  draws from the comparison population
-  (`Non-independent / Independent`); and
-* when independence has been rejected, a **duplicate relationship**
-  sub-label that uses the inconsistency signals to distinguish a
-  likely-duplicate case from one linked by something other than being
-  the same individual (`Duplicates / Otherwise related / Abstain`).
-
-These map to the user-facing label vocabulary as follows:
-
-| Independence assessment | Duplicate relationship | User-facing final label |
-|---|---|---|
-| Non-independent | Duplicates | **Duplicates** |
-| Non-independent | Otherwise related | **Otherwise related** |
-| Non-independent | Abstain | **Abstain** |
-| Independent | — | **Unrelated** |
-
-The two-layer split is deliberate: a low expected-collision count is
-evidence *against independence*, not specifically *for same individual*.
-Same reporter, same study, or unusual shared context can all produce
-strong matching evidence without the reports describing the same
-patient. The duplicate vs otherwise-related distinction is therefore
-handled by the inconsistency component once independence has been
-rejected. The mapping above is implemented by
-`ClassificationResult.final_label` and is the only label that downstream
-consumers (eval, review HTML, secure repo) should rely on.
-
-The **Abstain** label is not generic uncertainty. It represents a specific
-epistemic state: non-independence is established (a reliable shared source
-identifier is present), but the available structured evidence is
-insufficient to safely determine whether the two reports describe the same
-individual. It is produced exclusively by the shared-source override path
-for scenarios where latent unavailable information (e.g. the full
-publication text, in-house patient identifiers) may be required to resolve
-the question definitively. See § Shared-source override for per-verdict
-details.
-
-Concretely, the logic dispatches between a shared-source override and the rarity-based zone logic; see § Decision flow below for the execution order, and § Shared-source override / § Decision zones for the per-path rules.
-
----
-
-### Inputs to the decision logic
-
-For each report pair, the following quantities are provided as inputs:
-
-**Matching evidence**
-
-$$
-L_{\text{match}}
-$$
-
-which quantifies how unlikely the observed combination of matched features would be within the anchor population.
-
-**Weighted inconsistency score**
-
-$$
-w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}} + w_d \times n_{\text{decisive}}
-$$
-
-which combines minor, moderate, strong, and decisive inconsistencies into a single score. The counts include all sources: demographic inconsistencies (age, height, weight, sex), country-of-origin inconsistencies, drug-set inconsistencies, clinical-date inconsistencies, AE clinical-picture inconsistencies, and the source/case override decisive inconsistency (when `SAME_SOURCE_DIFFERENT_CASE`). The weights \(w_{mi}\), \(w_m\), \(w_s\) and \(w_d\) are configurable (defaults: \(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\), \(w_d = 100\)). The decisive weight is deliberately set large enough that any decisive count always exceeds every zone tolerance; a configuration validator enforces this invariant.
-
----
-
-### Weighted inconsistency score
-
-Minor, moderate, strong, and decisive inconsistencies are combined into a single weighted score:
-
-$$
-w_{\text{tot}} = w_{mi} \times n_{\text{minor}} + w_m \times n_{\text{moderate}} + w_s \times n_{\text{strong}} + w_d \times n_{\text{decisive}}
-$$
-
-The math symbols \(w_{mi}\), \(w_m\), \(w_s\), \(w_d\) correspond to the configuration parameters `w_minor`, `w_moderate`, `w_strong`, `w_decisive` respectively (see § Parameter tuning). With the current defaults (\(w_{mi} = 0.4\), \(w_m = 1\), \(w_s = 3\), \(w_d = 100\)), a single strong inconsistency contributes 7.5 times as much as a minor one, and a single decisive inconsistency always exceeds every zone tolerance (see § Decisive inconsistencies below).
-
----
-
-### Decision flow
-
-The decision logic is gated on whether the source/case assessment fires the shared-source override:
-
-1. **If the override fires** — verdict is one of `SAME_SOURCE_SINGLE_PATIENT`, `SAME_SOURCE_SAME_CASE`, `SAME_SOURCE_DIFFERENT_CASE`, `SAME_SOURCE_UNCOMPARABLE_CASE`, or — gated on \(L_{\text{match}} >\) `lmatch_weak` — `MULTI_PATIENT_CONTEXT_NO_LINK`. The verdict-specific rule under § Shared-source override determines the outcome.
-2. **Otherwise** — including the advisory verdicts `NO_DECISIVE_SIGNAL` and `NOT_ASSESSED`, and `MULTI_PATIENT_CONTEXT_NO_LINK` when \(L_{\text{match}} \leq\) `lmatch_weak` — the rarity-based zone logic under § Decision zones applies, with decisive inconsistencies handled as a special case (see § Decisive inconsistencies).
-
-The chosen branch is recorded on `ClassificationResult.independence_reason` (`shared_source` for the override path; one of `rarity_strong` / `rarity_medium` / `rarity_weak` / `rarity_insufficient` for the zone paths — note that `rarity_medium` uses the full word while the corresponding parameter names abbreviate as `lmatch_med` and `w_tot_med_zone`; historical naming, retained for backwards compatibility).
-
----
-
-### Shared-source override
-
-A reliable shared source identifier derived from the narratives is itself evidence against independence: if two reports both quote the same DOI (or other stable source identifier), they cannot be treated as independent draws from the comparison population regardless of how rare the matched clinical features are. This case is handled through a dedicated override path in `classifier/decision_logic.py`, separate from the rarity-based \(L_{\text{match}}\) framework.
-
-Per-verdict sub-label mappings (the verdict is computed upstream — see § Source/case verdict computation below):
-
-| Verdict | Sub-label mapping |
-|---|---|
-| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_med_zone`; else `Abstain` |
-| `SAME_SOURCE_SAME_CASE`      | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_med_zone`; else `Abstain` |
-| `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise related` (pinned) |
-| `SAME_SOURCE_UNCOMPARABLE_CASE` | three-way rule — see below |
-| `MULTI_PATIENT_CONTEXT_NO_LINK` | same three-way rule when \(L_{\text{match}} >\) `lmatch_weak`; ordinary zone logic (→ `Independent`) otherwise |
-
-#### Source/case verdict computation
-
-§ Narrative-derived features describes the upstream per-report LLM extraction that produces the `NarrativeSourceCase` record for each report. Given the two records, `feature_generation/source_case_comparison.compare_source_case` deterministically emits one of seven verdicts (no LLM is involved at this stage). Full schemas live in [`data_contracts.md § Derived Narrative Signals`](data_contracts.md).
-
-The logic has two parts:
-
-1. **Shared-source detection.** Each side is reduced to a set of `(type, normalized_value)` tuples. If those sets intersect on at least one non-`unknown` type, the most specific shared type (DOI > PMID > trial registration > linked case > protocol number > study name > article reference) is surfaced as `shared_source_identifier`. When strict equality finds nothing, a conservative token-set fallback is tried over `ARTICLE_REFERENCE` pairs only — citations that differ only in punctuation, accents, or supplement / page-range abbreviation style (e.g. `34(2):S136-S137` vs `34 (Suppl 2):S136-7`) are recovered when their lowercase NFKD-folded alphanumeric tokens, minus a small noise vocabulary (`et`, `al`, `vol`, `suppl`, `no`, `iss`, `pp`, …), share Jaccard ≥ 0.85, ≥ 8 non-noise tokens, and an equal 4-digit year when both sides carry one. Strict DOI/PMID/etc. matches always win over this fallback by virtue of the preference order.
-
-2. **Verdict selection.** Given the outcome of step 1 and the `single_patient_source` / `multi_patient_source` / case-identifier signals on each side, exactly one verdict is emitted:
-
-    | Pre-condition | Verdict |
-    |---|---|
-    | Either extraction missing | `NOT_ASSESSED` |
-    | Shared source identifier found, and either side has `single_patient_source=True` | `SAME_SOURCE_SINGLE_PATIENT` |
-    | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **agree** | `SAME_SOURCE_SAME_CASE` |
-    | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **differ** | `SAME_SOURCE_DIFFERENT_CASE` |
-    | Shared source identifier found, but case identifiers are missing on one side, of incompatible family, or otherwise not safely comparable | `SAME_SOURCE_UNCOMPARABLE_CASE` |
-    | No shared source identifier, but both sides report `multi_patient_source=True` | `MULTI_PATIENT_CONTEXT_NO_LINK` |
-    | Otherwise | `NO_DECISIVE_SIGNAL` |
-
-    Two case identifiers are considered *comparable* iff both carry a non-null non-`unknown` family of the same value (`case` vs `case`, `patient` vs `patient`, …) and both have non-empty normalized values; the comparator never treats family-mismatched or family-missing identifiers as evidence of different individuals.
-
-The verdict, the surfaced `shared_source_identifier` (with its type), and short prose `reasoning` are stored on `PairFeatures.source_case_assessment`. The four `SAME_SOURCE_*` verdicts feed the verdict-specific rules below; `MULTI_PATIENT_CONTEXT_NO_LINK` is *partially* advisory (see § Decision flow above for its L\_match-gated dispatch, and the `MULTI_PATIENT_CONTEXT_NO_LINK` subsection below for the three-way rule it can route through).
-
-#### SAME_SOURCE_SINGLE_PATIENT and SAME_SOURCE_SAME_CASE
-
-These verdicts default to `Duplicates`. When non-source-case inconsistency signals push \(w_{\text{tot}}\) to or past `w_tot_med_zone` (default `3.0`), the pair is **Abstained** rather than classified as `Otherwise related`. The rationale: for a genuinely single-patient source (or one where the same case identifier is confirmed), substantial inconsistencies are more plausibly caused by extraction artefacts, secondary-source corruption, reporting differences, or partial information than by the reports describing distinct individuals. The pair is therefore epistemically underdetermined — the inconsistency evidence does not safely establish different individuals — and an explicit `Abstain` is preferable to a false `Otherwise related` classification.
-
-The threshold is shared with the medium L_match zone by design: a single strong inconsistency (or equivalent accumulated severity: three moderates, one strong + one moderate, …) is required to reach the threshold. A single moderate or a handful of minors is tolerated. Decisive inconsistencies trigger the threshold via their large weight (`w_decisive = 100`).
-
-#### SAME_SOURCE_DIFFERENT_CASE
-
-No change. Pinned to `Otherwise related` regardless of \(w_{\text{tot}}\). Two reports sharing a DOI but carrying different comparable case labels clearly identify different individuals within the same multi-patient source. `feature_generation/source_case_inconsistency.py` synthesizes a **decisive** `Inconsistency` row (informational, audit-facing; the pin is what enforces the outcome).
-
-#### SAME_SOURCE_UNCOMPARABLE_CASE
-
-The shared source is confirmed, but case identifiers are missing or not safely comparable. UNCOMPARABLE_CASE specifically covers literature and summary-case publications, where reported demographics are deliberate and a discrepancy is more likely to reflect a different patient than an extraction artefact. A three-way rule is applied:
-
-| Branch | Condition | Outcome |
-|---|---|---|
-| B | \(w_{\text{tot}} \geq\) `w_tot_weak_zone` | `Otherwise related` |
-| A | \(L_{\text{patient}} > \) `lmatch_med` (with \(w_{\text{tot}} <\) `w_tot_weak_zone` implied) | `Duplicates` |
-| C | otherwise | `Abstain` |
-
-Branch B is checked first so any inconsistency above the weak-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
-
-Note the lower Otherwise related gate here (`w_tot_weak_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_med_zone`, default 3.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
-
-| Age difference | Severity | \(w_{\text{tot}}\) | Outcome |
-|---|---|---|---|
-| 0 (exact match) | none | 0.0 | (driven by branch A — typically Duplicates if L\_patient clears) |
-| 1 year | minor | 0.4 | Abstain or Duplicates (depending on branch A) |
-| 3 years | moderate | 1.0 | **Otherwise related** |
-| 5 years | strong | 3.0 | Otherwise related |
-
-##### Patient-specific log-evidence \(L_{\text{patient}}\)
-
-\(L_{\text{patient}}\) is the sum of \(-\log_{10}(p_f)\) over the per-feature contributions in `PairFeatures.probability.feature_contributions`, **excluding** `drug_set` and `ae_set` and **without** the anchor (\(N_{\text{pairs}}\)) penalty:
-
-$$
-L_{\text{patient}} = \sum_{f \in F_{\text{patient}}} -\log_{10}(p_f)
-$$
-
-where \(F_{\text{patient}} = \{\texttt{patient\_sex}, \texttt{patient\_age}, \texttt{patient\_height}, \texttt{patient\_weight}, \texttt{clinical\_date}\}\).
-
-Two deliberate departures from the standard \(L_{\text{match}}\):
-
-- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`_NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `classifier/decision_logic.py`).
-- **Anchor penalty dropped.** The anchor population was the comparison universe for the full \(L_{\text{match}}\) (e.g. "all reports on drug X"). For `UNCOMPARABLE_CASE` the relevant comparison universe is the unknown small set of K patients within the shared publication, not the anchor. Keeping the anchor penalty would apply a multiple-testing correction that does not match the actual comparison universe. Dropping it yields a pure measure of patient-specific concordance strength on the \(\log_{10}\) scale — the same scale as the per-feature `(+X.X)` contribution chips already shown in the review HTML.
-
-##### Threshold calibration
-
-The branch A bar is set at `lmatch_med` (default 2.0) so that intuitively informative concordances qualify:
-
-| Matched features | \(-\log_{10}(p_f)\) | Sum | Clears 2.0? |
-|---|---|---|---|
-| sex only | 0.30 | 0.30 | no |
-| age only (1/80) | 1.90 | 1.90 | no |
-| sex + age | 0.30 + 1.90 | 2.20 | **yes** |
-| age + weight (1/40) | 1.90 + 1.60 | 3.50 | yes |
-| sex + age + clinical date (drug start, 1/540) | 0.30 + 1.90 + 2.73 | 4.93 | yes |
-
-The branch A inconsistency gate is `w_tot < w_tot_weak_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. A single moderate inconsistency (\(w_{\text{tot}} = 1.0\)) is enough to drop branch A and fall through to Abstain. The asymmetry between the branch A gate (`< w_tot_weak_zone`) and the branch B gate (`\geq w_tot_med_zone`) is intentional: in a multi-patient publication even small inconsistencies are not noise, so it is easy to drop out of `Duplicates` but harder to confidently land in `Otherwise related`.
-
-Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represents *absence of comparable evidence*, not a discrepancy), so \(w_{\text{tot}}\) reflects only non-source-case signals and the comparison is apples-to-apples.
-
-#### MULTI_PATIENT_CONTEXT_NO_LINK
-
-This verdict fires when both narratives indicate a multi-patient source (literature series, shared-study cohort, drug-shortage cluster, …) but no reliable shared source identifier links the two reports. The drug-set / AE-set inflation concern that motivates the UNCOMPARABLE_CASE three-way rule applies here as well: patients reported within the same multi-patient context tend to share drugs and AEs by construction, so a high \(L_{\text{match}}\) can be driven by features that are weak identifiers of patient identity.
-
-The dispatch is gated on the matching evidence:
-
-- **\(L_{\text{match}} > \) `lmatch_weak`** — route through the same three-way rule as `SAME_SOURCE_UNCOMPARABLE_CASE`, using `_l_patient` (drug-set / AE-set excluded) for branch A and `w_tot_weak_zone` for the branch B / branch A inconsistency gate. So a pair with high \(L_{\text{match}}\) and a single moderate inconsistency lands in `Otherwise related` rather than being absorbed into `Duplicates` by the strong zone's looser tolerance.
-- **\(L_{\text{match}} \leq \) `lmatch_weak`** — fall through to the ordinary weak-threshold branch (→ `Independent`). Without positive shared-source evidence we do not promote a weak-matching pair into the override territory, where it would otherwise resolve to `Abstain`.
-
-Conceptually this asymmetry mirrors the underlying evidence: `UNCOMPARABLE_CASE` has a confirmed shared source identifier and so always invokes the three-way rule; `MULTI_PATIENT_CONTEXT_NO_LINK` lacks that anchor and therefore requires enough matching evidence to make the override worth applying. The chosen branch is recorded as `independence_reason = shared_source` in either case.
-
----
-
-### Decision zones
-
-The decision space is divided into four zones based on the magnitude of \(L_{\text{match}}\). Each zone applies a progressively stricter tolerance for \(w_{\text{tot}}\):
-
-| Zone | Condition | Duplicates if... | Otherwise |
-|---|---|---|---|
-| Strong evidence | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Non-independent / Otherwise related |
-| Moderate evidence | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Non-independent / Otherwise related |
-| Weak evidence | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Non-independent / Otherwise related |
-| Below threshold | \(L_{\text{match}} \leq 1.0\) | never | Independent (Unrelated) |
-
-In all three non-trivial zones the matching evidence is treated as
-strong enough to reject the independence null on its own, so any pair
-in these zones is labelled `Non-independent`; the inconsistency score
-then decides whether the sub-label is `Duplicates` or `Otherwise
-related`. The zones differ only in how much inconsistency evidence is
-tolerated before the verdict is downgraded from `Duplicates`. Below the
-weak threshold the matching evidence is too weak to reject independence
-regardless of how clean the structured comparison looks.
-
-The L\_match zone boundaries (3.0, 2.0, 1.0), the zone-specific \(w_{\text{tot}}\) thresholds (4, 3, 1), and the inconsistency weights are all configurable parameters.
-
-**Examples** (using default parameters):
-
-- \(L_{\text{match}} = 4.2\), one strong inconsistency: \(w_{\text{tot}} = 3 < 4\) → **Non-independent / Duplicates**
-- \(L_{\text{match}} = 4.2\), one strong + one moderate: \(w_{\text{tot}} = 4\), not \(< 4\) → **Non-independent / Otherwise related**
-- \(L_{\text{match}} = 2.5\), two moderate inconsistencies: \(w_{\text{tot}} = 2 < 3\) → **Non-independent / Duplicates**
-- \(L_{\text{match}} = 2.5\), one strong inconsistency: \(w_{\text{tot}} = 3\), not \(< 3\) → **Non-independent / Otherwise related**
-- \(L_{\text{match}} = 1.5\), no inconsistencies: \(w_{\text{tot}} = 0\) → **Non-independent / Duplicates**
-- \(L_{\text{match}} = 1.5\), one moderate inconsistency: \(w_{\text{tot}} = 1\), not \(< 1\) → **Non-independent / Otherwise related**
-- \(L_{\text{match}} = 0.8\): below threshold → **Independent (Unrelated)** regardless of inconsistencies
-
----
-
-### Decisive inconsistencies
-
-Decisive inconsistencies (e.g. clinical-date impossibility, an AE clinical-picture decisive verdict, or `SAME_SOURCE_DIFFERENT_CASE` from the source/case override) participate in the zone-based logic as a term in \(w_{\text{tot}}\) with a deliberately large weight \(w_d = 100\). This is set high enough that any non-zero decisive count drives \(w_{\text{tot}}\) past every zone tolerance, so the zone's failing-branch outcome is taken. A configuration validator enforces \(w_d > \max(\text{zone thresholds})\) so this invariant is preserved if the thresholds are ever retuned.
-
-The effect is the same as an explicit override, but expressed through the ordinary weighted score — which keeps the breakdown transparent (the decisive contribution is visible in the explanation string and in the review HTML penalty column).
-
-When a decisive inconsistency is present:
-
-- \(L_{\text{match}} > 1.0\) → **Non-independent / Otherwise related**
-  (the matching evidence still rejects independence, so the pair is
-  surfaced as related but not the same case)
-- \(L_{\text{match}} \leq 1.0\) → **Independent (Unrelated)**
-  (independence cannot be rejected, so no claim about relatedness is
-  made)
-
-In other words, decisive inconsistencies preclude a `Duplicates` verdict — the reports cannot describe the same individual case — but do not by themselves overturn the independence assessment.
-
----
-
-### Relationship between matching evidence and inconsistency tolerance
-
-The zone-based design explicitly allows strong matching evidence to outweigh isolated inconsistencies. This reflects the known variability and occasional recording errors in pharmacovigilance data:
-
-- In the strong evidence zone, a single strong inconsistency (such as mismatching patient sex) is tolerated because the combined rarity of the matched features makes coincidence unlikely.
-- In the moderate evidence zone, only moderate inconsistencies are tolerated, and only a limited number.
-- In the weak evidence zone, any inconsistency at all is enough to move the pair out of `Duplicates`.
-
-Whenever a pair is moved out of the `Duplicates` zone in any of the three non-trivial zones, the rejection of independence still stands (matching evidence above `lmatch_weak` is treated as sufficient on its own), so the pair is surfaced as **Otherwise related**. Only below the weak threshold, where the matching evidence cannot reject independence at all, does the pair fall back to **Unrelated**.
-
----
-
-### Parameter tuning
-
-The following parameters define the decision behaviour and are configurable:
-
-| Parameter | Default | Role |
-|---|---|---|
-| `lmatch_strong` | 3.0 | L\_match boundary for the strong evidence zone |
-| `lmatch_med` | 2.0 | L\_match boundary for the moderate evidence zone |
-| `lmatch_weak` | 1.0 | L\_match boundary for the weak evidence zone |
-| `w_minor` | 0.4 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
-| `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
-| `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |
-| `w_decisive` | 100 | Weight per decisive inconsistency in \(w_{\text{tot}}\) (kept large enough to push \(w_{\text{tot}}\) past every zone tolerance) |
-| `w_tot_strong_zone` | 4.0 | Maximum \(w_{\text{tot}}\) for `Duplicates` in the strong zone |
-| `w_tot_med_zone` | 3.0 | Maximum \(w_{\text{tot}}\) for `Duplicates` in the moderate zone |
-| `w_tot_weak_zone` | 1.0 | Maximum \(w_{\text{tot}}\) for `Duplicates` in the weak zone |
-
-These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behaviour.
 

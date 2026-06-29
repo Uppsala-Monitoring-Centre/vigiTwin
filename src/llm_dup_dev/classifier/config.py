@@ -126,29 +126,29 @@ class DecisionThresholds(BaseModel):
 
     Three L_match zones define progressively stricter tolerance for w_tot:
 
-    - strong zone (L_match > lmatch_strong): w_tot < 4 → Same
-    - medium zone (L_match > lmatch_med):    w_tot < 3 → Same
-    - weak zone   (L_match > lmatch_weak):   w_tot < 1 → Same
-    - below weak: always Different individuals / Unrelated
+    - compelling zone   (L_match > lmatch_compelling):   w_tot < 4 → Same
+    - intermediate zone (L_match > lmatch_intermediate): w_tot < 3 → Same
+    - limited zone      (L_match > lmatch_limited):      w_tot < 1 → Same
+    - below limited: always Different individuals / Unrelated
 
     In all three non-trivial zones, matching evidence is treated as
     sufficient to reject independence; w_tot only decides the
-    duplicate-vs-otherwise-related sub-label. Only the below-weak
+    duplicate-vs-otherwise-related sub-label. Only the below-limited
     branch yields Unrelated.
 
     ``w_decisive`` is set far above any zone threshold so that a single
     decisive inconsistency always forces the failing-zone branch, which
     in combination with the zone logic yields ``Otherwise_related``
-    whenever ``L_match > lmatch_weak`` and ``Unrelated`` otherwise. This
-    is enforced by an invariant validator.
+    whenever ``L_match > lmatch_limited`` and ``Unrelated`` otherwise.
+    This is enforced by an invariant validator.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
     # L_match zone boundaries
-    lmatch_strong: float = 3.0
-    lmatch_med: float = 2.0
-    lmatch_weak: float = 1.0
+    lmatch_compelling: float = 3.0
+    lmatch_intermediate: float = 2.0
+    lmatch_limited: float = 1.0
 
     # Inconsistency weights
     w_minor: float = 0.4
@@ -157,16 +157,16 @@ class DecisionThresholds(BaseModel):
     w_decisive: float = 100.0
 
     # Per-zone w_tot thresholds (Same if w_tot < threshold)
-    w_tot_strong_zone: float = 4.0
-    w_tot_med_zone: float = 3.0
-    w_tot_weak_zone: float = 1.0
+    w_tot_compelling_zone: float = 4.0
+    w_tot_intermediate_zone: float = 3.0
+    w_tot_limited_zone: float = 1.0
 
     @model_validator(mode="after")
     def _w_decisive_exceeds_zone_thresholds(self) -> "DecisionThresholds":
         max_zone = max(
-            self.w_tot_strong_zone,
-            self.w_tot_med_zone,
-            self.w_tot_weak_zone,
+            self.w_tot_compelling_zone,
+            self.w_tot_intermediate_zone,
+            self.w_tot_limited_zone,
         )
         if self.w_decisive <= max_zone:
             raise ValueError(
