@@ -51,7 +51,7 @@ def test_build_run_manifest_minimal_inputs() -> None:
 
 def test_build_run_manifest_from_runner() -> None:
     custom_config = PipelineConfig(anchor=AnchorConfig(threshold=99))
-    custom_thresholds = DecisionThresholds(lmatch_strong=4.2)
+    custom_thresholds = DecisionThresholds(lmatch_compelling=4.2)
     runner = PipelineRunner(
         report_loader=SyntheticReportLoader({}),
         stats_provider=SyntheticStatsProvider(),
@@ -64,7 +64,7 @@ def test_build_run_manifest_from_runner() -> None:
 
     # Effective config — non-default override survives.
     assert manifest.pipeline_config["anchor"]["threshold"] == 99
-    assert manifest.decision_thresholds["lmatch_strong"] == 4.2
+    assert manifest.decision_thresholds["lmatch_compelling"] == 4.2
     # Defaults still present alongside overrides.
     assert "domain_sizes" in manifest.pipeline_config
     # Feature flags reflect runner state.

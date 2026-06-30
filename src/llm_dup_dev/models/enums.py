@@ -178,16 +178,16 @@ class IndependenceReason(str, Enum):
     override path (when a reliable shared source identifier has been
     derived from the narratives) and by the multi-patient three-way
     rule that handles ``MULTI_PATIENT_CONTEXT_NO_LINK`` pairs with
-    ``L_match > lmatch_weak``. ``ABSTAIN`` is a defensive backstop for
-    paths not covered by the above; it is not emitted by any standard
-    code path.
+    ``L_match > lmatch_limited``. ``ABSTAIN`` is a defensive backstop
+    for paths not covered by the above; it is not emitted by any
+    standard code path.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
-    RARITY_STRONG = "rarity_strong"
-    RARITY_MEDIUM = "rarity_medium"
-    RARITY_WEAK = "rarity_weak"
+    RARITY_COMPELLING = "rarity_compelling"
+    RARITY_INTERMEDIATE = "rarity_intermediate"
+    RARITY_LIMITED = "rarity_limited"
     RARITY_INSUFFICIENT = "rarity_insufficient"
     SHARED_SOURCE = "shared_source"
     ABSTAIN = "abstain"

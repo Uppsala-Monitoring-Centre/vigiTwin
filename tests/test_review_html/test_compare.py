@@ -703,10 +703,10 @@ class TestFormatPenaltySummary:
         result = _format_penalty_summary(counts, explanation)
         assert result == "1 × 100.0 = 100.0 >= 4.0"
 
-    def test_below_weak_uses_zero_threshold(self):
-        """Below-weak branch: always Unrelated → show breakdown with '>= 0.0'."""
+    def test_below_limited_uses_zero_threshold(self):
+        """Below-limited branch: always Unrelated → show breakdown with '>= 0.0'."""
         explanation = (
-            "Matching evidence below weak threshold "
+            "Matching evidence below limited threshold "
             "(L_match=0.50 ≤ 1.0); independence cannot be rejected."
         )
         # Zero inconsistencies → no terms, just the total comparison.

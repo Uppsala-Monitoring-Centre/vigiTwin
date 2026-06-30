@@ -6,13 +6,13 @@ Uses the weighted inconsistency score
 (defaults: w_minor=0.4, w_moderate=1.0, w_strong=3.0, w_decisive=100.0)
 with per-zone thresholds:
 
-    strong zone (L > 3.0): w_tot < 4 → Non-independent / Duplicates
+    compelling zone (L > 3.0): w_tot < 4 → Non-independent / Duplicates
                             else      → Non-independent / Otherwise_related
-    medium zone (L > 2.0): w_tot < 3 → Non-independent / Duplicates
+    intermediate zone (L > 2.0): w_tot < 3 → Non-independent / Duplicates
                             else      → Non-independent / Otherwise_related
-    weak zone   (L > 1.0): w_tot < 1 → Non-independent / Duplicates
+    limited zone   (L > 1.0): w_tot < 1 → Non-independent / Duplicates
                             else      → Non-independent / Otherwise_related
-    below weak:            always Independent
+    below limited:            always Independent
 """
 
 from llm_dup_dev.classifier.config import DecisionThresholds
@@ -92,7 +92,7 @@ def _fc(feature: str, p_f: float) -> FeatureContribution:
 # Values come from the plan's worked-example table:
 #   sex p_f=0.5  → -log10 ≈ 0.30
 #   age p_f=1/80 → -log10 ≈ 1.90
-# Sum (sex + age) ≈ 2.20 — just clears lmatch_med = 2.0.
+# Sum (sex + age) ≈ 2.20 — just clears lmatch_intermediate = 2.0.
 _SEX_PLUS_AGE_CONTRIBS = [
     _fc("patient_sex", 0.5),
     _fc("patient_age", 1.0 / 80.0),
@@ -148,12 +148,12 @@ THRESHOLDS = DecisionThresholds()
 
 
 # ===================================================================
-# Strong zone: L_match > 3.0  —  w_tot < 4 → Duplicates
+# Compelling zone: L_match > 3.0  —  w_tot < 4 → Duplicates
 # w_tot = 1*moderate + 3*strong
 # ===================================================================
 
 class TestStrongZone:
-    """L_match > lmatch_strong (default 3.0)."""
+    """L_match > lmatch_compelling (default 3.0)."""
 
     def test_no_inconsistencies_duplicates(self):
         """w_tot=0 < 4 → Duplicates."""
@@ -192,10 +192,10 @@ class TestStrongZone:
         _assert_otherwise_related(result)
 
     def test_boundary_lmatch_exactly_strong(self):
-        """L_match == lmatch_strong (3.0) → NOT in strong zone, falls to medium."""
+        """L_match == lmatch_compelling (3.0) → NOT in compelling zone, falls to medium."""
         f = _make_features(L_match=3.0)
         result = classify(f, THRESHOLDS)
-        # 3.0 is NOT > 3.0, so falls to medium zone
+        # 3.0 is NOT > 3.0, so falls to intermediate zone
         _assert_duplicates(result)
 
     def test_just_above_strong(self):
@@ -206,11 +206,11 @@ class TestStrongZone:
 
 
 # ===================================================================
-# Medium zone: lmatch_med < L_match ≤ lmatch_strong — w_tot < 3 → Duplicates
+# Intermediate zone: lmatch_intermediate < L_match ≤ lmatch_compelling — w_tot < 3 → Duplicates
 # ===================================================================
 
 class TestMediumZone:
-    """lmatch_med (2.0) < L_match ≤ lmatch_strong (3.0)."""
+    """lmatch_intermediate (2.0) < L_match ≤ lmatch_compelling (3.0)."""
 
     def test_no_inconsistencies_duplicates(self):
         """w_tot=0 < 3 → Duplicates."""
@@ -237,22 +237,22 @@ class TestMediumZone:
         _assert_otherwise_related(result)
 
     def test_boundary_lmatch_exactly_med(self):
-        """L_match == lmatch_med (2.0) → NOT in medium zone, falls to weak."""
+        """L_match == lmatch_intermediate (2.0) → NOT in intermediate zone, falls to weak."""
         f = _make_features(L_match=2.0)
         result = classify(f, THRESHOLDS)
-        # 2.0 is NOT > 2.0, falls to weak zone
+        # 2.0 is NOT > 2.0, falls to limited zone
         # No inconsistencies → Duplicates
         _assert_duplicates(result)
 
 
 # ===================================================================
-# Weak zone: lmatch_weak < L_match ≤ lmatch_med — w_tot < 1 → Duplicates,
+# Limited zone: lmatch_limited < L_match ≤ lmatch_intermediate — w_tot < 1 → Duplicates,
 # else Non-independent / Otherwise_related (matching evidence still
 # rejects independence; inconsistencies only downgrade the sub-label).
 # ===================================================================
 
 class TestWeakZone:
-    """lmatch_weak (1.0) < L_match ≤ lmatch_med (2.0)."""
+    """lmatch_limited (1.0) < L_match ≤ lmatch_intermediate (2.0)."""
 
     def test_no_inconsistencies_duplicates(self):
         """w_tot=0 < 1 → Duplicates."""
@@ -273,18 +273,18 @@ class TestWeakZone:
         _assert_otherwise_related(result)
 
     def test_boundary_lmatch_exactly_weak(self):
-        """L_match == lmatch_weak (1.0) → NOT in weak zone, falls to below."""
+        """L_match == lmatch_limited (1.0) → NOT in limited zone, falls to below."""
         f = _make_features(L_match=1.0)
         result = classify(f, THRESHOLDS)
         _assert_independent(result)
 
 
 # ===================================================================
-# Below weak: L_match ≤ lmatch_weak
+# Below weak: L_match ≤ lmatch_limited
 # ===================================================================
 
 class TestBelowWeak:
-    """L_match ≤ lmatch_weak (1.0)."""
+    """L_match ≤ lmatch_limited (1.0)."""
 
     def test_zero_lmatch_independent(self):
         f = _make_features(L_match=0.0)
@@ -313,32 +313,32 @@ class TestDecisiveInconsistency:
     failing-zone branch."""
 
     def test_decisive_with_high_lmatch_otherwise_related(self):
-        """Decisive + L_match > lmatch_med → Non-independent / Otherwise_related."""
+        """Decisive + L_match > lmatch_intermediate → Non-independent / Otherwise_related."""
         f = _make_features(L_match=5.0, decisive=1)
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
 
     def test_decisive_with_medium_lmatch_otherwise_related(self):
-        """Decisive + L_match just above lmatch_med → Otherwise_related."""
+        """Decisive + L_match just above lmatch_intermediate → Otherwise_related."""
         f = _make_features(L_match=2.5, decisive=1)
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
 
     def test_decisive_with_weak_lmatch_otherwise_related(self):
-        """Decisive + lmatch_weak < L_match ≤ lmatch_med → Otherwise_related."""
+        """Decisive + lmatch_limited < L_match ≤ lmatch_intermediate → Otherwise_related."""
         f = _make_features(L_match=1.5, decisive=1)
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
 
     def test_decisive_boundary_at_med(self):
-        """Decisive + L_match == lmatch_med (2.0) → NOT > med, falls to weak
+        """Decisive + L_match == lmatch_intermediate (2.0) → NOT > med, falls to weak
         zone → Otherwise_related."""
         f = _make_features(L_match=2.0, decisive=1)
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
 
     def test_decisive_at_weak_boundary_independent(self):
-        """Decisive + L_match == lmatch_weak (1.0) → falls to below-weak →
+        """Decisive + L_match == lmatch_limited (1.0) → falls to below-limited →
         Independent (only zone where decisive still yields Unrelated)."""
         f = _make_features(L_match=1.0, decisive=1)
         result = classify(f, THRESHOLDS)
@@ -369,9 +369,9 @@ class TestCustomThresholds:
     def test_relaxed_lmatch(self):
         """With lower L_match thresholds, same L_match enters a higher zone."""
         relaxed = DecisionThresholds(
-            lmatch_strong=2.0, lmatch_med=1.0, lmatch_weak=0.5,
+            lmatch_compelling=2.0, lmatch_intermediate=1.0, lmatch_limited=0.5,
         )
-        # L_match=2.5 is now in the strong zone (>2.0)
+        # L_match=2.5 is now in the compelling zone (>2.0)
         # strong=1 → w_tot=3 < 4 → Duplicates
         f = _make_features(L_match=2.5, strong=1)
         result = classify(f, relaxed)
@@ -380,9 +380,9 @@ class TestCustomThresholds:
     def test_strict_lmatch(self):
         """With higher L_match thresholds, same L_match falls to lower zone."""
         strict = DecisionThresholds(
-            lmatch_strong=5.0, lmatch_med=4.0, lmatch_weak=3.0,
+            lmatch_compelling=5.0, lmatch_intermediate=4.0, lmatch_limited=3.0,
         )
-        # L_match=3.5 is now in the weak zone (>3.0 but ≤4.0)
+        # L_match=3.5 is now in the limited zone (>3.0 but ≤4.0)
         # moderate=1 → w_tot=1 ≥ 1 → Otherwise_related
         f = _make_features(L_match=3.5, moderate=1)
         result = classify(f, strict)
@@ -390,10 +390,10 @@ class TestCustomThresholds:
 
     def test_custom_weights(self):
         """Custom weights change what w_tot value is produced."""
-        # With w_moderate=2, w_strong=5, w_tot_strong_zone=6
+        # With w_moderate=2, w_strong=5, w_tot_compelling_zone=6
         # strong=1, moderate=0 → w_tot = 5 < 6 → Duplicates
         custom = DecisionThresholds(
-            w_moderate=2.0, w_strong=5.0, w_tot_strong_zone=6.0,
+            w_moderate=2.0, w_strong=5.0, w_tot_compelling_zone=6.0,
         )
         f = _make_features(L_match=4.0, strong=1)
         result = classify(f, custom)
@@ -401,10 +401,10 @@ class TestCustomThresholds:
 
     def test_custom_weights_boundary(self):
         """Custom weights at boundary produce Otherwise_related."""
-        # With w_moderate=2, w_strong=5, w_tot_strong_zone=6
+        # With w_moderate=2, w_strong=5, w_tot_compelling_zone=6
         # strong=1, moderate=1 → w_tot = 5+2 = 7 ≥ 6 → Otherwise_related
         custom = DecisionThresholds(
-            w_moderate=2.0, w_strong=5.0, w_tot_strong_zone=6.0,
+            w_moderate=2.0, w_strong=5.0, w_tot_compelling_zone=6.0,
         )
         f = _make_features(L_match=4.0, strong=1, moderate=1)
         result = classify(f, custom)
@@ -436,7 +436,7 @@ class TestExplanations:
         assert "strong=2" in result.explanation
         assert "moderate=1" in result.explanation
 
-    def test_below_weak_mentions_threshold(self):
+    def test_below_limited_mentions_threshold(self):
         f = _make_features(L_match=0.3)
         result = classify(f, THRESHOLDS)
         assert "1.0" in result.explanation  # mentions the weak threshold
@@ -467,19 +467,19 @@ class TestDefaultThresholds:
 class TestIndependenceReasonFromRarity:
     """Each existing L_match zone branch should set the matching reason."""
 
-    def test_strong_zone_sets_rarity_strong(self):
+    def test_compelling_zone_sets_rarity_compelling(self):
         result = classify(_make_features(L_match=4.0), THRESHOLDS)
-        assert result.independence_reason == IndependenceReason.RARITY_STRONG
+        assert result.independence_reason == IndependenceReason.RARITY_COMPELLING
 
-    def test_medium_zone_sets_rarity_medium(self):
+    def test_intermediate_zone_sets_rarity_intermediate(self):
         result = classify(_make_features(L_match=2.5), THRESHOLDS)
-        assert result.independence_reason == IndependenceReason.RARITY_MEDIUM
+        assert result.independence_reason == IndependenceReason.RARITY_INTERMEDIATE
 
-    def test_weak_zone_sets_rarity_weak(self):
+    def test_limited_zone_sets_rarity_limited(self):
         result = classify(_make_features(L_match=1.5), THRESHOLDS)
-        assert result.independence_reason == IndependenceReason.RARITY_WEAK
+        assert result.independence_reason == IndependenceReason.RARITY_LIMITED
 
-    def test_below_weak_sets_rarity_insufficient(self):
+    def test_below_limited_sets_rarity_insufficient(self):
         result = classify(_make_features(L_match=0.5), THRESHOLDS)
         assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
 
@@ -648,7 +648,7 @@ class TestSharedSourceOverride:
         """Advisory verdict does not trigger the override — existing
         L_match logic applies."""
         f = _make_features(
-            L_match=0.5,  # below weak threshold
+            L_match=0.5,  # below limited threshold
             source_case_assessment=_assessment(
                 SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
                 identifier=None,
@@ -668,7 +668,7 @@ class TestSharedSourceOverride:
         )
         result = classify(f, THRESHOLDS)
         _assert_duplicates(result)
-        assert result.independence_reason == IndependenceReason.RARITY_STRONG
+        assert result.independence_reason == IndependenceReason.RARITY_COMPELLING
 
     def test_not_assessed_falls_through(self):
         f = _make_features(
@@ -800,11 +800,11 @@ class TestUncomparableCaseThreeWayRule:
     patient-specific log-evidence ``L_patient`` (excluding drug/AE-set
     contributions) and ``w_tot``:
 
-        if w_tot >= w_tot_med_zone:                          → Otherwise_related
-        elif L_patient > lmatch_med and w_tot < w_tot_weak_zone: → Duplicates
+        if w_tot >= w_tot_intermediate_zone:                          → Otherwise_related
+        elif L_patient > lmatch_intermediate and w_tot < w_tot_limited_zone: → Duplicates
         else:                                                → Abstain
 
-    Defaults: lmatch_med=2.0, w_tot_weak_zone=1.0, w_tot_med_zone=3.0.
+    Defaults: lmatch_intermediate=2.0, w_tot_limited_zone=1.0, w_tot_intermediate_zone=3.0.
     """
 
     # ---------- Branch A: Duplicates ----------
@@ -999,7 +999,7 @@ class TestUncomparableCaseThreeWayRule:
 class TestMultiPatientContextNoLink:
     """``MULTI_PATIENT_CONTEXT_NO_LINK`` is routed through the same
     three-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` *only* when
-    ``L_match > lmatch_weak``. Below that threshold the verdict is
+    ``L_match > lmatch_limited``. Below that threshold the verdict is
     treated as advisory and the pair falls through to the standard
     weak-threshold branch (→ Independent). The two verdicts share the
     drug-set / AE-set inflation concern but only UNCOMPARABLE_CASE
@@ -1009,11 +1009,11 @@ class TestMultiPatientContextNoLink:
     # ---------- Below / at the weak threshold: fall through ----------
 
     def test_at_weak_boundary_falls_through(self):
-        """L_match exactly equal to lmatch_weak → standard zone logic
+        """L_match exactly equal to lmatch_limited → standard zone logic
         (Independent at the boundary). Confirms the strict ``>`` in the
         shim, matching the rest of the zone boundaries."""
         f = _make_features(
-            L_match=THRESHOLDS.lmatch_weak,
+            L_match=THRESHOLDS.lmatch_limited,
             source_case_assessment=_assessment(
                 SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
                 identifier=None,
@@ -1043,10 +1043,10 @@ class TestMultiPatientContextNoLink:
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_branch_b_one_moderate_otherwise_related(self):
-        """The motivating case: L_match=3.3 (strong zone) with one
+        """The motivating case: L_match=3.3 (compelling zone) with one
         moderate inconsistency. Standard zone logic would have absorbed
         the moderate and returned Duplicates (w_tot=1.0 < 4.0). The
-        multi-patient three-way rule tightens to w_tot_weak_zone, so
+        multi-patient three-way rule tightens to w_tot_limited_zone, so
         w_tot=1.0 ≥ 1.0 → Otherwise_related."""
         f = _make_features(
             L_match=3.3,

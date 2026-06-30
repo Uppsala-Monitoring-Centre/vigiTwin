@@ -211,7 +211,7 @@ class TestCustomConfig:
     ):
         """Very strict thresholds should make classification harder."""
         strict = DecisionThresholds(
-            lmatch_strong=10.0, lmatch_med=8.0, lmatch_weak=6.0
+            lmatch_compelling=10.0, lmatch_intermediate=8.0, lmatch_limited=6.0
         )
         runner = PipelineRunner(
             report_loader=loader,
