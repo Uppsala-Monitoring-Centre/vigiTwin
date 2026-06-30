@@ -520,11 +520,12 @@ class TestSharedSourceOverride:
 
     def test_same_source_same_case_downgrades_when_other_decisive(self):
         """Positive verdict + decisive non-source-case inconsistency
-        → Abstain (w_tot crosses medium-zone threshold; single-patient-
-        source inconsistencies abstain rather than Otherwise_related)."""
+        → Abstain (w_tot crosses compelling-zone threshold; single-
+        patient-source inconsistencies abstain rather than
+        Otherwise_related)."""
         f = _make_features(
             L_match=0.0,
-            decisive=1,  # w_tot = 100, well past medium-zone threshold 3.0
+            decisive=1,  # w_tot = 100, well past compelling-zone threshold 4.0
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
             ),
@@ -534,8 +535,8 @@ class TestSharedSourceOverride:
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_tolerates_one_moderate(self):
-        """A single moderate inconsistency (w_tot=1.0) is below the
-        medium-zone threshold (3.0) and must NOT demote the pair."""
+        """A single moderate inconsistency (w_tot=1.0) is well below the
+        compelling-zone threshold (4.0) and must NOT demote the pair."""
         f = _make_features(
             L_match=0.0,
             moderate=1,
@@ -549,7 +550,7 @@ class TestSharedSourceOverride:
 
     def test_same_source_tolerates_two_moderates(self):
         """Two moderate inconsistencies (w_tot=2.0) remain below the
-        medium-zone threshold (3.0)."""
+        compelling-zone threshold (4.0)."""
         f = _make_features(
             L_match=0.0,
             moderate=2,
@@ -561,12 +562,12 @@ class TestSharedSourceOverride:
         _assert_duplicates(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
-    def test_same_source_demotes_on_one_strong(self):
-        """A single strong inconsistency (w_tot=3.0) crosses the
-        medium-zone threshold: 3.0 is NOT < 3.0, so the pair is
-        abstained (not Otherwise_related) for a same-case verdict.
-        Inconsistencies on a confirmed single-patient/same-case source
-        are more plausibly artefacts than evidence of distinct patients."""
+    def test_same_source_tolerates_one_strong(self):
+        """A single strong inconsistency (w_tot=3.0) is still below the
+        compelling-zone threshold (4.0) and remains in the Duplicates
+        branch for a confirmed same-case verdict. The override shares
+        the compelling-zone inconsistency budget: a single strong is
+        tolerated."""
         f = _make_features(
             L_match=0.0,
             strong=1,
@@ -575,13 +576,15 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_duplicates(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_demotes_on_moderate_plus_strong(self):
-        """Moderate + strong (w_tot=4.0) crosses the medium-zone
-        threshold and abstains (not Otherwise_related) for a
-        single-patient verdict."""
+        """Moderate + strong (w_tot=4.0) reaches the compelling-zone
+        threshold: 4.0 is NOT < 4.0, so the pair is abstained (not
+        Otherwise_related) for a single-patient verdict. Inconsistencies
+        on a confirmed single-patient / same-case source are more
+        plausibly artefacts than evidence of distinct patients."""
         f = _make_features(
             L_match=0.0,
             moderate=1,
@@ -709,11 +712,13 @@ class TestAbstainOutcome:
     underdetermined same-source scenarios."""
 
     def test_single_patient_strong_inconsistency_abstains(self):
-        """SAME_SOURCE_SINGLE_PATIENT + w_tot=3.0 (≥ 3.0) → Abstain,
+        """SAME_SOURCE_SINGLE_PATIENT + w_tot=4.0 (≥ 4.0) → Abstain,
         not Otherwise_related. Inconsistencies on a single-patient source
-        are more plausibly extraction/reporting artefacts."""
+        are more plausibly extraction/reporting artefacts. One strong +
+        one moderate reaches the compelling-zone threshold."""
         f = _make_features(
             L_match=0.0,
+            moderate=1,
             strong=1,
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
@@ -724,9 +729,10 @@ class TestAbstainOutcome:
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_case_strong_inconsistency_abstains(self):
-        """SAME_SOURCE_SAME_CASE + w_tot=3.0 (≥ 3.0) → Abstain."""
+        """SAME_SOURCE_SAME_CASE + w_tot=4.0 (≥ 4.0) → Abstain."""
         f = _make_features(
             L_match=0.0,
+            moderate=1,
             strong=1,
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
@@ -752,6 +758,7 @@ class TestAbstainOutcome:
         """Abstain explanation includes the w_tot value for auditability."""
         f = _make_features(
             L_match=0.0,
+            moderate=1,
             strong=1,
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
@@ -759,8 +766,8 @@ class TestAbstainOutcome:
             ),
         )
         result = classify(f, THRESHOLDS)
-        assert "w_tot=3.0" in result.explanation
-        assert "3.0" in result.explanation  # threshold
+        assert "w_tot=4.0" in result.explanation
+        assert "4.0" in result.explanation  # threshold
         assert result.final_label == "Abstain"
 
     def test_abstain_explanation_uncomparable_mentions_multi_patient(self):
@@ -781,6 +788,7 @@ class TestAbstainOutcome:
         (same-source non-independence established)."""
         f = _make_features(
             L_match=0.0,
+            moderate=1,
             strong=1,
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,

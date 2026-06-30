@@ -65,7 +65,7 @@ text, patient-level identifiers) is not present in the structured data.
 It is produced only by the shared-source override path and only for the
 following verdicts:
 
-* ``SAME_SOURCE_SINGLE_PATIENT`` — when ``w_tot ≥ w_tot_intermediate_zone``
+* ``SAME_SOURCE_SINGLE_PATIENT`` — when ``w_tot ≥ w_tot_compelling_zone``
   (substantial inconsistencies that are more plausibly explained by
   extraction differences, reporting variation, or partial information
   than by distinct patients).
@@ -77,7 +77,7 @@ following verdicts:
   different individual (``w_tot ≥ w_tot_limited_zone``). See
   :func:`_l_patient` for the patient-specific log-evidence definition.
   Note the lower Otherwise_related gate (``w_tot_limited_zone``) vs the
-  SINGLE_PATIENT / SAME_CASE gate (``w_tot_intermediate_zone``): literature /
+  SINGLE_PATIENT / SAME_CASE gate (``w_tot_compelling_zone``): literature /
   summary-case demographics are more deliberate than ad-hoc reports,
   so smaller inconsistencies carry more weight as evidence of
   different patients.
@@ -299,18 +299,21 @@ def _shared_source_override(
 
     ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE``
         Default to ``DUPLICATES``, but are raised to ``ABSTAIN`` when
-        ``w_tot ≥ w_tot_intermediate_zone``. The rationale: for a genuinely
+        ``w_tot ≥ w_tot_compelling_zone``. The rationale: for a genuinely
         single-patient source (or one where the same case ID is
         confirmed), substantial inconsistencies are more plausibly
         extraction artefacts, reporting differences, or partial
         information than evidence of distinct individuals — so the
         pair is epistemically underdetermined rather than confidently
-        Otherwise_related. The threshold is shared with the intermediate
-        L_match zone (default 3.0): a single strong inconsistency, or
-        equivalent accumulated severity, is required to leave the
-        Duplicates branch. A single moderate or a handful of minors is
-        tolerated. Decisive inconsistencies demote via their large
-        weight (``w_decisive = 100``).
+        Otherwise_related. The threshold is shared with the compelling
+        L_match zone (default 4.0): a confirmed shared identifier with
+        a single-patient / same-case claim is at least as strong evidence
+        of identity as compelling rarity-based matching, so it deserves
+        the same inconsistency budget. A single strong inconsistency is
+        tolerated; reaching the threshold requires one strong + one
+        moderate, two strongs, or equivalent accumulated severity.
+        Decisive inconsistencies demote via their large weight
+        (``w_decisive = 100``).
     """
     verdict = assessment.verdict
     ident_str = _format_shared_identifier(assessment)
@@ -331,17 +334,17 @@ def _shared_source_override(
         )
 
     # SAME_SOURCE_SINGLE_PATIENT or SAME_SOURCE_SAME_CASE
-    if w_tot < thresholds.w_tot_intermediate_zone:
+    if w_tot < thresholds.w_tot_compelling_zone:
         return _duplicates(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
-                f"w_tot={w_tot:.1f} < {thresholds.w_tot_intermediate_zone:.1f}."
+                f"w_tot={w_tot:.1f} < {thresholds.w_tot_compelling_zone:.1f}."
             ),
         )
 
-    # w_tot >= w_tot_intermediate_zone: substantial inconsistencies, but for a
+    # w_tot >= w_tot_compelling_zone: substantial inconsistencies, but for a
     # confirmed single-patient / same-case source these are more plausibly
     # extraction artefacts or reporting differences than evidence of distinct
     # individuals. Epistemically underdetermined → Abstain.
@@ -350,7 +353,7 @@ def _shared_source_override(
         reason=IndependenceReason.SHARED_SOURCE,
         explanation=(
             f"Shared-source override ({verdict.value}{ident_str}); "
-            f"w_tot={w_tot:.1f} >= {thresholds.w_tot_intermediate_zone:.1f} "
+            f"w_tot={w_tot:.1f} >= {thresholds.w_tot_compelling_zone:.1f} "
             f"(strong={features.inconsistency_counts.strong}, "
             f"moderate={features.inconsistency_counts.moderate}, "
             f"decisive={features.inconsistency_counts.decisive}); "

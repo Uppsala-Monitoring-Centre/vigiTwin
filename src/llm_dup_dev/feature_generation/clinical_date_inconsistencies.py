@@ -124,17 +124,11 @@ def _severity_gt(a: Severity, b: Severity) -> bool:
 # Threshold configuration
 # ---------------------------------------------------------------------------
 
-# Overall AE onset date thresholds (tighter)
-_AE_ONSET_MINOR_DAYS = 7
-_AE_ONSET_MODERATE_DAYS = 30
-
-# Drug start / AE onset thresholds (more lenient).
-# Per-entity drug start and AE onset discrepancies cap at MODERATE: a single
-# entity-level mismatch is never strong evidence on its own (the overall AE
-# onset date covers the case-level signal). Differences <= 7 days are treated
-# as no inconsistency to absorb minor data-entry / regimen-rounding noise.
-_ENTITY_NONE_DAYS = 7
-_ENTITY_MODERATE_DAYS = 70
+# Canonical clinical-date day-difference thresholds. The same table grades
+# every clinical-date axis; per-entity comparisons (drug start / AE onset)
+# downgrade the resulting severity one step via :func:`_classify_entity`.
+_CLINICAL_DATE_MINOR_DAYS = 7
+_CLINICAL_DATE_MODERATE_DAYS = 75
 
 # Grace period for the report-date vs. overall-AE-onset impossibility check.
 # In practice we frequently see pairs where both reports list the day of
@@ -147,12 +141,25 @@ _ENTITY_MODERATE_DAYS = 70
 _DECISIVE_IMPOSSIBILITY_GRACE_DAYS = 30
 
 
+# Per-entity downgrade: a single regimen- or PT-level mismatch is too noisy
+# on its own to constitute strong evidence (the overall AE onset comparison
+# carries the case-level signal). MINOR collapses to NONE rather than to
+# IGNORED — the inconsistency is suppressed at the raw-classification stage,
+# not after a downgrade step.
+_PER_ENTITY_DOWNGRADE: dict[Severity, Severity] = {
+    Severity.STRONG: Severity.MODERATE,
+    Severity.MODERATE: Severity.MINOR,
+    Severity.MINOR: Severity.NONE,
+    Severity.NONE: Severity.NONE,
+}
+
+
 def _classify_overall_ae_onset(diff_days: int) -> Severity:
     if diff_days == 0:
         return Severity.NONE
-    if diff_days <= _AE_ONSET_MINOR_DAYS:
+    if diff_days <= _CLINICAL_DATE_MINOR_DAYS:
         return Severity.MINOR
-    if diff_days <= _AE_ONSET_MODERATE_DAYS:
+    if diff_days <= _CLINICAL_DATE_MODERATE_DAYS:
         return Severity.MODERATE
     return Severity.STRONG
 
@@ -160,14 +167,11 @@ def _classify_overall_ae_onset(diff_days: int) -> Severity:
 def _classify_entity(diff_days: int) -> Severity:
     """Classify a per-entity drug start / AE onset date difference.
 
-    Caps at MODERATE: single-entity mismatches are never STRONG.
-    Differences within :data:`_ENTITY_NONE_DAYS` are treated as NONE.
+    Applies the canonical clinical-date table and then downgrades the
+    result one step (per spec § Clinical date inconsistencies → Severity
+    thresholds), which preserves the per-entity cap at MODERATE.
     """
-    if diff_days <= _ENTITY_NONE_DAYS:
-        return Severity.NONE
-    if diff_days < _ENTITY_MODERATE_DAYS:
-        return Severity.MINOR
-    return Severity.MODERATE
+    return _PER_ENTITY_DOWNGRADE[_classify_overall_ae_onset(diff_days)]
 
 
 # ---------------------------------------------------------------------------

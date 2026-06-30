@@ -178,8 +178,8 @@ Per-verdict sub-label mappings (the verdict is computed upstream — see § Sour
 
 | Verdict | Sub-label mapping |
 |---|---|
-| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_intermediate_zone`; else `Abstain` |
-| `SAME_SOURCE_SAME_CASE`      | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_intermediate_zone`; else `Abstain` |
+| `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_compelling_zone`; else `Abstain` |
+| `SAME_SOURCE_SAME_CASE`      | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_compelling_zone`; else `Abstain` |
 | `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise related` (pinned) |
 | `SAME_SOURCE_UNCOMPARABLE_CASE` | three-way rule — see below |
 | `MULTI_PATIENT_CONTEXT_NO_LINK` | same three-way rule when \(L_{\text{match}} >\) `lmatch_limited`; ordinary zone logic (→ `Independent`) otherwise |
@@ -210,9 +210,9 @@ The verdict, the surfaced `shared_source_identifier` (with its type), and short 
 
 #### SAME_SOURCE_SINGLE_PATIENT and SAME_SOURCE_SAME_CASE
 
-These verdicts default to `Duplicates`. When non-source-case inconsistency signals push \(w_{\text{tot}}\) to or past `w_tot_intermediate_zone` (default `3.0`), the pair is **Abstained** rather than classified as `Otherwise related`. The rationale: for a genuinely single-patient source (or one where the same case identifier is confirmed), substantial inconsistencies are more plausibly caused by extraction artefacts, secondary-source corruption, reporting differences, or partial information than by the reports describing distinct individuals. The pair is therefore epistemically underdetermined — the inconsistency evidence does not safely establish different individuals — and an explicit `Abstain` is preferable to a false `Otherwise related` classification.
+These verdicts default to `Duplicates`. When non-source-case inconsistency signals push \(w_{\text{tot}}\) to or past `w_tot_compelling_zone` (default `4.0`), the pair is **Abstained** rather than classified as `Otherwise related`. The rationale: for a genuinely single-patient source (or one where the same case identifier is confirmed), substantial inconsistencies are more plausibly caused by extraction artefacts, secondary-source corruption, reporting differences, or partial information than by the reports describing distinct individuals. The pair is therefore epistemically underdetermined — the inconsistency evidence does not safely establish different individuals — and an explicit `Abstain` is preferable to a false `Otherwise related` classification.
 
-The threshold is shared with the medium L_match zone by design: a single strong inconsistency (or equivalent accumulated severity: three moderates, one strong + one moderate, …) is required to reach the threshold. A single moderate or a handful of minors is tolerated. Decisive inconsistencies trigger the threshold via their large weight (`w_decisive = 100`).
+The threshold is shared with the compelling L_match zone by design: a confirmed shared identifier coupled with a single-patient / same-case claim is at least as strong evidence of identity as compelling rarity-based matching, so it deserves the same inconsistency budget. A single strong inconsistency is tolerated; reaching the threshold requires one strong + one moderate, two strongs, four moderates, or equivalent accumulated severity. A single moderate or a handful of minors is well within budget. Decisive inconsistencies trigger the threshold via their large weight (`w_decisive = 100`).
 
 #### SAME_SOURCE_DIFFERENT_CASE
 
@@ -230,7 +230,7 @@ The shared source is confirmed, but case identifiers are missing or not safely c
 
 Branch B is checked first so any inconsistency above the weak-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
 
-Note the lower Otherwise related gate here (`w_tot_limited_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_intermediate_zone`, default 3.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
+Note the lower Otherwise related gate here (`w_tot_limited_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_compelling_zone`, default 4.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
 
 | Age difference | Severity | \(w_{\text{tot}}\) | Outcome |
 |---|---|---|---|
@@ -822,9 +822,9 @@ Four levels of inconsistency severity are defined:
 | strong   | difference that strongly suggests different individuals |
 | decisive | hard contradiction that precludes a `Duplicates` verdict |
 
-Inconsistencies in structured data (age, sex, height, weight, country of origin, drug set) span the minor, moderate, and strong severities — the exact mapping per feature is defined in the Features subsection below. Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see § Decision logic above).
+Inconsistencies in structured data (age, sex, height, weight, country of origin, drug set) primarily span the minor, moderate, and strong severities — the exact mapping per feature is defined in the Features subsection below. Their thresholds are based on typical variability and recording errors in pharmacovigilance data. The current thresholds specified below are starting values and may need refinement. It's possible that they should be adaptive (e.g. account for patient age when assessing mismatching height and weight). Since recording errors or misclassification are known to occur for any fields on adverse event reports, strong mismatches are not considered decisive on their own and must be interpreted together with the strength of the matching evidence via the weighted inconsistency score (see § Decision logic above).
 
-Decisive inconsistencies come from three sources: the clinical-date impossibility rule (when one report's report date predates the other report's earliest plausible overall AE onset by more than 30 days — see § Clinical date inconsistencies), the AE clinical-picture assessor's decisive verdict (no shared / compatible AEs at the case level), and the source/case override (`SAME_SOURCE_DIFFERENT_CASE`, where two reports share a source identifier but carry different comparable case labels). When present, they preclude a `Duplicates` verdict; the surrounding matching evidence then determines whether the pair is surfaced as `Otherwise related` (when independence is still rejected) or `Unrelated` (otherwise) — see § Decision logic above.
+Decisive inconsistencies come from four sources: a sufficiently large age gap (≥ 11 years — see § Age below — at which point typo / digit-transposition / unit-confusion explanations are no longer plausible), the clinical-date impossibility rule (when one report's report date predates the other report's earliest plausible overall AE onset by more than 30 days — see § Clinical date inconsistencies), the AE clinical-picture assessor's decisive verdict (no shared / compatible AEs at the case level), and the source/case override (`SAME_SOURCE_DIFFERENT_CASE`, where two reports share a source identifier but carry different comparable case labels). When present, they preclude a `Duplicates` verdict; the surrounding matching evidence then determines whether the pair is surfaced as `Otherwise related` (when independence is still rejected) or `Unrelated` (otherwise) — see § Decision logic above.
 
 ------
 
@@ -839,6 +839,9 @@ Age differences are evaluated using the absolute difference in years.
 | > 0 years  | minor inconsistency   |
 | ≥ 2 years  | moderate inconsistency |
 | ≥ 5 years  | strong inconsistency  |
+| ≥ 11 years | decisive inconsistency |
+
+Gaps of 11 or more years cannot plausibly be explained by single-digit typos, digit transpositions, month-vs-year unit confusion, or extraction noise, so the pair is treated as decisively distinct individuals.
 
 ------
 
@@ -848,9 +851,11 @@ Height differences are evaluated in centimetres.
 
 | Difference | Classification        |
 | ---------- | --------------------- |
-| > 0 cm     | minor inconsistency   |
+| ≥ 1 cm     | minor inconsistency   |
 | ≥ 3 cm     | moderate inconsistency |
 | ≥ 6 cm     | strong inconsistency  |
+
+Differences below 1 cm are typically rounding artefacts (heights are most often entered at whole-centimetre resolution) and are not counted as inconsistencies.
 
 ------
 
@@ -860,9 +865,11 @@ Weight differences are evaluated in kilograms.
 
 | Difference | Classification        |
 | ---------- | --------------------- |
-| > 0 kg     | minor inconsistency   |
+| ≥ 1 kg     | minor inconsistency   |
 | ≥ 3 kg     | moderate inconsistency |
 | ≥ 10 kg    | strong inconsistency  |
+
+Differences below 1 kg are typically rounding artefacts (weights are most often reported at one-decimal kg precision) and are not counted as inconsistencies.
 
 ------
 
@@ -1000,26 +1007,24 @@ After alignment, the downstream pipeline (classification, downgrades, source-dat
 
 ##### Severity thresholds
 
-Three comparison axes each carry their own severity table.
+All clinical-date day-difference comparisons grade against a single canonical table — the *overall AE onset date vs. overall AE onset date* comparison applies it directly; per-entity comparisons (drug start, AE onset) apply the same table and then downgrade the resulting severity by one step. A separate decisive-impossibility check on the report date vs. overall AE onset is layered on top.
 
-*Overall AE onset date vs. overall AE onset date* (tighter, because this is the case-level signal):
+*Overall AE onset date vs. overall AE onset date* (case-level signal — canonical table, applied directly):
 
 | Difference | Severity |
 | ---------- | -------- |
 | 0 days | none |
 | 1–7 days | minor |
-| 8–30 days | moderate |
-| > 30 days | strong |
+| 8–75 days | moderate |
+| > 75 days | strong |
 
-*Per-entity drug start dates and AE onset dates* (capped at moderate):
+*Per-entity drug start dates and AE onset dates* (canonical table with a one-step downgrade): apply the table above, then downgrade the result one step — *minor → none*, *moderate → minor*, *strong → moderate*. The downgrade preserves the per-entity cap at moderate, because a single regimen- or PT-level disagreement is too noisy on its own to constitute strong evidence — case-level temporal disagreement is captured by the overall AE onset comparison above. The effective per-entity grading is therefore:
 
 | Difference | Severity |
 | ---------- | -------- |
 | 0–7 days | none |
-| 8–69 days | minor |
-| ≥ 70 days | moderate |
-
-Per-entity drug start and AE onset mismatches never escalate to *strong*: a single regimen or PT-level disagreement is too noisy on its own to constitute strong evidence. Case-level temporal disagreement is captured by the overall AE onset date thresholds above.
+| 8–75 days | minor |
+| > 75 days | moderate |
 
 *Report date vs. overall AE onset date* (decisive impossibility):
 

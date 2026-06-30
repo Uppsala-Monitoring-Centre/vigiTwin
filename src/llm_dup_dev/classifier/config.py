@@ -81,15 +81,24 @@ class InconsistencyThresholds(BaseModel):
     See: docs/duplicate_adjudication_spec.md § Structured Data Inconsistencies
     """
 
-    # Age (years)
+    # Age (years). At or above ``age_decisive`` the gap is treated as
+    # decisive evidence of different patients — large enough that typo /
+    # extraction-error explanations no longer plausibly cover it.
     age_moderate: float = 2.0
     age_strong: float = 5.0
+    age_decisive: float = 11.0
 
-    # Height (cm)
+    # Height (cm). Differences below ``height_minor`` are treated as
+    # recording-precision noise (heights are typically entered at whole-cm
+    # resolution) and do not count as inconsistencies.
+    height_minor: float = 1.0
     height_moderate: float = 3.0
     height_strong: float = 6.0
 
-    # Weight (kg)
+    # Weight (kg). Differences below ``weight_minor`` are treated as
+    # rounding noise (weights are typically reported at one-decimal kg
+    # precision) and do not count as inconsistencies.
+    weight_minor: float = 1.0
     weight_moderate: float = 3.0
     weight_strong: float = 10.0
 

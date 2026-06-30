@@ -383,7 +383,7 @@ class TestExplicitOverrideInPipeline:
 
 
 class TestOverallAeOnsetThresholds:
-    """Overall AE onset: 1-7d minor, 8-30d moderate, >30d strong."""
+    """Overall AE onset: 1-7d minor, 8-75d moderate, >75d strong."""
 
     def _pair(self, onset_a: str, onset_b: str) -> ClinicalDateResult:
         r1 = _report(
@@ -421,18 +421,20 @@ class TestOverallAeOnsetThresholds:
         result = self._pair("2020-02-01", "2020-02-09")
         assert result.n_moderate >= 1
 
-    def test_30_days_still_moderate(self):
-        result = self._pair("2020-02-01", "2020-03-02")
+    def test_75_days_still_moderate(self):
+        # 2020-02-01 + 75 days = 2020-04-16
+        result = self._pair("2020-02-01", "2020-04-16")
         assert result.n_moderate >= 1
         assert result.n_strong == 0
 
-    def test_31_days_strong(self):
-        result = self._pair("2020-02-01", "2020-03-04")
+    def test_76_days_strong(self):
+        # 2020-02-01 + 76 days = 2020-04-17
+        result = self._pair("2020-02-01", "2020-04-17")
         assert result.n_strong >= 1
 
 
 class TestDrugStartAndAeOnsetThresholds:
-    """Drug start / AE onset: 0-7d none, 8-69d minor, ≥70d moderate.
+    """Drug start / AE onset: 0-7d none, 8-75d minor, >75d moderate.
 
     Per-entity discrepancies are capped at moderate; only the overall AE
     onset date can produce strong evidence on its own.
@@ -458,17 +460,19 @@ class TestDrugStartAndAeOnsetThresholds:
         ]
         assert any(f.final_severity == Severity.MINOR for f in drug_findings)
 
-    def test_drug_start_69_days_still_minor(self):
-        """Just under the moderate threshold stays minor."""
+    def test_drug_start_75_days_still_minor(self):
+        """At the moderate-canonical / minor-per-entity upper bound."""
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
-        r2 = _report("R2", drugs=[_drug("A", start="2020-03-10")])  # 69 days
+        # 2020-01-01 + 75 days = 2020-03-16
+        r2 = _report("R2", drugs=[_drug("A", start="2020-03-16")])
         result = compute_clinical_date_inconsistencies(r1, r2)
         assert result.n_minor >= 1
         assert result.n_moderate == 0
 
-    def test_drug_start_70_days_moderate(self):
+    def test_drug_start_76_days_moderate(self):
         r1 = _report("R1", drugs=[_drug("A", start="2020-01-01")])
-        r2 = _report("R2", drugs=[_drug("A", start="2020-03-11")])  # 70 days
+        # 2020-01-01 + 76 days = 2020-03-17
+        r2 = _report("R2", drugs=[_drug("A", start="2020-03-17")])
         result = compute_clinical_date_inconsistencies(r1, r2)
         assert result.n_moderate >= 1
         assert result.n_strong == 0
@@ -483,15 +487,15 @@ class TestDrugStartAndAeOnsetThresholds:
 
     def test_ae_onset_match_10_days(self):
         """10 days apart with only AE onsets — overall AE onset is derived
-        and uses tighter thresholds (8-30d = moderate), so the selected
-        finding is moderate (from overall AE onset), not minor."""
+        and graded by the canonical table directly (10d → moderate), so the
+        selected finding is moderate from the overall AE onset axis. The
+        per-entity AE onset row is also minor (canonical moderate downgraded
+        one step), and loses to the higher-priority overall AE onset in the
+        same bucket."""
         r1 = _report("R1", aes=[_ae("headache", onset="2020-01-01")])
         r2 = _report("R2", aes=[_ae("headache", onset="2020-01-11")])
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # Overall AE onset uses tighter thresholds: 10d → moderate
         assert result.n_moderate >= 1
-        # The raw AE onset entity is minor (10d > 7d) but loses to
-        # the higher-priority overall AE onset in the same bucket
         ae_only = [
             f for f in result.findings
             if f.entity_type == EntityType.AE_ONSET

@@ -71,12 +71,32 @@ def _classify_numeric_difference(
     units: str,
     moderate_threshold: float,
     strong_threshold: float,
+    minor_threshold: float = 0.0,
+    decisive_threshold: float | None = None,
 ) -> list[Inconsistency]:
     """Classify a numeric difference into severity levels.
 
-    Any non-zero difference below the moderate threshold is counted as
-    a minor inconsistency.
+    A non-zero difference at or above ``minor_threshold`` and below the
+    moderate threshold is counted as a minor inconsistency. The default
+    ``minor_threshold=0.0`` preserves the original "any non-zero" rule
+    for attributes (age) where recording precision is not a concern;
+    weight and height pass a positive value to suppress sub-1
+    rounding-precision differences.
+
+    When ``decisive_threshold`` is provided and the difference meets or
+    exceeds it, a decisive inconsistency is emitted instead of a strong
+    one. Used for age, where gaps of 11+ years cannot plausibly be
+    explained by typos or extraction errors.
     """
+    if decisive_threshold is not None and min_diff >= decisive_threshold:
+        return [
+            Inconsistency(
+                feature=feature,
+                severity=InconsistencySeverity.DECISIVE,
+                difference=min_diff,
+                units=units,
+            )
+        ]
     if min_diff >= strong_threshold:
         return [
             Inconsistency(
@@ -95,7 +115,7 @@ def _classify_numeric_difference(
                 units=units,
             )
         ]
-    if min_diff > 0:
+    if min_diff > 0 and min_diff >= minor_threshold:
         return [
             Inconsistency(
                 feature=feature,
@@ -135,6 +155,8 @@ def _classify_numeric_inconsistency(
     units: str,
     moderate_threshold: float,
     strong_threshold: float,
+    minor_threshold: float = 0.0,
+    decisive_threshold: float | None = None,
 ) -> list[Inconsistency]:
     """Shared shape for numeric-attribute inconsistency checks.
 
@@ -152,6 +174,8 @@ def _classify_numeric_inconsistency(
         units=units,
         moderate_threshold=moderate_threshold,
         strong_threshold=strong_threshold,
+        minor_threshold=minor_threshold,
+        decisive_threshold=decisive_threshold,
     )
 
 
@@ -168,6 +192,7 @@ def _check_age(
         units="years",
         moderate_threshold=thresholds.age_moderate,
         strong_threshold=thresholds.age_strong,
+        decisive_threshold=thresholds.age_decisive,
     )
 
 
@@ -182,6 +207,7 @@ def _check_height(
         [v.value for v in r2.patient_height_values],
         feature="patient_height",
         units="cm",
+        minor_threshold=thresholds.height_minor,
         moderate_threshold=thresholds.height_moderate,
         strong_threshold=thresholds.height_strong,
     )
@@ -198,6 +224,7 @@ def _check_weight(
         [v.value for v in r2.patient_weight_values],
         feature="patient_weight",
         units="kg",
+        minor_threshold=thresholds.weight_minor,
         moderate_threshold=thresholds.weight_moderate,
         strong_threshold=thresholds.weight_strong,
     )
