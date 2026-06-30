@@ -66,6 +66,46 @@ class TestAgeInconsistency:
         assert age_incs[0].difference == 4.0
 
     def test_strong_age_diff(self, thresholds):
+        # 10-year gap — above the strong threshold (5y) but just under
+        # the decisive threshold (11y).
+        r1 = Report(
+            report_id="1",
+            patient_age_values=[
+                AgeValue(value=50, unit="years", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_age_values=[
+                AgeValue(value=60, unit="years", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        age_incs = [i for i in result if i.feature == "patient_age"]
+        assert len(age_incs) == 1
+        assert age_incs[0].severity == InconsistencySeverity.STRONG
+
+    def test_age_diff_at_decisive_boundary(self, thresholds):
+        """Exactly at the 11-year decisive threshold → decisive."""
+        r1 = Report(
+            report_id="1",
+            patient_age_values=[
+                AgeValue(value=50, unit="years", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_age_values=[
+                AgeValue(value=61, unit="years", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        age_incs = [i for i in result if i.feature == "patient_age"]
+        assert len(age_incs) == 1
+        assert age_incs[0].severity == InconsistencySeverity.DECISIVE
+
+    def test_age_diff_well_above_decisive(self, thresholds):
+        """Large gap (30 years) is decisive, not strong."""
         r1 = Report(
             report_id="1",
             patient_age_values=[
@@ -81,7 +121,7 @@ class TestAgeInconsistency:
         result = detect_inconsistencies(r1, r2, thresholds)
         age_incs = [i for i in result if i.feature == "patient_age"]
         assert len(age_incs) == 1
-        assert age_incs[0].severity == InconsistencySeverity.STRONG
+        assert age_incs[0].severity == InconsistencySeverity.DECISIVE
 
     def test_multi_valued_uses_closest(self, thresholds):
         """When multiple values exist, the minimum difference is used."""
@@ -282,6 +322,43 @@ class TestCountryInconsistency:
 
 
 class TestWeightInconsistency:
+    def test_sub_one_kg_diff_no_inconsistency(self, thresholds):
+        """Differences below the 1 kg minor floor are treated as rounding
+        noise and produce no inconsistency."""
+        r1 = Report(
+            report_id="1",
+            patient_weight_values=[
+                MeasurementValue(value=79.0, unit="kg", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_weight_values=[
+                MeasurementValue(value=79.5, unit="kg", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        assert [i for i in result if i.feature == "patient_weight"] == []
+
+    def test_one_kg_diff_minor(self, thresholds):
+        """At exactly the 1 kg floor a minor inconsistency is emitted."""
+        r1 = Report(
+            report_id="1",
+            patient_weight_values=[
+                MeasurementValue(value=70.0, unit="kg", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_weight_values=[
+                MeasurementValue(value=71.0, unit="kg", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        weight_incs = [i for i in result if i.feature == "patient_weight"]
+        assert len(weight_incs) == 1
+        assert weight_incs[0].severity == InconsistencySeverity.MINOR
+
     def test_moderate_weight_diff(self, thresholds):
         r1 = Report(
             report_id="1",
@@ -323,6 +400,43 @@ class TestWeightInconsistency:
 
 
 class TestHeightInconsistency:
+    def test_sub_one_cm_diff_no_inconsistency(self, thresholds):
+        """Differences below the 1 cm minor floor are treated as
+        recording-precision noise and produce no inconsistency."""
+        r1 = Report(
+            report_id="1",
+            patient_height_values=[
+                MeasurementValue(value=170.0, unit="cm", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_height_values=[
+                MeasurementValue(value=170.5, unit="cm", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        assert [i for i in result if i.feature == "patient_height"] == []
+
+    def test_one_cm_diff_minor(self, thresholds):
+        """At exactly the 1 cm floor a minor inconsistency is emitted."""
+        r1 = Report(
+            report_id="1",
+            patient_height_values=[
+                MeasurementValue(value=170.0, unit="cm", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_height_values=[
+                MeasurementValue(value=171.0, unit="cm", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        height_incs = [i for i in result if i.feature == "patient_height"]
+        assert len(height_incs) == 1
+        assert height_incs[0].severity == InconsistencySeverity.MINOR
+
     def test_moderate_height_diff(self, thresholds):
         r1 = Report(
             report_id="1",

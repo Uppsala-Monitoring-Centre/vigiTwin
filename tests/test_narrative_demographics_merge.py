@@ -167,9 +167,13 @@ class TestGenerousMatchingProperty:
         assert [i for i in incs if i.feature == "age"] == []
 
     def test_multi_weight_admission_vs_discharge_matches_either(self):
-        """r1 weight is 79 kg; r2 narrative has both 82 and 79.5.
+        """r1 weight is 79 kg; r2 narrative has both 82 and 81.
 
-        Min-diff is |79 - 79.5| = 0.5, well under any threshold.
+        The alignment must pick the closer counterpart (81 kg → min-diff
+        2 kg), which sits above the 1 kg minor floor and below the 3 kg
+        moderate threshold, so the weight comparison surfaces a minor
+        inconsistency rather than the moderate one the further pairing
+        (|79 - 82| = 3 kg) would have produced.
         """
         r1 = Report(
             report_id="R001",
@@ -182,14 +186,10 @@ class TestGenerousMatchingProperty:
             NarrativeDemographics(
                 weights=[
                     NarrativeMeasurementValue(value=82, unit="kg", evidence="82 kg"),
-                    NarrativeMeasurementValue(value=79.5, unit="kg", evidence="79.5 kg"),
+                    NarrativeMeasurementValue(value=81, unit="kg", evidence="81 kg"),
                 ],
             ),
         )
         incs = detect_inconsistencies(r1, r2, InconsistencyThresholds())
         weight_incs = [i for i in incs if i.feature == "weight"]
-        # min-diff is 0.5 — below the default 3.0 moderate threshold but
-        # non-zero, so at most a minor inconsistency should ever appear.
-        # The _classify_numeric_difference logic in this project raises
-        # a minor tier for any non-zero diff below moderate.
         assert all(i.severity.value == "minor" for i in weight_incs)

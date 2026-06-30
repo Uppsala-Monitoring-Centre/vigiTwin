@@ -139,6 +139,7 @@ class TestGeneratePairFeatures:
             features.inconsistency_counts.minor
             + features.inconsistency_counts.moderate
             + features.inconsistency_counts.strong
+            + features.inconsistency_counts.decisive
         )
         assert total_from_list == total_from_counts
 
