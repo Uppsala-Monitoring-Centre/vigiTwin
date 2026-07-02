@@ -162,6 +162,46 @@ def test_secret_keys_redacted_in_secure_context() -> None:
     assert any("secure_context" in str(w.message) for w in caught)
 
 
+def test_llm_config_defaults_none() -> None:
+    manifest = build_dataset_manifest(dataset_snapshot=_snapshot())
+    assert manifest.llm_config is None
+
+
+def test_llm_config_passthrough_and_roundtrip(tmp_path) -> None:
+    manifest = build_dataset_manifest(
+        dataset_snapshot=_snapshot(),
+        llm_config={"provider": "azure_openai", "model": "gpt-5.4"},
+    )
+    assert manifest.llm_config == {"provider": "azure_openai", "model": "gpt-5.4"}
+
+    paths = write_dataset_manifest(tmp_path, manifest, formats=("yaml", "json"))
+    assert yaml.safe_load(paths["yaml"].read_text())["llm_config"]["model"] == "gpt-5.4"
+    restored = DatasetManifest.model_validate_json(paths["json"].read_text())
+    assert restored.llm_config["model"] == "gpt-5.4"
+
+
+def test_llm_config_accepts_llm_info() -> None:
+    from llm_dup_dev.llm.models import LLMInfo
+
+    manifest = build_dataset_manifest(
+        dataset_snapshot=_snapshot(),
+        llm_config=LLMInfo(provider="fake", model="gpt-5.4"),
+    )
+    assert manifest.llm_config["provider"] == "fake"
+    assert manifest.llm_config["model"] == "gpt-5.4"
+
+
+def test_llm_config_secrets_redacted() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        manifest = build_dataset_manifest(
+            dataset_snapshot=_snapshot(),
+            llm_config={"model": "gpt-5.4", "api_key": "sk-secret"},
+        )
+    assert manifest.llm_config["model"] == "gpt-5.4"
+    assert manifest.llm_config["api_key"] == REDACTED
+
+
 def test_unknown_format_raises(tmp_path) -> None:
     manifest = build_dataset_manifest(dataset_snapshot=_snapshot())
     with pytest.raises(ValueError, match="Unsupported"):

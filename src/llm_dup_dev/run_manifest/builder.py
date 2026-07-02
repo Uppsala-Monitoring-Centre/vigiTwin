@@ -35,21 +35,14 @@ def _default_dev_repo_path() -> Path:
     return Path(llm_dup_dev.__file__).resolve().parent
 
 
-def _llm_config_from_client(client: Any) -> dict[str, Any] | None:
-    """Best-effort extraction of LLM identity from an ``LLMClient`` instance.
+def _llm_info_to_dict(info: Any) -> dict[str, Any] | None:
+    """Normalise LLM identity metadata to a plain dict.
 
-    Calls the client's optional ``info()`` method (see the ``LLMClient``
-    protocol docstring) and converts the result to a plain dict. Returns
-    ``None`` when the client is missing, lacks ``info()``, or returns an
-    unrecognised shape — the manifest then falls back to whatever the
-    caller passed explicitly (or leaves ``llm_config`` empty).
+    Accepts an ``LLMInfo`` (frozen dataclass), any Pydantic model, or a
+    plain dict — matched by duck-typing so this module stays decoupled
+    from the ``llm`` package. Returns ``None`` for ``None`` or an
+    unrecognised shape.
     """
-    if client is None:
-        return None
-    info_method = getattr(client, "info", None)
-    if not callable(info_method):
-        return None
-    info = info_method()
     if info is None:
         return None
     if dataclasses.is_dataclass(info) and not isinstance(info, type):
@@ -59,6 +52,24 @@ def _llm_config_from_client(client: Any) -> dict[str, Any] | None:
     if isinstance(info, dict):
         return dict(info)
     return None
+
+
+def _llm_config_from_client(client: Any) -> dict[str, Any] | None:
+    """Best-effort extraction of LLM identity from an ``LLMClient`` instance.
+
+    Calls the client's optional ``info()`` method (see the ``LLMClient``
+    protocol docstring) and converts the result to a plain dict via
+    :func:`_llm_info_to_dict`. Returns ``None`` when the client is
+    missing, lacks ``info()``, or returns an unrecognised shape — the
+    manifest then falls back to whatever the caller passed explicitly (or
+    leaves ``llm_config`` empty).
+    """
+    if client is None:
+        return None
+    info_method = getattr(client, "info", None)
+    if not callable(info_method):
+        return None
+    return _llm_info_to_dict(info_method())
 
 
 def _runner_feature_flags(runner: "PipelineRunner") -> dict[str, Any]:
@@ -95,7 +106,7 @@ def build_run_manifest(
     pipeline_config: PipelineConfig | None = None,
     decision_thresholds: DecisionThresholds | None = None,
     feature_flags: dict[str, Any] | None = None,
-    llm_config: dict[str, Any] | None = None,
+    llm_config: Any = None,
     input_paths: dict[str, Any] | None = None,
     output_paths: dict[str, Any] | None = None,
     secure_context: dict[str, Any] | None = None,
@@ -125,21 +136,29 @@ def build_run_manifest(
     - ``dev_git_commit``: from ``git rev-parse --short HEAD`` rooted at
       ``dev_repo_path`` (defaults to the package source directory); ``None``
       if git metadata is unavailable.
-    - ``llm_config``: when not supplied, extracted via duck-typing from
-      ``runner._llm_client.info()`` (see the ``LLMClient`` protocol
-      docstring). Clients that don't expose ``info()`` simply leave the
-      field unset; supplying ``llm_config=`` explicitly always wins.
+    - ``llm_config``: the run's *live inference-time* model. When not
+      supplied, extracted via duck-typing from ``runner._llm_client.info()``
+      (see the ``LLMClient`` protocol docstring). Clients that don't expose
+      ``info()`` simply leave the field unset; supplying ``llm_config=``
+      explicitly always wins. An explicit value may be an ``LLMInfo``
+      dataclass, a Pydantic model, or a plain dict. It is left ``None`` for
+      a fully-offline run (no live client) and never inherits from
+      ``dataset_ref`` — the *extraction-time* model lives in its own slot,
+      ``dataset_ref.llm_config`` (see :class:`DatasetRef`).
 
-    Secrets in ``llm_config`` and ``secure_context`` are redacted by the
-    model validator — see ``_redaction.SECRET_KEY_PATTERNS``.
+    Secrets in ``llm_config``, ``dataset_ref.llm_config`` and
+    ``secure_context`` are redacted by the model validator — see
+    ``_redaction.SECRET_KEY_PATTERNS``.
     """
     resolved_pipeline_config = pipeline_config
     resolved_decision_thresholds = decision_thresholds
     resolved_feature_flags: dict[str, Any] = {}
 
-    resolved_llm_config: dict[str, Any] | None = (
-        dict(llm_config) if llm_config is not None else None
-    )
+    # The top-level ``llm_config`` records the run's *live inference-time*
+    # model. Resolution: explicit arg > client ``info()``. It deliberately
+    # does NOT fall back to ``dataset_ref.llm_config`` — that slot records
+    # the distinct *extraction-time* model and the two are never merged.
+    resolved_llm_config: dict[str, Any] | None = _llm_info_to_dict(llm_config)
 
     if runner is not None:
         if resolved_pipeline_config is None:

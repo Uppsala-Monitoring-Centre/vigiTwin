@@ -281,9 +281,9 @@ def test_explicit_created_at_and_run_id() -> None:
     assert manifest.created_at == when
 
 
-def test_schema_version_is_1_1() -> None:
-    """Adding ``dataset_ref`` is an additive change — schema version bumped to 1.1."""
-    assert SCHEMA_VERSION == "1.1"
+def test_schema_version_is_1_2() -> None:
+    """Adding ``dataset_ref.llm_config`` is additive — schema version bumped to 1.2."""
+    assert SCHEMA_VERSION == "1.2"
 
 
 def test_dataset_ref_default_none() -> None:
@@ -315,3 +315,104 @@ def test_dataset_ref_round_trip(tmp_path) -> None:
     assert restored.dataset_ref is not None
     assert restored.dataset_ref.dataset_id == "ds-abc123"
     assert restored.dataset_ref.database_name == "VigiBase"
+
+
+# ---------------------------------------------------------------------------
+# Two-slot LLM model provenance (extraction vs live inference)
+# ---------------------------------------------------------------------------
+
+
+def _runner_with_live_client(model_name: str) -> PipelineRunner:
+    from llm_dup_dev.llm.fake import FakeLLMClient
+
+    return PipelineRunner(
+        report_loader=SyntheticReportLoader({}),
+        stats_provider=SyntheticStatsProvider(),
+        llm_client=FakeLLMClient(model_name=model_name),
+    )
+
+
+def test_offline_run_records_extraction_model_in_dataset_ref(tmp_path) -> None:
+    """No live client: top-level llm_config is None; the extraction model
+    lives in dataset_ref.llm_config."""
+    ref = DatasetRef(dataset_id="ds-1", llm_config={"provider": "fake", "model": "gpt-5.4"})
+    manifest = build_run_manifest(dataset_ref=ref)
+
+    assert manifest.llm_config is None
+    assert manifest.dataset_ref is not None
+    assert manifest.dataset_ref.llm_config == {"provider": "fake", "model": "gpt-5.4"}
+
+    restored = RunManifest.model_validate_json(
+        write_run_manifest(tmp_path, manifest, formats=("json",))["json"].read_text()
+    )
+    assert restored.dataset_ref.llm_config["model"] == "gpt-5.4"
+
+
+def test_mixed_run_keeps_inference_and_extraction_models_distinct() -> None:
+    """A run with a live client AND a dataset ref records both models,
+    each in its own slot — never merged."""
+    runner = _runner_with_live_client("gpt-5.5-live")
+    ref = DatasetRef(dataset_id="ds-1", llm_config={"provider": "fake", "model": "gpt-5.4"})
+
+    manifest = build_run_manifest(runner=runner, dataset_ref=ref)
+
+    assert manifest.llm_config["model"] == "gpt-5.5-live"  # inference-time
+    assert manifest.dataset_ref.llm_config["model"] == "gpt-5.4"  # extraction-time
+
+
+def test_dataset_ref_llm_config_does_not_backfill_top_level() -> None:
+    """Without a client, top-level llm_config is NOT populated from the
+    dataset ref (the two roles must stay separate)."""
+    ref = DatasetRef(dataset_id="ds-1", llm_config={"model": "gpt-5.4"})
+    manifest = build_run_manifest(dataset_ref=ref)
+    assert manifest.llm_config is None
+
+
+def test_explicit_llm_config_accepts_llm_info() -> None:
+    """An explicit LLMInfo dataclass is normalised to a dict."""
+    from llm_dup_dev.llm.models import LLMInfo
+
+    manifest = build_run_manifest(
+        llm_config=LLMInfo(provider="azure_openai", model="gpt-5.4", deployment="dep-1")
+    )
+    assert manifest.llm_config["provider"] == "azure_openai"
+    assert manifest.llm_config["model"] == "gpt-5.4"
+    assert manifest.llm_config["deployment"] == "dep-1"
+
+
+def test_dataset_ref_llm_config_secrets_redacted() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        manifest = build_run_manifest(
+            dataset_ref=DatasetRef(
+                dataset_id="ds-1",
+                llm_config={"model": "gpt-5.4", "api_key": "sk-secret"},
+            )
+        )
+    assert manifest.dataset_ref.llm_config["model"] == "gpt-5.4"
+    assert manifest.dataset_ref.llm_config["api_key"] == REDACTED
+
+
+def test_dataset_ref_from_manifest_copies_extraction_model() -> None:
+    """DatasetRef.from_manifest carries the dataset's provenance + llm_config."""
+    from llm_dup_dev.dataset_manifest import DatasetSnapshot, build_dataset_manifest
+
+    dataset = build_dataset_manifest(
+        dataset_snapshot=DatasetSnapshot(
+            database_name="VigiBase",
+            database_snapshot="2026Q1",
+            meddra_version="27.0",
+            extracted_at=datetime.now(timezone.utc),
+        ),
+        llm_config={"provider": "fake", "model": "gpt-5.4"},
+    )
+    ref = DatasetRef.from_manifest(dataset, relative_path="../dataset_manifest.yaml")
+
+    assert ref.dataset_id == dataset.dataset_id
+    assert ref.database_name == "VigiBase"
+    assert ref.meddra_version == "27.0"
+    assert ref.llm_config == {"provider": "fake", "model": "gpt-5.4"}
+
+    manifest = build_run_manifest(dataset_ref=ref)
+    assert manifest.dataset_ref.llm_config["model"] == "gpt-5.4"
+    assert manifest.llm_config is None

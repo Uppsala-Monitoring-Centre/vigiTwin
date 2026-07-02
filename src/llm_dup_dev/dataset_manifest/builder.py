@@ -13,6 +13,7 @@ from llm_dup_dev.dataset_manifest.models import (
     DatasetSnapshot,
 )
 from llm_dup_dev.run_manifest._git import try_git_commit
+from llm_dup_dev.run_manifest.builder import _llm_info_to_dict
 from llm_dup_dev.run_manifest.models import DevPackageInfo
 
 _PACKAGE_NAME = "llm-dup-dev"
@@ -36,12 +37,19 @@ def build_dataset_manifest(
     dataset_snapshot: DatasetSnapshot,
     dataset_name: str | None = None,
     dataset_id: str | None = None,
+    llm_config: Any = None,
     secure_context: dict[str, Any] | None = None,
     notes: str | None = None,
     dev_repo_path: str | Path | None = None,
     created_at: datetime | None = None,
 ) -> DatasetManifest:
     """Assemble a :class:`DatasetManifest` for a validation set.
+
+    ``llm_config`` records the **extraction-time** LLM that produced the
+    dataset's frozen LLM artifacts (secure-side scripts supply it). It may
+    be an ``LLMInfo`` dataclass, a Pydantic model, or a plain dict — all
+    normalised to a dict. Secret-looking keys are redacted by the model
+    validator.
 
     Auto-populated when not provided:
 
@@ -54,8 +62,8 @@ def build_dataset_manifest(
       ``dev_repo_path`` (defaults to the package source directory);
       ``None`` if git metadata is unavailable.
 
-    Secrets in ``secure_context`` are redacted by the model validator —
-    see ``run_manifest._redaction.SECRET_KEY_PATTERNS``.
+    Secrets in ``llm_config`` and ``secure_context`` are redacted by the
+    model validator — see ``run_manifest._redaction.SECRET_KEY_PATTERNS``.
     """
     repo_path = Path(dev_repo_path) if dev_repo_path else _default_dev_repo_path()
 
@@ -68,6 +76,7 @@ def build_dataset_manifest(
             name=_PACKAGE_NAME, version=_detect_package_version()
         ),
         dev_git_commit=try_git_commit(repo_path),
+        llm_config=_llm_info_to_dict(llm_config),
         secure_context=dict(secure_context) if secure_context is not None else None,
         notes=notes,
     )

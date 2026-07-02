@@ -831,6 +831,9 @@ manifest = build_run_manifest(
     runner=runner,
     input_paths={"frozen_bundles": str(bundles_path)},
     output_paths={"results_dir": str(results_dir)},
+    # The run's *live inference-time* model (e.g. the AE clinical-picture LLM).
+    # May be an LLMInfo, a Pydantic model, or a dict. When omitted it is
+    # auto-pulled from the runner's LLM client `info()`.
     llm_config={
         "deployment": "gpt-4o-prod",
         "model": "gpt-4o",
@@ -842,12 +845,11 @@ manifest = build_run_manifest(
         "notebook": "eval_run_2026-04-27.ipynb",
         "invocation": " ".join(sys.argv),
     },
-    dataset_ref=DatasetRef(
-        dataset_id=dataset_manifest.dataset_id,
-        relative_path="../dataset_manifest.yaml",
-        database_name="VigiBase",
-        database_snapshot="2026Q1",
-        meddra_version="27.0",
+    # DatasetRef.from_manifest(dataset_manifest) copies the join key, the
+    # database/MedDRA fields, and the dataset's *extraction-time* llm_config —
+    # a separate slot from the run's inference-time llm_config above.
+    dataset_ref=DatasetRef.from_manifest(
+        dataset_manifest, relative_path="../dataset_manifest.yaml"
     ),
     notes="Quarterly eval refresh",
 )
@@ -862,7 +864,7 @@ write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
 
 | Field | Type | Source | Meaning |
 |---|---|---|---|
-| `schema_version` | str | constant | Bump when the manifest layout changes incompatibly. Currently `"1.1"`. |
+| `schema_version` | str | constant | Bump when the manifest layout changes incompatibly. Currently `"1.2"`. |
 | `created_at` | datetime (UTC) | auto / caller | When the manifest was built. |
 | `run_id` | str | auto / caller | Stable identifier for this run. Defaults to a 12-char hex token. |
 | `run_name` | str \| null | caller | Optional human-readable label. |
@@ -873,15 +875,15 @@ write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
 | `pipeline_config` | dict | runner / caller | `PipelineConfig.model_dump()` — *effective* values, defaults included. |
 | `decision_thresholds` | dict | runner / caller | `DecisionThresholds.model_dump()` — *effective* values. |
 | `feature_flags` | dict | runner / caller | When built from a runner: `ae_clinical_picture_mode`, `has_llm_client`, `has_frozen_source_case`, `has_frozen_narrative_demographics`. Caller-supplied keys merge on top. |
-| `llm_config` | dict \| null | caller | Non-secret LLM info (deployment, model, temperature, max_tokens). Secret-looking keys are auto-redacted. |
+| `llm_config` | dict \| null | caller / auto | The run's **live inference-time** LLM (deployment, model, temperature, max_tokens). Auto-pulled from the runner's client `info()` when not supplied; an explicit value may be an `LLMInfo`, a Pydantic model, or a dict. `null` for a fully-offline run. This is a *distinct slot* from the dataset's extraction-time model (`dataset_ref.llm_config`) — the two are never merged. Secret-looking keys are auto-redacted. |
 | `output_paths` | dict | caller | Free-form. Suggested keys: `results_dir`, `review_html_dir`, `eval_summary`. |
 | `secure_context` | dict \| null | caller | Deployment-specific metadata. The dev repo does not prescribe keys; suggested values: `secure_repo_commit`, `sql_loader_version`, `azure_deployment`, `notebook`, `invocation`. Do **not** put `database_name`, `database_snapshot`, or `meddra_version` here — use `dataset_ref` instead. |
-| `dataset_ref` | object \| null | caller | Pointer to the parent dataset manifest. `dataset_id` is the authoritative join key; `database_name`, `database_snapshot`, `meddra_version` are duplicated for at-a-glance comparison. See [Dataset manifests](#dataset-manifests). |
+| `dataset_ref` | object \| null | caller | Pointer to the parent dataset manifest. `dataset_id` is the authoritative join key; `database_name`, `database_snapshot`, `meddra_version` and `llm_config` (the dataset's **extraction-time** model) are duplicated for at-a-glance comparison and self-describing archived runs. Build via `DatasetRef.from_manifest(...)`. See [Dataset manifests](#dataset-manifests). |
 | `notes` | str \| null | caller | Free-form prose. |
 
 ### Secret redaction
 
-Keys in `llm_config` and `secure_context` whose names contain any of the following (case-insensitive substring match) are replaced with the literal string `"***REDACTED***"` and a `UserWarning` is emitted: `api_key`, `apikey`, `secret`, `token`, `password`, `passwd`, `credential`, `bearer`, `authorization`, `client_secret`, `connection_string`. Redaction recurses into nested dicts and lists. Treat the warning as a code smell — fix the call site rather than relying on the safety net.
+Keys in `llm_config`, `dataset_ref.llm_config`, and `secure_context` whose names contain any of the following (case-insensitive substring match) are replaced with the literal string `"***REDACTED***"` and a `UserWarning` is emitted: `api_key`, `apikey`, `secret`, `token`, `password`, `passwd`, `credential`, `bearer`, `authorization`, `client_secret`, `connection_string`. Redaction recurses into nested dicts and lists. Treat the warning as a code smell — fix the call site rather than relying on the safety net.
 
 ### Schema-version policy
 
@@ -933,6 +935,9 @@ dataset_manifest = build_dataset_manifest(
         extracted_at=datetime.now(timezone.utc),
     ),
     dataset_name="vs_2026Q1",
+    # The *extraction-time* LLM that produced this dataset's frozen LLM
+    # artifacts (narrative-demographics / source-case). May be an LLMInfo or dict.
+    llm_config={"provider": "azure_openai", "model": "gpt-5.4"},
     secure_context={"secure_repo_commit": secure_sha},
     notes="Quarterly validation set",
 )
@@ -946,7 +951,7 @@ write_dataset_manifest(vs_dir, dataset_manifest, formats=("yaml", "json"))
 
 | Field | Type | Source | Meaning |
 |---|---|---|---|
-| `schema_version` | str | constant | Currently `"1.0"`. |
+| `schema_version` | str | constant | Currently `"1.1"`. |
 | `created_at` | datetime (UTC) | auto / caller | When the manifest was built. |
 | `dataset_id` | str | auto / caller | Stable join key. Defaults to a 12-char hex token; every run under the validation set references this id via `dataset_ref.dataset_id`. |
 | `dataset_name` | str \| null | caller | Optional human-readable label for the validation set. |
@@ -955,6 +960,7 @@ write_dataset_manifest(vs_dir, dataset_manifest, formats=("yaml", "json"))
 | `dataset_snapshot.meddra_version` | str | caller | MedDRA version used to extract reports and stats (e.g. `"27.0"`). |
 | `dataset_snapshot.extracted_at` | datetime | caller | When reports were pulled from the DB. |
 | `dev_package.*`, `dev_git_commit` | … | auto | Same semantics as on `RunManifest`. |
+| `llm_config` | dict \| null | caller | The **extraction-time** LLM that produced this dataset's frozen LLM artifacts (provider, model, deployment, …). May be an `LLMInfo`, a Pydantic model, or a dict. Runs that consume this dataset copy it into `RunManifest.dataset_ref.llm_config` (use `DatasetRef.from_manifest`). Secret-looking keys are auto-redacted. |
 | `secure_context` | dict \| null | caller | Deployment-specific metadata, same redaction rules as on `RunManifest`. |
 | `notes` | str \| null | caller | Free-form prose. |
 
