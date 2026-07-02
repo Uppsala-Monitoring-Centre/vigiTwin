@@ -15,8 +15,11 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
+from llm_dup_dev.models.enums import InconsistencySeverity
+from llm_dup_dev.models.pair_features import Inconsistency
 from llm_dup_dev.review_html.compare import (
     _anchor_penalty,
+    _apply_demographic_severity,
     _build_ae_rows,
     _build_drug_rows,
     _compare_age_values,
@@ -122,6 +125,90 @@ class TestCompareAgeValues:
         right = [AgeValue(value=54, unit="years", sources=["s"])]
         result = _compare_age_values([], right)
         assert result.status == ComparisonStatus.MISSING_LEFT
+
+
+# ===================================================================
+# _apply_demographic_severity
+# ===================================================================
+
+
+class _StubFeatures:
+    """Minimal stand-in: _apply_demographic_severity only reads .inconsistencies."""
+
+    def __init__(self, inconsistencies):
+        self.inconsistencies = inconsistencies
+
+
+class TestApplyDemographicSeverity:
+    def _weight_row(self, status=ComparisonStatus.MATCH):
+        return FieldComparison(
+            label="Weight",
+            left_display="126 kg",
+            right_display="131 kg",
+            status=status,
+        )
+
+    def test_moderate_weight_overrides_green_match(self):
+        """The reported bug: 126 vs 131 kg shows green but analysis says moderate."""
+        rows = [self._weight_row(ComparisonStatus.MATCH)]
+        features = _StubFeatures(
+            [
+                Inconsistency(
+                    feature="patient_weight",
+                    severity=InconsistencySeverity.MODERATE,
+                    difference=5.0,
+                    units="kg",
+                )
+            ]
+        )
+        _apply_demographic_severity(rows, features)
+        assert rows[0].severity == "moderate"
+
+    def test_no_inconsistency_leaves_severity_none(self):
+        rows = [self._weight_row(ComparisonStatus.MATCH)]
+        _apply_demographic_severity(rows, _StubFeatures([]))
+        assert rows[0].severity is None
+
+    def test_most_severe_wins_for_same_field(self):
+        rows = [self._weight_row(ComparisonStatus.MATCH)]
+        features = _StubFeatures(
+            [
+                Inconsistency(feature="patient_weight", severity=InconsistencySeverity.MINOR),
+                Inconsistency(feature="patient_weight", severity=InconsistencySeverity.STRONG),
+            ]
+        )
+        _apply_demographic_severity(rows, features)
+        assert rows[0].severity == "strong"
+
+    def test_suppressed_inconsistency_ignored(self):
+        rows = [self._weight_row(ComparisonStatus.MATCH)]
+        features = _StubFeatures(
+            [
+                Inconsistency(
+                    feature="patient_weight",
+                    severity=InconsistencySeverity.MODERATE,
+                    suppressed=True,
+                )
+            ]
+        )
+        _apply_demographic_severity(rows, features)
+        assert rows[0].severity is None
+
+    def test_missing_side_row_not_overridden(self):
+        rows = [self._weight_row(ComparisonStatus.MISSING_LEFT)]
+        features = _StubFeatures(
+            [Inconsistency(feature="patient_weight", severity=InconsistencySeverity.STRONG)]
+        )
+        _apply_demographic_severity(rows, features)
+        assert rows[0].severity is None
+
+    def test_non_demographic_feature_ignored(self):
+        rows = [self._weight_row(ComparisonStatus.MATCH)]
+        features = _StubFeatures(
+            [Inconsistency(feature="drug_set", severity=InconsistencySeverity.STRONG)]
+        )
+        _apply_demographic_severity(rows, features)
+        assert rows[0].severity is None
 
 
 # ===================================================================

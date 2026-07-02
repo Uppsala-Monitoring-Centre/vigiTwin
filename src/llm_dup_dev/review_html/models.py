@@ -48,6 +48,15 @@ class FieldComparison(BaseModel):
     right_display: str
     status: ComparisonStatus
     tooltip: str = ""
+    # Analysis-derived inconsistency severity for this field, taken from
+    # ``PairFeatures.inconsistencies`` (one of "minor", "moderate",
+    # "strong", "decisive"). When set, the renderer colours the row with
+    # the shared severity palette used elsewhere for inconsistencies,
+    # keeping the demographics table consistent with the analysis rather
+    # than with an independent display tolerance. ``None`` when the field
+    # has no recorded inconsistency (an exact/close match) or when no
+    # PairFeatures were available.
+    severity: str | None = None
     # When this matched field contributed to L_match, its log-rarity
     # contribution (-log10(p_f)) and the colour-bin CSS class are
     # populated here so the template can render an inline ``(+X.X)`` chip.
