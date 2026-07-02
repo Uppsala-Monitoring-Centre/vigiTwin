@@ -899,7 +899,7 @@ Cross-country duplication does occur (e.g. a case originally reported in one cou
 
 #### Drug set
 
-Drug-set inconsistencies detect when a clinically important drug from one report is entirely absent from the other report's drug list.
+Drug-set inconsistencies detect when a clinically important drug from one report — or one of its ingredient components — is absent from the other report's drug list.
 
 Drugs are classified by their **role** in the report:
 
@@ -912,19 +912,25 @@ Drugs are classified by their **role** in the report:
 
 The check is **directional**: for each report, its key drugs are compared against the full drug list (all roles) of the other report. Each direction produces at most one moderate inconsistency, regardless of how many key drugs are missing.
 
+Presence is evaluated at the level of **ingredient components** rather than whole substance strings, so that combination products coded differently across reports do not register as mismatches (see the combination-product override below).
+
 ```
 For each direction (r1→r2, r2→r1):
-  key_drugs(source) = substances with role ∈ {suspected, interacting}
-  all_drugs(target) = all substances regardless of role
-  missing = key_drugs(source) − all_drugs(target)
+  key_drugs(source)     = substances with role ∈ {suspected, interacting}
+  components(name)      = name split on ';', each part stripped + lowercased
+  target_components     = ⋃ components(s) over all substances s of target (any role)
+  missing = { key ∈ key_drugs(source)
+              : components(key) ⊄ target_components }   # some component absent
   if missing is non-empty → 1 moderate inconsistency
 ```
 
 This yields 0, 1, or 2 moderate inconsistencies per pair.
 
+**Combination-product override.** In WHODrug, ';' separates the ingredients of a combination product. A product coded as the combination on one report (`valsartan;amlodipine`) and as separate ingredients on the other (`valsartan` + `amlodipine`) is a coding-convention difference, not a clinical discrepancy, so it must not be penalised. Because presence is checked per component against the union of the target's components, such a pair produces **no** inconsistency in either direction. The override is symmetric: an individual key substance (`valsartan`) is likewise covered by a combination product containing it on the other side. A genuinely unreported ingredient still fires — a key `valsartan;amlodipine` against a report listing only `valsartan` leaves the `amlodipine` component missing, so that direction is still inconsistent. Matching remains **exact at the component level, never substring**, so distinct substances whose names contain one another (`prednisolone` vs `methylprednisolone`) still mismatch. This override affects only the inconsistency check; the matched drug set feeding \(L_{\text{match}}\) is unchanged and still keyed on whole substance strings, so combination products get no false match credit and the frequency counts are not disturbed.
+
 **Design notes:**
 
-- Drug name matching is **case-insensitive**.
+- Drug name matching is **case-insensitive** (and component whitespace is stripped).
 - A drug present in both reports with **different roles** is not inconsistent — role differences do not indicate different individuals.
 - Reports with **no key drugs** (all concomitant or role unknown) produce no drug-set inconsistencies.
 - Only drug **presence** is evaluated; differences in dosage, form, or dates are not considered here — date differences are handled by the Clinical Date Inconsistencies module below.
