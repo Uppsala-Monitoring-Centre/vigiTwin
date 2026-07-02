@@ -104,12 +104,11 @@
       "type": "object"
     },
     "NarrativeSex": {
-      "description": "Controlled vocabulary for narrative-extracted patient sex.\n\nLowercase to match the convention used by\n:func:`llm_dup_dev.feature_generation.inconsistencies._check_sex`,\nwhich lowercases all values before comparing.",
+      "description": "Controlled vocabulary for narrative-extracted patient sex.\n\nLowercase to match the convention used by\n:func:`llm_dup_dev.feature_generation.inconsistencies._check_sex`,\nwhich lowercases all values before comparing.\n\nThere is deliberately no ``UNKNOWN`` member: an explicit statement\nthat sex is unknown/unreported is treated as *missing* (no candidate\nextracted), not as a categorical value. See ``_MISSING_SEX_SENTINELS``\nand the ``sexes`` validator on :class:`NarrativeDemographics`.",
       "enum": [
         "male",
         "female",
-        "other",
-        "unknown"
+        "other"
       ],
       "title": "NarrativeSex",
       "type": "string"

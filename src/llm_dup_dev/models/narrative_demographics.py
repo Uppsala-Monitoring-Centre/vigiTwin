@@ -29,7 +29,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ------------------------------------------------------------------
@@ -43,12 +43,37 @@ class NarrativeSex(str, Enum):
     Lowercase to match the convention used by
     :func:`llm_dup_dev.feature_generation.inconsistencies._check_sex`,
     which lowercases all values before comparing.
+
+    There is deliberately no ``UNKNOWN`` member: an explicit statement
+    that sex is unknown/unreported is treated as *missing* (no candidate
+    extracted), not as a categorical value. See ``_MISSING_SEX_SENTINELS``
+    and the ``sexes`` validator on :class:`NarrativeDemographics`.
     """
 
     MALE = "male"
     FEMALE = "female"
     OTHER = "other"
-    UNKNOWN = "unknown"
+
+
+# Sex "values" that actually signal absence of information. These are
+# dropped rather than recorded, so a narrative saying "sex: unknown"
+# yields no sex candidate — consistent with the precision-oriented,
+# empty-list-means-missing contract of the extractor.
+_MISSING_SEX_SENTINELS = frozenset(
+    {
+        "",
+        "unknown",
+        "unspecified",
+        "not reported",
+        "not stated",
+        "not specified",
+        "not available",
+        "n/a",
+        "na",
+        "none",
+        "?",
+    }
+)
 
 
 # ------------------------------------------------------------------
@@ -116,3 +141,29 @@ class NarrativeDemographics(BaseModel):
         default="",
         description="Brief free-text explanation for human review.",
     )
+
+    @field_validator("sexes", mode="before")
+    @classmethod
+    def _drop_missing_sex_sentinels(cls, value: object) -> object:
+        """Drop sex candidates that merely say the sex is unknown/unreported.
+
+        Runs before per-item validation so a value like ``"unknown"`` is
+        removed entirely (yielding an empty list) rather than either being
+        recorded as a categorical value or raising a ``ValidationError``.
+        This also keeps legacy frozen bundles that still contain
+        ``"unknown"`` loadable — the entry is silently dropped.
+        """
+        if not isinstance(value, list):
+            return value
+        kept = []
+        for item in value:
+            if isinstance(item, NarrativeSexValue):
+                raw = item.value
+            elif isinstance(item, dict):
+                raw = item.get("value")
+            else:
+                raw = item
+            if str(raw).strip().lower() in _MISSING_SEX_SENTINELS:
+                continue
+            kept.append(item)
+        return kept
