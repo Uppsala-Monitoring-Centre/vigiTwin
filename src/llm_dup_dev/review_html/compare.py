@@ -85,7 +85,14 @@ from .normalize import (
 )
 
 # ---------------------------------------------------------------------------
-# Display-tolerance constants (for colour-coding only, not pipeline thresholds)
+# Display-tolerance constants — *fallback only*.
+#
+# When PairFeatures are available the demographics rows are coloured by the
+# analysis's own inconsistency severity (see ``_apply_demographic_severity``),
+# so the table always matches the pipeline. These tolerances are used only for
+# the numeric match/partial/mismatch status when no PairFeatures are supplied
+# (e.g. a standalone preview render). They are intentionally *not* the pipeline
+# thresholds.
 # ---------------------------------------------------------------------------
 
 AGE_TOLERANCE_YEARS: float = 3.0
@@ -576,6 +583,60 @@ def _annotate_demographic_contributions(
         contribution = -math.log10(fc.p_f)
         row.match_contribution = contribution
         row.match_contribution_class = _contrib_pos_class(contribution)
+
+
+# Ordering for picking the most severe inconsistency when several map to
+# the same demographic row.
+_SEVERITY_ORDER: dict[str, int] = {
+    "minor": 0,
+    "moderate": 1,
+    "strong": 2,
+    "decisive": 3,
+}
+
+
+def _apply_demographic_severity(
+    demographics: list[FieldComparison],
+    features: PairFeatures,
+) -> None:
+    """Colour demographic rows by the analysis's own inconsistency severity.
+
+    Reads the authoritative ``PairFeatures.inconsistencies`` list — the same
+    entries the decision logic counts — and stamps each corresponding
+    demographic row with its severity, so the table's colours match the
+    analysis rather than an independent display tolerance. (Previously a
+    numeric field could show green while the analysis recorded a moderate
+    inconsistency, because the display used its own laxer tolerances.)
+
+    Rows with no recorded inconsistency (an exact/close match) keep their
+    match status and green colour. Missing-side and neutral rows are never
+    overridden. When several inconsistencies map to one row, the most
+    severe wins.
+    """
+    by_label: dict[str, FieldComparison] = {f.label: f for f in demographics}
+    worst: dict[str, str] = {}
+    for inc in features.inconsistencies:
+        if inc.suppressed:
+            continue
+        label = _FEATURE_TO_DEMO_LABEL.get(inc.feature)
+        if label is None:
+            continue
+        sev = inc.severity.value
+        if _SEVERITY_ORDER.get(sev, -1) > _SEVERITY_ORDER.get(
+            worst.get(label, ""), -1
+        ):
+            worst[label] = sev
+    for label, sev in worst.items():
+        row = by_label.get(label)
+        if row is None:
+            continue
+        if row.status in (
+            ComparisonStatus.MISSING_LEFT,
+            ComparisonStatus.MISSING_RIGHT,
+            ComparisonStatus.NEUTRAL,
+        ):
+            continue
+        row.severity = sev
 
 
 def _build_features_summary(
@@ -1097,6 +1158,7 @@ def build_pair_view_model(
         _annotate_demographic_contributions(
             demographics, features_summary.feature_contributions
         )
+        _apply_demographic_severity(demographics, features)
     classification_summary = (
         _build_classification_summary(classification, features)
         if classification

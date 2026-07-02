@@ -71,6 +71,13 @@ tr.missing_right td { background: #e8eaed; }
 tr.informational td { background: #d1ecf1; }
 /* neutral: no background colour, just the status badge */
 tr.neutral td { background: inherit; }
+/* Severity-driven rows (demographics): light tints of the shared
+   inconsistency palette (minor amber, moderate orange, strong red,
+   decisive purple) so the table matches the analysis severity. */
+tr.sev-minor td    { background: #faf3d6; }
+tr.sev-moderate td { background: #fce3cf; }
+tr.sev-strong td   { background: #f8d7da; }
+tr.sev-decisive td { background: #ece0f7; }
 
 /* Status indicator column */
 th.status-col, td.status-col { width: 56px; text-align: center; white-space: nowrap; }
@@ -493,16 +500,23 @@ details.debug-section pre {
         </thead>
         <tbody>
         {% for f in vm.demographics %}
-            <tr class="{{ f.status.value }}"{% if f.tooltip %} title="{{ f.tooltip }}"{% endif %}>
+            {% set name_cls = "name-neutral" if f.severity else "name-" ~ f.status.value %}
+            <tr class="{{ ('sev-' ~ f.severity) if f.severity else f.status.value }}"{% if f.tooltip %} title="{{ f.tooltip }}"{% endif %}>
                 <td>
                     {{ f.label }}
                     {%- if f.match_contribution is not none %}
                     <span class="contrib {{ f.match_contribution_class }}">(+{{ "%.1f"|format(f.match_contribution) }})</span>
                     {%- endif %}
                 </td>
-                <td><span class="name-{{ f.status.value }}">{{ f.left_display | safe }}</span></td>
-                <td><span class="name-{{ f.status.value }}">{{ f.right_display | safe }}</span></td>
-                <td class="status-col">{{ status_badge(f.status) }}</td>
+                <td><span class="{{ name_cls }}">{{ f.left_display | safe }}</span></td>
+                <td><span class="{{ name_cls }}">{{ f.right_display | safe }}</span></td>
+                <td class="status-col">
+                    {%- if f.severity %}
+                    <span class="severity-{{ f.severity }}">{{ f.severity }}</span>
+                    {%- else %}
+                    {{ status_badge(f.status) }}
+                    {%- endif %}
+                </td>
             </tr>
         {% endfor %}
         </tbody>
