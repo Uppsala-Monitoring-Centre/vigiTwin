@@ -60,7 +60,15 @@ candidate is always preferable to an imputed one.
 
 **Never impute.**  Do not map qualitative descriptors to numeric or \
 categorical defaults; do not fill in a "typical" value when the \
-narrative is silent.  In particular:
+narrative is silent.
+
+An explicit statement that an attribute is unknown or unreported is \
+**not** a value — it means the attribute is *missing*.  Snippets such as \
+"sex: unknown", "age not reported", "weight: N/A", "height not stated", \
+"unspecified", or "not available" must yield **no candidate** for that \
+attribute (leave its list empty).  This applies to all four attributes.
+
+In particular:
 
 - For **age**, the only acceptable evidence is an explicit numeric \
 value with a unit (e.g. "56-year-old", "aged 72", "6-month-old", \
@@ -75,7 +83,9 @@ or "short" do not yield a value.
 noun applied to the patient ("male", "female", "man", "woman", "boy", \
 "girl"), or (b) sustained gendered pronouns ("he/him", "she/her") \
 referring to the patient.  Do **not** infer sex from a given name \
-alone, nor from pregnancy or obstetric context alone.
+alone, nor from pregnancy or obstetric context alone.  An explicit \
+"unknown", "not reported", "unspecified", or "N/A" for sex yields no \
+sex candidate.
 
 Examples:
 - "This report concerns an adult patient." → no age candidate (and \
@@ -83,6 +93,8 @@ no sex candidate from "patient" alone).
 - "A 56-year-old man presented." → age 56 years, sex male.
 - "She was admitted following ..." (with no explicit noun) → sex \
 female from the sustained pronoun, no age candidate.
+- "Sex: unknown." or "Age: not reported." → no candidate for that \
+attribute (leave the list empty).
 
 When in doubt, omit the candidate.  Empty lists are the correct \
 output for under-specified narratives.
@@ -105,7 +117,9 @@ short enough to quote (typically under 20 words).
 Units and controlled vocabulary:
 - Ages: unit is one of "years", "months", "days".  Prefer the unit \
 used in the narrative; do not convert.
-- Sex: one of "male", "female", "other", "unknown" (lowercase).
+- Sex: one of "male", "female", "other" (lowercase).  "unknown", \
+"not reported", "not stated", "unspecified", and "N/A" are not values — \
+omit the candidate entirely.
 - Weight: unit "kg".  Convert from pounds to kilograms only if the \
 narrative clearly states pounds; otherwise leave the value out.
 - Height: unit "cm".  Convert from inches / feet only if the \

@@ -87,20 +87,43 @@ class TestNarrativeDemographics:
     def test_dict_validation(self):
         data = {
             "ages": [{"value": 12, "unit": "months", "evidence": "12 months"}],
-            "sexes": [{"value": "unknown", "evidence": "sex not reported"}],
+            "sexes": [{"value": "male", "evidence": "a 12-month-old boy"}],
             "weights": [],
             "heights": [],
             "notes": "",
         }
         d = NarrativeDemographics.model_validate(data)
         assert d.ages[0].unit == "months"
-        assert d.sexes[0].value is NarrativeSex.UNKNOWN
+        assert d.sexes[0].value is NarrativeSex.MALE
 
     def test_rejects_unknown_sex_string(self):
         with pytest.raises(ValidationError):
             NarrativeDemographics.model_validate({
                 "sexes": [{"value": "m", "evidence": "m"}],
             })
+
+    def test_unknown_sex_sentinel_is_dropped(self):
+        """An explicit "sex: unknown" yields no candidate, not a value."""
+        d = NarrativeDemographics.model_validate({
+            "sexes": [{"value": "unknown", "evidence": "sex: unknown"}],
+        })
+        assert d.sexes == []
+
+    def test_various_missing_sex_sentinels_are_dropped(self):
+        for sentinel in ["unknown", "Not Reported", "unspecified", "N/A", "none"]:
+            d = NarrativeDemographics.model_validate({
+                "sexes": [{"value": sentinel, "evidence": sentinel}],
+            })
+            assert d.sexes == [], f"{sentinel!r} should be dropped"
+
+    def test_sentinel_dropped_but_valid_sex_kept(self):
+        d = NarrativeDemographics.model_validate({
+            "sexes": [
+                {"value": "unknown", "evidence": "sex: unknown"},
+                {"value": "female", "evidence": "she was admitted"},
+            ],
+        })
+        assert [s.value for s in d.sexes] == [NarrativeSex.FEMALE]
 
     def test_serializes_to_json_string(self):
         d = NarrativeDemographics(notes="hi")
