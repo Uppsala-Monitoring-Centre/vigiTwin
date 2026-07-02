@@ -663,3 +663,145 @@ class TestDrugSetInconsistency:
         result = detect_inconsistencies(r1, r2, thresholds)
         drug_incs = [i for i in result if i.feature == "drug_set"]
         assert len(drug_incs) == 0
+
+
+class TestCombinationProductOverride:
+    """Combination products coded as one drug on one report and as separate
+    ingredients on the other must not trigger drug-set inconsistencies."""
+
+    def test_combination_vs_separate_ingredients_no_inconsistency(self, thresholds):
+        """Combination key drug vs both ingredients as separate drugs → 0."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(
+                    substance="valsartan;amlodipine",
+                    sources=["s"],
+                    role=DrugRole.SUSPECTED,
+                ),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="valsartan", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="amlodipine", sources=["s"], role=DrugRole.SUSPECTED),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_separate_ingredients_vs_combination_no_inconsistency(self, thresholds):
+        """Same as above with the reports swapped → 0."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="valsartan", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="amlodipine", sources=["s"], role=DrugRole.SUSPECTED),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(
+                    substance="valsartan;amlodipine",
+                    sources=["s"],
+                    role=DrugRole.SUSPECTED,
+                ),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_ingredient_covered_by_concomitant_combination(self, thresholds):
+        """Key ingredient covered by a combination product on the other side,
+        even when the combination is concomitant → 0."""
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="valsartan", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(
+                    substance="valsartan;amlodipine",
+                    sources=["s"],
+                    role=DrugRole.CONCOMITANT,
+                ),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0
+
+    def test_combination_with_unreported_ingredient_is_inconsistent(self, thresholds):
+        """Combination key drug vs only one of its ingredients → 1 (that direction)."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(
+                    substance="valsartan;amlodipine",
+                    sources=["s"],
+                    role=DrugRole.SUSPECTED,
+                ),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="valsartan", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        # r1→r2: amlodipine component unreported in r2 → 1
+        # r2→r1: valsartan covered by the combination → 0
+        assert len(drug_incs) == 1
+        assert drug_incs[0].severity == InconsistencySeverity.MODERATE
+        assert "valsartan;amlodipine" in drug_incs[0].description
+
+    def test_substring_names_remain_inconsistent(self, thresholds):
+        """Component matching is exact, not substring: distinct substances whose
+        names contain each other still mismatch bidirectionally."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="prednisolone", sources=["s"], role=DrugRole.SUSPECTED),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(
+                    substance="methylprednisolone",
+                    sources=["s"],
+                    role=DrugRole.SUSPECTED,
+                ),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 2
+
+    def test_whitespace_and_case_around_semicolon(self, thresholds):
+        """Components are stripped and lowercased before comparison."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(
+                    substance="Valsartan; Amlodipine",
+                    sources=["s"],
+                    role=DrugRole.SUSPECTED,
+                ),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="valsartan", sources=["s"], role=DrugRole.CONCOMITANT),
+                Drug(substance="AMLODIPINE", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        drug_incs = [i for i in result if i.feature == "drug_set"]
+        assert len(drug_incs) == 0

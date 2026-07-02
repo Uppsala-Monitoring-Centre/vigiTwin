@@ -316,9 +316,25 @@ def _key_substance_names(report: Report) -> set[str]:
     }
 
 
-def _all_substance_names(report: Report) -> set[str]:
-    """Extract lowercased substance names for all drugs regardless of role."""
-    return {d.substance.lower() for d in report.drugs}
+def _substance_components(name: str) -> set[str]:
+    """Split a substance name into lowercased ingredient components.
+
+    Combination products are coded with ';' between ingredients in
+    WHODrug (e.g. "valsartan;amlodipine"); single-ingredient names
+    yield themselves as the only component. Splitting is exact-match
+    on components — never substring — so distinct substances that
+    contain each other's names (e.g. "prednisolone" vs
+    "methylprednisolone") remain distinct.
+    """
+    return {part.strip().lower() for part in name.split(";") if part.strip()}
+
+
+def _all_substance_components(report: Report) -> set[str]:
+    """Union of ingredient components across all drugs regardless of role."""
+    components: set[str] = set()
+    for d in report.drugs:
+        components |= _substance_components(d.substance)
+    return components
 
 
 def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
@@ -334,18 +350,30 @@ def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
     A drug present in both reports with different roles is NOT inconsistent.
     Reports with no key drugs (including role=None) produce no inconsistencies.
 
+    Combination-product override: presence is checked at the level of
+    semicolon-split ingredient components, so a key drug counts as found
+    when all of its components appear among the components of the target
+    report's drugs. A combination coded as separate ingredients on the
+    other report (or an ingredient covered by a combination there) is
+    therefore not inconsistent, while a genuinely unreported ingredient
+    still is.
+
     Returns 0, 1, or 2 moderate inconsistencies.
     """
     key_1 = _key_substance_names(r1)
     key_2 = _key_substance_names(r2)
-    all_1 = _all_substance_names(r1)
-    all_2 = _all_substance_names(r2)
+    components_1 = _all_substance_components(r1)
+    components_2 = _all_substance_components(r2)
 
     inconsistencies: list[Inconsistency] = []
 
     # Direction 1: r1 key drugs missing from r2 all drugs
     if key_1:
-        missing_in_r2 = key_1 - all_2
+        missing_in_r2 = {
+            name
+            for name in key_1
+            if not _substance_components(name) <= components_2
+        }
         if missing_in_r2:
             inconsistencies.append(
                 Inconsistency(
@@ -360,7 +388,11 @@ def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
 
     # Direction 2: r2 key drugs missing from r1 all drugs
     if key_2:
-        missing_in_r1 = key_2 - all_1
+        missing_in_r1 = {
+            name
+            for name in key_2
+            if not _substance_components(name) <= components_1
+        }
         if missing_in_r1:
             inconsistencies.append(
                 Inconsistency(
