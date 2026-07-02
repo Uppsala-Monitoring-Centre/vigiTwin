@@ -22,7 +22,8 @@ from pydantic import BaseModel, Field, model_validator
 from llm_dup_dev.run_manifest._redaction import redact_secrets
 from llm_dup_dev.run_manifest.models import DevPackageInfo
 
-SCHEMA_VERSION = "1.0"
+# 1.0 → 1.1: added ``llm_config`` (extraction-time LLM model).
+SCHEMA_VERSION = "1.1"
 
 
 class DatasetSnapshot(BaseModel):
@@ -57,11 +58,19 @@ class DatasetManifest(BaseModel):
     dev_package: DevPackageInfo = Field(default_factory=DevPackageInfo)
     dev_git_commit: str | None = None
 
+    # The *extraction-time* LLM that produced this dataset's frozen LLM
+    # artifacts (narrative-demographics / source-case extractions).
+    # ``LLMInfo``-shaped dict (provider / model / deployment / …); populated
+    # secure-side. A run that consumes this dataset copies it into
+    # ``RunManifest.dataset_ref.llm_config``.
+    llm_config: dict[str, Any] | None = None
+
     secure_context: dict[str, Any] | None = None
     notes: str | None = None
 
     @model_validator(mode="after")
     def _redact_secret_values(self) -> "DatasetManifest":
+        self.llm_config = redact_secrets(self.llm_config, field_name="llm_config")
         self.secure_context = redact_secrets(
             self.secure_context, field_name="secure_context"
         )
