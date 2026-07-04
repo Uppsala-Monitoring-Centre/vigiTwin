@@ -152,7 +152,14 @@ patient_sex_values: [
 ]
 ```
 
-Values representing uncertainty (e.g. `"unknown"`) must not be stored.
+Values representing uncertainty (e.g. `"unknown"`, `"not known"`) must not be
+stored — missing information is an empty list, not a sentinel string. This is
+now **enforced** at the `Report` model: a `patient_sex_values` validator keeps
+only the E2B-aligned binary vocabulary `"male"`/`"female"` (case-normalised) and
+silently drops everything else (uncertainty values, `"other"`, blanks) as
+missing. A parallel `country_of_origin_values` validator drops uncertainty
+sentinels while leaving real values untouched. Offending entries are dropped
+rather than rejected, so legacy frozen bundles remain loadable.
 
 ------
 

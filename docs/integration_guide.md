@@ -344,7 +344,8 @@ class SqlReportLoader:
 
 | Attribute | Source | Notes |
 |-----------|--------|-------|
-| `patient_sex_values` | Structured field + LLM extraction | Use `sources=["structured"]` or `sources=["narrative_llm"]` |
+| `patient_sex_values` | Structured field + LLM extraction | Use `sources=["structured"]` or `sources=["narrative_llm"]`. Dev-side normalization keeps only `"male"`/`"female"` (case-insensitive) and drops uncertainty values (`"unknown"`, `"not known"`, …) and `"other"` as missing, so the loader need not special-case them. |
+| `country_of_origin_values` | Structured field + LLM extraction | Use `sources=["structured"]` or `sources=["narrative_llm"]`. Dev-side normalization drops uncertainty values (`"unknown"`, `"not known"`, …) as missing; real country values pass through unchanged. |
 | `patient_age_values` | Structured + LLM | Include `unit` ("years", "months", "days") |
 | `patient_height_values` | Structured + LLM | Values in **centimetres (cm)** |
 | `patient_weight_values` | Structured + LLM | Values in **kilograms (kg)** |
