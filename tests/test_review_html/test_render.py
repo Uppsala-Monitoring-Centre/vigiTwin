@@ -90,6 +90,78 @@ class TestRenderPair:
         # omeprazole is only in report_b → R2 only badge
         assert "R2 only" in html
 
+    def test_narrative_evidence_rendered_under_value(self):
+        """Evidence snippets render as .narrative-evidence divs in the
+        demographics table."""
+        vm = PairViewModel(
+            pair_id="TEST",
+            report_1_id="A",
+            report_2_id="B",
+            narratives=NarrativeComparison(),
+            demographics=[
+                FieldComparison(
+                    label="Age",
+                    left_display="54 years",
+                    right_display="54 years",
+                    status=ComparisonStatus.MATCH,
+                    left_evidence=["a 54-year-old man"],
+                    right_evidence=["aged 54 years"],
+                )
+            ],
+        )
+        html = render_pair(vm)
+        assert "narrative-evidence" in html
+        assert "a 54-year-old man" in html
+        assert "aged 54 years" in html
+
+    def test_narrative_evidence_is_escaped_not_injected(self):
+        """Evidence is verbatim narrative text and must be auto-escaped.
+        Unlike left_display/right_display it never gets ``| safe``, so a
+        snippet containing markup cannot inject HTML into the page."""
+        vm = PairViewModel(
+            pair_id="TEST",
+            report_1_id="A",
+            report_2_id="B",
+            narratives=NarrativeComparison(),
+            demographics=[
+                FieldComparison(
+                    label="Age",
+                    left_display="54 years",
+                    right_display="54 years",
+                    status=ComparisonStatus.MATCH,
+                    left_evidence=['<script>alert("x")</script> & more'],
+                )
+            ],
+        )
+        html = render_pair(vm)
+        assert "<script>alert" not in html
+        assert "&lt;script&gt;" in html
+        assert "&amp; more" in html
+
+    def test_llm_notes_row_absent_when_notes_empty(self):
+        vm = PairViewModel(
+            pair_id="TEST",
+            report_1_id="A",
+            report_2_id="B",
+            narratives=NarrativeComparison(),
+        )
+        assert "LLM notes" not in render_pair(vm)
+
+    def test_llm_notes_row_present_when_notes_set(self):
+        """Notes render even with no comparable demographics rows — that is
+        the case where a note explaining the absence matters most, so the
+        section conditional must not gate them out."""
+        vm = PairViewModel(
+            pair_id="TEST",
+            report_1_id="A",
+            report_2_id="B",
+            narratives=NarrativeComparison(),
+            narrative_notes_1="No demographics stated in the narrative.",
+        )
+        html = render_pair(vm)
+        assert "LLM notes" in html
+        assert "No demographics stated in the narrative." in html
+
     def test_demographics_rendered(self, report_a, report_b):
         vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
         html = render_pair(vm)

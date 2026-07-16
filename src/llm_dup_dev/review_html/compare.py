@@ -639,6 +639,54 @@ def _apply_demographic_severity(
         row.severity = sev
 
 
+# Extraction list attribute on ``NarrativeDemographics`` -> demographics row
+# label. Country and Report date have no narrative counterpart, so they never
+# carry evidence.
+_NARRATIVE_EVIDENCE_LABELS: dict[str, str] = {
+    "ages": "Age",
+    "sexes": "Sex",
+    "weights": "Weight",
+    "heights": "Height",
+}
+
+
+def _attach_narrative_evidence(
+    demographics: list[FieldComparison],
+    narrative_demographics_1: NarrativeDemographics | None,
+    narrative_demographics_2: NarrativeDemographics | None,
+) -> None:
+    """Mutate demographics rows in place with narrative evidence snippets.
+
+    ``merge_narrative_demographics`` drops the verbatim ``evidence`` snippet
+    each candidate carries — the Report's value models have nowhere to put it
+    — so the snippets are read straight off the extraction objects here. The
+    reviewer otherwise sees an italicised narrative-derived value with no way
+    to check what the LLM based it on.
+
+    Attached per row and per side rather than per displayed value: the display
+    strings dedupe across structured and narrative contributors, so a rendered
+    segment cannot be mapped back to one candidate. Every snippet the
+    extractor produced for the field is shown instead.
+    """
+    by_label: dict[str, FieldComparison] = {f.label: f for f in demographics}
+    for attr, label in _NARRATIVE_EVIDENCE_LABELS.items():
+        row = by_label.get(label)
+        if row is None:
+            continue
+        if narrative_demographics_1 is not None:
+            row.left_evidence = [
+                c.evidence
+                for c in getattr(narrative_demographics_1, attr)
+                if c.evidence
+            ]
+        if narrative_demographics_2 is not None:
+            row.right_evidence = [
+                c.evidence
+                for c in getattr(narrative_demographics_2, attr)
+                if c.evidence
+            ]
+
+
 def _build_features_summary(
     features: PairFeatures,
 ) -> FeaturesSummaryVM:
@@ -1081,6 +1129,10 @@ def build_pair_view_model(
         feature generation; rendering needs an independent application
         because the runner discards the enriched reports.
 
+        The extractions are also read directly for their ``evidence``
+        snippets and ``notes``, which the merge drops — see
+        ``_attach_narrative_evidence``.
+
     Returns
     -------
     PairViewModel
@@ -1137,6 +1189,16 @@ def build_pair_view_model(
         for key in _DEMOGRAPHIC_FIELD_ORDER
         if demographic_builders.get(key) is not None
     ]
+
+    # Evidence comes off the extractions rather than the merged reports, and
+    # does not depend on PairFeatures — so this runs outside the features
+    # block below.
+    if narrative_demographics_1 is not None or narrative_demographics_2 is not None:
+        _attach_narrative_evidence(
+            demographics,
+            narrative_demographics_1,
+            narrative_demographics_2,
+        )
 
     # --- drugs & AEs ---
     drugs = _build_drug_rows(report_1, report_2)
@@ -1214,6 +1276,16 @@ def build_pair_view_model(
         drugs=drugs,
         adverse_events=adverse_events,
         narratives=narratives,
+        narrative_notes_1=(
+            narrative_demographics_1.notes
+            if narrative_demographics_1 is not None
+            else ""
+        ),
+        narrative_notes_2=(
+            narrative_demographics_2.notes
+            if narrative_demographics_2 is not None
+            else ""
+        ),
         features_summary=features_summary,
         classification_summary=classification_summary,
         freq_stats=freq_stats,

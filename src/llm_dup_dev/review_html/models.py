@@ -64,6 +64,16 @@ class FieldComparison(BaseModel):
     # available.
     match_contribution: float | None = None
     match_contribution_class: str | None = None
+    # Verbatim narrative snippets supporting this field's narrative-derived
+    # candidates, per side. Read directly off the ``NarrativeDemographics``
+    # extraction at render time rather than from the Report: the merge drops
+    # ``evidence``, and the Report's value models have no field to carry it
+    # (see models/narrative_demographics.py). Granularity is per-row, not
+    # per-displayed-value — values dedupe across structured and narrative
+    # sources, so a rendered segment has no reliable mapping back to a single
+    # candidate. Both stay empty when no extraction was supplied for that side.
+    left_evidence: list[str] = Field(default_factory=list)
+    right_evidence: list[str] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +438,13 @@ class PairViewModel(BaseModel):
     narratives: NarrativeComparison = Field(
         default_factory=NarrativeComparison
     )
+
+    # Free-text explanation the narrative-demographics extractor emitted for
+    # each report, surfaced so reviewers can see the LLM's reasoning about the
+    # demographics it proposed. Empty when no extraction was supplied or the
+    # extractor produced no notes.
+    narrative_notes_1: str = ""
+    narrative_notes_2: str = ""
 
     features_summary: FeaturesSummaryVM | None = None
     classification_summary: ClassificationSummaryVM | None = None

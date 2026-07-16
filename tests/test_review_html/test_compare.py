@@ -518,6 +518,160 @@ class TestBuildPairViewModel:
 
 
 # ===================================================================
+# Narrative evidence snippets and notes
+# ===================================================================
+
+
+def _nd_report(report_id: str) -> Report:
+    """Minimal report carrying only a structured sex, so the demographics
+    table always has an Age/Weight/Height row available to annotate."""
+    return Report(
+        report_id=report_id,
+        patient_sex_values=[SourcedValue(value="male", sources=["s"])],
+    )
+
+
+class TestNarrativeEvidence:
+    """``_attach_narrative_evidence`` surfaces the verbatim snippet behind
+    each narrative-derived demographic candidate, per row and per side.
+
+    The merge drops ``evidence``, so it is read straight off the
+    ``NarrativeDemographics`` extraction at render time.
+    """
+
+    def test_evidence_lands_on_correct_row_and_side(self):
+        from llm_dup_dev.models.narrative_demographics import (
+            NarrativeAgeValue,
+            NarrativeDemographics,
+        )
+
+        nd1 = NarrativeDemographics(
+            ages=[NarrativeAgeValue(value=54.0, evidence="a 54-year-old man")]
+        )
+        vm = build_pair_view_model(
+            _nd_report("R1"),
+            _nd_report("R2"),
+            pair_id="R1__R2",
+            narrative_demographics_1=nd1,
+        )
+        age = next(f for f in vm.demographics if f.label == "Age")
+        assert age.left_evidence == ["a 54-year-old man"]
+        # Nothing was supplied for side 2.
+        assert age.right_evidence == []
+        # Sex had no narrative candidate, so it stays clean.
+        sex = next(f for f in vm.demographics if f.label == "Sex")
+        assert sex.left_evidence == []
+
+    def test_multiple_candidates_yield_multiple_snippets(self):
+        """The narrative may legitimately state more than one value for a
+        field (e.g. weight on admission vs discharge); show every snippet."""
+        from llm_dup_dev.models.narrative_demographics import (
+            NarrativeDemographics,
+            NarrativeMeasurementValue,
+        )
+
+        nd1 = NarrativeDemographics(
+            weights=[
+                NarrativeMeasurementValue(
+                    value=72.0, unit="kg", evidence="weighed 72 kg on admission"
+                ),
+                NarrativeMeasurementValue(
+                    value=68.0, unit="kg", evidence="68 kg at discharge"
+                ),
+            ]
+        )
+        vm = build_pair_view_model(
+            _nd_report("R1"),
+            _nd_report("R2"),
+            pair_id="R1__R2",
+            narrative_demographics_1=nd1,
+        )
+        weight = next(f for f in vm.demographics if f.label == "Weight")
+        assert weight.left_evidence == [
+            "weighed 72 kg on admission",
+            "68 kg at discharge",
+        ]
+
+    def test_both_sides_annotated_independently(self):
+        from llm_dup_dev.models.narrative_demographics import (
+            NarrativeAgeValue,
+            NarrativeDemographics,
+        )
+
+        nd1 = NarrativeDemographics(
+            ages=[NarrativeAgeValue(value=54.0, evidence="54-year-old")]
+        )
+        nd2 = NarrativeDemographics(
+            ages=[NarrativeAgeValue(value=54.0, evidence="aged 54 years")]
+        )
+        vm = build_pair_view_model(
+            _nd_report("R1"),
+            _nd_report("R2"),
+            pair_id="R1__R2",
+            narrative_demographics_1=nd1,
+            narrative_demographics_2=nd2,
+        )
+        age = next(f for f in vm.demographics if f.label == "Age")
+        assert age.left_evidence == ["54-year-old"]
+        assert age.right_evidence == ["aged 54 years"]
+
+    def test_no_extraction_leaves_evidence_empty(self):
+        """The common case — structured-only reports — must be untouched."""
+        vm = build_pair_view_model(
+            _nd_report("R1"), _nd_report("R2"), pair_id="R1__R2"
+        )
+        assert all(f.left_evidence == [] for f in vm.demographics)
+        assert all(f.right_evidence == [] for f in vm.demographics)
+
+    def test_blank_evidence_is_skipped(self):
+        """A candidate the extractor left unquoted contributes no snippet
+        rather than an empty italic line."""
+        from llm_dup_dev.models.narrative_demographics import (
+            NarrativeAgeValue,
+            NarrativeDemographics,
+        )
+
+        nd1 = NarrativeDemographics(
+            ages=[
+                NarrativeAgeValue(value=54.0, evidence=""),
+                NarrativeAgeValue(value=55.0, evidence="aged 55"),
+            ]
+        )
+        vm = build_pair_view_model(
+            _nd_report("R1"),
+            _nd_report("R2"),
+            pair_id="R1__R2",
+            narrative_demographics_1=nd1,
+        )
+        age = next(f for f in vm.demographics if f.label == "Age")
+        assert age.left_evidence == ["aged 55"]
+
+    def test_notes_surface_on_view_model(self):
+        from llm_dup_dev.models.narrative_demographics import (
+            NarrativeDemographics,
+        )
+
+        nd1 = NarrativeDemographics(notes="Age stated only in the discharge summary.")
+        nd2 = NarrativeDemographics(notes="No demographics in narrative.")
+        vm = build_pair_view_model(
+            _nd_report("R1"),
+            _nd_report("R2"),
+            pair_id="R1__R2",
+            narrative_demographics_1=nd1,
+            narrative_demographics_2=nd2,
+        )
+        assert vm.narrative_notes_1 == "Age stated only in the discharge summary."
+        assert vm.narrative_notes_2 == "No demographics in narrative."
+
+    def test_notes_default_empty_without_extraction(self):
+        vm = build_pair_view_model(
+            _nd_report("R1"), _nd_report("R2"), pair_id="R1__R2"
+        )
+        assert vm.narrative_notes_1 == ""
+        assert vm.narrative_notes_2 == ""
+
+
+# ===================================================================
 # Clinical date counts in view models
 # ===================================================================
 
