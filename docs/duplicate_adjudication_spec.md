@@ -228,7 +228,7 @@ The shared source is confirmed, but case identifiers are missing or not safely c
 | A | \(L_{\text{patient}} > \) `lmatch_intermediate` (with \(w_{\text{tot}} <\) `w_tot_limited_zone` implied) | `Duplicates` |
 | C | otherwise | `Abstain` |
 
-Branch B is checked first so any inconsistency above the weak-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
+Branch B is checked first so any inconsistency above the limited-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
 
 Note the lower Otherwise related gate here (`w_tot_limited_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_compelling_zone`, default 4.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
 
@@ -266,7 +266,7 @@ The branch A bar is set at `lmatch_intermediate` (default 2.0) so that intuitive
 | age + weight (1/40) | 1.90 + 1.60 | 3.50 | yes |
 | sex + age + clinical date (drug start, 1/540) | 0.30 + 1.90 + 2.73 | 4.93 | yes |
 
-The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. A single moderate inconsistency (\(w_{\text{tot}} = 1.0\)) is enough to drop branch A and fall through to Abstain. The asymmetry between the branch A gate (`< w_tot_limited_zone`) and the branch B gate (`\geq w_tot_intermediate_zone`) is intentional: in a multi-patient publication even small inconsistencies are not noise, so it is easy to drop out of `Duplicates` but harder to confidently land in `Otherwise related`.
+The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. Because branch B is checked first on the complementary condition (\(w_{\text{tot}} \geq\) `w_tot_limited_zone`), the two branches partition the \(w_{\text{tot}}\) axis at the same bar: any moderate-or-stronger inconsistency — or three accumulated minors (\(3 \times 0.4 = 1.2\)) — lands the pair in `Otherwise related`, while a single minor (0.4) is tolerated. Below the bar the outcome rests entirely on \(L_{\text{patient}}\). `Abstain` therefore means minimal inconsistency *and* insufficient patient-specific evidence (\(w_{\text{tot}} <\) `w_tot_limited_zone` and \(L_{\text{patient}} \leq\) `lmatch_intermediate`) — not the presence of a moderate inconsistency, which resolves to `Otherwise related` via branch B.
 
 Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represents *absence of comparable evidence*, not a discrepancy), so \(w_{\text{tot}}\) reflects only non-source-case signals and the comparison is apples-to-apples.
 
