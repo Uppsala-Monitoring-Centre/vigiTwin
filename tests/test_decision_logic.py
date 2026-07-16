@@ -808,11 +808,12 @@ class TestUncomparableCaseThreeWayRule:
     patient-specific log-evidence ``L_patient`` (excluding drug/AE-set
     contributions) and ``w_tot``:
 
-        if w_tot >= w_tot_intermediate_zone:                          → Otherwise_related
-        elif L_patient > lmatch_intermediate and w_tot < w_tot_limited_zone: → Duplicates
-        else:                                                → Abstain
+        if w_tot >= w_tot_limited_zone:        → Otherwise_related
+        elif L_patient > lmatch_intermediate:  → Duplicates
+                                                 (w_tot < w_tot_limited_zone implied)
+        else:                                  → Abstain
 
-    Defaults: lmatch_intermediate=2.0, w_tot_limited_zone=1.0, w_tot_intermediate_zone=3.0.
+    Defaults: lmatch_intermediate=2.0, w_tot_limited_zone=1.0.
     """
 
     # ---------- Branch A: Duplicates ----------
@@ -913,7 +914,7 @@ class TestUncomparableCaseThreeWayRule:
     # ---------- Branch B: Otherwise_related ----------
 
     def test_branch_b_strong_inconsistency_overrides_patient_evidence(self):
-        """w_tot=3.0 ≥ 3.0 → Otherwise_related, even if L_patient is
+        """w_tot=3.0 ≥ 1.0 → Otherwise_related, even if L_patient is
         very high. (B) is checked before (A)."""
         f = _make_features(
             L_match=0.0,
