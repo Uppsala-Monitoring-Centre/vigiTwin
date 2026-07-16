@@ -31,6 +31,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from llm_dup_dev.models.demographics_vocab import UNCERTAINTY_SENTINELS
+
 
 # ------------------------------------------------------------------
 # Controlled vocabulary
@@ -58,22 +60,10 @@ class NarrativeSex(str, Enum):
 # Sex "values" that actually signal absence of information. These are
 # dropped rather than recorded, so a narrative saying "sex: unknown"
 # yields no sex candidate — consistent with the precision-oriented,
-# empty-list-means-missing contract of the extractor.
-_MISSING_SEX_SENTINELS = frozenset(
-    {
-        "",
-        "unknown",
-        "unspecified",
-        "not reported",
-        "not stated",
-        "not specified",
-        "not available",
-        "n/a",
-        "na",
-        "none",
-        "?",
-    }
-)
+# empty-list-means-missing contract of the extractor. The canonical set
+# is shared with the structured-side Report validators (see
+# :mod:`llm_dup_dev.models.demographics_vocab`).
+_MISSING_SEX_SENTINELS = UNCERTAINTY_SENTINELS
 
 
 # ------------------------------------------------------------------

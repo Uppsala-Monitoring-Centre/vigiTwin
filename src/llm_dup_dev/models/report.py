@@ -14,8 +14,12 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from llm_dup_dev.models.demographics_vocab import (
+    drop_uncertainty_values,
+    normalize_structured_sex,
+)
 from llm_dup_dev.models.enums import DrugRole
 
 
@@ -169,3 +173,29 @@ class Report(BaseModel):
     # fixtures, in which case the narrative-source-case task falls back to
     # its pre-existing narrative-only behavior.
     literature_reference: str | None = None
+
+    @field_validator("patient_sex_values", mode="before")
+    @classmethod
+    def _validate_sex_values(cls, value: object) -> object:
+        """Restrict structured patient sex to the E2B binary vocabulary.
+
+        Keeps only ``male``/``female`` (canonicalised to lowercase) and drops
+        every other value — ``other``, ``"unknown"``, ``"not known"``, blanks —
+        as missing, per ``docs/data_contracts.md`` § Patient Sex. Offending
+        entries are dropped rather than rejected so legacy frozen bundles remain
+        loadable. Narrative candidates appended later via ``model_copy`` are
+        already vocabulary-constrained upstream and bypass this validator.
+        """
+        return normalize_structured_sex(value)
+
+    @field_validator("country_of_origin_values", mode="before")
+    @classmethod
+    def _validate_country_values(cls, value: object) -> object:
+        """Drop uncertainty sentinels from country of origin.
+
+        The country domain cannot be enumerated, so real values pass through
+        unchanged; only values that signal absence of information (``"unknown"``,
+        ``"not known"``, …) are dropped, per the empty-list-means-missing
+        contract.
+        """
+        return drop_uncertainty_values(value)
