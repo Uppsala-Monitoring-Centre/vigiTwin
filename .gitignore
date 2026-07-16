@@ -23,6 +23,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Generated output (review_html.render.DEFAULT_OUTPUT_DIR renders here)
+outputs/
+
 # Azure / secrets
 *.pem
 *.key
