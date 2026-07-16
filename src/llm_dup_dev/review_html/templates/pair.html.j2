@@ -225,6 +225,12 @@ tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
     font-size: 12px;
     margin-top: 2px;
 }
+.narrative-evidence {
+    color: #586069;
+    font-size: 12px;
+    margin-top: 2px;
+    font-style: italic;
+}
 
 /* --- Classification badge --- */
 .label-badge {
@@ -485,7 +491,9 @@ details.debug-section pre {
 {% endif %}
 
 {# ── Demographics comparison ── #}
-{% if vm.demographics %}
+{# Notes are shown even with no comparable rows: "no demographics in the
+   narrative" is exactly the case that explains an empty table. #}
+{% if vm.demographics or vm.narrative_notes_1 or vm.narrative_notes_2 %}
 <div class="section">
     <h2>Demographics &amp; Report Metadata</h2>
     <div class="table-scroll">
@@ -508,8 +516,18 @@ details.debug-section pre {
                     <span class="contrib {{ f.match_contribution_class }}">(+{{ "%.1f"|format(f.match_contribution) }})</span>
                     {%- endif %}
                 </td>
-                <td><span class="{{ name_cls }}">{{ f.left_display | safe }}</span></td>
-                <td><span class="{{ name_cls }}">{{ f.right_display | safe }}</span></td>
+                <td>
+                    <span class="{{ name_cls }}">{{ f.left_display | safe }}</span>
+                    {%- for ev in f.left_evidence %}
+                    <div class="narrative-evidence">&ldquo;{{ ev }}&rdquo;</div>
+                    {%- endfor %}
+                </td>
+                <td>
+                    <span class="{{ name_cls }}">{{ f.right_display | safe }}</span>
+                    {%- for ev in f.right_evidence %}
+                    <div class="narrative-evidence">&ldquo;{{ ev }}&rdquo;</div>
+                    {%- endfor %}
+                </td>
                 <td class="status-col">
                     {%- if f.severity %}
                     <span class="severity-{{ f.severity }}">{{ f.severity }}</span>
@@ -519,6 +537,14 @@ details.debug-section pre {
                 </td>
             </tr>
         {% endfor %}
+        {% if vm.narrative_notes_1 or vm.narrative_notes_2 %}
+            <tr class="neutral">
+                <td>LLM notes</td>
+                <td><span class="name-neutral">{{ vm.narrative_notes_1 }}</span></td>
+                <td><span class="name-neutral">{{ vm.narrative_notes_2 }}</span></td>
+                <td class="status-col"></td>
+            </tr>
+        {% endif %}
         </tbody>
     </table>
     </div>

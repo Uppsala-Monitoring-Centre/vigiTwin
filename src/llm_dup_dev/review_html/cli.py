@@ -26,6 +26,9 @@ Expected JSON formats
 - ``features.json`` (optional): ``{ "<pair_id>": { ...PairFeatures fields... }, ... }``
 - ``classifications.json`` (optional): ``{ "<pair_id>": { ...ClassificationResult fields... }, ... }``
 - ``bundles.json`` (optional): ``{ "<pair_id>": { ...FrozenPairBundle fields... }, ... }``
+- ``narrative_demographics.json`` (optional): a ``FrozenNarrativeDemographics``
+  artifact, ``{ "extractions": { "<report_id>": { ...NarrativeDemographics
+  fields... }, ... } }``
 """
 
 from __future__ import annotations
@@ -36,8 +39,12 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
-from llm_dup_dev.data.offline import FrozenPairBundle
+from llm_dup_dev.data.offline import (
+    FrozenPairBundle,
+    load_frozen_narrative_demographics,
+)
 from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
@@ -89,6 +96,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Path to frozen pair bundles JSON (dict keyed by pair_id). "
             "When provided, each pair report includes a Frequency Statistics "
             "section. Optional."
+        ),
+    )
+    parser.add_argument(
+        "--narrative-demographics",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a frozen narrative demographics bundle JSON (keyed by "
+            "report_id). When provided, narrative-extracted demographic "
+            "candidates appear in the demographics table alongside structured "
+            "fields, with the supporting narrative snippets. Optional."
         ),
     )
     parser.add_argument(
@@ -149,6 +167,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             for pid, bdata in raw_bundles.items()
         }
 
+    # Load optional narrative demographics extractions. Unlike the bundles
+    # above this is a wrapper model keyed by report_id, so it has its own
+    # loader rather than a bare dict of models.
+    narrative_demographics: dict[str, NarrativeDemographics] = {}
+    if args.narrative_demographics:
+        narrative_demographics = load_frozen_narrative_demographics(
+            args.narrative_demographics
+        ).extractions
+
     # Build view models
     view_models: list[PairViewModel] = []
     errors: list[str] = []
@@ -173,6 +200,12 @@ def main(argv: Sequence[str] | None = None) -> None:
             features=features.get(pair.pair_id),
             classification=classifications.get(pair.pair_id),
             frozen_bundle=bundles.get(pair.pair_id),
+            narrative_demographics_1=narrative_demographics.get(
+                pair.report_1_id
+            ),
+            narrative_demographics_2=narrative_demographics.get(
+                pair.report_2_id
+            ),
         )
         view_models.append(vm)
 
