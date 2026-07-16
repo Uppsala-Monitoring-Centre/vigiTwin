@@ -22,7 +22,7 @@
   },
   "probability": {
     "p_joint": 2.3e-08,
-    "expected_collisions": 2.3e-05,
+    "p_match": 2.277e-05,
     "feature_contributions": [
       {
         "feature": "ae_set",

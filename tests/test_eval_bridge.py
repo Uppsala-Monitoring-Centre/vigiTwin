@@ -37,7 +37,7 @@ def _make_pair_result(
             N_drugs=100, N_AEs=100, N_drugs_AEs=50,
             type=AnchorType.DRUGS_AES, N_anchor=50,
         ),
-        probability=ProbabilityEstimate(p_joint=1e-5, expected_collisions=0.01),
+        probability=ProbabilityEstimate(p_joint=1e-5, p_match=0.01),
         L_match=4.0,
         inconsistency_counts=InconsistencyCounts(),
         narrative_consistency=NarrativeConsistency.NEUTRAL,

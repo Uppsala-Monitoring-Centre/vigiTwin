@@ -1,13 +1,16 @@
 """Probability estimation for the collision framework.
 
-Computes feature-level probabilities, composite matching probability,
-expected collisions within the anchor population, and L_match.
+Computes feature-level probabilities, the composite matching probability
+for a single pairwise opportunity (p_joint), the multiplicity-adjusted
+probability of at least one chance collision anywhere in the anchor
+population (P_match), and L_match.
 
-The core idea: if the expected number of random report pairs sharing the
-observed feature pattern is extremely small, that is strong evidence the
-two reports describe the same individual — and therefore strong support
-for the *Duplicates* hypothesis in the duplicate adjudication pipeline.
-L_match is one of the main inputs to the report-pair decision logic.
+The core idea: if it is very improbable that *any* random pair of reports
+in the anchor population would share the observed feature pattern, that is
+strong evidence the two reports describe the same individual — and
+therefore strong support for the *Duplicates* hypothesis in the duplicate
+adjudication pipeline. L_match is one of the main inputs to the
+report-pair decision logic.
 
 See: docs/duplicate_adjudication_spec.md § Probability estimation
 """
@@ -55,7 +58,7 @@ class ProbabilityResult:
 
     feature_probabilities: list[FeatureProbability] = dc_field(default_factory=list)
     p_joint: float = 1.0
-    expected_collisions: float = 0.0
+    p_match: float = 0.0
     L_match: float = 0.0
 
     @property
@@ -67,7 +70,7 @@ class ProbabilityResult:
         """
         return ProbabilityEstimate(
             p_joint=self.p_joint,
-            expected_collisions=self.expected_collisions,
+            p_match=self.p_match,
             feature_contributions=[
                 FeatureContribution(
                     feature=fp.feature,
@@ -133,6 +136,65 @@ MARGINAL_FLOOR: float = 1e-6
 
 
 # ---------------------------------------------------------------------------
+# Multiplicity adjustment
+# ---------------------------------------------------------------------------
+
+
+def n_anchor_pairs(n_anchor: int) -> int:
+    """Return M = C(N_anchor, 2), the number of unordered report pairs.
+
+    This is the multiplicity universe: the number of pairwise opportunities
+    for a chance match within the anchor population. Zero when fewer than
+    two reports are available to compare.
+    """
+    if n_anchor < 2:
+        return 0
+    return n_anchor * (n_anchor - 1) // 2
+
+
+def probability_any_collision(p_joint: float, n_pairs: int) -> float:
+    """Probability that at least one chance collision occurs in the anchor.
+
+    Treating each of the ``n_pairs`` unordered report pairs as an equivalent
+    and independent opportunity for a chance match with per-pair probability
+    ``p_joint``::
+
+        P_match = 1 - (1 - p_joint) ** n_pairs
+
+    Evaluated as ``-expm1(n_pairs * log1p(-p_joint))``, which is the same
+    quantity written to survive the regime the method actually operates in.
+    The naive form loses the result entirely for small ``p_joint``: at
+    ``p_joint=1e-17`` and ``n_pairs=1225`` it underflows to exactly ``0.0``
+    (true value ``1.225e-14``), which ``-log10`` would then report as
+    maximal rather than negligible matching evidence.
+
+    Note this is a multiplicity-adjusted chance-match probability under an
+    independence/equivalent-opportunity assumption — not a p-value, and not
+    a tail probability.
+
+    Parameters
+    ----------
+    p_joint : float
+        Chance-match probability for one pairwise opportunity.
+    n_pairs : int
+        M = C(N_anchor, 2). See :func:`n_anchor_pairs`.
+
+    Returns
+    -------
+    float
+        P_match, in [0, 1]. Zero when there are no pairs to compare or the
+        per-pair probability is zero; one when a collision is certain.
+    """
+    if n_pairs <= 0 or p_joint <= 0.0:
+        return 0.0
+    if p_joint >= 1.0:
+        return 1.0
+    p_match = -math.expm1(n_pairs * math.log1p(-p_joint))
+    # Guard against floating-point excursion only; the maths is already in [0, 1].
+    return min(1.0, max(0.0, p_match))
+
+
+# ---------------------------------------------------------------------------
 # Main computation
 # ---------------------------------------------------------------------------
 
@@ -149,9 +211,15 @@ def compute_probability(
 
     Steps:
         1. Compute p_f for each matched feature NOT in the anchor definition.
-        2. Multiply to get p_joint.
-        3. Compute E_joint = N_anchor*(N_anchor-1)/2 * p_joint.
-        4. Compute L_match = max(0, -log10(E_joint + epsilon)).
+        2. Multiply to get p_joint, the chance-match probability for one
+           pairwise opportunity.
+        3. Compute P_match = 1 - (1 - p_joint)**M, the probability of at
+           least one chance collision among the M = C(N_anchor, 2) unordered
+           report pairs in the anchor population.
+        4. Compute L_match = max(0, -log10(P_match + epsilon)).
+
+    L_match is a multiplicity-adjusted chance-match measure, not a p-value.
+    See :func:`probability_any_collision` for the independence assumption.
 
     Drug/AE set frequencies are excluded when they form part of the
     anchor (to avoid double-counting). When included, they are estimated
@@ -307,25 +375,23 @@ def compute_probability(
             )
         )
 
-    # Composite probability
+    # Composite probability for one pairwise opportunity
     p_joint = 1.0
     for fp in feature_probs:
         p_joint *= fp.p_f
 
-    # Expected collisions (birthday-problem approximation)
-    n = anchor.N_anchor
-    if n >= 2:
-        expected_collisions = (n * (n - 1) / 2) * p_joint
-    else:
-        expected_collisions = 0.0
+    # Multiplicity adjustment: probability of at least one chance collision
+    # among the M = C(N_anchor, 2) unordered pairs in the anchor population.
+    n_pairs = n_anchor_pairs(anchor.N_anchor)
+    p_match = probability_any_collision(p_joint, n_pairs)
 
     # L_match
-    L_match = max(0.0, -math.log10(expected_collisions + epsilon))
+    L_match = max(0.0, -math.log10(p_match + epsilon))
 
     return ProbabilityResult(
         feature_probabilities=feature_probs,
         p_joint=p_joint,
-        expected_collisions=expected_collisions,
+        p_match=p_match,
         L_match=L_match,
     )
 

@@ -8,7 +8,7 @@ The pipeline is primarily a transparent rule-based decision logic operating on s
 2. **Inconsistency signals** from structured data and clinical dates, which capture information arguing against the duplicate hypothesis.
 3. **Narrative consistency** (planned), assessed using a language model to determine whether free-text narratives are clinically compatible with the same case.
 
-The matching evidence is anchored in a **comparison population** (the *anchor population*) defined by the shared clinical context of the two reports. The expected number of report pairs within that population that would share the observed feature pattern by chance is approximated using a birthday-problem-style collision calculation; small expected counts produce strong evidence in favour of the duplicate hypothesis.
+The matching evidence is anchored in a **comparison population** (the *anchor population*) defined by the shared clinical context of the two reports. The method estimates the probability that **at least one** pair of reports anywhere in that population would share the observed feature pattern by chance, across all unordered pairs it contains; small probabilities produce strong evidence in favour of the duplicate hypothesis.
 
 The combined evidence is then fed into a transparent decision logic that classifies each report pair into one of three user-facing categories:
 

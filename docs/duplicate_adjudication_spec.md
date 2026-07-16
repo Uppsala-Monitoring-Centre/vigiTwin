@@ -524,15 +524,30 @@ This formulation allows multiple individually weak matches to accumulate into st
 
 ---
 
-#### Composite collision probability
+#### Multiplicity-adjusted chance-match probability
 
-The expected number of random report pairs sharing the observed feature pattern can then be approximated using a birthday-problem style collision calculation. Given an anchor population of size \(N_{\text{anchor}}\), the expected number of random report pairs matching the **entire set of observed features simultaneously** is approximated as:
+The quantity \(p_{\text{joint}}\) describes a **single** pairwise opportunity. The anchor population, however, offers many opportunities for a chance match, and the method must account for that multiplicity.
+
+Given an anchor population of size \(N_{\text{anchor}}\), the number of unordered report pairs is:
+
 $$
-E_{\text{joint}} =
-\frac{N_{\text{anchor}}(N_{\text{anchor}}-1)}{2}\, p_{\text{joint}}
+M = \binom{N_{\text{anchor}}}{2}
+= \frac{N_{\text{anchor}}(N_{\text{anchor}}-1)}{2}
 $$
 
-This approximates the expected number of report pairs within the anchor population that would share the full set of matched feature values by chance.
+Treating each of these \(M\) pairs as an **equivalent and independent** opportunity for a chance match with per-pair probability \(p_{\text{joint}}\), the probability that **at least one** such collision occurs somewhere in the anchor population is:
+
+$$
+P_{\text{match}} = 1-(1-p_{\text{joint}})^{M}
+$$
+
+This is the quantity the method uses. It is bounded in \([0, 1]\) by construction: however many opportunities the anchor provides, the probability that some pair collides cannot exceed certainty.
+
+**Assumptions.** The expression is an analytical approximation, not an exact real-world probability. It assumes the \(M\) pairwise opportunities are mutually independent and that each carries the same chance-match probability \(p_{\text{joint}}\). Neither holds exactly: reports within an anchor population are not independent draws, and \(p_{\text{joint}}\) is itself estimated. \(P_{\text{match}}\) should therefore be read as a calibrated measure of how unsurprising the observed match is given the size of the anchor — not as a literal frequency.
+
+**Relation to the expected count.** The expected number of chance collisions is \(E_{\text{joint}} = M\,p_{\text{joint}}\). This is an unbounded count rather than a probability, and it is not used by the method. It relates to \(P_{\text{match}}\) as an upper bound, \(P_{\text{match}} \le E_{\text{joint}}\) (union bound), with the two converging as \(E_{\text{joint}} \to 0\). The Poisson form \(1-\exp(-E_{\text{joint}})\) is likewise a rare-event approximation only; the exact expression above defines the method.
+
+**Numerical evaluation.** \(P_{\text{match}}\) is computed as \(-\operatorname{expm1}\!\left(M \cdot \operatorname{log1p}(-p_{\text{joint}})\right)\). Evaluating \(1-(1-p_{\text{joint}})^{M}\) directly underflows to exactly zero for the small \(p_{\text{joint}}\) this method routinely produces, which would misreport negligible evidence as maximal.
 
 ---
 
@@ -542,12 +557,12 @@ The overall matching evidence is then defined as:
 
 $$
 L_{\text{match}} =
-\max\left(0,\,-\log_{10}(E_{\text{joint}}+\varepsilon)\right)
+\max\left(0,\,-\log_{10}(P_{\text{match}}+\varepsilon)\right)
 $$
 
-where \(\varepsilon\) is a small constant used to avoid numerical instability.
+where \(\varepsilon\) is a small constant used to avoid numerical instability. Because \(\varepsilon\) is additive inside the logarithm, an exactly zero \(P_{\text{match}}\) — which arises when \(M = 0\), i.e. an anchor too small to furnish any comparison — yields \(L_{\text{match}} = -\log_{10}\varepsilon\) rather than an infinite value.
 
-The value \(L_{\text{match}}\) increases as the expected number of random matches decreases, meaning that rarer feature combinations produce stronger evidence.
+\(L_{\text{match}}\) is a **multiplicity-adjusted chance-match measure**: it increases as the probability of any chance collision anywhere in the anchor population decreases, so rarer feature combinations produce stronger evidence, and a larger anchor population weakens the evidence from an identical match. It is **not** a p-value, a hypothesis-test result, or a tail probability, and should not be reported or interpreted as one.
 
 ---
 

@@ -712,7 +712,7 @@ def _build_features_summary(
 
     return FeaturesSummaryVM(
         l_match=features.L_match,
-        expected_collisions=features.probability.expected_collisions,
+        p_match=features.probability.p_match,
         anchor_type=features.anchor.type.value,
         anchor_n=features.anchor.N_anchor,
         reporting_context=ctx_str,
@@ -1373,13 +1373,21 @@ def _format_penalty_summary(
 # ---------------------------------------------------------------------------
 # Per-feature L_match contribution chips
 # ---------------------------------------------------------------------------
-# L_match decomposes additively in log-space:
+# L_match is defined on the exact multiplicity-adjusted probability
 #
-#     L_match = max(0,  -log10(N_pairs)  +  Σ -log10(p_f) )
+#     L_match = max(0, -log10(P_match + ε)),  P_match = 1 - (1 - p_joint)**N_pairs
+#
+# which does not decompose additively. These chips instead display its
+# rare-event approximation, which does:
+#
+#     L_match ≈ max(0,  -log10(N_pairs)  +  Σ -log10(p_f) )
 #
 # where N_pairs = N_anchor * (N_anchor − 1) / 2. Each per-feature chip
 # carries the positive evidence contribution -log10(p_f) (green); the
 # anchor chip carries the negative starting point -log10(N_pairs) (red).
+# The approximation is exact in the limit N_pairs * p_joint → 0 and drifts
+# below 0.03 only once P_match approaches 1, where L_match is clamped to 0
+# regardless — so the chips remain a faithful reading of the displayed score.
 
 # Magnitude bins shared between green (positive evidence) and red
 # (anchor penalty) chips so reviewers learn one scale.

@@ -3,8 +3,10 @@
 import math
 
 import pytest
+from pydantic import ValidationError
 
 from llm_dup_dev.classifier.config import DomainSizeConfig
+from llm_dup_dev.classifier.decision_logic import classify
 from llm_dup_dev.feature_generation.matching import (
     ClinicalDateMatch,
     DemographicMatch,
@@ -16,9 +18,22 @@ from llm_dup_dev.feature_generation.probability import (
     _clinical_date_domain_sizes,
     _marginal_with_backoff,
     compute_probability,
+    n_anchor_pairs,
+    probability_any_collision,
 )
-from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
-from llm_dup_dev.models.pair_features import AnchorPopulation
+from llm_dup_dev.models.enums import (
+    AnchorType,
+    IndependenceReason,
+    NarrativeConsistency,
+    ReportingContextLevel,
+)
+from llm_dup_dev.models.pair_features import (
+    AnchorPopulation,
+    InconsistencyCounts,
+    PairFeatures,
+    ProbabilityEstimate,
+    ReportingContext,
+)
 
 
 @pytest.fixture
@@ -100,7 +115,7 @@ class TestProbabilityComputation:
         assert result.L_match > 0
         assert result.p_joint > 0
         assert result.p_joint < 1
-        assert result.expected_collisions >= 0
+        assert result.p_match >= 0
 
     def test_estimate_carries_feature_contributions(
         self, basic_match, anchor_drugs, stats, domain_config
@@ -263,7 +278,9 @@ class TestProbabilityComputation:
             N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50
         )
         result = compute_probability(empty_match, anchor, stats, domain_config)
-        # p_joint=1.0, E_joint = 50*49/2 = 1225 → L_match = max(0, -log10(1225)) = 0
+        # p_joint=1.0 → a collision is certain on every one of the M=1225
+        # pairs → P_match = 1 - (1-1)^1225 = 1 → L_match = max(0, -log10(1)) = 0
+        assert result.p_match == 1.0
         assert result.L_match == 0.0
 
     def test_rare_combination_high_lmatch(self, domain_config):
@@ -299,8 +316,21 @@ class TestProbabilityComputation:
         result = compute_probability(match, anchor, stats, domain_config)
         assert result.L_match > 5  # very strong evidence
 
-    def test_single_anchor_report_gives_zero_collisions(self, domain_config):
-        """N_anchor=1 → 0 possible pairs → E_joint=0 → high L_match."""
+    def test_single_anchor_report_gives_zero_match_probability(self, domain_config):
+        """N_anchor=1 → 0 possible pairs → P_match=0 → high L_match.
+
+        Pins current behaviour only; it does not endorse it. The input is
+        unreachable in production: the anchor counts include the focal pair
+        (``_marginal_with_backoff`` subtracts 2 for exactly that reason), so
+        a pair with a matching drug forces N_drugs >= 2. N_anchor=1 would be
+        a data-layer contradiction.
+
+        The reachable M == 0 case is instead N_anchor=0 — the spec's
+        "degenerate case", where the pair shares no drugs and no AEs. There,
+        L_match=15.0 lands in the compelling zone off a vacuous P_match=0,
+        which is backwards. Tracked separately; predates the P_match change,
+        which left this path's value unchanged (E_joint=0 gave 15.0 too).
+        """
         match = MatchResult(
             matching_drugs=["drug_a"],
             matching_AEs=["ae_a"],
@@ -324,8 +354,8 @@ class TestProbabilityComputation:
             N_total=100_000, N_drugs=1, N_AEs=50, N_drugs_AEs=1
         )
         result = compute_probability(match, anchor, stats, domain_config)
-        # N_anchor=1 → 0 pairs → expected_collisions=0
-        assert result.expected_collisions == 0.0
+        # N_anchor=1 → M=0 → no opportunity for a chance collision → P_match=0
+        assert result.p_match == 0.0
         # L_match = -log10(0 + epsilon) should be very high
         assert result.L_match > 10
 
@@ -1198,3 +1228,249 @@ class TestMarginalBackoff:
             for fp in result.feature_probabilities:
                 if fp.feature in ("drug_set", "ae_set"):
                     assert fp.p_f > 0, f"{fp.feature} got p_f={fp.p_f} (anchor={anchor.type})"
+
+
+# ===================================================================
+# Multiplicity adjustment: P_match = 1 - (1 - p_joint)**M
+# ===================================================================
+
+class TestMultiplicityAdjustment:
+    """Tests for n_anchor_pairs and probability_any_collision.
+
+    The method measures the probability that *at least one* chance
+    collision occurs among the M = C(N_anchor, 2) unordered report pairs
+    in the anchor population, not the expected number of collisions.
+    """
+
+    # -- M = C(N_anchor, 2) ------------------------------------------
+
+    @pytest.mark.parametrize(
+        "n_anchor,expected",
+        [
+            (0, 0), (1, 0),      # too small to furnish any pair
+            (2, 1),              # 2*1/2
+            (3, 3), (45, 990), (50, 1225),
+        ],
+    )
+    def test_n_anchor_pairs(self, n_anchor, expected):
+        """M = C(N_anchor, 2), and 0 when fewer than two reports."""
+        assert n_anchor_pairs(n_anchor) == expected
+
+    # -- Boundary cases ----------------------------------------------
+
+    def test_zero_multiplicity_gives_zero_probability(self):
+        """M == 0 → P_match == 0 (no opportunity for a collision)."""
+        assert probability_any_collision(0.5, 0) == 0.0
+        assert probability_any_collision(0.5, n_anchor_pairs(1)) == 0.0
+
+    def test_zero_per_pair_probability_gives_zero_probability(self):
+        """p_joint == 0 → P_match == 0."""
+        assert probability_any_collision(0.0, 1225) == 0.0
+
+    def test_certain_collision(self):
+        """p_joint == 1 and M > 0 → P_match == 1, and L_match == 0."""
+        p_match = probability_any_collision(1.0, 1225)
+        assert p_match == 1.0
+        # max(0, -log10(1 + 1e-15)) → the clamp absorbs the epsilon
+        assert max(0.0, -math.log10(p_match + 1e-15)) == 0.0
+
+    def test_single_comparison_returns_p_joint(self):
+        """M == 1 → P_match == p_joint exactly."""
+        for p in (1e-12, 1e-6, 1e-3, 0.5):
+            assert probability_any_collision(p, 1) == pytest.approx(p, rel=1e-12)
+
+    # -- Regimes -----------------------------------------------------
+
+    def test_small_probability_regime_approximates_expected_count(self):
+        """P_match ≈ M * p_joint when the expected count is very small."""
+        M, p = 990, 2.3e-8
+        e_joint = M * p  # 2.277e-05
+        p_match = probability_any_collision(p, M)
+        assert p_match == pytest.approx(e_joint, rel=1e-4)
+
+    def test_non_negligible_regime_is_below_expected_count(self):
+        """The exact probability is < the expected count and stays ≤ 1."""
+        M, p = 1225, 2e-4
+        e_joint = M * p  # 0.245 — no longer negligible
+        p_match = probability_any_collision(p, M)
+        assert p_match == pytest.approx(0.21731, rel=1e-4)
+        assert p_match < e_joint
+        assert 0.0 <= p_match <= 1.0
+
+    def test_saturates_at_one_when_expected_count_exceeds_one(self):
+        """E_joint may exceed 1; a probability may not."""
+        M, p = 1225, 0.5
+        assert M * p > 1.0  # the old expected count was unbounded
+        p_match = probability_any_collision(p, M)
+        assert p_match == 1.0
+
+    # -- Numerical stability -----------------------------------------
+
+    def test_tiny_p_joint_does_not_collapse_to_zero(self):
+        """Very small p_joint must survive; the naive form does not.
+
+        This is the regression that motivates log1p/expm1: the naive
+        1-(1-p)**M underflows to exactly 0.0 here, which -log10 would
+        then report as *maximal* rather than negligible evidence.
+        """
+        M, p = 1225, 1e-17
+        assert 1 - (1 - p) ** M == 0.0  # naive form loses the result entirely
+        p_match = probability_any_collision(p, M)
+        assert p_match == pytest.approx(1.225e-14, rel=1e-6)
+        assert p_match > 0.0
+
+    @pytest.mark.parametrize(
+        "M,p",
+        [
+            (1225, 1e-15),
+            (4_999_950_000, 1e-300),     # N_anchor = 100_000
+            (4_999_950_000, 5e-324),     # smallest subnormal
+            (10**12, 1e-18),
+            (1, 1e-308),
+        ],
+    )
+    def test_extreme_inputs_stay_finite_and_in_range(self, M, p):
+        """No NaN, no overflow, and P_match stays within [0, 1]."""
+        p_match = probability_any_collision(p, M)
+        assert not math.isnan(p_match)
+        assert math.isfinite(p_match)
+        assert 0.0 <= p_match <= 1.0
+
+    def test_monotonic_in_multiplicity(self):
+        """More pairwise opportunities → higher collision probability."""
+        p = 1e-6
+        values = [probability_any_collision(p, M) for M in (1, 10, 1000, 100_000)]
+        assert values == sorted(values)
+        assert all(v <= 1.0 for v in values)
+
+    # -- Exact vs Poisson approximation ------------------------------
+
+    def test_agrees_with_poisson_in_rare_event_regime(self):
+        """1 - exp(-E_joint) agrees with the exact form when E_joint is small.
+
+        The Poisson expression is a diagnostic approximation only; the
+        exact binomial complement remains authoritative.
+        """
+        M, p = 990, 2.3e-8
+        poisson = 1 - math.exp(-(M * p))
+        assert probability_any_collision(p, M) == pytest.approx(poisson, rel=1e-6)
+
+    def test_exact_form_departs_from_poisson_when_not_rare(self):
+        """Away from the rare-event limit the two diverge; exact wins."""
+        M, p = 1225, 2e-4
+        poisson = 1 - math.exp(-(M * p))          # ≈ 0.21728
+        exact = probability_any_collision(p, M)   # ≈ 0.21731
+        assert exact != poisson
+        assert exact == pytest.approx(poisson, rel=1e-3)  # close, but not equal
+        assert exact == pytest.approx(1 - (1 - p) ** M, rel=1e-9)
+
+
+class TestProbabilityResultWiring:
+    """compute_probability must expose P_match and derive L_match from it."""
+
+    def test_l_match_is_derived_from_p_match(self, basic_match, anchor_drugs,
+                                             stats, domain_config):
+        """L_match == max(0, -log10(p_match + epsilon)) on the real result."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        expected = max(0.0, -math.log10(result.p_match + 1e-15))
+        assert result.L_match == pytest.approx(expected)
+
+    def test_p_match_matches_the_exact_formula(self, basic_match, anchor_drugs,
+                                               stats, domain_config):
+        """p_match == 1 - (1 - p_joint)**M for the selected anchor."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        M = n_anchor_pairs(anchor_drugs.N_anchor)
+        assert result.p_match == pytest.approx(
+            probability_any_collision(result.p_joint, M), rel=1e-12
+        )
+        assert 0.0 <= result.p_match <= 1.0
+
+
+class TestEvidenceZoneRegression:
+    """The revised L_match must still drive the compelling/intermediate/limited zones.
+
+    Zone dispatch uses strict ``>``, so each case is placed clear of its
+    threshold. P_match ≤ E_joint (union bound), so the switch from the
+    expected count can only raise L_match — by at most ~0.02 at the
+    limited threshold, ~0.002 at intermediate and ~0.0002 at compelling.
+    No zone assignment in these cases changes as a result.
+    """
+
+    @pytest.mark.parametrize(
+        "p_joint,expected_reason",
+        [
+            # M = 1225 for N_anchor=50. L_match = -log10(1 - (1-p)^1225).
+            (1e-8, IndependenceReason.RARITY_COMPELLING),      # L ≈ 4.91  > 3.0
+            (2e-6, IndependenceReason.RARITY_INTERMEDIATE),    # L ≈ 2.61  ∈ (2, 3]
+            (2e-5, IndependenceReason.RARITY_LIMITED),         # L ≈ 1.61  ∈ (1, 2]
+            (2e-3, IndependenceReason.RARITY_INSUFFICIENT),    # L ≈ 0.42  ≤ 1.0
+        ],
+    )
+    def test_zone_assignment_from_revised_l_match(self, p_joint, expected_reason):
+        """Each regime lands in its intended evidence zone."""
+        M = n_anchor_pairs(50)
+        l_match = max(0.0, -math.log10(probability_any_collision(p_joint, M) + 1e-15))
+
+        features = PairFeatures(
+            pair_id="zone_test",
+            reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
+            anchor=AnchorPopulation(
+                N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+                type=AnchorType.DRUGS_AES, N_anchor=50,
+            ),
+            probability=ProbabilityEstimate(
+                p_joint=p_joint,
+                p_match=probability_any_collision(p_joint, M),
+            ),
+            L_match=l_match,
+            inconsistency_counts=InconsistencyCounts(),
+            narrative_consistency=NarrativeConsistency.NEUTRAL,
+        )
+        result = classify(features)
+        assert result.independence_reason == expected_reason
+
+    def test_zone_terminology_is_retained(self):
+        """The matching-evidence zones keep the compelling/intermediate/limited names."""
+        values = {r.value for r in IndependenceReason}
+        assert {"rarity_compelling", "rarity_intermediate", "rarity_limited"} <= values
+        # The older strong/moderate/weak terminology must not reappear.
+        assert not {"rarity_strong", "rarity_moderate", "rarity_weak"} & values
+
+
+class TestProbabilityEstimateSerialization:
+    """p_match and expected counts must not be conflated in the output contract."""
+
+    def test_p_match_is_serialized(self):
+        """p_match round-trips through JSON with its own field."""
+        est = ProbabilityEstimate(p_joint=2.3e-8, p_match=2.277e-5)
+        restored = ProbabilityEstimate.model_validate_json(est.model_dump_json())
+        assert restored.p_match == pytest.approx(2.277e-5)
+        assert restored.p_joint == pytest.approx(2.3e-8)
+
+    def test_expected_collisions_field_is_gone(self):
+        """The expected-count field must not survive under its old name.
+
+        A probability must never be served through a field that downstream
+        consumers read as an expected count.
+        """
+        assert "expected_collisions" not in ProbabilityEstimate.model_fields
+        assert "p_match" in ProbabilityEstimate.model_fields
+
+    def test_p_match_is_required(self):
+        """p_match has no default — it must be supplied explicitly."""
+        with pytest.raises(ValidationError):
+            ProbabilityEstimate(p_joint=1e-5)
+
+    def test_schema_documents_p_match_as_a_probability(self):
+        """The published schema describes p_match distinctly and not as a p-value."""
+        schema = ProbabilityEstimate.model_json_schema()
+        assert "expected_collisions" not in schema["properties"]
+        desc = schema["properties"]["p_match"]["description"]
+        assert "at least one" in desc
+        assert "not a p-value" in desc
+        # p_joint is the per-pair quantity; the two must be described separately.
+        assert "one equivalent pairwise" in schema["properties"]["p_joint"]["description"]

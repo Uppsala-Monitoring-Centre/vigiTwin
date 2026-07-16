@@ -377,14 +377,16 @@
       "type": "string"
     },
     "ProbabilityEstimate": {
-      "description": "Result of the collision probability computation.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Probability estimation",
+      "description": "Result of the collision probability computation.\n\n``p_joint`` is the chance-match probability for a single pairwise\nopportunity; ``p_match`` adjusts it for the multiplicity of the anchor\npopulation. Both are probabilities in [0, 1] \u2014 neither is a p-value.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Probability estimation",
       "properties": {
         "p_joint": {
+          "description": "Chance-match probability for one equivalent pairwise opportunity: the product of the per-feature p_f values.",
           "title": "P Joint",
           "type": "number"
         },
-        "expected_collisions": {
-          "title": "Expected Collisions",
+        "p_match": {
+          "description": "P_match = 1 - (1 - p_joint)**M: the probability that at least one chance collision occurs among the M = C(N_anchor, 2) unordered report pairs in the anchor population. Drives L_match = max(0, -log10(P_match + epsilon)). A multiplicity-adjusted chance-match probability under an independence/equivalent-opportunity assumption, not a p-value.",
+          "title": "P Match",
           "type": "number"
         },
         "feature_contributions": {
@@ -397,7 +399,7 @@
       },
       "required": [
         "p_joint",
-        "expected_collisions"
+        "p_match"
       ],
       "title": "ProbabilityEstimate",
       "type": "object"

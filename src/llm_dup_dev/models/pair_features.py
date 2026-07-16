@@ -74,11 +74,29 @@ class FeatureContribution(BaseModel):
 class ProbabilityEstimate(BaseModel):
     """Result of the collision probability computation.
 
+    ``p_joint`` is the chance-match probability for a single pairwise
+    opportunity; ``p_match`` adjusts it for the multiplicity of the anchor
+    population. Both are probabilities in [0, 1] — neither is a p-value.
+
     See: docs/duplicate_adjudication_spec.md § Probability estimation
     """
 
-    p_joint: float
-    expected_collisions: float
+    p_joint: float = Field(
+        description=(
+            "Chance-match probability for one equivalent pairwise "
+            "opportunity: the product of the per-feature p_f values."
+        ),
+    )
+    p_match: float = Field(
+        description=(
+            "P_match = 1 - (1 - p_joint)**M: the probability that at least "
+            "one chance collision occurs among the M = C(N_anchor, 2) "
+            "unordered report pairs in the anchor population. Drives "
+            "L_match = max(0, -log10(P_match + epsilon)). A multiplicity-"
+            "adjusted chance-match probability under an independence/"
+            "equivalent-opportunity assumption, not a p-value."
+        ),
+    )
     feature_contributions: list[FeatureContribution] = Field(default_factory=list)
 
 
