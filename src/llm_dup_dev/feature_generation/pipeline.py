@@ -122,6 +122,7 @@ def generate_pair_features(
         N_drugs=stats.N_drugs,
         N_AEs=stats.N_AEs,
         N_drugs_AEs=stats.N_drugs_AEs,
+        N_total=stats.N_total,
         threshold=config.anchor.threshold,
     )
 

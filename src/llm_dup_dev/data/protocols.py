@@ -133,6 +133,19 @@ class StatsProvider(Protocol):
     These counts depend on the reporting context (country+year / country / global)
     which is determined by the pipeline before calling this provider.
 
+    **The counts must include the two focal reports.** Both the
+    leave-pair-out marginals and anchor selection depend on this: a
+    non-empty ``matching_drugs`` implies ``N_drugs >= 2``, because both
+    reports contain what they were found to share. Returning counts that
+    exclude the focal pair will corrupt the probability estimates.
+
+    It follows that a count of zero must mean **the matching set was
+    empty**, and never "no reports were found". Callers rely on this to
+    distinguish "this feature does not narrow the population" (count 0 →
+    the candidate is the whole context) from "this feature narrows it to
+    a rare group" (small non-zero count → strong evidence). Conflating
+    the two inverts the method's conclusion.
+
     Implementations *should* additionally populate the optional
     broader-context fields on the returned ``FrequencyStats`` when the
     data source has them: ``N_total_country`` / ``N_drugs_country`` /

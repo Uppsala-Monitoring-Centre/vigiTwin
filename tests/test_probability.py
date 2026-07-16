@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from llm_dup_dev.classifier.config import DomainSizeConfig
 from llm_dup_dev.classifier.decision_logic import classify
+from llm_dup_dev.feature_generation.anchor import select_anchor
 from llm_dup_dev.feature_generation.matching import (
     ClinicalDateMatch,
     DemographicMatch,
@@ -23,6 +24,7 @@ from llm_dup_dev.feature_generation.probability import (
 )
 from llm_dup_dev.models.enums import (
     AnchorType,
+    IndependenceAssessment,
     IndependenceReason,
     NarrativeConsistency,
     ReportingContextLevel,
@@ -1474,3 +1476,121 @@ class TestProbabilityEstimateSerialization:
         assert "not a p-value" in desc
         # p_joint is the per-pair quantity; the two must be described separately.
         assert "one equivalent pairwise" in schema["properties"]["p_joint"]["description"]
+
+
+class TestDegenerateAnchorEvidence:
+    """A pair sharing no drugs and no AEs must not yield maximal evidence.
+
+    Regression for the degenerate-anchor bug: select_anchor used to report
+    N_anchor=0 when both matching sets were empty, which made M vanish, so
+    P_match=0 held vacuously and L_match saturated at -log10(epsilon)=15 —
+    the compelling zone. Two reports with nothing in common classified as
+    Duplicates. The anchor is now the whole reporting context, because an
+    empty matching set leaves the population unnarrowed rather than empty.
+    """
+
+    def _classify(self, match, stats):
+        anchor = select_anchor(
+            N_drugs=stats.N_drugs, N_AEs=stats.N_AEs,
+            N_drugs_AEs=stats.N_drugs_AEs, N_total=stats.N_total,
+        )
+        result = compute_probability(match, anchor, stats, DomainSizeConfig())
+        features = PairFeatures(
+            pair_id="degenerate",
+            reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
+            anchor=anchor,
+            probability=result.estimate,
+            L_match=result.L_match,
+            inconsistency_counts=InconsistencyCounts(),
+            narrative_consistency=NarrativeConsistency.NEUTRAL,
+        )
+        return anchor, result, classify(features)
+
+    @staticmethod
+    def _no_overlap_stats():
+        """What a correct provider returns for a pair sharing no drugs/AEs."""
+        return FrequencyStats(
+            N_total=100_000, N_drugs=0, N_AEs=0, N_drugs_AEs=0
+        )
+
+    def test_nothing_in_common_is_not_compelling_evidence(self):
+        """No drugs, no AEs, only sex+age → not a duplicate."""
+        match = MatchResult(
+            matching_drugs=[], matching_AEs=[],
+            drugs_only_r1=["aspirin"], drugs_only_r2=["warfarin"],
+            aes_only_r1=["rash"], aes_only_r2=["nausea"],
+            demographic_matches=[
+                DemographicMatch(feature="patient_sex", matched=True,
+                                 values_r1=["female"], values_r2=["female"]),
+                DemographicMatch(feature="patient_age", matched=True,
+                                 values_r1=[54], values_r2=[54]),
+            ],
+        )
+        anchor, result, decision = self._classify(match, self._no_overlap_stats())
+
+        assert anchor.N_anchor == 100_000     # unnarrowed, not zero
+        assert result.p_match == 1.0          # a chance match is near-certain
+        assert result.L_match == 0.0
+        assert decision.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
+        assert decision.independence_assessment == IndependenceAssessment.INDEPENDENT
+
+    def test_no_matched_features_agrees_regardless_of_anchor(self):
+        """Nothing matched → L_match=0 whether or not the anchor is narrowed.
+
+        The bug made this identical input give L_match=0 for a populated
+        anchor but 15.0 for a degenerate one.
+        """
+        match = MatchResult(
+            matching_drugs=[], matching_AEs=[], demographic_matches=[]
+        )
+        _, degenerate, _ = self._classify(match, self._no_overlap_stats())
+        _, populated, _ = self._classify(
+            match,
+            FrequencyStats(N_total=100_000, N_drugs=50, N_AEs=50, N_drugs_AEs=50),
+        )
+        # p_joint = 1.0 (empty product): a chance match is certain. L_match
+        # must not simultaneously claim it is impossible.
+        assert degenerate.p_joint == 1.0
+        assert degenerate.L_match == 0.0 == populated.L_match
+
+    def test_rare_demographics_still_carry_evidence(self):
+        """The unnarrowed anchor judges, rather than discards, the evidence.
+
+        A pair sharing no drugs/AEs but an implausibly rare demographic
+        profile is still weighed — against the multiplicity of the whole
+        context — instead of being dismissed outright.
+        """
+        match = MatchResult(
+            matching_drugs=[], matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(feature="patient_sex", matched=True,
+                                 values_r1=["female"], values_r2=["female"]),
+                DemographicMatch(feature="patient_age", matched=True,
+                                 values_r1=[54], values_r2=[54]),
+                DemographicMatch(feature="patient_birth_date", matched=True,
+                                 values_r1=["1970-03-14"], values_r2=["1970-03-14"],
+                                 date_resolution="day"),
+            ],
+        )
+        # A small context, so the multiplicity cannot swamp the evidence.
+        stats = FrequencyStats(N_total=200, N_drugs=0, N_AEs=0, N_drugs_AEs=0)
+        anchor, result, _ = self._classify(match, stats)
+        assert anchor.N_anchor == 200
+        assert result.L_match > 0.0, "rare demographic evidence was discarded"
+
+    def test_degenerate_anchor_never_reaches_the_l_match_ceiling(self):
+        """No zero-overlap input may produce the saturated L_match."""
+        ceiling = -math.log10(1e-15)  # 15.0
+        for n_total in (2, 10, 200, 100_000):
+            match = MatchResult(
+                matching_drugs=[], matching_AEs=[],
+                demographic_matches=[
+                    DemographicMatch(feature="patient_sex", matched=True,
+                                     values_r1=["female"], values_r2=["female"]),
+                ],
+            )
+            stats = FrequencyStats(
+                N_total=n_total, N_drugs=0, N_AEs=0, N_drugs_AEs=0
+            )
+            _, result, _ = self._classify(match, stats)
+            assert result.L_match < ceiling, f"saturated at N_total={n_total}"
