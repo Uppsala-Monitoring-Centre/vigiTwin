@@ -225,7 +225,7 @@ The shared source is confirmed, but case identifiers are missing or not safely c
 | Branch | Condition | Outcome |
 |---|---|---|
 | B | \(w_{\text{tot}} \geq\) `w_tot_limited_zone` | `Otherwise related` |
-| A | \(L_{\text{patient}} > \) `lmatch_intermediate` (with \(w_{\text{tot}} <\) `w_tot_limited_zone` implied) | `Duplicates` |
+| A | \(L_{\text{patient}} > \) `lpatient_compelling` (with \(w_{\text{tot}} <\) `w_tot_limited_zone` implied) | `Duplicates` |
 | C | otherwise | `Abstain` |
 
 Branch B is checked first so any inconsistency above the limited-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
@@ -241,7 +241,7 @@ Note the lower Otherwise related gate here (`w_tot_limited_zone`, default 1.0) c
 
 ##### Patient-specific log-evidence \(L_{\text{patient}}\)
 
-\(L_{\text{patient}}\) is the sum of \(-\log_{10}(p_f)\) over the per-feature contributions in `PairFeatures.probability.feature_contributions`, **excluding** `drug_set` and `ae_set` and **without** the anchor (\(N_{\text{pairs}}\)) penalty (see § Probability estimation below for the per-feature contributions and the anchor penalty):
+\(L_{\text{patient}}\) is the sum of \(-\log_{10}(p_f)\) over the per-feature contributions in `PairFeatures.probability.feature_contributions`, **excluding** `drug_set` and `ae_set` and carrying **no multiplicity adjustment** (see § Probability estimation below for the per-feature contributions):
 
 $$
 L_{\text{patient}} = \sum_{f \in F_{\text{patient}}} -\log_{10}(p_f)
@@ -249,14 +249,18 @@ $$
 
 where \(F_{\text{patient}} = \{\texttt{patient\_sex}, \texttt{patient\_age}, \texttt{patient\_height}, \texttt{patient\_weight}, \texttt{clinical\_date}\}\).
 
+Equivalently, \(L_{\text{patient}} = -\log_{10}\!\left(\prod_{f \in F_{\text{patient}}} p_f\right)\): the chance-match probability for this one pair, restricted to the patient-specific features, on the \(\log_{10}\) scale — the same scale as the per-feature `(+X.X)` contribution chips already shown in the review HTML.
+
 Two deliberate departures from the standard \(L_{\text{match}}\):
 
 - **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`_NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `classifier/decision_logic.py`).
-- **Anchor penalty dropped.** The anchor population was the comparison universe for the full \(L_{\text{match}}\) (e.g. "all reports on drug X"). For `UNCOMPARABLE_CASE` the relevant comparison universe is the unknown small set of K patients within the shared publication, not the anchor. Keeping the anchor penalty would apply a multiple-testing correction that does not match the actual comparison universe. Dropping it yields a pure measure of patient-specific concordance strength on the \(\log_{10}\) scale — the same scale as the per-feature `(+X.X)` contribution chips already shown in the review HTML.
+- **No anchor multiplicity adjustment.** \(L_{\text{match}}\) asks how probable the observed match would be to arise by chance *somewhere in the anchor population* (e.g. "all reports on drug X"), and is adjusted for the \(M = \binom{N_{\text{anchor}}}{2}\) pairwise opportunities that population affords. For `UNCOMPARABLE_CASE` the relevant comparison universe is instead the unknown small set of K patients within the shared publication, so adjusting for the anchor would correct for opportunities that are not the ones actually taken. \(L_{\text{patient}}\) therefore stays at the per-pair level.
+
+Note this is **not** \(L_{\text{match}}\) minus a penalty term. Since \(L_{\text{match}} = \max(0, -\log_{10}(P_{\text{match}} + \varepsilon))\) with \(P_{\text{match}} = 1-(1-p_{\text{joint}})^{M}\), it does not decompose additively; the two quantities coincide in that form only in the rare-event limit. \(L_{\text{patient}}\) is defined in its own right, and is judged against its own bar, `lpatient_compelling`.
 
 ##### Threshold calibration
 
-The branch A bar is set at `lmatch_intermediate` (default 2.0) so that intuitively informative concordances qualify:
+The branch A bar is `lpatient_compelling` (default 2.0), set so that intuitively informative concordances qualify:
 
 | Matched features | \(-\log_{10}(p_f)\) | Sum | Clears 2.0? |
 |---|---|---|---|
@@ -266,7 +270,9 @@ The branch A bar is set at `lmatch_intermediate` (default 2.0) so that intuitive
 | age + weight (1/40) | 1.90 + 1.60 | 3.50 | yes |
 | sex + age + clinical date (drug start, 1/540) | 0.30 + 1.90 + 2.73 | 4.93 | yes |
 
-The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. Because branch B is checked first on the complementary condition (\(w_{\text{tot}} \geq\) `w_tot_limited_zone`), the two branches partition the \(w_{\text{tot}}\) axis at the same bar: any moderate-or-stronger inconsistency — or three accumulated minors (\(3 \times 0.4 = 1.2\)) — lands the pair in `Otherwise related`, while a single minor (0.4) is tolerated. Below the bar the outcome rests entirely on \(L_{\text{patient}}\). `Abstain` therefore means minimal inconsistency *and* insufficient patient-specific evidence (\(w_{\text{tot}} <\) `w_tot_limited_zone` and \(L_{\text{patient}} \leq\) `lmatch_intermediate`) — not the presence of a moderate inconsistency, which resolves to `Otherwise related` via branch B.
+`lpatient_compelling` is a **separate threshold from the \(L_{\text{match}}\) zone boundaries**, even though its default (2.0) coincides with `lmatch_intermediate`. The two bars are applied to different quantities on different scales — \(L_{\text{patient}}\) covers only the patient-specific features and carries no multiplicity adjustment — and they answer different questions, so they must be free to move independently. The shared value is a coincidence of calibration, not a relationship: retuning an \(L_{\text{match}}\) zone must not silently shift the patient-identity bar. The table above is the calibration evidence for the default, and applies to `lpatient_compelling` alone.
+
+The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. Because branch B is checked first on the complementary condition (\(w_{\text{tot}} \geq\) `w_tot_limited_zone`), the two branches partition the \(w_{\text{tot}}\) axis at the same bar: any moderate-or-stronger inconsistency — or three accumulated minors (\(3 \times 0.4 = 1.2\)) — lands the pair in `Otherwise related`, while a single minor (0.4) is tolerated. Below the bar the outcome rests entirely on \(L_{\text{patient}}\). `Abstain` therefore means minimal inconsistency *and* insufficient patient-specific evidence (\(w_{\text{tot}} <\) `w_tot_limited_zone` and \(L_{\text{patient}} \leq\) `lpatient_compelling`) — not the presence of a moderate inconsistency, which resolves to `Otherwise related` via branch B.
 
 Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represents *absence of comparable evidence*, not a discrepancy), so \(w_{\text{tot}}\) reflects only non-source-case signals and the comparison is apples-to-apples.
 
@@ -345,6 +351,7 @@ The following parameters define the decision behaviour and are configurable:
 | `lmatch_compelling` | 3.0 | L\_match boundary for the compelling evidence zone |
 | `lmatch_intermediate` | 2.0 | L\_match boundary for the intermediate evidence zone |
 | `lmatch_limited` | 1.0 | L\_match boundary for the limited evidence zone |
+| `lpatient_compelling` | 2.0 | L\_patient bar for `Duplicates` in the shared-source / uncomparable-case three-way rule; separate from the L\_match zones — see § Threshold calibration |
 | `w_minor` | 0.4 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
 | `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
 | `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |

@@ -15,11 +15,18 @@ All other verdicts yield no synthesized rows.  In particular,
 evidence* (a shared source identifier without safely comparable case
 labels), not a discrepancy — synthesizing a moderate inconsistency
 for it would mislabel "we cannot tell" as "we found a moderate
-mismatch" and inflate ``w_tot`` accordingly.  The shared-source
-override in :mod:`llm_dup_dev.classifier.decision_logic` pins the
-sub-label to ``Otherwise_related`` deterministically for this verdict
-regardless of ``w_tot``, so the conservative outcome is guaranteed
-without an Inconsistency row.
+mismatch" and inflate ``w_tot`` accordingly.
+
+That distinction is load-bearing rather than cosmetic.  The
+shared-source override in :mod:`llm_dup_dev.classifier.decision_logic`
+routes this verdict to a three-way rule whose first branch is
+``w_tot >= w_tot_limited_zone`` → ``Otherwise_related``.  A synthesized
+moderate row (``w_moderate`` = 1.0, meeting the default bar of 1.0)
+would therefore fire that branch on its own, foreclosing both the
+``Duplicates`` and ``Abstain`` outcomes and denying the pair any
+adjudication on its patient-specific evidence.  Emitting nothing keeps
+``w_tot`` reflecting only non-source-case signals, which is what makes
+the three-way rule's comparison apples-to-apples.
 
 The remaining verdicts likewise emit nothing — ``SINGLE_PATIENT`` /
 ``SAME_CASE`` carry no evidence against independence, and

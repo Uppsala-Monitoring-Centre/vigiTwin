@@ -1425,8 +1425,10 @@ def _contrib_neg_class(c: float) -> str:
 def _anchor_penalty(n_anchor: int | None) -> float | None:
     """Return -log10(N*(N-1)/2) for N >= 2, else None.
 
-    The anchor penalty is the additive starting point of L_match: it
-    captures how many random pairs the per-feature evidence had to beat.
+    The anchor penalty is the additive starting point of the rare-event
+    approximation to L_match (see the block comment above): it captures
+    how many random pairs the per-feature evidence had to beat. L_match
+    itself is -log10(P_match + eps) and does not decompose additively.
     """
     if n_anchor is None or n_anchor < 2:
         return None
