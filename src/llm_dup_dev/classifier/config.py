@@ -151,6 +151,11 @@ class DecisionThresholds(BaseModel):
     whenever ``L_match > lmatch_limited`` and ``Unrelated`` otherwise.
     This is enforced by an invariant validator.
 
+    ``lpatient_compelling`` is a separate bar for a separate quantity: the
+    shared-source / uncomparable-case branch adjudicates on ``L_patient``,
+    not ``L_match``. It is deliberately not one of the zone boundaries
+    above — see the field comment.
+
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
 
@@ -158,6 +163,19 @@ class DecisionThresholds(BaseModel):
     lmatch_compelling: float = 3.0
     lmatch_intermediate: float = 2.0
     lmatch_limited: float = 1.0
+
+    # L_patient bar for the shared-source / uncomparable-case branch
+    # (SAME_SOURCE_UNCOMPARABLE_CASE and MULTI_PATIENT_CONTEXT_NO_LINK):
+    # L_patient > this → Duplicates, given minimal inconsistency.
+    #
+    # Kept separate from lmatch_intermediate, which it previously borrowed.
+    # L_patient is a different quantity on a different scale — patient-
+    # specific features only, and no multiplicity adjustment — so the two
+    # bars answer different questions and must be free to move apart. The
+    # shared default of 2.0 was a coincidence of calibration, not a
+    # relationship: retuning an L_match zone must not silently shift the
+    # patient-identity bar.
+    lpatient_compelling: float = 2.0
 
     # Inconsistency weights
     w_minor: float = 0.4

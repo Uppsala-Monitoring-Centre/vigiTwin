@@ -72,7 +72,7 @@ following verdicts:
 * ``SAME_SOURCE_SAME_CASE`` — same rule as SINGLE_PATIENT.
 * ``SAME_SOURCE_UNCOMPARABLE_CASE`` — when the pair is neither
   convincingly the same individual (which requires compelling
-  patient-specific evidence ``L_patient > lmatch_intermediate`` with essentially
+  patient-specific evidence ``L_patient > lpatient_compelling`` with essentially
   zero inconsistencies, ``w_tot < w_tot_limited_zone``) nor convincingly a
   different individual (``w_tot ≥ w_tot_limited_zone``). See
   :func:`_l_patient` for the patient-specific log-evidence definition.
@@ -392,7 +392,7 @@ def _multi_patient_three_way(
     * ``w_tot >= w_tot_limited_zone`` → ``Otherwise_related``. Any
       moderate-or-stronger inconsistency (or three accumulated minors)
       clears the bar. A single minor is still tolerated.
-    * ``L_patient > lmatch_intermediate`` (with ``w_tot < w_tot_limited_zone``
+    * ``L_patient > lpatient_compelling`` (with ``w_tot < w_tot_limited_zone``
       implied) → ``Duplicates``. Patient-specific log-evidence excludes
       ``drug_set`` / ``ae_set`` contributions, so the matching evidence
       must come from demographics + clinical-date coincidences.
@@ -415,13 +415,13 @@ def _multi_patient_three_way(
         )
 
     l_patient = _l_patient(features)
-    if l_patient > thresholds.lmatch_intermediate:
+    if l_patient > thresholds.lpatient_compelling:
         return _duplicates(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
-                f"L_patient={l_patient:.2f} > {thresholds.lmatch_intermediate:.1f} "
+                f"L_patient={l_patient:.2f} > {thresholds.lpatient_compelling:.1f} "
                 f"and w_tot={w_tot:.1f} < {thresholds.w_tot_limited_zone:.1f}; "
                 f"compelling patient-specific evidence with minimal "
                 f"inconsistency."
@@ -434,7 +434,7 @@ def _multi_patient_three_way(
         explanation=(
             f"Shared-source override ({verdict.value}{ident_str}); "
             f"L_patient={l_patient:.2f} (threshold "
-            f"{thresholds.lmatch_intermediate:.1f}), w_tot={w_tot:.1f} "
+            f"{thresholds.lpatient_compelling:.1f}), w_tot={w_tot:.1f} "
             f"(threshold {thresholds.w_tot_limited_zone:.1f}); "
             f"identity indeterminate — multi-patient source context "
             f"with insufficient patient-specific evidence."
@@ -465,22 +465,35 @@ def _l_patient(features: PairFeatures) -> float:
     Defined as the sum of ``-log10(p_f)`` over the entries of
     ``features.probability.feature_contributions`` whose ``feature`` name
     is *not* in :data:`_NON_PATIENT_SPECIFIC_FEATURES` (i.e. excluding
-    ``drug_set`` and ``ae_set``). Two deliberate departures from the
-    standard ``L_match``:
+    ``drug_set`` and ``ae_set``).
+
+    Equivalently, it is ``-log10`` of the joint chance-match probability
+    restricted to the patient-specific features: a pure measure of
+    patient-specific concordance strength on the log10 scale, the same
+    scale as the per-feature ``(+X.X)`` chips already shown in the review
+    HTML. It carries **no multiplicity adjustment of any kind**.
+
+    Two deliberate departures from the standard ``L_match``:
 
     * Drug-set and AE-set contributions are dropped. Drugs and AEs
       overlap by construction in a multi-patient publication / shared
       study context, so they are weak identifiers of patient identity
       in that setting.
-    * The anchor (``N_pairs``) penalty is **not** included. The anchor
-      population was the comparison universe for the full ``L_match``
-      (e.g. "all reports on drug X"); for ``UNCOMPARABLE_CASE`` the
-      relevant comparison universe is the unknown small set of K
-      patients within the shared publication, so the anchor penalty
-      would correct for a multiple-testing scenario that does not
-      apply. Dropping it yields a pure measure of patient-specific
-      concordance strength on the log10 scale — the same scale as the
-      per-feature ``(+X.X)`` chips already shown in the review HTML.
+    * No anchor multiplicity adjustment. ``L_match`` asks how likely the
+      match would be to arise by chance *somewhere in the anchor
+      population* (e.g. "all reports on drug X"), and is adjusted for the
+      number of pairwise opportunities that population affords. For
+      ``UNCOMPARABLE_CASE`` the relevant comparison universe is instead
+      the unknown small set of K patients within the shared publication,
+      so adjusting for the anchor would correct for opportunities that
+      are not the ones actually taken. ``L_patient`` therefore stays at
+      the per-pair level and is judged against its own bar,
+      ``lpatient_compelling``.
+
+    Note this is *not* "``L_match`` minus a penalty": ``L_match`` is
+    ``-log10(P_match)`` with ``P_match = 1 - (1 - p_joint)**M``, which does
+    not decompose additively, so the two are related only in the
+    rare-event limit.
 
     Returns ``0.0`` when ``feature_contributions`` is empty (e.g. on
     offline / fixture paths that skip probability decomposition); the

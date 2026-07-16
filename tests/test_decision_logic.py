@@ -92,7 +92,8 @@ def _fc(feature: str, p_f: float) -> FeatureContribution:
 # Values come from the plan's worked-example table:
 #   sex p_f=0.5  → -log10 ≈ 0.30
 #   age p_f=1/80 → -log10 ≈ 1.90
-# Sum (sex + age) ≈ 2.20 — just clears lmatch_intermediate = 2.0.
+# Sum (sex + age) ≈ 2.204 — just clears lpatient_compelling = 2.0. The
+# margin is only 0.204, so raising that default above ~2.2 flips these.
 _SEX_PLUS_AGE_CONTRIBS = [
     _fc("patient_sex", 0.5),
     _fc("patient_age", 1.0 / 80.0),
@@ -143,7 +144,8 @@ def _assert_abstain(result):
     assert result.final_label == "Abstain"
 
 
-# Default thresholds: strong=3.0, med=2.0, weak=1.0, w_m=1, w_s=3
+# Default thresholds: lmatch compelling=3.0, intermediate=2.0, limited=1.0;
+# lpatient_compelling=2.0; w_minor=0.4, w_moderate=1.0, w_strong=3.0.
 THRESHOLDS = DecisionThresholds()
 
 
@@ -809,11 +811,11 @@ class TestUncomparableCaseThreeWayRule:
     contributions) and ``w_tot``:
 
         if w_tot >= w_tot_limited_zone:        → Otherwise_related
-        elif L_patient > lmatch_intermediate:  → Duplicates
+        elif L_patient > lpatient_compelling:  → Duplicates
                                                  (w_tot < w_tot_limited_zone implied)
         else:                                  → Abstain
 
-    Defaults: lmatch_intermediate=2.0, w_tot_limited_zone=1.0.
+    Defaults: lpatient_compelling=2.0, w_tot_limited_zone=1.0.
     """
 
     # ---------- Branch A: Duplicates ----------
@@ -999,6 +1001,96 @@ class TestUncomparableCaseThreeWayRule:
         assert "L_patient=" in result.explanation
         assert "w_tot=" in result.explanation
         assert "indeterminate" in result.explanation
+
+    # ---------- Branch A boundary ----------
+
+    def test_branch_a_boundary_exactly_at_threshold(self):
+        """L_patient exactly == lpatient_compelling → NOT Duplicates.
+
+        The gate is a strict ``>``, matching every L_match zone boundary.
+        patient_age p_f=0.01 → -log10 = exactly 2.0 == the default bar.
+        """
+        f = _make_features(
+            L_match=0.0,
+            feature_contributions=[_fc("patient_age", 0.01)],
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+        assert THRESHOLDS.lpatient_compelling == 2.0  # guards the fixture
+        result = classify(f, THRESHOLDS)
+        _assert_abstain(result)
+
+
+class TestLPatientThresholdIsIndependent:
+    """``L_patient`` is judged against ``lpatient_compelling``, not an L_match zone.
+
+    The two are different quantities on different scales — L_patient covers
+    only patient-specific features and carries no multiplicity adjustment —
+    so retuning an L_match zone must not shift the patient-identity bar.
+    They share a default of 2.0 by calibration coincidence, not by
+    relationship, which is exactly why this needs a test: at the defaults
+    the coupling is invisible.
+    """
+
+    @staticmethod
+    def _uncomparable_sex_plus_age():
+        """L_patient ≈ 2.204, w_tot = 0 — just clears the default bar."""
+        return _make_features(
+            L_match=0.0,
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            ),
+        )
+
+    def test_lmatch_intermediate_does_not_move_the_l_patient_bar(self):
+        """Moving the L_match intermediate zone must not change the outcome.
+
+        Before the split this flipped to Abstain, because the branch
+        borrowed lmatch_intermediate.
+        """
+        f = self._uncomparable_sex_plus_age()
+        for lmatch_intermediate in (0.5, 2.0, 8.0):
+            result = classify(
+                f, DecisionThresholds(lmatch_intermediate=lmatch_intermediate)
+            )
+            # Duplicates at every setting: the bar is lpatient_compelling.
+            _assert_duplicates(result)
+
+    def test_lpatient_compelling_does_move_the_bar(self):
+        """The dedicated threshold is the one that governs the branch."""
+        f = self._uncomparable_sex_plus_age()
+        # 2.204 > 2.0 → Duplicates; 2.204 < 8.0 → Abstain.
+        _assert_duplicates(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
+        _assert_abstain(classify(f, DecisionThresholds(lpatient_compelling=8.0)))
+
+    def test_explanation_reports_the_l_patient_threshold(self):
+        """The explanation must quote the bar actually applied."""
+        f = self._uncomparable_sex_plus_age()
+        result = classify(
+            f, DecisionThresholds(lpatient_compelling=1.0, lmatch_intermediate=9.0)
+        )
+        # L_patient=2.20 > 1.0 → Duplicates, quoting 1.0 and never 9.0.
+        _assert_duplicates(result)
+        assert "L_patient=2.20 > 1.0" in result.explanation
+        assert "9.0" not in result.explanation
+
+    def test_no_link_branch_uses_the_l_patient_bar_too(self):
+        """MULTI_PATIENT_CONTEXT_NO_LINK routes through the same gate.
+
+        Its own L_match shim still uses lmatch_limited; only branch A's
+        patient-evidence bar is decoupled.
+        """
+        f = _make_features(
+            L_match=2.5,  # above lmatch_limited → shim fires
+            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+            ),
+        )
+        _assert_duplicates(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
+        _assert_abstain(classify(f, DecisionThresholds(lpatient_compelling=8.0)))
 
 
 # ===================================================================

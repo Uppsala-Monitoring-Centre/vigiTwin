@@ -759,6 +759,7 @@ thresholds = DecisionThresholds(
     lmatch_compelling=3.0,    # compelling evidence zone
     lmatch_intermediate=2.0,  # intermediate evidence zone
     lmatch_limited=1.0,       # limited evidence zone
+    lpatient_compelling=2.0,  # L_patient bar (shared-source override; not an L_match zone)
     w_moderate=1.0,           # weight for moderate inconsistencies
     w_strong=3.0,             # weight for strong inconsistencies
     w_tot_compelling_zone=4.0,    # w_tot threshold for compelling zone
