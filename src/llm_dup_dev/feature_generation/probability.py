@@ -106,9 +106,13 @@ class FrequencyStats(BaseModel):
     missing levels are skipped.
     """
 
+    # These counts include the two focal reports, so a non-empty matching
+    # set forces its count to at least 2. A zero therefore means "the
+    # matching set was empty", never "no reports were found" — see
+    # ``StatsProvider`` and ``select_anchor``.
     N_total: int  # total reports in the reporting context
-    N_drugs: int  # reports containing all matching drugs
-    N_AEs: int  # reports containing all matching AEs
+    N_drugs: int  # reports containing all matching drugs; 0 iff no drugs match
+    N_AEs: int  # reports containing all matching AEs; 0 iff no AEs match
     N_drugs_AEs: int  # reports containing both
 
     # Optional broader-context counts for the marginal backoff cascade.

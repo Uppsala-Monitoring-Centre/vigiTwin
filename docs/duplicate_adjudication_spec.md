@@ -429,6 +429,10 @@ N_drugs+AEs = number of reports containing both
 
 These populations represent progressively narrower clinical definitions.
 
+These counts **include the two focal reports**. A non-empty matching set therefore forces its count to at least 2 — both reports contain what they were found to share. (The leave-pair-out marginals rely on the same fact, treating \(n_f > 2\) as evidence outside the focal pair.)
+
+It follows that a count of zero can only mean **the matching set is empty**, never that the population is empty. Since every report vacuously contains the empty set, an empty matching set leaves the population **unnarrowed**, not empty: the corresponding candidate is the whole reporting context, \(N_{\text{total}}\).
+
 ---
 
 #### Anchor selection
@@ -439,7 +443,7 @@ Let \(T\) denote a configurable threshold (e.g. \(T = 50\)).
 
 The anchor is selected as follows:
 
-0. If either \(N_{\text{drugs}}\) or \(N_{\text{AEs}}\) is zero (no overlap for that set), that candidate is skipped and the other is used. If both are zero the anchor is zero (degenerate case).
+0. If either \(N_{\text{drugs}}\) or \(N_{\text{AEs}}\) is zero, that matching set is empty and so imposes no restriction; the candidate is skipped and the other is used. If **both** are zero, neither set narrows the population and the anchor is the whole reporting context, \(N_{\text{anchor}} = N_{\text{total}}\).
 
 1. If either \(N_{\text{drugs}}\) or \(N_{\text{AEs}}\) is less than or equal to \(T\), select the smaller of the two.
 
@@ -463,7 +467,9 @@ The anchor population defines the group of reports within which the observed mat
 
 A small anchor population indicates that the shared clinical context is rare, meaning that even modest additional matches may provide strong evidence that the reports describe the same patient.
 
-Conversely, large anchor populations imply that many similar reports exist, requiring stronger supporting evidence to establish duplication.
+Conversely, large anchor populations imply that many similar reports exist, requiring stronger supporting evidence to establish duplication. The limiting case is a pair sharing no drugs and no adverse events: the anchor is the entire reporting context, so the multiplicity \(M = \binom{N_{\text{anchor}}}{2}\) is at its largest and any remaining matches must be correspondingly more surprising to carry weight. This is the intended behaviour — such a pair has no shared clinical context to make a coincidence unlikely.
+
+Note that \(N_{\text{anchor}}\) is never zero, and this matters to the method's validity rather than merely to its numerics. A zero anchor would make \(M = 0\), so \(P_{\text{match}} = 0\) would hold **vacuously** — not because a chance collision is improbable, but because no pair exists to collide. Since \(L_{\text{match}} = -\log_{10}(P_{\text{match}} + \varepsilon)\) reads a small \(P_{\text{match}}\) as strong evidence, a vacuous zero would saturate \(L_{\text{match}}\) at its ceiling and report two reports with *nothing in common* as maximally compelling evidence of duplication — the exact inverse of the truth. Treating an empty matching set as unnarrowed rather than empty removes this case by construction.
 
 
 
