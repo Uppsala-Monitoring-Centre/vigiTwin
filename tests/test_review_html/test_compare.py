@@ -1048,7 +1048,7 @@ def _make_pair_vm_for_format(
     _format_matching_features."""
     fs = FeaturesSummaryVM(
         l_match=0.0,
-        expected_collisions=1.0,
+        p_match=1.0,
         anchor_type="drugs_aes",
         anchor_n=10,
         reporting_context="Country (US, 2020)",

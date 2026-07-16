@@ -69,7 +69,7 @@ def _make_features(
         ),
         probability=ProbabilityEstimate(
             p_joint=1e-5,
-            expected_collisions=0.01,
+            p_match=0.01,
             feature_contributions=feature_contributions or [],
         ),
         L_match=L_match,

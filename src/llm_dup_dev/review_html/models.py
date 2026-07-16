@@ -267,7 +267,7 @@ class FeaturesSummaryVM(BaseModel):
     """View model for the optional PairFeatures evidence section."""
 
     l_match: float
-    expected_collisions: float
+    p_match: float
     anchor_type: str
     anchor_n: int
     reporting_context: str

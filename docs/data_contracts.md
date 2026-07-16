@@ -531,16 +531,36 @@ Together with Reporting context, these values represent candidate anchor populat
 ```
 probability: {
   "p_joint": 1.4e-7,
-  "expected_collisions": 0.002
+  "p_match": 0.002
 }
 
 L_match: 2.7
 ```
 
+| Field | Meaning |
+| ----- | ------- |
+| `p_joint` | Chance-match probability for **one** equivalent pairwise opportunity — the product of the per-feature $p_f$ values. |
+| `p_match` | Probability that **at least one** chance collision occurs among the $M = \binom{N_{anchor}}{2}$ unordered report pairs in the anchor population. |
+| `L_match` | The multiplicity-adjusted matching-evidence measure derived from `p_match`. |
+
 Where
 $$
-L_{match} = -\log_{10}(E_{joint})
+M = \binom{N_{anchor}}{2}, \qquad
+P_{match} = 1-(1-p_{joint})^{M}, \qquad
+L_{match} = \max\left(0,\,-\log_{10}(P_{match} + \varepsilon)\right)
 $$
+
+with $\varepsilon$ (default `1e-15`) a small additive constant for numerical
+stability, which caps `L_match` at $-\log_{10}\varepsilon = 15$ when
+$P_{match}$ is exactly zero. `L_match` is a multiplicity-adjusted chance-match
+measure, not a p-value.
+
+> **Changed field.** `probability.expected_collisions` (the expected collision
+> count $E_{joint} = M\,p_{joint}$) has been **replaced** by `probability.p_match`.
+> An expected count is not a probability and is no longer part of the method or
+> the output. Consumers reading `expected_collisions` must migrate to `p_match`;
+> the two agree to within floating-point noise whenever $E_{joint} \ll 1$, and
+> diverge as $E_{joint}$ approaches 1, where `p_match` correctly saturates at 1.
 
 ------
 

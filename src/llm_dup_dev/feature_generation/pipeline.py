@@ -60,7 +60,7 @@ def generate_pair_features(
         1. Reporting context determination
         2. Feature matching (drugs, AEs, demographics)
         3. Anchor population selection
-        4. Probability estimation (p_joint, E_joint, L_match)
+        4. Probability estimation (p_joint, P_match, L_match)
         5. Inconsistency detection
         6. Evidence summary construction
 

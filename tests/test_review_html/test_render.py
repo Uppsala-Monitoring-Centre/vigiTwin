@@ -476,7 +476,7 @@ def _make_features(pair_id: str = "R001__R002") -> PairFeatures:
             type=AnchorType.DRUGS_AES, N_anchor=40,
         ),
         probability=ProbabilityEstimate(
-            p_joint=1.5e-5, expected_collisions=0.075,
+            p_joint=1.5e-5, p_match=0.075,
             feature_contributions=[
                 FeatureContribution(
                     feature="patient_sex", p_f=0.5, method="domain_size",
