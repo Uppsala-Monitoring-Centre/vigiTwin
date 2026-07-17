@@ -1338,3 +1338,73 @@ class TestIndexSourceCaseSurface:
 
         assert item.source_case is None
         assert 'class="verdict-badge"' not in html
+
+
+# ---------------------------------------------------------------------------
+# Penalty row — end-to-end
+# ---------------------------------------------------------------------------
+
+
+class TestPenaltyRendering:
+    """The penalty must reach the HTML agreeing with the explanation beside it.
+
+    There was no end-to-end penalty coverage before, which is why the
+    default-weight recomputation and the dropped multi-patient row both
+    survived.
+    """
+
+    def test_custom_weights_agree_on_the_page(self, report_a, report_b):
+        """The rendered row and the rendered explanation must not contradict."""
+        from llm_dup_dev.classifier.config import DecisionThresholds
+        from llm_dup_dev.classifier.decision_logic import classify
+
+        features = _make_features()
+        features.L_match = 4.0
+        features.inconsistency_counts.minor = 0
+        features.inconsistency_counts.moderate = 0
+        features.inconsistency_counts.strong = 1
+        thresholds = DecisionThresholds(w_strong=5.0, w_tot_compelling_zone=6.0)
+        classification = classify(features, thresholds)
+
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        html = render_pair(vm)
+
+        assert "w_tot=5.0 &lt; 6.0" in html or "w_tot=5.0 < 6.0" in html
+        assert "1 × 5.0 = 5.0 &lt; 6.0" in html or "1 × 5.0 = 5.0 < 6.0" in html
+        # The default weight must not appear: that was the bug.
+        assert "1 × 3.0" not in html
+
+    def test_penalty_row_present_for_multi_patient_abstain(self, report_a, report_b):
+        """Regression: this row used to be missing entirely."""
+        from llm_dup_dev.classifier.decision_logic import classify
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseAssessment, SourceIdentifierType,
+        )
+        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+
+        features = _make_features()
+        features.L_match = 0.5
+        features.L_patient = 0.30103          # below lpatient_compelling -> Abstain
+        features.inconsistency_counts.minor = 0
+        features.inconsistency_counts.moderate = 0
+        features.inconsistency_counts.strong = 0
+        features.source_case_assessment = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            shared_source_identifier="10.1/abc",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+            case_identifiers_compared=False,
+            case_identifiers_comparable=False,
+            reasoning="fixture",
+        )
+        classification = classify(features)
+        assert classification.final_label == "Abstain"
+
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=features, classification=classification,
+        )
+        assert vm.classification_summary.penalty_summary == "0.0 < 1.0"
+        assert "Penalty" in render_pair(vm)

@@ -97,11 +97,16 @@ See: docs/duplicate_adjudication_spec.md § Decision logic
 from __future__ import annotations
 
 from llm_dup_dev.classifier.config import DecisionThresholds
-from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.classification import (
+    ClassificationResult,
+    InconsistencyPenalty,
+    PenaltyTerm,
+)
 from llm_dup_dev.models.enums import (
     DuplicateRelationship,
     IndependenceAssessment,
     IndependenceReason,
+    InconsistencySeverity,
 )
 from llm_dup_dev.models.narrative_source_case import (
     SourceCaseAssessment,
@@ -150,7 +155,8 @@ def classify(
 
     counts = features.inconsistency_counts
     L = features.L_match
-    w_tot = _weighted_inconsistency(counts, thresholds)
+    penalty = _inconsistency_penalty(counts, thresholds)
+    w_tot = penalty.w_tot
 
     # --- Shared-source override ---
     # A reliable shared source identifier is itself evidence against
@@ -159,7 +165,7 @@ def classify(
     # when non-source-case signals disagree).
     asm = features.source_case_assessment
     if asm is not None and asm.verdict in _SHARED_SOURCE_VERDICTS:
-        return _shared_source_override(features, asm, thresholds, w_tot)
+        return _shared_source_override(features, asm, thresholds, penalty)
 
     # --- Multi-patient context (no shared-source identifier) ---
     # MULTI_PATIENT_CONTEXT_NO_LINK shares the drug-set / AE-set inflation
@@ -177,7 +183,7 @@ def classify(
     ):
         return _multi_patient_three_way(
             features, asm.verdict,
-            _format_shared_identifier(asm), w_tot, thresholds,
+            _format_shared_identifier(asm), penalty, thresholds,
         )
 
     # --- Compelling zone: L_match > lmatch_compelling ---
@@ -186,6 +192,7 @@ def classify(
             return _duplicates(
                 pair_id=features.pair_id,
                 reason=IndependenceReason.RARITY_COMPELLING,
+                penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
                 explanation=(
                     f"Compelling matching evidence (L_match={L:.2f} > "
                     f"{thresholds.lmatch_compelling}); w_tot={w_tot:.1f} "
@@ -195,6 +202,7 @@ def classify(
         return _otherwise_related(
             pair_id=features.pair_id,
             reason=IndependenceReason.RARITY_COMPELLING,
+            penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
             explanation=(
                 f"Compelling matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_compelling_zone:.1f} "
@@ -209,6 +217,7 @@ def classify(
             return _duplicates(
                 pair_id=features.pair_id,
                 reason=IndependenceReason.RARITY_INTERMEDIATE,
+                penalty=penalty.compared_to(thresholds.w_tot_intermediate_zone),
                 explanation=(
                     f"Intermediate matching evidence (L_match={L:.2f} > "
                     f"{thresholds.lmatch_intermediate}); w_tot={w_tot:.1f} "
@@ -218,6 +227,7 @@ def classify(
         return _otherwise_related(
             pair_id=features.pair_id,
             reason=IndependenceReason.RARITY_INTERMEDIATE,
+            penalty=penalty.compared_to(thresholds.w_tot_intermediate_zone),
             explanation=(
                 f"Intermediate matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_intermediate_zone:.1f} "
@@ -232,6 +242,7 @@ def classify(
             return _duplicates(
                 pair_id=features.pair_id,
                 reason=IndependenceReason.RARITY_LIMITED,
+                penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
                 explanation=(
                     f"Limited matching evidence (L_match={L:.2f} > "
                     f"{thresholds.lmatch_limited}); w_tot={w_tot:.1f} "
@@ -241,6 +252,7 @@ def classify(
         return _otherwise_related(
             pair_id=features.pair_id,
             reason=IndependenceReason.RARITY_LIMITED,
+            penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
             explanation=(
                 f"Limited matching evidence (L_match={L:.2f}) but "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_limited_zone:.1f} "
@@ -250,9 +262,12 @@ def classify(
         )
 
     # --- Below limited threshold ---
+    # L_match decides here; w_tot is never consulted, so the penalty is
+    # recorded without a comparison.
     return _independent(
         pair_id=features.pair_id,
         reason=IndependenceReason.RARITY_INSUFFICIENT,
+        penalty=penalty,
         explanation=(
             f"Matching evidence below limited threshold "
             f"(L_match={L:.2f} ≤ {thresholds.lmatch_limited}); "
@@ -270,7 +285,7 @@ def _shared_source_override(
     features: PairFeatures,
     assessment: SourceCaseAssessment,
     thresholds: DecisionThresholds,
-    w_tot: float,
+    penalty: InconsistencyPenalty,
 ) -> ClassificationResult:
     """Reject independence based on a reliable shared source identifier.
 
@@ -309,11 +324,14 @@ def _shared_source_override(
     """
     verdict = assessment.verdict
     ident_str = _format_shared_identifier(assessment)
+    w_tot = penalty.w_tot
 
     if verdict == SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE:
+        # Pinned regardless of w_tot, so the penalty carries no comparison.
         return _otherwise_related(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
+            penalty=penalty,
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
                 f"sub-label pinned to Otherwise_related."
@@ -322,7 +340,7 @@ def _shared_source_override(
 
     if verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE:
         return _multi_patient_three_way(
-            features, verdict, ident_str, w_tot, thresholds,
+            features, verdict, ident_str, penalty, thresholds,
         )
 
     # SAME_SOURCE_SINGLE_PATIENT or SAME_SOURCE_SAME_CASE
@@ -330,6 +348,7 @@ def _shared_source_override(
         return _duplicates(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
+            penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
                 f"w_tot={w_tot:.1f} < {thresholds.w_tot_compelling_zone:.1f}."
@@ -343,6 +362,7 @@ def _shared_source_override(
     return _abstain(
         pair_id=features.pair_id,
         reason=IndependenceReason.SHARED_SOURCE,
+        penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
         explanation=(
             f"Shared-source override ({verdict.value}{ident_str}); "
             f"w_tot={w_tot:.1f} >= {thresholds.w_tot_compelling_zone:.1f} "
@@ -359,7 +379,7 @@ def _multi_patient_three_way(
     features: PairFeatures,
     verdict: SourceCaseVerdict,
     ident_str: str,
-    w_tot: float,
+    penalty: InconsistencyPenalty,
     thresholds: DecisionThresholds,
 ) -> ClassificationResult:
     """Three-way rule for multi-patient source contexts.
@@ -392,11 +412,13 @@ def _multi_patient_three_way(
       convincingly different individuals.
     """
     counts = features.inconsistency_counts
+    w_tot = penalty.w_tot
 
     if w_tot >= thresholds.w_tot_limited_zone:
         return _otherwise_related(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
+            penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_limited_zone:.1f} "
@@ -411,6 +433,7 @@ def _multi_patient_three_way(
         return _duplicates(
             pair_id=features.pair_id,
             reason=IndependenceReason.SHARED_SOURCE,
+            penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
                 f"L_patient={l_patient:.2f} > {thresholds.lpatient_compelling:.1f} "
@@ -423,6 +446,7 @@ def _multi_patient_three_way(
     return _abstain(
         pair_id=features.pair_id,
         reason=IndependenceReason.SHARED_SOURCE,
+        penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
         explanation=(
             f"Shared-source override ({verdict.value}{ident_str}); "
             f"L_patient={l_patient:.2f} (threshold "
@@ -448,24 +472,40 @@ def _format_shared_identifier(assessment: SourceCaseAssessment) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Weighted inconsistency score
+# Weighted inconsistency penalty
 # ---------------------------------------------------------------------------
 
 
-def _weighted_inconsistency(
+def _inconsistency_penalty(
     counts: InconsistencyCounts,
     thresholds: DecisionThresholds,
-) -> float:
-    """Compute the weighted inconsistency score.
+) -> InconsistencyPenalty:
+    """Compute the weighted inconsistency score and its breakdown.
 
     w_tot = w_minor × minor + w_moderate × moderate
           + w_strong × strong + w_decisive × decisive
+
+    Records the weights actually applied alongside the total, so the result is
+    self-describing: no consumer has to know the run's ``DecisionThresholds`` to
+    reproduce the arithmetic. Only the severities present contribute a term.
+
+    The returned penalty carries no ``threshold`` — each branch attaches the bar
+    it tested against via :meth:`InconsistencyPenalty.compared_to`.
     """
-    return (
-        thresholds.w_minor * counts.minor
-        + thresholds.w_moderate * counts.moderate
-        + thresholds.w_strong * counts.strong
-        + thresholds.w_decisive * counts.decisive
+    weights = (
+        (InconsistencySeverity.MINOR, counts.minor, thresholds.w_minor),
+        (InconsistencySeverity.MODERATE, counts.moderate, thresholds.w_moderate),
+        (InconsistencySeverity.STRONG, counts.strong, thresholds.w_strong),
+        (InconsistencySeverity.DECISIVE, counts.decisive, thresholds.w_decisive),
+    )
+    terms = [
+        PenaltyTerm(severity=severity, count=count, weight=weight)
+        for severity, count, weight in weights
+        if count > 0
+    ]
+    return InconsistencyPenalty(
+        w_tot=sum(count * weight for _, count, weight in weights),
+        terms=terms,
     )
 
 
@@ -478,6 +518,7 @@ def _duplicates(
     pair_id: str,
     explanation: str,
     reason: IndependenceReason,
+    penalty: InconsistencyPenalty | None = None,
 ) -> ClassificationResult:
     """Build a Non-independent / Duplicates result."""
     return ClassificationResult(
@@ -486,6 +527,7 @@ def _duplicates(
         duplicate_relationship=DuplicateRelationship.DUPLICATES,
         independence_reason=reason,
         explanation=explanation,
+        penalty=penalty,
     )
 
 
@@ -493,6 +535,7 @@ def _otherwise_related(
     pair_id: str,
     explanation: str,
     reason: IndependenceReason,
+    penalty: InconsistencyPenalty | None = None,
 ) -> ClassificationResult:
     """Build a Non-independent / Otherwise_related result."""
     return ClassificationResult(
@@ -501,6 +544,7 @@ def _otherwise_related(
         duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
         independence_reason=reason,
         explanation=explanation,
+        penalty=penalty,
     )
 
 
@@ -508,6 +552,7 @@ def _abstain(
     pair_id: str,
     explanation: str,
     reason: IndependenceReason,
+    penalty: InconsistencyPenalty | None = None,
 ) -> ClassificationResult:
     """Build a Non-independent / Abstain result (user-facing label: Abstain).
 
@@ -522,6 +567,7 @@ def _abstain(
         duplicate_relationship=DuplicateRelationship.ABSTAIN,
         independence_reason=reason,
         explanation=explanation,
+        penalty=penalty,
     )
 
 
@@ -529,6 +575,7 @@ def _independent(
     pair_id: str,
     explanation: str,
     reason: IndependenceReason,
+    penalty: InconsistencyPenalty | None = None,
 ) -> ClassificationResult:
     """Build an Independent result (user-facing label: Unrelated)."""
     return ClassificationResult(
@@ -537,4 +584,5 @@ def _independent(
         duplicate_relationship=None,
         independence_reason=reason,
         explanation=explanation,
+        penalty=penalty,
     )

@@ -496,7 +496,7 @@ class BatchIndexItem(BaseModel):
     matching_features: str | None = None         # e.g. "sex=male, age=25 years, AEs=headache"
     annotation_label: str | None = None          # normalised human annotation
     annotation_agrees: bool | None = None        # True/False/None (no pipeline label)
-    penalty_text: str | None = None              # e.g. "w_tot=0.8 < 4.0"
+    penalty_text: str | None = None              # e.g. "2 × 0.4 = 0.8 < 4.0"
     # Anchor penalty contribution to L_match (negative, in decades) and its
     # colour-bin CSS class. None when N_anchor < 2.
     anchor_penalty: float | None = None

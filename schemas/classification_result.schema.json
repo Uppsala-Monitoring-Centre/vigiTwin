@@ -10,6 +10,50 @@
       "title": "DuplicateRelationship",
       "type": "string"
     },
+    "InconsistencyPenalty": {
+      "description": "The weighted inconsistency score, and the comparison the decision made.\n\n    w_tot = \u03a3 (count \u00d7 weight)  over the severities present\n\nSelf-describing by design: the classifier is the only component that knows\nboth the inconsistency counts and the configured weights, so it records the\nresult rather than leaving consumers to recompute it. Recomputing requires\nthe run's ``DecisionThresholds``, and a consumer that assumes the defaults\nwill silently disagree with the decision whenever the run used custom\nweights.\n\n``threshold`` is the bar this score was tested against, or ``None`` when the\ndecision made no ``w_tot`` comparison at all \u2014 the below-limited zone (where\n``L_match`` decides), ``SAME_SOURCE_DIFFERENT_CASE`` (pinned regardless of\n``w_tot``), and the multi-patient Abstain branch. In those cases the score is\nstill recorded; there is simply no comparison to report.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Decision logic",
+      "properties": {
+        "w_tot": {
+          "title": "W Tot",
+          "type": "number"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "terms": {
+          "items": {
+            "$ref": "#/$defs/PenaltyTerm"
+          },
+          "title": "Terms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "w_tot"
+      ],
+      "title": "InconsistencyPenalty",
+      "type": "object"
+    },
+    "InconsistencySeverity": {
+      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Severity Levels\n\nLevels:\n    minor     \u2013 small difference, weakly suggests different individuals\n    moderate  \u2013 meaningful difference, weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
+      "enum": [
+        "minor",
+        "moderate",
+        "strong",
+        "decisive"
+      ],
+      "title": "InconsistencySeverity",
+      "type": "string"
+    },
     "IndependenceAssessment": {
       "description": "Internal independence assessment produced by the decision logic.\n\nCaptures whether the rarity-based matching evidence is strong\nenough to reject the null hypothesis that the two reports are\nindependent draws from the comparison population. A\n``NON_INDEPENDENT`` verdict means the matched features are too\nunlikely to have arisen by chance under that null; the duplicate\nvs otherwise-related distinction is then made by the\n``DuplicateRelationship`` sub-label using inconsistency signals.\n\nThe user-facing label is derived from this enum (plus\n``DuplicateRelationship``) by ``ClassificationResult.final_label``;\ndownstream consumers should depend on the final label rather than\non this raw enum.\n\nThe rarity-zone path assigns only ``NON_INDEPENDENT`` or\n``INDEPENDENT``. The shared-source override path additionally\nassigns ``NON_INDEPENDENT`` paired with\n``DuplicateRelationship.ABSTAIN`` for epistemically underdetermined\nsame-source scenarios. ``IndependenceAssessment.ABSTAIN`` itself is\nkept as a defensive backstop but is not emitted by standard paths.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Decision logic",
       "enum": [
@@ -32,9 +76,32 @@
       ],
       "title": "IndependenceReason",
       "type": "string"
+    },
+    "PenaltyTerm": {
+      "description": "One severity's contribution to ``w_tot``.\n\nCarries the ``weight`` **actually applied** by the run, not the default,\nso the arithmetic can be reproduced from the result alone.",
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/InconsistencySeverity"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "weight": {
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "severity",
+        "count",
+        "weight"
+      ],
+      "title": "PenaltyTerm",
+      "type": "object"
     }
   },
-  "description": "Full duplicate-adjudication output for a report pair.\n\nTwo layered internal labels are produced by the decision logic:\n\n* ``independence_assessment`` \u2014 whether the rarity-based matching\n  evidence is strong enough to reject the null hypothesis that the\n  two reports are independent draws from the comparison population.\n* ``duplicate_relationship`` \u2014 when independence has been rejected,\n  a sub-label that uses inconsistency signals to distinguish a\n  likely-duplicate case from one that is linked by something other\n  than being the same individual case (e.g. same reporter, same\n  study).\n\nUse ``final_label`` for the user-facing label\n(``Duplicates`` / ``Otherwise_related`` / ``Unrelated``); downstream\nconsumers should depend on this rather than on the raw internal\nfields.",
+  "description": "Full duplicate-adjudication output for a report pair.\n\nTwo layered internal labels are produced by the decision logic:\n\n* ``independence_assessment`` \u2014 whether the rarity-based matching\n  evidence is strong enough to reject the null hypothesis that the\n  two reports are independent draws from the comparison population.\n* ``duplicate_relationship`` \u2014 when independence has been rejected,\n  a sub-label that uses inconsistency signals to distinguish a\n  likely-duplicate case from one that is linked by something other\n  than being the same individual case (e.g. same reporter, same\n  study).\n\nUse ``final_label`` for the user-facing label\n(``Duplicates`` / ``Otherwise_related`` / ``Unrelated``); downstream\nconsumers should depend on this rather than on the raw internal\nfields. ``penalty`` is the exception: it is diagnostic, carried so that\nthe inconsistency arithmetic behind the decision can be displayed and\naudited without reconstructing it.",
   "properties": {
     "pair_id": {
       "title": "Pair Id",
@@ -69,6 +136,17 @@
       "default": "",
       "title": "Explanation",
       "type": "string"
+    },
+    "penalty": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InconsistencyPenalty"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

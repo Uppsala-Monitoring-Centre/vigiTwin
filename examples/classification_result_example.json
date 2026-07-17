@@ -3,5 +3,16 @@
   "independence_assessment": "Non-independent",
   "duplicate_relationship": "Duplicates",
   "independence_reason": "rarity_compelling",
-  "explanation": "Compelling matching evidence (L_match=4.64 > 3.0); w_tot=1.0 < 4.0."
+  "explanation": "Compelling matching evidence (L_match=4.64 > 3.0); w_tot=1.0 < 4.0.",
+  "penalty": {
+    "w_tot": 1.0,
+    "threshold": 4.0,
+    "terms": [
+      {
+        "severity": "moderate",
+        "count": 1,
+        "weight": 1.0
+      }
+    ]
+  }
 }

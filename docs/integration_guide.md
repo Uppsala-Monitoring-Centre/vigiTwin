@@ -578,8 +578,22 @@ result = runner.run_pair(pair)
 
 print(result.final_label)          # "Duplicates", "Otherwise_related", "Unrelated"
 print(result.features.L_match)     # e.g. 4.2
+print(result.features.L_patient)   # e.g. 2.3 — patient-specific evidence
 print(result.classification.explanation)  # human-readable reasoning
+
+# The inconsistency arithmetic behind the decision, as the classifier recorded it
+penalty = result.classification.penalty
+print(penalty.w_tot)               # e.g. 1.0
+print(penalty.threshold)           # e.g. 4.0 — None if w_tot was never compared
+print(penalty.satisfied)           # True when w_tot < threshold; None if not compared
+for term in penalty.terms:
+    print(term.severity, term.count, term.weight)   # weights the run applied
 ```
+
+Read `penalty` rather than parsing `explanation`. The explanation remains the
+human-readable surface and still quotes `w_tot`, but it is prose and its wording
+is not a contract. `penalty` carries the weights the run actually used, so the
+arithmetic can be reproduced without knowing the run's `DecisionThresholds`.
 
 For **offline/frozen-validation** mode, replace `SqlStatsProvider` with
 `FrozenStatsProvider` — see [Offline frozen-validation mode](#offline-frozen-validation-mode) above.

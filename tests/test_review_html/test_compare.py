@@ -15,6 +15,10 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
+from llm_dup_dev.models.classification import (
+    InconsistencyPenalty,
+    PenaltyTerm,
+)
 from llm_dup_dev.models.enums import InconsistencySeverity
 from llm_dup_dev.models.pair_features import Inconsistency
 from llm_dup_dev.review_html.compare import (
@@ -908,72 +912,84 @@ class TestNarrativeLiteratureReference:
 
 
 class TestFormatPenaltySummary:
-    """Transparent summation of the aggregated discrepancy penalty."""
+    """Rendering of the penalty the classifier recorded.
 
-    def test_zone_based_explanation_produces_breakdown(self):
-        """A typical zone-based explanation yields 'n × w + ... = total op Y'."""
-        counts = InconsistencyCountsVM(minor=3, moderate=1, strong=0)
-        explanation = (
-            "Strong matching evidence (L_match=3.50 > 3.0); "
-            "w_tot=2.2 < 4.0."
-        )
-        result = _format_penalty_summary(counts, explanation)
-        # Default thresholds: w_minor=0.4, w_moderate=1.0, w_strong=3.0
-        # 3*0.4 + 1*1.0 = 2.2
-        assert result == "3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"
+    These render an InconsistencyPenalty directly. They deliberately do not
+    fabricate explanation strings: the previous versions did, which made them
+    self-consistent by construction and structurally unable to catch either
+    the custom-weights disagreement or the dropped multi-patient row.
+    """
 
-    def test_failing_zone_uses_gte_operator(self):
-        """Explanation with 'w_tot=X >= Y' keeps the >= operator."""
-        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=2)
-        explanation = (
-            "Strong matching evidence (L_match=3.50) but "
-            "w_tot=6.0 >= 4.0 (strong=2, moderate=0)."
+    def test_breakdown_from_recorded_terms(self):
+        """'n × w + ... = total op Y', with the weights the run applied."""
+        penalty = InconsistencyPenalty(
+            w_tot=2.2,
+            threshold=4.0,
+            terms=[
+                PenaltyTerm(severity=InconsistencySeverity.MINOR, count=3, weight=0.4),
+                PenaltyTerm(severity=InconsistencySeverity.MODERATE, count=1, weight=1.0),
+            ],
         )
-        result = _format_penalty_summary(counts, explanation)
-        # 2*3.0 = 6.0
-        assert result == "2 × 3.0 = 6.0 >= 4.0"
+        assert _format_penalty_summary(penalty) == "3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"
+
+    def test_failing_comparison_uses_gte(self):
+        """w_tot >= threshold renders the >= operator."""
+        penalty = InconsistencyPenalty(
+            w_tot=6.0,
+            threshold=4.0,
+            terms=[PenaltyTerm(severity=InconsistencySeverity.STRONG, count=2, weight=3.0)],
+        )
+        assert _format_penalty_summary(penalty) == "2 × 3.0 = 6.0 >= 4.0"
+
+    def test_boundary_is_not_satisfied(self):
+        """At w_tot == threshold the tolerance is exceeded — strict <."""
+        penalty = InconsistencyPenalty(w_tot=4.0, threshold=4.0)
+        assert penalty.satisfied is False
+        assert _format_penalty_summary(penalty) == "4.0 >= 4.0"
 
     def test_decisive_included_in_breakdown(self):
-        """Decisive counts now contribute via w_decisive in the breakdown."""
-        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0, decisive=1)
-        explanation = (
-            "Strong matching evidence (L_match=3.50) but "
-            "w_tot=100.0 >= 4.0 (strong=0, moderate=0, decisive=1)."
+        """Decisive contributes like any other severity."""
+        penalty = InconsistencyPenalty(
+            w_tot=100.0,
+            threshold=4.0,
+            terms=[
+                PenaltyTerm(severity=InconsistencySeverity.DECISIVE, count=1, weight=100.0)
+            ],
         )
-        # Default w_decisive=100.0 → 1 × 100.0 = 100.0
-        result = _format_penalty_summary(counts, explanation)
-        assert result == "1 × 100.0 = 100.0 >= 4.0"
+        assert _format_penalty_summary(penalty) == "1 × 100.0 = 100.0 >= 4.0"
 
-    def test_below_limited_uses_zero_threshold(self):
-        """Below-limited branch: always Unrelated → show breakdown with '>= 0.0'."""
-        explanation = (
-            "Matching evidence below limited threshold "
-            "(L_match=0.50 ≤ 1.0); independence cannot be rejected."
-        )
-        # Zero inconsistencies → no terms, just the total comparison.
-        result = _format_penalty_summary(
-            InconsistencyCountsVM(minor=0, moderate=0, strong=0), explanation
-        )
-        assert result == "0.0 >= 0.0"
-        # Non-zero minor → full breakdown.
-        result = _format_penalty_summary(
-            InconsistencyCountsVM(minor=2, moderate=0, strong=0), explanation
-        )
-        assert result == "2 × 0.4 = 0.8 >= 0.0"
+    def test_no_terms_shows_total_only(self):
+        """Zero inconsistencies → no breakdown, just the comparison."""
+        penalty = InconsistencyPenalty(w_tot=0.0, threshold=4.0)
+        assert _format_penalty_summary(penalty) == "0.0 < 4.0"
 
-    def test_zero_inconsistencies_strong_zone(self):
-        """Clean strong-zone pass with zero inconsistencies → no terms, just '0.0 < Y'."""
-        counts = InconsistencyCountsVM(minor=0, moderate=0, strong=0)
-        explanation = (
-            "Strong matching evidence (L_match=4.00 > 3.0); "
-            "w_tot=0.0 < 4.0."
-        )
-        result = _format_penalty_summary(counts, explanation)
-        assert result == "0.0 < 4.0"
+    def test_no_comparison_is_reported_as_such(self):
+        """Where the decision never compared w_tot, do not invent a threshold.
 
-    def test_missing_counts_returns_none(self):
-        """No inconsistency_counts available → None (template falls back to '--')."""
-        assert _format_penalty_summary(None, "w_tot=1.0 < 4.0") is None
+        Replaces the old notional '>= 0.0', which asserted a comparison that
+        never happened.
+        """
+        penalty = InconsistencyPenalty(w_tot=0.8, threshold=None, terms=[
+            PenaltyTerm(severity=InconsistencySeverity.MINOR, count=2, weight=0.4),
+        ])
+        assert penalty.satisfied is None
+        assert _format_penalty_summary(penalty) == "2 × 0.4 = 0.8 (not compared)"
+
+    def test_missing_penalty_returns_none(self):
+        """No penalty recorded → None (template falls back to '--')."""
+        assert _format_penalty_summary(None) is None
+
+    def test_uses_recorded_weights_not_defaults(self):
+        """The rendered weights are the run's, not DecisionThresholds()."""
+        # w_strong default is 3.0; this run used 5.0.
+        penalty = InconsistencyPenalty(
+            w_tot=5.0,
+            threshold=6.0,
+            terms=[PenaltyTerm(severity=InconsistencySeverity.STRONG, count=1, weight=5.0)],
+        )
+        result = _format_penalty_summary(penalty)
+        assert result == "1 × 5.0 = 5.0 < 6.0"
+        assert "3.0" not in result
 
 
 # ===================================================================
@@ -1149,3 +1165,167 @@ class TestFormatMatchingFeatures:
     def test_returns_none_when_no_contributions(self):
         vm = _make_pair_vm_for_format([])
         assert _format_matching_features(vm, key_drugs=set()) is None
+
+
+# ===================================================================
+# Penalty regressions — driven through classify(), not fabricated text
+# ===================================================================
+
+
+def _penalty_features(L_match, minor=0, moderate=0, strong=0, verdict=None,
+                      contributions=None):
+    """A PairFeatures shaped for the penalty regressions."""
+    from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
+    from llm_dup_dev.models.narrative_source_case import (
+        SourceCaseAssessment, SourceIdentifierType,
+    )
+    from llm_dup_dev.models.pair_features import (
+        AnchorPopulation, InconsistencyCounts, PairFeatures,
+        ProbabilityEstimate, ReportingContext,
+    )
+    from llm_dup_dev.feature_generation.probability import compute_l_patient
+
+    contributions = contributions or []
+    assessment = None
+    if verdict is not None:
+        assessment = SourceCaseAssessment(
+            verdict=verdict,
+            shared_source_identifier="10.1/abc",
+            shared_source_identifier_type=SourceIdentifierType.DOI,
+            case_identifiers_compared=False,
+            case_identifiers_comparable=False,
+            reasoning="fixture",
+        )
+    return PairFeatures(
+        pair_id="R001__R002",
+        reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
+        anchor=AnchorPopulation(N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+                                type=AnchorType.DRUGS_AES, N_anchor=50),
+        probability=ProbabilityEstimate(p_joint=1e-5, p_match=0.01,
+                                        feature_contributions=contributions),
+        L_match=L_match,
+        L_patient=compute_l_patient(contributions),
+        inconsistency_counts=InconsistencyCounts(
+            minor=minor, moderate=moderate, strong=strong
+        ),
+        narrative_consistency=NarrativeConsistency.NEUTRAL,
+        source_case_assessment=assessment,
+    )
+
+
+class TestPenaltyAgreesWithClassifier:
+    """The rendered penalty must never contradict the decision it describes.
+
+    Regression: the display used to scrape the threshold out of the
+    explanation and recompute w_tot with DecisionThresholds() DEFAULTS, so a
+    run with custom weights rendered a row that disagreed with the sentence
+    directly above it.
+    """
+
+    def test_custom_weights_are_respected(self):
+        """A run with w_strong=5.0 must not be rendered with the default 3.0."""
+        from llm_dup_dev.classifier.config import DecisionThresholds
+        from llm_dup_dev.classifier.decision_logic import classify
+
+        thresholds = DecisionThresholds(w_strong=5.0, w_tot_compelling_zone=6.0)
+        features = _penalty_features(L_match=4.0, strong=1)
+        result = classify(features, thresholds)
+
+        rendered = _format_penalty_summary(result.penalty)
+        # The classifier says w_tot=5.0 < 6.0; the row must say the same.
+        assert "w_tot=5.0 < 6.0" in result.explanation
+        assert rendered == "1 × 5.0 = 5.0 < 6.0"
+        # The old code rendered "1 × 3.0 = 3.0 < 6.0" using the default weight.
+        assert "3.0" not in rendered
+
+    def test_rendered_total_always_matches_the_recorded_w_tot(self):
+        """Across weight settings, the displayed total is the classifier's."""
+        from llm_dup_dev.classifier.config import DecisionThresholds
+        from llm_dup_dev.classifier.decision_logic import classify
+
+        for w_moderate in (1.0, 2.0, 7.5):
+            thresholds = DecisionThresholds(w_moderate=w_moderate)
+            features = _penalty_features(L_match=4.0, moderate=1)
+            result = classify(features, thresholds)
+            rendered = _format_penalty_summary(result.penalty)
+            assert f"= {result.penalty.w_tot:.1f}" in rendered
+            assert f"w_tot={result.penalty.w_tot:.1f}" in result.explanation
+
+
+class TestPenaltyIsRecordedOnEveryBranch:
+    """Every branch records the score; only some record a comparison."""
+
+    def test_multi_patient_abstain_has_a_penalty_row(self):
+        """Regression: this row used to vanish.
+
+        The branch formats as 'w_tot=0.0 (threshold 1.0)' — no '<' or '>=' —
+        so the old regex missed it and the row silently disappeared from both
+        the pair page and the index.
+        """
+        from llm_dup_dev.classifier.decision_logic import classify
+        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+        from llm_dup_dev.models.pair_features import FeatureContribution
+
+        features = _penalty_features(
+            L_match=0.5,
+            verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+            # sex only -> L_patient 0.30, below the bar -> Abstain
+            contributions=[
+                FeatureContribution(feature="patient_sex", p_f=0.5,
+                                    method="domain_size")
+            ],
+        )
+        result = classify(features)
+        assert result.final_label == "Abstain"
+        # w_tot passed the branch-B gate, so the comparison is real.
+        assert _format_penalty_summary(result.penalty) == "0.0 < 1.0"
+
+    def test_below_limited_records_no_comparison(self):
+        """L_match decides here; w_tot is never consulted."""
+        from llm_dup_dev.classifier.decision_logic import classify
+
+        features = _penalty_features(L_match=0.5, minor=2)
+        result = classify(features)
+        assert result.final_label == "Unrelated"
+        assert result.penalty.threshold is None
+        # Previously rendered as a notional "2 × 0.4 = 0.8 >= 0.0".
+        assert _format_penalty_summary(result.penalty) == "2 × 0.4 = 0.8 (not compared)"
+
+    def test_different_case_records_no_comparison(self):
+        """SAME_SOURCE_DIFFERENT_CASE is pinned regardless of w_tot."""
+        from llm_dup_dev.classifier.decision_logic import classify
+        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+
+        features = _penalty_features(
+            L_match=4.0, moderate=1,
+            verdict=SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
+        )
+        result = classify(features)
+        assert result.final_label == "Otherwise_related"
+        assert result.penalty.threshold is None
+        assert _format_penalty_summary(result.penalty) == "1 × 1.0 = 1.0 (not compared)"
+
+    def test_every_branch_records_a_score(self):
+        """No classification may lose its w_tot."""
+        from llm_dup_dev.classifier.decision_logic import classify
+        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+
+        cases = [
+            _penalty_features(L_match=4.0),                       # compelling
+            _penalty_features(L_match=4.0, strong=2),             # compelling, failing
+            _penalty_features(L_match=2.5),                       # intermediate
+            _penalty_features(L_match=1.5),                       # limited
+            _penalty_features(L_match=0.5),                       # below limited
+            _penalty_features(L_match=4.0,
+                              verdict=SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT),
+            _penalty_features(L_match=4.0, strong=2,
+                              verdict=SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT),
+            _penalty_features(L_match=4.0,
+                              verdict=SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE),
+            _penalty_features(L_match=0.5,
+                              verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE),
+        ]
+        for features in cases:
+            result = classify(features)
+            assert result.penalty is not None, result.explanation
+            assert _format_penalty_summary(result.penalty) is not None
