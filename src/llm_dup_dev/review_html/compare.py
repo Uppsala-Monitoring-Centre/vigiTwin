@@ -713,6 +713,7 @@ def _build_features_summary(
 
     return FeaturesSummaryVM(
         l_match=features.L_match,
+        l_patient=features.L_patient,
         p_match=features.probability.p_match,
         anchor_type=features.anchor.type.value,
         anchor_n=features.anchor.N_anchor,

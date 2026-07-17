@@ -1408,3 +1408,47 @@ class TestPenaltyRendering:
         )
         assert vm.classification_summary.penalty_summary == "0.0 < 1.0"
         assert "Penalty" in render_pair(vm)
+
+
+class TestLPatientRendering:
+    """L_patient surfaces beside L_match in the evidence sections."""
+
+    def test_l_patient_rendered_in_evidence_sections(self, report_a, report_b):
+        """The value appears, and is the patient-specific one — not L_match."""
+        features = _make_features()
+        features.L_match = 3.8
+        features.L_patient = 0.30103          # sex only; drug_set excluded
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002", features=features,
+        )
+        html = render_pair(vm)
+
+        assert "L<sub>patient</sub>" in html
+        assert "0.3010" in html               # the patient value
+        assert "3.8000" in html               # L_match, still distinct
+        assert vm.features_summary.l_patient == 0.30103
+
+    def test_l_patient_is_not_confused_with_l_match(self, report_a, report_b):
+        """A pair where the two differ must render both, not one twice."""
+        features = _make_features()
+        features.L_match = 3.8
+        features.L_patient = 0.30103
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002", features=features,
+        )
+        html = render_pair(vm)
+        # Evidence Summary and Probability Details each carry both rows.
+        assert html.count("L<sub>patient</sub>") == 2
+        assert html.count("0.3010") == 2
+
+    def test_l_patient_tooltip_states_its_scope(self, report_a, report_b):
+        """The tooltip must say it governs only the shared-source branch.
+
+        Shown for every pair, so it needs to say when it is actually used.
+        """
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002", features=_make_features(),
+        )
+        html = render_pair(vm)
+        assert "no multiplicity adjustment" in html
+        assert "only consulted for shared-source" in html.lower()

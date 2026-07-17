@@ -691,6 +691,8 @@ details.debug-section pre {
     <dl class="evidence-kv">
         <dt>L<sub>match</sub></dt>
         <dd>{{ "%.4f"|format(vm.features_summary.l_match) }}</dd>
+        <dt title="Patient-specific matching evidence: -log10 of the chance-match probability restricted to the features that identify a patient (drug and AE sets excluded), with no multiplicity adjustment. Computed for every pair, but only consulted for shared-source / uncomparable-case and multi-patient pairs.">L<sub>patient</sub></dt>
+        <dd>{{ "%.4f"|format(vm.features_summary.l_patient) }}</dd>
         <dt title="P_match = 1 - (1 - p_joint)^M: probability of at least one chance collision among the M unordered report pairs in the anchor population.">P(&ge;1 chance collision)</dt>
         <dd>{{ "%.4e"|format(vm.features_summary.p_match) }}</dd>
         <dt>Anchor</dt>
@@ -752,6 +754,8 @@ details.debug-section pre {
         <dd>{{ "%.4e"|format(vm.features_summary.p_match) }}</dd>
         <dt>L<sub>match</sub></dt>
         <dd>{{ "%.4f"|format(vm.features_summary.l_match) }}</dd>
+        <dt title="Patient-specific matching evidence: -log10 of the chance-match probability restricted to the features that identify a patient (drug and AE sets excluded), with no multiplicity adjustment. Only consulted for shared-source / uncomparable-case and multi-patient pairs.">L<sub>patient</sub></dt>
+        <dd>{{ "%.4f"|format(vm.features_summary.l_patient) }}</dd>
     </dl>
     {% if vm.features_summary.feature_contributions %}
     <h4 style="font-size: 0.9rem; margin: 8px 0 4px; color: #586069;">Feature Contributions</h4>
