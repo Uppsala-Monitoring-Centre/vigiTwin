@@ -253,7 +253,7 @@ Equivalently, \(L_{\text{patient}} = -\log_{10}\!\left(\prod_{f \in F_{\text{pat
 
 Two deliberate departures from the standard \(L_{\text{match}}\):
 
-- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`_NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `classifier/decision_logic.py`).
+- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `feature_generation/probability.py`).
 - **No anchor multiplicity adjustment.** \(L_{\text{match}}\) asks how probable the observed match would be to arise by chance *somewhere in the anchor population* (e.g. "all reports on drug X"), and is adjusted for the \(M = \binom{N_{\text{anchor}}}{2}\) pairwise opportunities that population affords. For `UNCOMPARABLE_CASE` the relevant comparison universe is instead the unknown small set of K patients within the shared publication, so adjusting for the anchor would correct for opportunities that are not the ones actually taken. \(L_{\text{patient}}\) therefore stays at the per-pair level.
 
 Note this is **not** \(L_{\text{match}}\) minus a penalty term. Since \(L_{\text{match}} = \max(0, -\log_{10}(P_{\text{match}} + \varepsilon))\) with \(P_{\text{match}} = 1-(1-p_{\text{joint}})^{M}\), it does not decompose additively; the two quantities coincide in that form only in the rare-event limit. \(L_{\text{patient}}\) is defined in its own right, and is judged against its own bar, `lpatient_compelling`.
@@ -363,6 +363,16 @@ The following parameters define the decision behaviour and are configurable:
 | `w_tot_limited_zone` | 1.0 | Strict upper bound on \(w_{\text{tot}}\) for `Duplicates` in the limited zone (\(w_{\text{tot}} <\) this value) |
 
 These parameters may be refined during method development using annotated report pairs to ensure appropriate calibration of the classification behaviour.
+
+#### Calibrating them
+
+Because \(L_{\text{match}}\), \(L_{\text{patient}}\) and the inconsistency counts are all computed during feature generation, and `classify` is a pure function of `(PairFeatures, DecisionThresholds)`, the decision can be replayed under different thresholds without re-running the pipeline. Persisting `PairFeatures` (`pipeline.export.write_pair_features`) therefore makes the refinement above executable offline — no reports, no database, no language model — against annotated pairs. See `eval.sweep`.
+
+Three properties of the scoring must be respected when reading a sweep, each of which can otherwise produce a confidently wrong answer:
+
+- **Abstained pairs leave the denominator.** Under `AbstainMode.DECIDED_ONLY` a pair the pipeline abstains on is excluded from \(n\) entirely, so a threshold setting that abstains on the pairs it would have misclassified scores *better* on fewer pairs. F1 is therefore not comparable across settings whose \(n\) differs, and no threshold should be selected by maximising it.
+- **Pair orientation is not canonical.** `pair_id` is `{report_id1}__{report_id2}` and nothing sorts the two, so an annotation file that lists a pair in the opposite order matches nothing. Check the coverage report before reading any metric.
+- **Only ratios matter among the weights.** `w_minor` … `w_strong` and the `w_tot_*_zone` thresholds are not independent; sweeping both jointly explores a redundant space. Vary one side. `w_decisive` is not a free parameter at all — the validator requires it to exceed every zone threshold.
 
 ## Rarity-based matching evidence
 
