@@ -734,6 +734,80 @@ mapped to the user-facing label by `ClassificationResult.final_label`:
 
 Eval consumers should compare against `result.final_label` rather than the internal `independence_assessment` / `duplicate_relationship` fields.
 
+### Threshold calibration (offline)
+
+`classify()` is a pure function of `(PairFeatures, DecisionThresholds)`, so once a
+batch has run you can replay the decision under different thresholds without
+re-running the pipeline — no reports, no database, no LLM. Persist the features
+once, then sweep as often as you like:
+
+```python
+from llm_dup_dev.pipeline.export import write_pair_features
+
+batch = runner.run_batch(pairs)
+write_pair_features(batch.results, "features.json")   # do this once
+```
+
+```python
+from llm_dup_dev.eval import (
+    AbstainMode, grid_over, load_annotations, sweep, sweep_to_text,
+)
+from llm_dup_dev.pipeline.export import read_pair_features
+
+features = read_pair_features("features.json")
+annotations = load_annotations("annotations.csv")
+
+result = sweep(
+    features,
+    annotations,
+    grid=grid_over(lpatient_compelling=[1.5, 2.0, 2.5, 3.0]),
+    abstain_mode=AbstainMode.DECIDED_ONLY,
+)
+print(sweep_to_text(result))
+```
+
+`write_pair_features` also produces the file `review_html --features` expects, so
+the same artifact drives the review pages.
+
+**Reading a sweep — three traps.** Each is reported rather than silently
+absorbed, but the judgement is yours:
+
+- **No row is marked best, deliberately.** Under `DECIDED_ONLY` an abstained pair
+  leaves `n` entirely, so a setting that abstains on the pairs it would have got
+  wrong posts a *better* F1 on a smaller denominator. F1 is not comparable across
+  rows whose `n` differs. Read `n` and `abstained` together; there is no `argmax`
+  helper because it would reliably pick the setting that refuses the most pairs.
+- **Check coverage first.** `pair_id` is `{report_id1}__{report_id2}` and nothing
+  canonicalises the order, so an annotation file listing a pair the other way
+  round matches nothing and is silently unscored. The report warns when
+  annotations match only in reversed orientation, or not at all.
+- **Invalid grid points are skipped, not fatal.** `DecisionThresholds` requires
+  `w_decisive` to exceed every zone threshold, so a rectangular grid has invalid
+  corners. They appear under "Skipped" with the reason.
+
+`grid_over(base, **axes)` builds the rectangular grid. Note the inconsistency
+weights and the `w_tot_*_zone` thresholds are not independent — only their ratios
+matter — so vary one side, not both.
+
+### Eval annotation format (calibration)
+
+`load_annotations` reads a delimited file (tab, comma or semicolon — sniffed)
+identifying each pair by its two report ids:
+
+```
+report_id1	report_id2	duplicates_assessment
+R001	R002	duplicates
+R003	R004	unrelated
+```
+
+`pair_id` is derived as `{report_id1}__{report_id2}`. Any additional columns
+(annotator, notes, …) are preserved on the loaded dict and ignored by scoring, so
+they remain available for stratifying an analysis.
+
+Two conditions fail at load rather than mid-run: a repeated pair (evaluation
+indexes by `pair_id` and would silently keep whichever row came last) and a label
+outside `duplicates` / `otherwise_related` / `unrelated` / `abstain`.
+
 ---
 
 ## Configuration

@@ -48,6 +48,7 @@ from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
+from llm_dup_dev.pipeline.export import read_classifications, read_pair_features
 
 from .compare import build_pair_view_model
 from .models import PairViewModel
@@ -140,23 +141,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         ReportPair.model_validate(p) for p in raw_pairs
     ]
 
-    # Load optional features
+    # Load optional features / classifications. The readers live in
+    # pipeline.export alongside the writers that produce these files.
     features: dict[str, PairFeatures] = {}
     if args.features:
-        raw_features = _load_json(args.features)
-        features = {
-            pid: PairFeatures.model_validate(fdata)
-            for pid, fdata in raw_features.items()
-        }
+        features = read_pair_features(args.features)
 
-    # Load optional classifications
     classifications: dict[str, ClassificationResult] = {}
     if args.classifications:
-        raw_cls = _load_json(args.classifications)
-        classifications = {
-            pid: ClassificationResult.model_validate(cdata)
-            for pid, cdata in raw_cls.items()
-        }
+        classifications = read_classifications(args.classifications)
 
     # Load optional frozen pair bundles
     bundles: dict[str, FrozenPairBundle] = {}
