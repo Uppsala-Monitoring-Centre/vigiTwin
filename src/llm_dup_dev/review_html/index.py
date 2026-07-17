@@ -6,10 +6,11 @@ page. Consumes the already-built :class:`PairViewModel` (produced by
 inline inconsistency items, anchor / context labels, the penalty
 breakdown, and the matching-feature chip strip.
 
-Shared scoring/display utilities (``_format_penalty_summary``,
-``_contrib_pos_class``, ``_contrib_neg_class``,
-``_FEATURE_TO_DEMO_LABEL``) live in :mod:`compare` because they are
-also used by pair-building; this module imports them.
+Shared scoring/display utilities (``_contrib_pos_class``,
+``_contrib_neg_class``, ``_FEATURE_TO_DEMO_LABEL``) live in
+:mod:`compare` because they are also used by pair-building; this module
+imports them. The penalty text is not among them — it is formatted once
+during pair-building and read off the view model here.
 """
 
 from __future__ import annotations
@@ -23,7 +24,6 @@ from .compare import (
     _FEATURE_TO_DEMO_LABEL,
     _contrib_neg_class,
     _contrib_pos_class,
-    _format_penalty_summary,
 )
 from .models import (
     BatchIndexItem,
@@ -88,7 +88,11 @@ def build_batch_index_item(
 
     anchor_label, anchor_n = _format_anchor_label(vm, key_drugs)
 
-    penalty_text = _format_penalty_text(vm)
+    penalty_text = (
+        vm.classification_summary.penalty_summary
+        if vm.classification_summary
+        else None
+    )
 
     return BatchIndexItem(
         pair_id=vm.pair_id,
@@ -154,20 +158,6 @@ _DRUG_SET_RE_1 = re.compile(
 _DRUG_SET_RE_2 = re.compile(
     r"Key drug\(s\) in report 2 not found in report 1:\s*\[(.+)\]"
 )
-
-
-def _format_penalty_text(vm: PairViewModel) -> str | None:
-    """Build the batch-index Penalty cell content for a pair."""
-    if not vm.classification_summary:
-        return None
-    counts = (
-        vm.features_summary.inconsistency_counts
-        if vm.features_summary
-        else None
-    )
-    return _format_penalty_summary(
-        counts, vm.classification_summary.explanation
-    )
 
 
 def _parse_drug_list(raw: str) -> list[str]:

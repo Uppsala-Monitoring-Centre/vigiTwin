@@ -22,7 +22,6 @@ causing the field to be omitted from the demographics table.
 from __future__ import annotations
 
 import math
-import re
 from collections import OrderedDict
 
 from llm_dup_dev.data.offline import FrozenPairBundle
@@ -33,8 +32,10 @@ from llm_dup_dev.feature_generation.matching import (
 from llm_dup_dev.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
 )
-from llm_dup_dev.classifier.config import DecisionThresholds
-from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.classification import (
+    ClassificationResult,
+    InconsistencyPenalty,
+)
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
 from llm_dup_dev.models.pair_features import PairFeatures
@@ -843,10 +844,7 @@ def _build_classification_summary(
         ),
         final_label=classification.final_label,
         explanation=classification.explanation,
-        penalty_summary=_format_penalty_summary(
-            features.inconsistency_counts if features else None,
-            classification.explanation,
-        ),
+        penalty_summary=_format_penalty_summary(classification.penalty),
     )
 
 
@@ -928,10 +926,7 @@ def _build_decision_summary(
             if classification.duplicate_relationship
             else None
         ),
-        penalty_summary=_format_penalty_summary(
-            features.inconsistency_counts if features else None,
-            classification.explanation,
-        ),
+        penalty_summary=_format_penalty_summary(classification.penalty),
     )
 
 
@@ -1296,78 +1291,42 @@ def build_pair_view_model(
 
 
 # ===================================================================
-# Shared scoring/display utilities (also used by review_html.index)
+# Shared scoring/display utilities
 # ===================================================================
 
-# Regex for extracting the aggregated discrepancy penalty fragment from
-# classification explanations, e.g. "w_tot=0.8 < 4.0" or "w_tot=2.5 >= 3.0".
-_PENALTY_RE = re.compile(r"w_tot=\d+\.?\d*\s*(?:<|>=)\s*\d+\.?\d*")
-_PENALTY_CMP_RE = re.compile(r"(<|>=)\s*(\d+\.?\d*)")
 
+def _format_penalty_summary(penalty: InconsistencyPenalty | None) -> str | None:
+    """Render the aggregated discrepancy penalty the classifier recorded.
 
-def _format_penalty_summary(
-    counts: object | None,
-    explanation: str,
-) -> str | None:
-    """Build a transparent summation of the aggregated discrepancy penalty.
+    Produces a string like ``"3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"`` showing how
+    each severity contributed to ``w_tot``, alongside the comparison the
+    decision actually made.
 
-    Produces a string like ``"3 × 0.4 + 1 × 1.0 = 2.2 < 4.0"`` showing
-    how each severity count contributes to ``w_tot`` alongside the
-    zone-specific comparison.
+    Every number comes from :class:`InconsistencyPenalty` — the weights the
+    run applied, the total the classifier computed, and the threshold it
+    tested against. Nothing is recomputed and nothing is parsed out of the
+    explanation prose, so the row cannot disagree with the decision it
+    describes.
 
-    ``counts`` may be either the domain ``InconsistencyCounts`` object
-    or the view-model ``InconsistencyCountsVM``; both expose
-    ``minor`` / ``moderate`` / ``strong`` integer attributes.
+    Where the decision made no ``w_tot`` comparison — the below-limited zone
+    (``L_match`` decides) and ``SAME_SOURCE_DIFFERENT_CASE`` (pinned
+    regardless) — the score is shown without a comparison rather than
+    inventing one.
 
-    Returns ``None`` only when ``counts`` is missing. For the below-limited
-    branch — where the pair is always classified as ``Unrelated``
-    regardless of the penalty — a notional threshold of ``0.0`` with
-    operator ``>=`` is used so the breakdown is still shown for visual
-    consistency. Decisive inconsistencies contribute via
-    ``w_decisive × decisive`` and therefore appear in the breakdown
-    like any other severity.
-
-    Note on weights: ``DecisionThresholds()`` defaults are used for the
-    multipliers. If the pipeline ran with custom weights, the shown
-    breakdown remains internally consistent (terms sum to the displayed
-    total) but may disagree with the classifier's own w_tot in the
-    source explanation string.
+    Returns ``None`` only when no penalty was recorded.
     """
-    if counts is None:
-        return None
-    m = _PENALTY_RE.search(explanation)
-    if m is not None:
-        cmp_match = _PENALTY_CMP_RE.search(m.group(0))
-        if cmp_match is None:
-            return None
-        op, threshold = cmp_match.group(1), cmp_match.group(2)
-    elif "below limited threshold" in explanation:
-        # Below-limited zone: always Unrelated regardless of penalty. Use a
-        # notional threshold of 0 so the row still shows the breakdown.
-        op, threshold = ">=", "0.0"
-    else:
+    if penalty is None:
         return None
 
-    thresholds = DecisionThresholds()
-    terms: list[str] = []
-    if counts.minor > 0:
-        terms.append(f"{counts.minor} × {thresholds.w_minor:.1f}")
-    if counts.moderate > 0:
-        terms.append(f"{counts.moderate} × {thresholds.w_moderate:.1f}")
-    if counts.strong > 0:
-        terms.append(f"{counts.strong} × {thresholds.w_strong:.1f}")
-    if counts.decisive > 0:
-        terms.append(f"{counts.decisive} × {thresholds.w_decisive:.1f}")
-
-    w_tot = (
-        thresholds.w_minor * counts.minor
-        + thresholds.w_moderate * counts.moderate
-        + thresholds.w_strong * counts.strong
-        + thresholds.w_decisive * counts.decisive
+    terms = " + ".join(
+        f"{term.count} × {term.weight:.1f}" for term in penalty.terms
     )
-    if terms:
-        return f"{' + '.join(terms)} = {w_tot:.1f} {op} {threshold}"
-    return f"{w_tot:.1f} {op} {threshold}"
+    total = f"{terms} = {penalty.w_tot:.1f}" if terms else f"{penalty.w_tot:.1f}"
+
+    if penalty.threshold is None:
+        return f"{total} (not compared)"
+    op = "<" if penalty.satisfied else ">="
+    return f"{total} {op} {penalty.threshold:.1f}"
 
 
 # ---------------------------------------------------------------------------
