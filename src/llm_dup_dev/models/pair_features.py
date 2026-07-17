@@ -299,6 +299,12 @@ class PairFeatures(BaseModel):
     anchor: AnchorPopulation
     probability: ProbabilityEstimate
     L_match: float
+    # Patient-specific evidence: the same log10 scale as L_match, restricted
+    # to the features that identify a patient (drug_set / ae_set excluded) and
+    # carrying no multiplicity adjustment. Computed for every pair, but
+    # consumed only by the shared-source / uncomparable-case branch of the
+    # decision logic. See feature_generation.probability.compute_l_patient.
+    L_patient: float
 
     # Inconsistencies (structured: age, weight, height, sex, drug-set)
     inconsistencies: list[Inconsistency] = Field(default_factory=list)

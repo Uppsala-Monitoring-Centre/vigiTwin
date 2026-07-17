@@ -211,6 +211,7 @@ def generate_pair_features(
         anchor=anchor,
         probability=prob_result.estimate,
         L_match=prob_result.L_match,
+        L_patient=prob_result.L_patient,
         inconsistencies=inconsistencies,
         inconsistency_counts=inconsistency_counts,
         clinical_date_inconsistency_counts=clinical_date_counts,

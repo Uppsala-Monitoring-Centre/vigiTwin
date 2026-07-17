@@ -48,6 +48,7 @@
     ]
   },
   "L_match": 4.64,
+  "L_patient": 2.31,
   "inconsistencies": [
     {
       "feature": "weight",

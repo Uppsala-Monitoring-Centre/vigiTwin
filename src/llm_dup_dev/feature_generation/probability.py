@@ -3,7 +3,8 @@
 Computes feature-level probabilities, the composite matching probability
 for a single pairwise opportunity (p_joint), the multiplicity-adjusted
 probability of at least one chance collision anywhere in the anchor
-population (P_match), and L_match.
+population (P_match), and the two evidence measures derived from them:
+L_match and L_patient.
 
 The core idea: if it is very improbable that *any* random pair of reports
 in the anchor population would share the observed feature pattern, that is
@@ -12,13 +13,21 @@ therefore strong support for the *Duplicates* hypothesis in the duplicate
 adjudication pipeline. L_match is one of the main inputs to the
 report-pair decision logic.
 
+L_patient is the companion measure for contexts where the anchor is not the
+right comparison universe: the same log10 scale, restricted to the features
+that identify a patient and carrying no multiplicity adjustment. Both are
+evidence measures computed here; the decision logic only compares them to
+their respective thresholds.
+
 See: docs/duplicate_adjudication_spec.md § Probability estimation
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass, field as dc_field
+from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -41,6 +50,18 @@ from llm_dup_dev.models.pair_features import (
 # ---------------------------------------------------------------------------
 
 
+class _FeatureProbabilityLike(Protocol):
+    """A per-feature probability contribution.
+
+    Satisfied by both :class:`FeatureProbability` (internal) and
+    :class:`~llm_dup_dev.models.pair_features.FeatureContribution`
+    (serialized), which are the two forms of the same thing.
+    """
+
+    feature: str
+    p_f: float
+
+
 @dataclass
 class FeatureProbability:
     """Probability contribution from a single matched feature."""
@@ -60,6 +81,7 @@ class ProbabilityResult:
     p_joint: float = 1.0
     p_match: float = 0.0
     L_match: float = 0.0
+    L_patient: float = 0.0
 
     @property
     def estimate(self) -> ProbabilityEstimate:
@@ -137,6 +159,74 @@ class FrequencyStats(BaseModel):
 #: L_match instead of being silently dropped. When the global total is
 #: available, the floor is ``1 / max(N_total_global - 2, 1)`` instead.
 MARGINAL_FLOOR: float = 1e-6
+
+#: Features that do not identify a patient, and are therefore excluded from
+#: L_patient. Drugs and adverse events overlap by construction within a
+#: multi-patient publication / shared study context, so they are weak
+#: identifiers of patient identity in that setting.
+NON_PATIENT_SPECIFIC_FEATURES: frozenset[str] = frozenset({"drug_set", "ae_set"})
+
+
+# ---------------------------------------------------------------------------
+# Patient-specific evidence
+# ---------------------------------------------------------------------------
+
+
+def compute_l_patient(contributions: Iterable[_FeatureProbabilityLike]) -> float:
+    """Sum ``-log10(p_f)`` over the patient-specific features.
+
+        L_patient = Σ  -log10(p_f)   for f ∉ NON_PATIENT_SPECIFIC_FEATURES
+
+    Equivalently, ``-log10`` of the joint chance-match probability restricted
+    to the patient-specific features: a measure of patient-specific
+    concordance strength on the log10 scale, the same scale as the per-feature
+    ``(+X.X)`` chips shown in the review HTML.
+
+    Two deliberate departures from ``L_match``:
+
+    * Drug-set and AE-set contributions are dropped — see
+      :data:`NON_PATIENT_SPECIFIC_FEATURES`.
+    * **No multiplicity adjustment of any kind.** ``L_match`` asks how likely
+      the match would be to arise by chance *somewhere in the anchor
+      population*, and is adjusted for the M = C(N_anchor, 2) pairwise
+      opportunities that population affords. ``L_patient`` is used where the
+      relevant comparison universe is instead the unknown small set of K
+      patients within a shared publication, so adjusting for the anchor would
+      correct for opportunities that are not the ones actually taken. It
+      therefore stays at the per-pair level.
+
+    Note this is *not* ``L_match`` minus a penalty: ``L_match`` is
+    ``-log10(P_match)`` with ``P_match = 1 - (1 - p_joint)**M``, which does not
+    decompose additively, so the two are related only in the rare-event limit.
+
+    Consumed only by the shared-source / uncomparable-case branch of the
+    decision logic, which compares it against ``lpatient_compelling``. It is
+    computed for every pair regardless, as an evidence measure alongside
+    ``L_match``.
+
+    Parameters
+    ----------
+    contributions : iterable
+        Items exposing ``.feature`` and ``.p_f``. Both ``FeatureProbability``
+        (internal) and ``FeatureContribution`` (serialized) qualify — they are
+        the two forms of the same thing.
+
+    Returns
+    -------
+    float
+        Non-negative for p_f in (0, 1]. Zero when no patient-specific feature
+        contributes (e.g. an empty decomposition), which is the conservative
+        default: the Duplicates branch then cannot fire.
+    """
+    total = 0.0
+    for fc in contributions:
+        if fc.feature in NON_PATIENT_SPECIFIC_FEATURES:
+            continue
+        if fc.p_f <= 0:
+            # Guards log10(0); a non-positive p_f carries no evidence.
+            continue
+        total += -math.log10(fc.p_f)
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +311,8 @@ def compute_probability(
            least one chance collision among the M = C(N_anchor, 2) unordered
            report pairs in the anchor population.
         4. Compute L_match = max(0, -log10(P_match + epsilon)).
+        5. Compute L_patient over the patient-specific features only, with
+           no multiplicity adjustment (see :func:`compute_l_patient`).
 
     L_match is a multiplicity-adjusted chance-match measure, not a p-value.
     See :func:`probability_any_collision` for the independence assumption.
@@ -392,11 +484,18 @@ def compute_probability(
     # L_match
     L_match = max(0.0, -math.log10(p_match + epsilon))
 
+    # Patient-specific evidence: the same log10-scale measure restricted to
+    # the features that identify a patient, and without any multiplicity
+    # adjustment. Consumed only by the shared-source branch of the decision
+    # logic, but computed for every pair alongside L_match.
+    L_patient = compute_l_patient(feature_probs)
+
     return ProbabilityResult(
         feature_probabilities=feature_probs,
         p_joint=p_joint,
         p_match=p_match,
         L_match=L_match,
+        L_patient=L_patient,
     )
 
 

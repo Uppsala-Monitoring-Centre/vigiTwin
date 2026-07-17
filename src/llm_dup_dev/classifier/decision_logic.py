@@ -74,8 +74,10 @@ following verdicts:
   convincingly the same individual (which requires compelling
   patient-specific evidence ``L_patient > lpatient_compelling`` with essentially
   zero inconsistencies, ``w_tot < w_tot_limited_zone``) nor convincingly a
-  different individual (``w_tot ≥ w_tot_limited_zone``). See
-  :func:`_l_patient` for the patient-specific log-evidence definition.
+  different individual (``w_tot ≥ w_tot_limited_zone``). ``L_patient`` is
+  carried on ``PairFeatures``; see
+  :func:`llm_dup_dev.feature_generation.probability.compute_l_patient`
+  for its definition.
   Note the lower Otherwise_related gate (``w_tot_limited_zone``) vs the
   SINGLE_PATIENT / SAME_CASE gate (``w_tot_compelling_zone``): literature /
   summary-case demographics are more deliberate than ad-hoc reports,
@@ -93,8 +95,6 @@ See: docs/duplicate_adjudication_spec.md § Decision logic
 """
 
 from __future__ import annotations
-
-import math
 
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import ClassificationResult
@@ -124,14 +124,6 @@ _SHARED_SOURCE_VERDICTS = frozenset({
     SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
     SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
 })
-
-
-# Feature contributions to drop when computing the patient-specific
-# log-evidence (``L_patient``) used by the SAME_SOURCE_UNCOMPARABLE_CASE
-# Duplicates branch. Drugs and adverse events overlap by construction
-# within a multi-patient publication / shared study context, so they are
-# weak identifiers of patient identity in that setting.
-_NON_PATIENT_SPECIFIC_FEATURES = frozenset({"drug_set", "ae_set"})
 
 
 def classify(
@@ -414,7 +406,7 @@ def _multi_patient_three_way(
             ),
         )
 
-    l_patient = _l_patient(features)
+    l_patient = features.L_patient
     if l_patient > thresholds.lpatient_compelling:
         return _duplicates(
             pair_id=features.pair_id,
@@ -453,61 +445,6 @@ def _format_shared_identifier(assessment: SourceCaseAssessment) -> str:
     )
     return f", {id_type}={assessment.shared_source_identifier}"
 
-
-# ---------------------------------------------------------------------------
-# Patient-specific log-evidence
-# ---------------------------------------------------------------------------
-
-
-def _l_patient(features: PairFeatures) -> float:
-    """Patient-specific log-evidence score for the UNCOMPARABLE_CASE branch.
-
-    Defined as the sum of ``-log10(p_f)`` over the entries of
-    ``features.probability.feature_contributions`` whose ``feature`` name
-    is *not* in :data:`_NON_PATIENT_SPECIFIC_FEATURES` (i.e. excluding
-    ``drug_set`` and ``ae_set``).
-
-    Equivalently, it is ``-log10`` of the joint chance-match probability
-    restricted to the patient-specific features: a pure measure of
-    patient-specific concordance strength on the log10 scale, the same
-    scale as the per-feature ``(+X.X)`` chips already shown in the review
-    HTML. It carries **no multiplicity adjustment of any kind**.
-
-    Two deliberate departures from the standard ``L_match``:
-
-    * Drug-set and AE-set contributions are dropped. Drugs and AEs
-      overlap by construction in a multi-patient publication / shared
-      study context, so they are weak identifiers of patient identity
-      in that setting.
-    * No anchor multiplicity adjustment. ``L_match`` asks how likely the
-      match would be to arise by chance *somewhere in the anchor
-      population* (e.g. "all reports on drug X"), and is adjusted for the
-      number of pairwise opportunities that population affords. For
-      ``UNCOMPARABLE_CASE`` the relevant comparison universe is instead
-      the unknown small set of K patients within the shared publication,
-      so adjusting for the anchor would correct for opportunities that
-      are not the ones actually taken. ``L_patient`` therefore stays at
-      the per-pair level and is judged against its own bar,
-      ``lpatient_compelling``.
-
-    Note this is *not* "``L_match`` minus a penalty": ``L_match`` is
-    ``-log10(P_match)`` with ``P_match = 1 - (1 - p_joint)**M``, which does
-    not decompose additively, so the two are related only in the
-    rare-event limit.
-
-    Returns ``0.0`` when ``feature_contributions`` is empty (e.g. on
-    offline / fixture paths that skip probability decomposition); the
-    Duplicates branch then cannot fire and the pair falls into Abstain
-    or Otherwise_related, which is the desired conservative default.
-    """
-    total = 0.0
-    for fc in features.probability.feature_contributions:
-        if fc.feature in _NON_PATIENT_SPECIFIC_FEATURES:
-            continue
-        if fc.p_f <= 0:
-            continue
-        total += -math.log10(fc.p_f)
-    return total
 
 
 # ---------------------------------------------------------------------------

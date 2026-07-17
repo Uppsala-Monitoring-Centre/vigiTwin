@@ -18,6 +18,7 @@ from llm_dup_dev.feature_generation.probability import (
     FrequencyStats,
     _clinical_date_domain_sizes,
     _marginal_with_backoff,
+    compute_l_patient,
     compute_probability,
     n_anchor_pairs,
     probability_any_collision,
@@ -31,11 +32,17 @@ from llm_dup_dev.models.enums import (
 )
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
+    FeatureContribution,
     InconsistencyCounts,
     PairFeatures,
     ProbabilityEstimate,
     ReportingContext,
 )
+
+
+def _fc(feature: str, p_f: float) -> FeatureContribution:
+    """Concise FeatureContribution builder for the L_patient tests."""
+    return FeatureContribution(feature=feature, p_f=p_f, method="domain_size")
 
 
 @pytest.fixture
@@ -1429,6 +1436,7 @@ class TestEvidenceZoneRegression:
                 p_match=probability_any_collision(p_joint, M),
             ),
             L_match=l_match,
+            L_patient=0.0,  # not exercised: this asserts on L_match zones
             inconsistency_counts=InconsistencyCounts(),
             narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
@@ -1501,6 +1509,7 @@ class TestDegenerateAnchorEvidence:
             anchor=anchor,
             probability=result.estimate,
             L_match=result.L_match,
+            L_patient=result.L_patient,
             inconsistency_counts=InconsistencyCounts(),
             narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
@@ -1594,3 +1603,164 @@ class TestDegenerateAnchorEvidence:
             )
             _, result, _ = self._classify(match, stats)
             assert result.L_match < ceiling, f"saturated at N_total={n_total}"
+
+
+# ===================================================================
+# L_patient — patient-specific evidence
+# ===================================================================
+
+class TestComputeLPatient:
+    """compute_l_patient must:
+
+    1. Sum -log10(p_f) over patient-specific features only.
+    2. Skip drug_set / ae_set entries.
+    3. Skip zero/negative p_f defensively.
+    4. Return 0 on empty input.
+    5. Apply no multiplicity adjustment of any kind.
+
+    Moved here from tests/test_decision_logic.py when the computation moved
+    out of the classifier: L_patient is an evidence measure derived from the
+    per-feature contributions, not a decision.
+    """
+
+    def test_returns_zero_on_empty_contributions(self):
+        """No contributions → 0.0, the conservative default."""
+        assert compute_l_patient([]) == 0.0
+
+    def test_excludes_drug_and_ae_set_features(self):
+        """drug_set / ae_set carry no patient-identity evidence."""
+        contributions = [_fc("drug_set", 1e-10), _fc("ae_set", 1e-10)]
+        # These p_f would contribute +20 to L_match; L_patient must ignore them.
+        assert compute_l_patient(contributions) == 0.0
+
+    def test_sums_patient_specific_contributions(self):
+        """sex + age → -log10(0.5) + -log10(1/80) ≈ 0.30103 + 1.90309."""
+        contributions = [_fc("patient_sex", 0.5), _fc("patient_age", 1.0 / 80.0)]
+        assert compute_l_patient(contributions) == pytest.approx(2.20412, abs=1e-4)
+
+    def test_mixed_contributions_only_patient_specific_count(self):
+        """Drug/AE entries are ignored even when interleaved."""
+        contributions = [
+            _fc("drug_set", 1e-10),           # excluded
+            _fc("patient_sex", 0.5),          # 0.30103
+            _fc("ae_set", 1e-10),             # excluded
+            _fc("patient_age", 1.0 / 80.0),   # 1.90309
+            _fc("clinical_date", 1.0 / 540.0),  # 2.73239
+        ]
+        expected = 0.30103 + 1.90309 + 2.73239
+        assert compute_l_patient(contributions) == pytest.approx(expected, abs=1e-3)
+
+    def test_skips_nonpositive_p_f(self):
+        """A non-positive p_f is skipped rather than raising on log10(0)."""
+        contributions = [
+            _fc("patient_sex", 0.0),      # skipped (defensive)
+            _fc("patient_age", -1.0),     # skipped (defensive)
+            _fc("patient_weight", 0.5),   # contributes 0.30103
+        ]
+        assert compute_l_patient(contributions) == pytest.approx(0.30103, abs=1e-4)
+
+    def test_applies_no_multiplicity_adjustment(self):
+        """L_patient is the bare sum — no anchor term, however large M is.
+
+        Its comparison universe is the unknown K patients in a shared
+        publication, not the anchor population, so the C(N_anchor, 2)
+        multiplicity that L_match carries must not appear here.
+        """
+        contributions = [_fc("patient_age", 0.01)]  # -log10 = exactly 2.0
+        # Had we subtracted log10(N_pairs) for N_anchor=50, we would get
+        # 2.0 - log10(1225) ≈ -1.09. The correct result is 2.0.
+        assert compute_l_patient(contributions) == pytest.approx(2.0, abs=1e-6)
+
+    def test_accepts_both_contribution_shapes(self):
+        """FeatureProbability and FeatureContribution are interchangeable here.
+
+        compute_probability passes the internal form; callers reading a
+        serialized PairFeatures pass the model form. They must agree.
+        """
+        from llm_dup_dev.feature_generation.probability import FeatureProbability
+
+        internal = [
+            FeatureProbability(feature="patient_sex", p_f=0.5, method="domain_size"),
+            FeatureProbability(feature="drug_set", p_f=1e-10, method="empirical"),
+        ]
+        serialized = [_fc("patient_sex", 0.5), _fc("drug_set", 1e-10)]
+        assert compute_l_patient(internal) == compute_l_patient(serialized)
+
+
+class TestLPatientOnProbabilityResult:
+    """compute_probability must carry L_patient alongside L_match."""
+
+    def test_l_patient_is_populated(self, basic_match, anchor_drugs, stats,
+                                    domain_config):
+        """The result exposes L_patient derived from its own contributions."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        assert result.L_patient == pytest.approx(
+            compute_l_patient(result.estimate.feature_contributions)
+        )
+        assert result.L_patient > 0
+
+    def test_l_patient_excludes_the_ae_set_contribution(
+        self, basic_match, anchor_drugs, stats, domain_config
+    ):
+        """With a DRUGS anchor the AE set contributes to L_match, not L_patient."""
+        result = compute_probability(
+            basic_match, anchor_drugs, stats, domain_config
+        )
+        features = {fc.feature for fc in result.estimate.feature_contributions}
+        assert "ae_set" in features  # it is present, and must still be excluded
+        by_hand = sum(
+            -math.log10(fc.p_f)
+            for fc in result.estimate.feature_contributions
+            if fc.feature not in ("drug_set", "ae_set") and fc.p_f > 0
+        )
+        assert result.L_patient == pytest.approx(by_hand)
+
+    def test_l_patient_is_independent_of_anchor_size(self, basic_match, stats,
+                                                     domain_config):
+        """Changing the anchor moves L_match but must not move L_patient."""
+        small = AnchorPopulation(N_drugs=3, N_AEs=200, N_drugs_AEs=2,
+                                 type=AnchorType.DRUGS, N_anchor=3)
+        large = AnchorPopulation(N_drugs=48, N_AEs=200, N_drugs_AEs=12,
+                                 type=AnchorType.DRUGS, N_anchor=48)
+        r_small = compute_probability(basic_match, small, stats, domain_config)
+        r_large = compute_probability(basic_match, large, stats, domain_config)
+
+        assert r_small.L_match != r_large.L_match          # anchor moves L_match
+        assert r_small.L_patient == pytest.approx(r_large.L_patient)
+
+
+class TestLPatientSerialization:
+    """L_patient must reach consumers as a field, not only as prose."""
+
+    def test_pair_features_carries_l_patient(self):
+        """The field round-trips through JSON."""
+        f = PairFeatures(
+            pair_id="p",
+            reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
+            anchor=AnchorPopulation(N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+                                    type=AnchorType.DRUGS_AES, N_anchor=50),
+            probability=ProbabilityEstimate(p_joint=1e-5, p_match=0.01),
+            L_match=3.0,
+            L_patient=2.31,
+            inconsistency_counts=InconsistencyCounts(),
+            narrative_consistency=NarrativeConsistency.NEUTRAL,
+        )
+        restored = PairFeatures.model_validate_json(f.model_dump_json())
+        assert restored.L_patient == pytest.approx(2.31)
+
+    def test_l_patient_is_required(self):
+        """No default: every constructor must decide.
+
+        A silent 0.0 would read as "no patient evidence" and could flip a
+        Duplicates pair to Abstain.
+        """
+        assert "L_patient" in PairFeatures.model_fields
+        assert PairFeatures.model_fields["L_patient"].is_required()
+
+    def test_schema_exposes_l_patient(self):
+        """The published schema carries the field, beside L_match."""
+        schema = PairFeatures.model_json_schema()
+        assert "L_patient" in schema["properties"]
+        assert "L_patient" in schema["required"]
