@@ -17,6 +17,7 @@ with per-zone thresholds:
 
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.classifier.decision_logic import classify
+from llm_dup_dev.feature_generation.probability import compute_l_patient
 from llm_dup_dev.models.enums import (
     AnchorType,
     DuplicateRelationship,
@@ -52,6 +53,7 @@ def _make_features(
     pair_id: str = "test_pair",
     source_case_assessment: SourceCaseAssessment | None = None,
     feature_contributions: list[FeatureContribution] | None = None,
+    L_patient: float | None = None,
 ) -> PairFeatures:
     """Build a minimal PairFeatures for decision logic testing.
 
@@ -59,7 +61,13 @@ def _make_features(
     so tests can exercise the patient-specific ``L_patient`` decomposition
     used by the SAME_SOURCE_UNCOMPARABLE_CASE Duplicates branch. Default
     is an empty list (no decomposition available).
+
+    ``L_patient`` defaults to what the feature-generation pipeline would
+    derive from ``feature_contributions``, so tests can keep expressing
+    patient evidence as contributions. Pass it explicitly to decouple the
+    two (e.g. to pin a boundary value directly).
     """
+    contributions = feature_contributions or []
     return PairFeatures(
         pair_id=pair_id,
         reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
@@ -70,9 +78,12 @@ def _make_features(
         probability=ProbabilityEstimate(
             p_joint=1e-5,
             p_match=0.01,
-            feature_contributions=feature_contributions or [],
+            feature_contributions=contributions,
         ),
         L_match=L_match,
+        L_patient=(
+            compute_l_patient(contributions) if L_patient is None else L_patient
+        ),
         inconsistency_counts=InconsistencyCounts(
             moderate=moderate, strong=strong, decisive=decisive,
         ),
@@ -1214,81 +1225,3 @@ class TestMultiPatientContextNoLink:
         # No identifier suffix should appear (the formatter returns ""
         # when no identifier is present).
         assert ", doi=" not in result.explanation
-
-
-# ===================================================================
-# _l_patient helper — focused unit test
-# ===================================================================
-
-class TestLPatientHelper:
-    """The patient-specific log-evidence helper must:
-    1. Sum -log10(p_f) over patient-specific features only.
-    2. Skip drug_set / ae_set entries.
-    3. Skip zero/negative p_f defensively.
-    4. Return 0 on empty input.
-    5. Not subtract any anchor penalty.
-    """
-
-    def test_returns_zero_on_empty_contributions(self):
-        from llm_dup_dev.classifier.decision_logic import _l_patient
-        f = _make_features(L_match=0.0, feature_contributions=[])
-        assert _l_patient(f) == 0.0
-
-    def test_excludes_drug_and_ae_set_features(self):
-        from llm_dup_dev.classifier.decision_logic import _l_patient
-        f = _make_features(
-            L_match=0.0,
-            feature_contributions=_DRUG_AE_ONLY_CONTRIBS,
-        )
-        assert _l_patient(f) == 0.0
-
-    def test_sums_patient_specific_contributions(self):
-        from llm_dup_dev.classifier.decision_logic import _l_patient
-        f = _make_features(
-            L_match=0.0,
-            feature_contributions=_SEX_PLUS_AGE_CONTRIBS,
-        )
-        # -log10(0.5) + -log10(1/80) ≈ 0.30103 + 1.90309 = 2.20412
-        assert abs(_l_patient(f) - 2.20412) < 1e-4
-
-    def test_mixed_contributions_only_patient_specific_count(self):
-        """Drug/AE entries must be ignored even when interleaved with
-        patient-specific ones."""
-        from llm_dup_dev.classifier.decision_logic import _l_patient
-        f = _make_features(
-            L_match=0.0,
-            feature_contributions=[
-                _fc("drug_set", 1e-10),       # excluded
-                _fc("patient_sex", 0.5),      # 0.30103
-                _fc("ae_set", 1e-10),         # excluded
-                _fc("patient_age", 1.0/80.0),  # 1.90309
-                _fc("clinical_date", 1.0/540.0),  # 2.73239
-            ],
-        )
-        expected = 0.30103 + 1.90309 + 2.73239
-        assert abs(_l_patient(f) - expected) < 1e-3
-
-    def test_skips_nonpositive_p_f(self):
-        from llm_dup_dev.classifier.decision_logic import _l_patient
-        f = _make_features(
-            L_match=0.0,
-            feature_contributions=[
-                _fc("patient_sex", 0.0),    # skipped (defensive)
-                _fc("patient_age", -1.0),   # skipped (defensive)
-                _fc("patient_weight", 0.5),  # contributes 0.30103
-            ],
-        )
-        assert abs(_l_patient(f) - 0.30103) < 1e-4
-
-    def test_does_not_apply_anchor_penalty(self):
-        """L_patient must be the bare sum of -log10(p_f), with no
-        N_pairs penalty subtraction. Verify against a hand-computed sum."""
-        from llm_dup_dev.classifier.decision_logic import _l_patient
-        f = _make_features(
-            L_match=0.0,
-            feature_contributions=[_fc("patient_age", 0.01)],  # -log10 = 2.0
-        )
-        # If we mistakenly subtracted log10(N_pairs) for N_anchor=50, we
-        # would get 2.0 - log10(50*49/2) ≈ 2.0 - 3.09 = -1.09 → clamped to 0.
-        # The correct result is 2.0.
-        assert abs(_l_patient(f) - 2.0) < 1e-6

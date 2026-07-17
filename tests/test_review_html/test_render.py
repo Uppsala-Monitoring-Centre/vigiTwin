@@ -489,6 +489,8 @@ def _make_features(pair_id: str = "R001__R002") -> PairFeatures:
             ],
         ),
         L_match=3.8,
+        # patient_sex only: -log10(0.5). drug_set is excluded from L_patient.
+        L_patient=0.30103,
         inconsistencies=[
             Inconsistency(
                 feature="weight",

@@ -458,6 +458,7 @@ Example structure:
   "probability": {...},
 
   "L_match": 3.2,
+  "L_patient": 2.3,
 
   "inconsistencies": [...],
   "inconsistency_counts": {...},
@@ -812,8 +813,18 @@ matching_AEs
 reporting_context
 anchor.N_anchor
 L_match
+L_patient
 inconsistencies
 narrative_consistency
 ```
 
 Additional fields support debugging, reproducibility, and interpretability.
+
+> **New field.** `L_patient` is now computed during feature generation and
+> carried on `PairFeatures`, alongside `L_match`. It was previously derived
+> inside the decision logic and surfaced only as text inside
+> `ClassificationResult.explanation`, so consumers had to parse prose to
+> recover it. The value and the classification are unchanged — this is a
+> relocation, not a redefinition. Consumers currently regex-matching
+> `L_patient=` out of `explanation` should read the field instead; the
+> explanation still carries it.

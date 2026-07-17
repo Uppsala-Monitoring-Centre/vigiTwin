@@ -258,6 +258,8 @@ Two deliberate departures from the standard \(L_{\text{match}}\):
 
 Note this is **not** \(L_{\text{match}}\) minus a penalty term. Since \(L_{\text{match}} = \max(0, -\log_{10}(P_{\text{match}} + \varepsilon))\) with \(P_{\text{match}} = 1-(1-p_{\text{joint}})^{M}\), it does not decompose additively; the two quantities coincide in that form only in the rare-event limit. \(L_{\text{patient}}\) is defined in its own right, and is judged against its own bar, `lpatient_compelling`.
 
+Like \(L_{\text{match}}\), \(L_{\text{patient}}\) is an **evidence measure computed during feature generation** (`feature_generation.probability.compute_l_patient`) and carried on `PairFeatures.L_patient`. It is a pure function of the per-feature contributions — it takes no thresholds and no decision inputs — so it belongs with the other evidence measures rather than with the decision logic, whose role is only to compare it against `lpatient_compelling`. It is computed for every pair, but consumed only on the branch described here.
+
 ##### Threshold calibration
 
 The branch A bar is `lpatient_compelling` (default 2.0), set so that intuitively informative concordances qualify:

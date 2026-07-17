@@ -652,6 +652,10 @@
       "title": "L Match",
       "type": "number"
     },
+    "L_patient": {
+      "title": "L Patient",
+      "type": "number"
+    },
     "inconsistencies": {
       "items": {
         "$ref": "#/$defs/Inconsistency"
@@ -737,6 +741,7 @@
     "anchor",
     "probability",
     "L_match",
+    "L_patient",
     "narrative_consistency"
   ],
   "title": "PairFeatures",

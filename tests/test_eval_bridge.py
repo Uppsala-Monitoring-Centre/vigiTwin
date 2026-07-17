@@ -39,6 +39,7 @@ def _make_pair_result(
         ),
         probability=ProbabilityEstimate(p_joint=1e-5, p_match=0.01),
         L_match=4.0,
+        L_patient=0.0,  # no feature_contributions to decompose
         inconsistency_counts=InconsistencyCounts(),
         narrative_consistency=NarrativeConsistency.NEUTRAL,
     )
