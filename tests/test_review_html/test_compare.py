@@ -1064,6 +1064,7 @@ def _make_pair_vm_for_format(
     _format_matching_features."""
     fs = FeaturesSummaryVM(
         l_match=0.0,
+        l_patient=0.0,
         p_match=1.0,
         anchor_type="drugs_aes",
         anchor_n=10,

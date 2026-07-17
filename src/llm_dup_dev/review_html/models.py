@@ -267,6 +267,11 @@ class FeaturesSummaryVM(BaseModel):
     """View model for the optional PairFeatures evidence section."""
 
     l_match: float
+    # Patient-specific evidence: same log10 scale as l_match, restricted to
+    # the features that identify a patient and carrying no multiplicity
+    # adjustment. Computed for every pair; consulted only on the
+    # shared-source / uncomparable-case and multi-patient branches.
+    l_patient: float
     p_match: float
     anchor_type: str
     anchor_n: int
