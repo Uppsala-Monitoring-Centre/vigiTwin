@@ -23,9 +23,15 @@ The comparator is deliberately conservative:
   normalized values.  Otherwise the pair is marked uncomparable rather
   than different; mismatch alone never becomes evidence of different
   individuals.
-- In absence of a reliable shared source identifier, two reports that
-  both describe a multi-patient source but lack case labels are flagged
-  conservatively (``MULTI_PATIENT_CONTEXT_NO_LINK``) rather than being
+- In absence of a reliable shared source identifier, a pair is flagged
+  ``MULTI_PATIENT_CONTEXT_NO_LINK`` when *at least one* report describes a
+  multi-patient source and *neither* explicitly describes a single-patient
+  source. Accepting one-sided evidence keeps the signal robust to reports
+  that lack narratives or literature-reference fields, mirroring how a
+  single-patient indication from one report suffices; an explicit
+  single-patient claim on either side vetoes the flag, since the
+  multi-patient rationale (two different patients from a shared source)
+  does not apply. The pair is still treated conservatively rather than
   inferred as duplicates.
 
 See: docs/data_contracts.md § Derived Narrative Signals
@@ -584,13 +590,16 @@ def compare_source_case(
             ),
         )
 
-    if a.multi_patient_source and b.multi_patient_source:
+    if (a.multi_patient_source or b.multi_patient_source) and not (
+        a.single_patient_source or b.single_patient_source
+    ):
         return SourceCaseAssessment(
             verdict=SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
             case_identifiers_compared=case_compared,
             case_identifiers_comparable=case_comparable,
             reasoning=(
-                "Both narratives indicate a multi-patient source but no "
+                "At least one narrative indicates a multi-patient source "
+                "(and neither indicates a single-patient source) but no "
                 "reliable shared source identifier is available."
             ),
         )

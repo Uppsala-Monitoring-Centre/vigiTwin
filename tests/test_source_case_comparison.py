@@ -418,6 +418,38 @@ class TestCompareSourceCase:
         result = compare_source_case(a, b)
         assert result.verdict == SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK
 
+    def test_one_sided_multi_patient_no_shared_source(self):
+        """One report indicates multi-patient, the other leaves the flags
+        unset (e.g. missing narrative) → MULTI_PATIENT_CONTEXT_NO_LINK.
+
+        One-sided evidence suffices; a null flag on the other side never
+        vetoes.
+        """
+        a = _lit(doi="10.a/b", multi=True)
+        b = _lit(doi="10.c/d")  # flags None
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK
+
+    def test_one_sided_multi_vetoed_by_explicit_single(self):
+        """Multi on one side but the other explicitly indicates a single-
+        patient source, no shared identifier → the single-patient claim
+        vetoes the multi-patient flag → NO_DECISIVE_SIGNAL.
+        """
+        a = _lit(doi="10.a/b", multi=True)
+        b = _lit(doi="10.c/d", single=True)
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.NO_DECISIVE_SIGNAL
+
+    def test_same_report_multi_and_single_vetoes(self):
+        """A single report carrying both multi=True and single=True triggers
+        the veto (the flags are independent, not mutually exclusive) →
+        NO_DECISIVE_SIGNAL.
+        """
+        a = _lit(doi="10.a/b", multi=True, single=True)
+        b = _lit(doi="10.c/d")
+        result = compare_source_case(a, b)
+        assert result.verdict == SourceCaseVerdict.NO_DECISIVE_SIGNAL
+
     # -- otherwise no decisive signal -------------------------------
 
     def test_empty_extractions_no_decisive_signal(self):
