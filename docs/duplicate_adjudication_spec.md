@@ -201,7 +201,7 @@ The logic has two parts:
     | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **agree** | `SAME_SOURCE_SAME_CASE` |
     | Shared source identifier found, comparable case identifiers exist on both sides, normalized values **differ** | `SAME_SOURCE_DIFFERENT_CASE` |
     | Shared source identifier found, but case identifiers are missing on one side, of incompatible family, or otherwise not safely comparable | `SAME_SOURCE_UNCOMPARABLE_CASE` |
-    | No shared source identifier, but both sides report `multi_patient_source=True` | `MULTI_PATIENT_CONTEXT_NO_LINK` |
+    | No shared source identifier, at least one side reports `multi_patient_source=True`, and neither side reports `single_patient_source=True` | `MULTI_PATIENT_CONTEXT_NO_LINK` |
     | Otherwise | `NO_DECISIVE_SIGNAL` |
 
     Two case identifiers are considered *comparable* iff both carry a non-null non-`unknown` family of the same value (`case` vs `case`, `patient` vs `patient`, …) and both have non-empty normalized values; the comparator never treats family-mismatched or family-missing identifiers as evidence of different individuals.
@@ -280,7 +280,7 @@ Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represent
 
 #### MULTI_PATIENT_CONTEXT_NO_LINK
 
-This verdict fires when both narratives indicate a multi-patient source (literature series, shared-study cohort, drug-shortage cluster, …) but no reliable shared source identifier links the two reports. The drug-set / AE-set inflation concern that motivates the UNCOMPARABLE_CASE two-way rule applies here as well: patients reported within the same multi-patient context tend to share drugs and AEs by construction, so a high \(L_{\text{match}}\) can be driven by features that are weak identifiers of patient identity.
+This verdict fires when at least one narrative indicates a multi-patient source (literature series, shared-study cohort, drug-shortage cluster, …), neither narrative explicitly indicates a single-patient source, and no reliable shared source identifier links the two reports. Accepting a one-sided multi-patient indication (rather than requiring both) keeps the signal robust to reports that lack narratives or literature-reference fields, and mirrors how a one-sided `single_patient_source` suffices for `SAME_SOURCE_SINGLE_PATIENT`; an explicit single-patient claim on either side vetoes the verdict, since the shared-multi-patient-source rationale then no longer applies. The drug-set / AE-set inflation concern that motivates the UNCOMPARABLE_CASE two-way rule applies here as well: patients reported within the same multi-patient context tend to share drugs and AEs by construction, so a high \(L_{\text{match}}\) can be driven by features that are weak identifiers of patient identity.
 
 The dispatch is gated on the matching evidence:
 
