@@ -70,26 +70,17 @@ following verdicts:
   extraction differences, reporting variation, or partial information
   than by distinct patients).
 * ``SAME_SOURCE_SAME_CASE`` — same rule as SINGLE_PATIENT.
-* ``SAME_SOURCE_UNCOMPARABLE_CASE`` — when the pair is neither
-  convincingly the same individual (which requires compelling
-  patient-specific evidence ``L_patient > lpatient_compelling`` with essentially
-  zero inconsistencies, ``w_tot < w_tot_limited_zone``) nor convincingly a
-  different individual (``w_tot ≥ w_tot_limited_zone``). ``L_patient`` is
-  carried on ``PairFeatures``; see
-  :func:`llm_dup_dev.feature_generation.probability.compute_l_patient`
-  for its definition.
-  Note the lower Otherwise_related gate (``w_tot_limited_zone``) vs the
-  SINGLE_PATIENT / SAME_CASE gate (``w_tot_compelling_zone``): literature /
-  summary-case demographics are more deliberate than ad-hoc reports,
-  so smaller inconsistencies carry more weight as evidence of
-  different patients.
-* ``MULTI_PATIENT_CONTEXT_NO_LINK`` with ``L_match > lmatch_limited`` —
-  same three-way rule as UNCOMPARABLE_CASE (delegated to
-  :func:`_multi_patient_three_way`). The two verdicts share the
-  drug-set / AE-set inflation concern even though only UNCOMPARABLE_CASE
-  carries positive shared-source evidence. Below ``lmatch_limited`` the
-  verdict is treated as advisory and the pair falls through to
-  ``Independent``.
+
+The multi-patient verdicts ``SAME_SOURCE_UNCOMPARABLE_CASE`` and
+``MULTI_PATIENT_CONTEXT_NO_LINK`` (the latter gated on
+``L_match > lmatch_limited``) do *not* abstain. They are routed to the
+two-way rule in :func:`_multi_patient_three_way`, which resolves to
+``Duplicates`` when the patient-specific evidence is compelling
+(``L_patient > lpatient_compelling`` with ``w_tot < w_tot_limited_zone``)
+and to ``Otherwise_related`` otherwise. ``L_patient`` is carried on
+``PairFeatures``; see
+:func:`llm_dup_dev.feature_generation.probability.compute_l_patient`
+for its definition.
 
 See: docs/duplicate_adjudication_spec.md § Decision logic
 """
@@ -120,7 +111,7 @@ from llm_dup_dev.models.pair_features import InconsistencyCounts, PairFeatures
 # (NO_DECISIVE_SIGNAL, NOT_ASSESSED) fall through to the standard L_match
 # zone logic. MULTI_PATIENT_CONTEXT_NO_LINK is handled separately by a
 # verdict-aware shim in ``classify`` that routes it through the
-# multi-patient three-way rule (the same rule used for
+# multi-patient two-way rule (the same rule used for
 # UNCOMPARABLE_CASE) only when ``L_match > lmatch_limited``; below that
 # threshold it still falls through to the standard logic.
 _SHARED_SOURCE_VERDICTS = frozenset({
@@ -172,7 +163,7 @@ def classify(
     # concern with UNCOMPARABLE_CASE: both reports come from a multi-patient
     # context (literature series, shared-study cohort, …) where drugs and
     # AEs overlap by construction. Above lmatch_limited we route through the
-    # same three-way rule that UNCOMPARABLE_CASE uses, so a single moderate
+    # same two-way rule that UNCOMPARABLE_CASE uses, so a single moderate
     # is enough to move the pair out of Duplicates. Below lmatch_limited the
     # verdict is still purely advisory and falls through to the standard
     # limited-threshold branch (→ Independent).
@@ -382,7 +373,7 @@ def _multi_patient_three_way(
     penalty: InconsistencyPenalty,
     thresholds: DecisionThresholds,
 ) -> ClassificationResult:
-    """Three-way rule for multi-patient source contexts.
+    """Two-way rule for multi-patient source contexts.
 
     Used by two verdicts that share the same inflation concern — drug-set
     and AE-set overlap inflating ``L_match`` while patient identity is
@@ -408,8 +399,12 @@ def _multi_patient_three_way(
       implied) → ``Duplicates``. Patient-specific log-evidence excludes
       ``drug_set`` / ``ae_set`` contributions, so the matching evidence
       must come from demographics + clinical-date coincidences.
-    * Otherwise → ``Abstain``. Neither convincingly the same nor
-      convincingly different individuals.
+    * Otherwise → ``Otherwise_related``. Patient-specific evidence is not
+      compelling enough to call ``Duplicates``, but non-independence is
+      established, so the pair defaults to ``Otherwise_related`` rather
+      than abstaining. The rule is therefore effectively two-way:
+      ``Duplicates`` only when ``L_patient`` clears the bar, else
+      ``Otherwise_related``.
     """
     counts = features.inconsistency_counts
     w_tot = penalty.w_tot
@@ -443,7 +438,7 @@ def _multi_patient_three_way(
             ),
         )
 
-    return _abstain(
+    return _otherwise_related(
         pair_id=features.pair_id,
         reason=IndependenceReason.SHARED_SOURCE,
         penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
@@ -452,8 +447,9 @@ def _multi_patient_three_way(
             f"L_patient={l_patient:.2f} (threshold "
             f"{thresholds.lpatient_compelling:.1f}), w_tot={w_tot:.1f} "
             f"(threshold {thresholds.w_tot_limited_zone:.1f}); "
-            f"identity indeterminate — multi-patient source context "
-            f"with insufficient patient-specific evidence."
+            f"patient-specific evidence insufficient to call Duplicates "
+            f"in a multi-patient source context — defaulting to "
+            f"Otherwise_related."
         ),
     )
 

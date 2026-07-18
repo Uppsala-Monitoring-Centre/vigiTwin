@@ -181,8 +181,8 @@ Per-verdict sub-label mappings (the verdict is computed upstream — see § Sour
 | `SAME_SOURCE_SINGLE_PATIENT` | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_compelling_zone`; else `Abstain` |
 | `SAME_SOURCE_SAME_CASE`      | `Duplicates` if \(w_{\text{tot}} <\) `w_tot_compelling_zone`; else `Abstain` |
 | `SAME_SOURCE_DIFFERENT_CASE` | `Otherwise related` (pinned) |
-| `SAME_SOURCE_UNCOMPARABLE_CASE` | three-way rule — see below |
-| `MULTI_PATIENT_CONTEXT_NO_LINK` | same three-way rule when \(L_{\text{match}} >\) `lmatch_limited`; ordinary zone logic (→ `Independent`) otherwise |
+| `SAME_SOURCE_UNCOMPARABLE_CASE` | two-way rule — see below |
+| `MULTI_PATIENT_CONTEXT_NO_LINK` | same two-way rule when \(L_{\text{match}} >\) `lmatch_limited`; ordinary zone logic (→ `Independent`) otherwise |
 
 #### Source/case verdict computation
 
@@ -206,7 +206,7 @@ The logic has two parts:
 
     Two case identifiers are considered *comparable* iff both carry a non-null non-`unknown` family of the same value (`case` vs `case`, `patient` vs `patient`, …) and both have non-empty normalized values; the comparator never treats family-mismatched or family-missing identifiers as evidence of different individuals.
 
-The verdict, the surfaced `shared_source_identifier` (with its type), and short prose `reasoning` are stored on `PairFeatures.source_case_assessment`. The four `SAME_SOURCE_*` verdicts feed the verdict-specific rules below; `MULTI_PATIENT_CONTEXT_NO_LINK` is *partially* advisory (see § Decision flow above for its L\_match-gated dispatch, and the `MULTI_PATIENT_CONTEXT_NO_LINK` subsection below for the three-way rule it can route through).
+The verdict, the surfaced `shared_source_identifier` (with its type), and short prose `reasoning` are stored on `PairFeatures.source_case_assessment`. The four `SAME_SOURCE_*` verdicts feed the verdict-specific rules below; `MULTI_PATIENT_CONTEXT_NO_LINK` is *partially* advisory (see § Decision flow above for its L\_match-gated dispatch, and the `MULTI_PATIENT_CONTEXT_NO_LINK` subsection below for the two-way rule it can route through).
 
 #### SAME_SOURCE_SINGLE_PATIENT and SAME_SOURCE_SAME_CASE
 
@@ -220,22 +220,22 @@ No change. Pinned to `Otherwise related` regardless of \(w_{\text{tot}}\). Two r
 
 #### SAME_SOURCE_UNCOMPARABLE_CASE
 
-The shared source is confirmed, but case identifiers are missing or not safely comparable. UNCOMPARABLE_CASE specifically covers literature and summary-case publications, where reported demographics are deliberate and a discrepancy is more likely to reflect a different patient than an extraction artefact. A three-way rule is applied:
+The shared source is confirmed, but case identifiers are missing or not safely comparable. UNCOMPARABLE_CASE specifically covers literature and summary-case publications, where reported demographics are deliberate and a discrepancy is more likely to reflect a different patient than an extraction artefact. A two-way rule is applied:
 
 | Branch | Condition | Outcome |
 |---|---|---|
 | B | \(w_{\text{tot}} \geq\) `w_tot_limited_zone` | `Otherwise related` |
 | A | \(L_{\text{patient}} > \) `lpatient_compelling` (with \(w_{\text{tot}} <\) `w_tot_limited_zone` implied) | `Duplicates` |
-| C | otherwise | `Abstain` |
+| C | otherwise | `Otherwise related` (default) |
 
-Branch B is checked first so any inconsistency above the limited-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence.
+Branch B is checked first so any inconsistency above the limited-zone bar reaches `Otherwise related` regardless of patient-specific positive evidence. Branch A promotes to `Duplicates` only when the patient-specific evidence is compelling; every remaining case falls through branch C to `Otherwise related`. The rule therefore never abstains — non-independence is established, so a pair that is not convincingly the same individual is simply reported as `Otherwise related` rather than left undecided.
 
 Note the lower Otherwise related gate here (`w_tot_limited_zone`, default 1.0) compared to the SINGLE_PATIENT / SAME_CASE Abstain gate (`w_tot_compelling_zone`, default 4.0). The two verdicts differ conceptually: SINGLE_PATIENT / SAME_CASE has a confirmed single-patient identity claim from the narrative, so inconsistencies are more plausibly artefacts; UNCOMPARABLE_CASE has no such claim, so small inconsistencies in a curated publication carry more weight as evidence of different patients. Calibrated behavior:
 
 | Age difference | Severity | \(w_{\text{tot}}\) | Outcome |
 |---|---|---|---|
-| 0 (exact match) | none | 0.0 | (driven by branch A — typically Duplicates if L\_patient clears) |
-| 1 year | minor | 0.4 | Abstain or Duplicates (depending on branch A) |
+| 0 (exact match) | none | 0.0 | (driven by branch A — Duplicates if L\_patient clears, else Otherwise related) |
+| 1 year | minor | 0.4 | Otherwise related or Duplicates (depending on branch A) |
 | 3 years | moderate | 1.0 | **Otherwise related** |
 | 5 years | strong | 3.0 | Otherwise related |
 
@@ -274,20 +274,20 @@ The branch A bar is `lpatient_compelling` (default 2.0), set so that intuitively
 
 `lpatient_compelling` is a **separate threshold from the \(L_{\text{match}}\) zone boundaries**, even though its default (2.0) coincides with `lmatch_intermediate`. The two bars are applied to different quantities on different scales — \(L_{\text{patient}}\) covers only the patient-specific features and carries no multiplicity adjustment — and they answer different questions, so they must be free to move independently. The shared value is a coincidence of calibration, not a relationship: retuning an \(L_{\text{match}}\) zone must not silently shift the patient-identity bar. The table above is the calibration evidence for the default, and applies to `lpatient_compelling` alone.
 
-The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. Because branch B is checked first on the complementary condition (\(w_{\text{tot}} \geq\) `w_tot_limited_zone`), the two branches partition the \(w_{\text{tot}}\) axis at the same bar: any moderate-or-stronger inconsistency — or three accumulated minors (\(3 \times 0.4 = 1.2\)) — lands the pair in `Otherwise related`, while a single minor (0.4) is tolerated. Below the bar the outcome rests entirely on \(L_{\text{patient}}\). `Abstain` therefore means minimal inconsistency *and* insufficient patient-specific evidence (\(w_{\text{tot}} <\) `w_tot_limited_zone` and \(L_{\text{patient}} \leq\) `lpatient_compelling`) — not the presence of a moderate inconsistency, which resolves to `Otherwise related` via branch B.
+The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0), the strictest existing tolerance — essentially zero inconsistencies. Because branch B is checked first on the complementary condition (\(w_{\text{tot}} \geq\) `w_tot_limited_zone`), the two branches partition the \(w_{\text{tot}}\) axis at the same bar: any moderate-or-stronger inconsistency — or three accumulated minors (\(3 \times 0.4 = 1.2\)) — lands the pair in `Otherwise related`, while a single minor (0.4) is tolerated. Below the bar the outcome rests entirely on \(L_{\text{patient}}\): compelling patient-specific evidence (\(L_{\text{patient}} > \) `lpatient_compelling`) yields `Duplicates`, and everything else falls through branch C to the `Otherwise related` default. Minimal inconsistency *with* insufficient patient-specific evidence (\(w_{\text{tot}} <\) `w_tot_limited_zone` and \(L_{\text{patient}} \leq\) `lpatient_compelling`) therefore resolves to `Otherwise related` rather than abstaining.
 
 Note: `SAME_SOURCE_UNCOMPARABLE_CASE` emits **no** `Inconsistency` (it represents *absence of comparable evidence*, not a discrepancy), so \(w_{\text{tot}}\) reflects only non-source-case signals and the comparison is apples-to-apples.
 
 #### MULTI_PATIENT_CONTEXT_NO_LINK
 
-This verdict fires when both narratives indicate a multi-patient source (literature series, shared-study cohort, drug-shortage cluster, …) but no reliable shared source identifier links the two reports. The drug-set / AE-set inflation concern that motivates the UNCOMPARABLE_CASE three-way rule applies here as well: patients reported within the same multi-patient context tend to share drugs and AEs by construction, so a high \(L_{\text{match}}\) can be driven by features that are weak identifiers of patient identity.
+This verdict fires when both narratives indicate a multi-patient source (literature series, shared-study cohort, drug-shortage cluster, …) but no reliable shared source identifier links the two reports. The drug-set / AE-set inflation concern that motivates the UNCOMPARABLE_CASE two-way rule applies here as well: patients reported within the same multi-patient context tend to share drugs and AEs by construction, so a high \(L_{\text{match}}\) can be driven by features that are weak identifiers of patient identity.
 
 The dispatch is gated on the matching evidence:
 
-- **\(L_{\text{match}} > \) `lmatch_limited`** — route through the same three-way rule as `SAME_SOURCE_UNCOMPARABLE_CASE`, using `_l_patient` (drug-set / AE-set excluded) for branch A and `w_tot_limited_zone` for the branch B / branch A inconsistency gate. So a pair with high \(L_{\text{match}}\) and a single moderate inconsistency lands in `Otherwise related` rather than being absorbed into `Duplicates` by the compelling zone's looser tolerance.
-- **\(L_{\text{match}} \leq \) `lmatch_limited`** — fall through to the ordinary weak-threshold branch (→ `Independent`). Without positive shared-source evidence we do not promote a weak-matching pair into the override territory, where it would otherwise resolve to `Abstain`.
+- **\(L_{\text{match}} > \) `lmatch_limited`** — route through the same two-way rule as `SAME_SOURCE_UNCOMPARABLE_CASE`, using `_l_patient` (drug-set / AE-set excluded) for branch A and `w_tot_limited_zone` for the branch B / branch A inconsistency gate. So a pair with high \(L_{\text{match}}\) and a single moderate inconsistency lands in `Otherwise related` rather than being absorbed into `Duplicates` by the compelling zone's looser tolerance.
+- **\(L_{\text{match}} \leq \) `lmatch_limited`** — fall through to the ordinary weak-threshold branch (→ `Independent`). Without positive shared-source evidence we do not promote a weak-matching pair into the override territory, where it would otherwise resolve to `Otherwise related`.
 
-Conceptually this asymmetry mirrors the underlying evidence: `UNCOMPARABLE_CASE` has a confirmed shared source identifier and so always invokes the three-way rule; `MULTI_PATIENT_CONTEXT_NO_LINK` lacks that anchor and therefore requires enough matching evidence to make the override worth applying. The chosen branch is recorded as `independence_reason = shared_source` in either case.
+Conceptually this asymmetry mirrors the underlying evidence: `UNCOMPARABLE_CASE` has a confirmed shared source identifier and so always invokes the two-way rule; `MULTI_PATIENT_CONTEXT_NO_LINK` lacks that anchor and therefore requires enough matching evidence to make the override worth applying. The chosen branch is recorded as `independence_reason = shared_source` in either case.
 
 ---
 
@@ -353,7 +353,7 @@ The following parameters define the decision behaviour and are configurable:
 | `lmatch_compelling` | 3.0 | L\_match boundary for the compelling evidence zone |
 | `lmatch_intermediate` | 2.0 | L\_match boundary for the intermediate evidence zone |
 | `lmatch_limited` | 1.0 | L\_match boundary for the limited evidence zone |
-| `lpatient_compelling` | 2.0 | L\_patient bar for `Duplicates` in the shared-source / uncomparable-case three-way rule; separate from the L\_match zones — see § Threshold calibration |
+| `lpatient_compelling` | 2.0 | L\_patient bar for `Duplicates` in the shared-source / uncomparable-case two-way rule; separate from the L\_match zones — see § Threshold calibration |
 | `w_minor` | 0.4 | Weight per minor inconsistency in \(w_{\text{tot}}\) |
 | `w_moderate` | 1.0 | Weight per moderate inconsistency in \(w_{\text{tot}}\) |
 | `w_strong` | 3.0 | Weight per strong inconsistency in \(w_{\text{tot}}\) |

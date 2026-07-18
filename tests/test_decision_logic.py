@@ -626,15 +626,16 @@ class TestSharedSourceOverride:
         _assert_otherwise_related(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
-    # SAME_SOURCE_UNCOMPARABLE_CASE has a three-way rule. The dedicated
+    # SAME_SOURCE_UNCOMPARABLE_CASE has a two-way rule. The dedicated
     # test class TestUncomparableCaseThreeWayRule below covers branches
-    # A (Duplicates), B (Otherwise_related), and C (Abstain) in depth.
-    # The two tests below act as smoke tests for the override-path entry.
+    # A (Duplicates), B (Otherwise_related), and C (Otherwise_related
+    # default) in depth. The two tests below act as smoke tests for the
+    # override-path entry.
 
-    def test_same_source_uncomparable_case_no_evidence_abstains(self):
+    def test_same_source_uncomparable_case_no_evidence_otherwise_related(self):
         """UNCOMPARABLE_CASE smoke test: no feature contributions, no
         inconsistencies → falls through branch (A), past branch (B), to
-        branch (C) Abstain."""
+        the branch (C) Otherwise_related default."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -642,7 +643,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_uncomparable_case_otherwise_related_on_decisive(self):
@@ -754,18 +755,19 @@ class TestAbstainOutcome:
         result = classify(f, THRESHOLDS)
         _assert_abstain(result)
 
-    def test_uncomparable_case_no_inconsistency_abstains(self):
-        """SAME_SOURCE_UNCOMPARABLE_CASE + w_tot=0 → Abstain.
-        Absence of inconsistency is insufficient evidence of patient
-        identity in a multi-patient publication context."""
+    def test_uncomparable_case_no_inconsistency_otherwise_related(self):
+        """SAME_SOURCE_UNCOMPARABLE_CASE + w_tot=0 → Otherwise_related.
+        Absence of inconsistency is insufficient patient-specific evidence
+        to call Duplicates in a multi-patient publication context, but the
+        pair no longer abstains — it defaults to Otherwise_related."""
         f = _make_features(
-            L_match=4.0,  # high L_match does not override the abstain
+            L_match=4.0,  # high L_match does not force Duplicates here
             source_case_assessment=_assessment(
                 SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
 
     def test_abstain_explanation_contains_w_tot(self):
         """Abstain explanation includes the w_tot value for auditability."""
@@ -783,8 +785,9 @@ class TestAbstainOutcome:
         assert "4.0" in result.explanation  # threshold
         assert result.final_label == "Abstain"
 
-    def test_abstain_explanation_uncomparable_mentions_multi_patient(self):
-        """UNCOMPARABLE_CASE abstain explanation mentions multi-patient context."""
+    def test_uncomparable_default_explanation_mentions_multi_patient(self):
+        """UNCOMPARABLE_CASE branch-C default explanation mentions the
+        multi-patient context and resolves to Otherwise_related."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -794,7 +797,7 @@ class TestAbstainOutcome:
         )
         result = classify(f, THRESHOLDS)
         assert "multi-patient" in result.explanation
-        assert result.final_label == "Abstain"
+        assert result.final_label == "Otherwise_related"
 
     def test_abstain_is_non_independent(self):
         """Abstain always has independence_assessment = NON_INDEPENDENT
@@ -813,18 +816,18 @@ class TestAbstainOutcome:
 
 
 # ===================================================================
-# UNCOMPARABLE_CASE three-way rule (Duplicates / Otherwise_related / Abstain)
+# UNCOMPARABLE_CASE two-way rule (Duplicates / Otherwise_related)
 # ===================================================================
 
 class TestUncomparableCaseThreeWayRule:
-    """SAME_SOURCE_UNCOMPARABLE_CASE applies a three-way rule based on the
+    """SAME_SOURCE_UNCOMPARABLE_CASE applies a two-way rule based on the
     patient-specific log-evidence ``L_patient`` (excluding drug/AE-set
     contributions) and ``w_tot``:
 
         if w_tot >= w_tot_limited_zone:        → Otherwise_related
         elif L_patient > lpatient_compelling:  → Duplicates
                                                  (w_tot < w_tot_limited_zone implied)
-        else:                                  → Abstain
+        else:                                  → Otherwise_related (default)
 
     Defaults: lpatient_compelling=2.0, w_tot_limited_zone=1.0.
     """
@@ -899,7 +902,8 @@ class TestUncomparableCaseThreeWayRule:
         _assert_duplicates(result)
 
     def test_branch_a_drops_on_sex_only(self):
-        """sex only → L_patient ≈ 0.30, NOT > 2.0 → Abstain (not Duplicates)."""
+        """sex only → L_patient ≈ 0.30, NOT > 2.0 → Otherwise_related
+        (branch-C default, not Duplicates)."""
         f = _make_features(
             L_match=0.0,
             feature_contributions=_SEX_ONLY_CONTRIBS,
@@ -908,12 +912,13 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
 
     def test_branch_a_drug_ae_contributions_do_not_count(self):
         """drug_set p_f=1e-10 + ae_set p_f=1e-10 (full L_match would be huge)
-        → L_patient = 0 (those features are excluded) → Abstain.
-        Proves the multi-patient noise-floor exclusion is effective."""
+        → L_patient = 0 (those features are excluded) → Otherwise_related
+        (branch-C default, not Duplicates). Proves the multi-patient
+        noise-floor exclusion is effective."""
         f = _make_features(
             L_match=10.0,  # huge L_match — must not influence the decision
             feature_contributions=_DRUG_AE_ONLY_CONTRIBS,
@@ -922,7 +927,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
 
     # ---------- Branch B: Otherwise_related ----------
 
@@ -985,10 +990,11 @@ class TestUncomparableCaseThreeWayRule:
         result = classify(f, THRESHOLDS)
         _assert_otherwise_related(result)
 
-    # ---------- Branch C: Abstain (fallback) ----------
+    # ---------- Branch C: Otherwise_related (default) ----------
 
     def test_branch_c_no_evidence_no_inconsistency(self):
-        """Empty feature_contributions and no inconsistencies → branch (C)."""
+        """Empty feature_contributions and no inconsistencies → branch (C)
+        Otherwise_related default."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -996,7 +1002,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
 
     def test_branch_c_explanation_surfaces_both_quantities(self):
         """The (C) explanation must surface L_patient and w_tot."""
@@ -1011,12 +1017,13 @@ class TestUncomparableCaseThreeWayRule:
         result = classify(f, THRESHOLDS)
         assert "L_patient=" in result.explanation
         assert "w_tot=" in result.explanation
-        assert "indeterminate" in result.explanation
+        assert "insufficient" in result.explanation
 
     # ---------- Branch A boundary ----------
 
     def test_branch_a_boundary_exactly_at_threshold(self):
-        """L_patient exactly == lpatient_compelling → NOT Duplicates.
+        """L_patient exactly == lpatient_compelling → NOT Duplicates
+        (falls through to the branch-C Otherwise_related default).
 
         The gate is a strict ``>``, matching every L_match zone boundary.
         patient_age p_f=0.01 → -log10 = exactly 2.0 == the default bar.
@@ -1030,7 +1037,7 @@ class TestUncomparableCaseThreeWayRule:
         )
         assert THRESHOLDS.lpatient_compelling == 2.0  # guards the fixture
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
 
 
 class TestLPatientThresholdIsIndependent:
@@ -1058,8 +1065,8 @@ class TestLPatientThresholdIsIndependent:
     def test_lmatch_intermediate_does_not_move_the_l_patient_bar(self):
         """Moving the L_match intermediate zone must not change the outcome.
 
-        Before the split this flipped to Abstain, because the branch
-        borrowed lmatch_intermediate.
+        Before the split this flipped away from Duplicates, because the
+        branch borrowed lmatch_intermediate.
         """
         f = self._uncomparable_sex_plus_age()
         for lmatch_intermediate in (0.5, 2.0, 8.0):
@@ -1072,9 +1079,11 @@ class TestLPatientThresholdIsIndependent:
     def test_lpatient_compelling_does_move_the_bar(self):
         """The dedicated threshold is the one that governs the branch."""
         f = self._uncomparable_sex_plus_age()
-        # 2.204 > 2.0 → Duplicates; 2.204 < 8.0 → Abstain.
+        # 2.204 > 2.0 → Duplicates; 2.204 < 8.0 → Otherwise_related (branch C).
         _assert_duplicates(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
-        _assert_abstain(classify(f, DecisionThresholds(lpatient_compelling=8.0)))
+        _assert_otherwise_related(
+            classify(f, DecisionThresholds(lpatient_compelling=8.0))
+        )
 
     def test_explanation_reports_the_l_patient_threshold(self):
         """The explanation must quote the bar actually applied."""
@@ -1101,16 +1110,18 @@ class TestLPatientThresholdIsIndependent:
             ),
         )
         _assert_duplicates(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
-        _assert_abstain(classify(f, DecisionThresholds(lpatient_compelling=8.0)))
+        _assert_otherwise_related(
+            classify(f, DecisionThresholds(lpatient_compelling=8.0))
+        )
 
 
 # ===================================================================
-# MULTI_PATIENT_CONTEXT_NO_LINK — L_match-gated three-way dispatch
+# MULTI_PATIENT_CONTEXT_NO_LINK — L_match-gated two-way dispatch
 # ===================================================================
 
 class TestMultiPatientContextNoLink:
     """``MULTI_PATIENT_CONTEXT_NO_LINK`` is routed through the same
-    three-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` *only* when
+    two-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` *only* when
     ``L_match > lmatch_limited``. Below that threshold the verdict is
     treated as advisory and the pair falls through to the standard
     weak-threshold branch (→ Independent). The two verdicts share the
@@ -1135,7 +1146,7 @@ class TestMultiPatientContextNoLink:
         _assert_independent(result)
         assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
 
-    # ---------- Above the weak threshold: three-way rule ----------
+    # ---------- Above the weak threshold: two-way rule ----------
 
     def test_branch_a_above_weak_duplicates(self):
         """L_match=2.5 (above weak), w_tot=0, L_patient ≈ 2.20 > 2.0 →
@@ -1158,7 +1169,7 @@ class TestMultiPatientContextNoLink:
         """The motivating case: L_match=3.3 (compelling zone) with one
         moderate inconsistency. Standard zone logic would have absorbed
         the moderate and returned Duplicates (w_tot=1.0 < 4.0). The
-        multi-patient three-way rule tightens to w_tot_limited_zone, so
+        multi-patient two-way rule tightens to w_tot_limited_zone, so
         w_tot=1.0 ≥ 1.0 → Otherwise_related."""
         f = _make_features(
             L_match=3.3,
@@ -1173,11 +1184,11 @@ class TestMultiPatientContextNoLink:
         _assert_otherwise_related(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
-    def test_branch_c_above_weak_insufficient_l_patient_abstains(self):
+    def test_branch_c_above_weak_insufficient_l_patient_otherwise_related(self):
         """L_match=2.5 with only sex contribution (L_patient ≈ 0.30 ≤
-        2.0) and no inconsistencies → Branch C Abstain. Standard zone
-        logic would have returned Duplicates; the override surfaces
-        the indeterminacy."""
+        2.0) and no inconsistencies → Branch C Otherwise_related default.
+        Standard zone logic would have returned Duplicates; the override
+        withholds the Duplicates call but no longer abstains."""
         f = _make_features(
             L_match=2.5,
             feature_contributions=_SEX_ONLY_CONTRIBS,
@@ -1187,14 +1198,14 @@ class TestMultiPatientContextNoLink:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_branch_c_drug_ae_contributions_do_not_count(self):
         """Huge drug/AE concordance must not move a no-shared-source
         multi-patient pair into Duplicates. L_match=10.0 with only
-        drug_set / ae_set contributions → L_patient = 0 → Abstain
-        (same exclusion as UNCOMPARABLE_CASE)."""
+        drug_set / ae_set contributions → L_patient = 0 → Otherwise_related
+        (branch-C default, same exclusion as UNCOMPARABLE_CASE)."""
         f = _make_features(
             L_match=10.0,
             feature_contributions=_DRUG_AE_ONLY_CONTRIBS,
@@ -1204,7 +1215,7 @@ class TestMultiPatientContextNoLink:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_abstain(result)
+        _assert_otherwise_related(result)
 
     # ---------- Explanation surface ----------
 

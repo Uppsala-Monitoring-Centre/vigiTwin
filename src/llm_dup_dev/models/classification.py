@@ -46,9 +46,9 @@ class InconsistencyPenalty(BaseModel):
 
     ``threshold`` is the bar this score was tested against, or ``None`` when the
     decision made no ``w_tot`` comparison at all — the below-limited zone (where
-    ``L_match`` decides), ``SAME_SOURCE_DIFFERENT_CASE`` (pinned regardless of
-    ``w_tot``), and the multi-patient Abstain branch. In those cases the score is
-    still recorded; there is simply no comparison to report.
+    ``L_match`` decides) and ``SAME_SOURCE_DIFFERENT_CASE`` (pinned regardless of
+    ``w_tot``). In those cases the score is still recorded; there is simply no
+    comparison to report.
 
     See: docs/duplicate_adjudication_spec.md § Decision logic
     """
