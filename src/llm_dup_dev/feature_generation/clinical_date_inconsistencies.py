@@ -20,14 +20,19 @@ Multiple entries per entity:
     multiple distinct start dates (e.g. re-challenge regimens), and
     the same MedDRA PT may appear with multiple onset dates.  For
     each matched entity (drug substance or PT) across the two
-    reports, we compute the **minimum-cost one-to-one alignment**
-    between the two reports' date sets (using the same interval-aware
-    minimum possible day difference), deduplicate exact duplicate
-    date values within a report first, and emit candidate findings
-    only from the aligned pairs — leftover unmatched dates do not by
-    themselves create extra inconsistencies.  Drug role is **ignored**
-    for counterpart selection; it is retained only for downstream
-    rules (source-date priority, concomitant-drug downgrade).
+    reports, we deduplicate exact duplicate date values within a
+    report and then select the **single best-matching date pair** —
+    the one with the smallest interval-aware minimum possible day
+    difference — emitting at most one candidate finding per entity.
+    Every other date is a leftover and creates no inconsistency, so an
+    entity is flagged only when even its best-matching pair is
+    inconsistent.  A consequence is that a genuine second-regimen
+    mismatch is *masked* whenever a first date matches well (e.g. a
+    shared start date alongside a far-apart second date yields no
+    finding); this is intentional, since the per-entity date signal is
+    already deliberately down-weighted.  Drug role is **ignored** for
+    counterpart selection; it is retained only for downstream rules
+    (source-date priority, concomitant-drug downgrade).
 
 See: docs/duplicate_adjudication_spec.md § Clinical Date Inconsistencies
 """
@@ -466,17 +471,17 @@ def _dedup_across_directions(
 
     The bidirectional loop generates findings from both R1→R2 and R2→R1.
     For a single entity mismatch (e.g. the same drug on both reports with
-    different dates) this produces two selected findings per aligned
+    different dates) this produces two selected findings for the aligned
     pair.  We keep only the one with the *lower* final severity
     (conservative: if one direction downgrades the finding, we honour
     that).
 
     The grouping key is direction-independent at the **aligned-pair**
     level: ``(entity_label, frozenset({source_date, matched_date}))``.
-    This ensures that when the same entity yields multiple distinct
-    aligned pairs (e.g. two different regimen start-date pairs for the
-    same drug), each pair is deduplicated independently rather than
-    collapsing them all into one.
+    Per-entity alignment now selects a single best-matching pair, so in
+    practice this collapses the two directions of that one pair; the
+    pair-aware key is retained so the dedup stays correct even if an
+    entity ever contributes more than one pair.
 
     Mutates findings in-place by clearing ``selected`` on the duplicate.
     """
