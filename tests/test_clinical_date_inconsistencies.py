@@ -659,17 +659,29 @@ class TestCrossEntityDowngrade:
         assert r1_findings[0].raw_severity == Severity.MODERATE
         assert r1_findings[0].final_severity == Severity.MINOR
 
-    def test_minor_stays_minor_after_downgrade(self):
-        """Minor → minor (does not go below minor)."""
+    def test_minor_drops_to_ignored_after_downgrade(self):
+        """Minor → ignored (aligned with the concomitant-drug ladder).
+
+        A minor whose source date coincides with another date on the
+        opposite report is the most likely to be a labeling artefact, so
+        it steps down out of the counts rather than surviving as minor.
+
+        Both drug-A start dates coincide with a date on the opposite
+        report (drug B / drug C), so the cross-entity downgrade fires in
+        *both* directions and the pair contributes nothing.
+        """
         r1 = _report(
             "R1",
-            drugs=[_drug("A", start="2020-01-01")],
+            drugs=[
+                _drug("A", start="2020-01-01"),
+                _drug("B", start="2020-01-10"),  # == R2's drug-A date
+            ],
         )
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-01-10"),  # 9 days → minor
-                _drug("B", start="2020-01-01"),  # exact match
+                _drug("A", start="2020-01-10"),  # 9 days → minor (per-entity)
+                _drug("C", start="2020-01-01"),  # == R1's drug-A date
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
@@ -679,7 +691,10 @@ class TestCrossEntityDowngrade:
             and "drug_start:a" in f.entity_label
         ]
         assert len(r1_findings) >= 1
-        assert r1_findings[0].final_severity == Severity.MINOR
+        assert r1_findings[0].final_severity == Severity.IGNORED
+        assert not r1_findings[0].selected
+        # Both directions drop to ignored → nothing counted.
+        assert result.n_minor == 0
 
 
 # ===================================================================
@@ -793,21 +808,31 @@ class TestSourceDateBucketing:
             assert EntityType.OVERALL_AE_ONSET in selected_types or len(selected_types) <= 1
 
     def test_lower_priority_may_contribute_if_higher_has_no_inconsistency(self):
-        """If overall AE onset has no inconsistency, drug start may count."""
-        # Overall AE onset matches exactly, but drug start differs
+        """If overall AE onset has no inconsistency, drug start may count.
+
+        The drug-start source date (shared with the matched overall AE
+        onset) necessarily coincides with a date on the other report, so
+        the cross-entity downgrade fires. The gap is chosen large enough
+        (strong → moderate per-entity) that a single downgrade leaves it
+        at minor and still selectable — demonstrating the bucket
+        fall-through to the lower-priority entity.
+        """
+        # Overall AE onset matches exactly (2020-06-01 on both), but the
+        # drug start differs enough to survive the cross-entity downgrade.
         r1 = _report(
             "R1",
-            drugs=[_drug("A", start="2020-01-01")],
-            aes=[_ae("headache", onset="2020-01-01")],
+            drugs=[_drug("A", start="2020-06-01")],
+            aes=[_ae("headache", onset="2020-06-01")],
         )
         r2 = _report(
             "R2",
-            drugs=[_drug("A", start="2020-03-01")],  # 60 days → moderate
-            aes=[_ae("headache", onset="2020-01-01")],  # exact match
+            drugs=[_drug("A", start="2020-01-01")],  # 152 days → strong → moderate
+            aes=[_ae("headache", onset="2020-06-01")],  # exact match
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # The overall AE onset matches exactly → no inconsistency from that entity
-        # The drug start differs → should be selected since AE onset had no issue
+        # The overall AE onset matches exactly → no inconsistency from that entity.
+        # The drug start differs → selected (as minor after the downgrade)
+        # since the higher-priority overall AE onset had no issue.
         r1_selected = [
             f for f in result.findings
             if f.selected and f.source_report == "R1"
