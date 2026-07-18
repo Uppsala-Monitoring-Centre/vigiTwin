@@ -1085,7 +1085,7 @@ Partial dates are converted to intervals (`[earliest, latest]` plausible date). 
 
 ##### Downgrade rules
 
-1. *Cross-entity downgrade*: if the source date exactly matches any clinically relevant date (drug start, AE onset, overall AE onset, or drug end date) on the other report, the severity is reduced by one step (strong → moderate, moderate → minor, minor stays minor).
+1. *Cross-entity downgrade*: if the source date exactly matches any clinically relevant date (drug start, AE onset, overall AE onset, or drug end date) on the other report, the severity is reduced by one step (strong → moderate, moderate → minor, minor → ignored). This uses the same single-step ladder as the concomitant-drug downgrade below: a minor discrepancy whose source date coincides with another date on the opposite report is the most likely to be a field-labeling artefact, so it drops out entirely rather than surviving as a minor.
 
 2. *Concomitant drug downgrade*: for concomitant-drug start date mismatches, severity is reduced by one step (moderate → minor, minor → ignored). Because per-entity drug start severity is capped at moderate, a two-step downgrade would always wipe concomitant findings out entirely; a single-step downgrade keeps concomitant moderates contributing as minor inconsistencies.
 

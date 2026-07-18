@@ -384,15 +384,17 @@ def _apply_cross_entity_downgrade(
     source_date: PartialDate,
     other_report_dates: set[str],
 ) -> tuple[Severity, str | None]:
-    """Downgrade by one step if source date exactly matches any date on other report."""
+    """Downgrade by one step if source date exactly matches any date on other report.
+
+    Uses the same single-step ladder as the concomitant-drug downgrade
+    (STRONG->MODERATE->MINOR->IGNORED): a minor discrepancy whose source
+    date coincides with another date on the opposite report is the most
+    likely to be a field-labeling artefact, so it drops out to IGNORED
+    rather than surviving as a minor.
+    """
     if source_date.value in other_report_dates:
         reason = f"exact match with date {source_date.value} on other report"
-        if severity == Severity.STRONG:
-            return Severity.MODERATE, reason
-        if severity == Severity.MODERATE:
-            return Severity.MINOR, reason
-        # MINOR stays MINOR
-        return severity, reason
+        return _step_down_severity(severity), reason
     return severity, None
 
 
