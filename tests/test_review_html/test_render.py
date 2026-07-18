@@ -1377,7 +1377,7 @@ class TestPenaltyRendering:
         # The default weight must not appear: that was the bug.
         assert "1 × 3.0" not in html
 
-    def test_penalty_row_present_for_multi_patient_abstain(self, report_a, report_b):
+    def test_penalty_row_present_for_multi_patient_default(self, report_a, report_b):
         """Regression: this row used to be missing entirely."""
         from llm_dup_dev.classifier.decision_logic import classify
         from llm_dup_dev.models.narrative_source_case import (
@@ -1387,7 +1387,7 @@ class TestPenaltyRendering:
 
         features = _make_features()
         features.L_match = 0.5
-        features.L_patient = 0.30103          # below lpatient_compelling -> Abstain
+        features.L_patient = 0.30103          # below lpatient_compelling -> branch C
         features.inconsistency_counts.minor = 0
         features.inconsistency_counts.moderate = 0
         features.inconsistency_counts.strong = 0
@@ -1400,7 +1400,7 @@ class TestPenaltyRendering:
             reasoning="fixture",
         )
         classification = classify(features)
-        assert classification.final_label == "Abstain"
+        assert classification.final_label == "Otherwise_related"
 
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002",

@@ -1256,7 +1256,7 @@ class TestPenaltyAgreesWithClassifier:
 class TestPenaltyIsRecordedOnEveryBranch:
     """Every branch records the score; only some record a comparison."""
 
-    def test_multi_patient_abstain_has_a_penalty_row(self):
+    def test_multi_patient_default_has_a_penalty_row(self):
         """Regression: this row used to vanish.
 
         The branch formats as 'w_tot=0.0 (threshold 1.0)' — no '<' or '>=' —
@@ -1270,14 +1270,14 @@ class TestPenaltyIsRecordedOnEveryBranch:
         features = _penalty_features(
             L_match=0.5,
             verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
-            # sex only -> L_patient 0.30, below the bar -> Abstain
+            # sex only -> L_patient 0.30, below the bar -> branch C default
             contributions=[
                 FeatureContribution(feature="patient_sex", p_f=0.5,
                                     method="domain_size")
             ],
         )
         result = classify(features)
-        assert result.final_label == "Abstain"
+        assert result.final_label == "Otherwise_related"
         # w_tot passed the branch-B gate, so the comparison is real.
         assert _format_penalty_summary(result.penalty) == "0.0 < 1.0"
 

@@ -176,7 +176,7 @@ class IndependenceReason(str, Enum):
     ``RARITY_*`` values correspond to the four L_match zones of the
     rarity-based branch; ``SHARED_SOURCE`` is set by the shared-source
     override path (when a reliable shared source identifier has been
-    derived from the narratives) and by the multi-patient three-way
+    derived from the narratives) and by the multi-patient two-way
     rule that handles ``MULTI_PATIENT_CONTEXT_NO_LINK`` pairs with
     ``L_match > lmatch_limited``. ``ABSTAIN`` is a defensive backstop
     for paths not covered by the above; it is not emitted by any

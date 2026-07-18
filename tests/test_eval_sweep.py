@@ -87,23 +87,22 @@ class TestAbstainDenominator:
     def test_every_point_reports_n_and_abstained(self):
         """The trade-off must be visible on each row, not aggregated away."""
         features = {
-            "A__B": _features("A__B", L_match=0.5,
-                              verdict=SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
-                              contributions=[
-                                  FeatureContribution(feature="patient_sex", p_f=0.5,
-                                                      method="domain_size")
-                              ]),
+            # SAME_SOURCE_SINGLE_PATIENT with moderate+strong -> w_tot = 4.0.
+            # Abstain fires when w_tot >= w_tot_compelling_zone, so the sweep
+            # toggles it by moving that bar across 4.0.
+            "A__B": _features("A__B", L_match=0.5, moderate=1, strong=1,
+                              verdict=SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT),
         }
         result = sweep(
             features, [_ann("A__B", "duplicates")],
-            grid_over(lpatient_compelling=[0.1, 5.0]),
+            grid_over(w_tot_compelling_zone=[5.0, 3.0]),
             abstain_mode=AbstainMode.DECIDED_ONLY,
         )
-        # lpatient=0.1 -> L_patient 0.30 clears -> Duplicates (scored).
-        # lpatient=5.0 -> does not clear -> Abstain (dropped from n_pairs).
+        # compelling_zone=5.0 -> w_tot 4.0 < 5.0 -> Duplicates (scored).
+        # compelling_zone=3.0 -> w_tot 4.0 >= 3.0 -> Abstain (dropped from n_pairs).
         by_label = {p.summary.experiment_id: p for p in result.points}
-        decided = by_label["lpatient_compelling=0.1"]
-        abstained = by_label["lpatient_compelling=5"]
+        decided = by_label["w_tot_compelling_zone=5"]
+        abstained = by_label["w_tot_compelling_zone=3"]
         assert decided.n_pairs == 1 and decided.n_abstained == 0
         assert abstained.n_pairs == 0 and abstained.n_abstained == 1
 
