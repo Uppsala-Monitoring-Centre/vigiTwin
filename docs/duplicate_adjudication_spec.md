@@ -1034,16 +1034,18 @@ derivation returns missing.
 
 The same normalized drug substance may appear on a single report with multiple distinct start dates (for example, re-challenge regimens or different dosing periods), and the same MedDRA PT may appear with several distinct onset dates. Comparing all cross-pairs would produce spurious "strong" findings whenever the reports disagree on which regimen is primary.
 
-Instead, for each matched entity (one normalized drug substance or one PT appearing on both reports), counterpart dates are chosen as follows:
+Instead, for each matched entity (one normalized drug substance or one PT appearing on both reports), a single counterpart pair is chosen as follows:
 
 1. **Group by normalized entity.** All drug start dates for one substance on one report form a group; likewise for AE onsets on one PT.
 2. **Deduplicate exact-duplicate date values within a report.** Two rows for the same substance with the same start date collapse into one slot. When two rows share a date value but differ in drug role, a non-concomitant role dominates over a concomitant one for that slot — so a drug that is both suspected and concomitant at the same date is not penalised with the concomitant-drug downgrade.
-3. **Compute a minimum-cost one-to-one alignment** between the two reports' date lists for that entity. The alignment cost is the interval-aware minimum possible day difference used by the severity thresholds. Ties are broken deterministically.
-4. **Emit candidate findings only from aligned pairs.** Leftover unmatched dates (on the larger side) do **not** generate additional findings — they are simply absent from the comparison, consistent with the missing-data rule.
+3. **Select the single best-matching date pair.** Across the two reports' date lists for that entity, pick the one pair with the smallest interval-aware minimum possible day difference (the same cost used by the severity thresholds). Ties are broken deterministically.
+4. **Emit at most one candidate finding, from that best pair.** Every other date on either report is a leftover and does **not** generate a finding — consistent with the missing-data rule. An entity is therefore flagged only when even its best-matching pair is inconsistent.
 
-Drug **role is ignored** when choosing counterparts: alignment minimises date distance only. The source-side role is retained, however, so the concomitant-drug downgrade still applies per direction when the source entry is concomitant.
+Drug **role is ignored** when choosing the counterpart: selection minimises date distance only. The source-side role is retained, however, so the concomitant-drug downgrade still applies per direction when the source entry is concomitant.
 
-After alignment, the downstream pipeline (classification, downgrades, source-date bucketing, cross-direction deduplication) is unchanged. Cross-direction deduplication uses a **pair-aware** key — `(entity_label, {source_date, matched_date})` — so that when an entity produces several aligned pairs (for example, two regimen start-date pairs for the same drug), each pair is deduplicated independently instead of collapsing all pairs into one.
+A deliberate consequence of the single-best-pair rule is that a genuine **second-regimen mismatch is masked** whenever a first date matches well: e.g. a shared start date alongside a far-apart second date yields no finding, because the shared date is the best-matching pair (zero difference). This is intentional — the per-entity date signal is already down-weighted (capped at moderate, one-step downgrade), so at most one date signal per entity is the desired calibration, and it avoids the artifact of force-pairing two unrelated leftover dates once an exact match is consumed.
+
+After selection, the downstream pipeline (classification, downgrades, source-date bucketing, cross-direction deduplication) is unchanged. Cross-direction deduplication uses a **pair-aware** key — `(entity_label, {source_date, matched_date})` — which collapses the two directions (R1→R2 and R2→R1) of the selected pair into one finding.
 
 ##### Severity thresholds
 

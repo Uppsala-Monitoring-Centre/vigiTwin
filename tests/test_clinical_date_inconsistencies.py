@@ -1224,12 +1224,9 @@ class TestMultipleDrugEntries:
             drugs=[_drug("A", start="2020-01-05")],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # From R1 perspective: entity with 2020-01-01 matches against 2020-01-05
-        # (4 days → minor), entity with 2020-03-01 matches against 2020-01-05
-        # (55 days → moderate). Each is separate but bucketed by source date.
-        # From R2: drug A start 2020-01-05 finds closest on R1, which is
-        # 2020-01-01 (4 days → minor).
-        # Total should be modest — the closest match keeps things reasonable.
+        # Single-best-pair selection picks (2020-01-01, 2020-01-05) at 4 days
+        # for drug A; the 2020-03-01 start is a leftover. 4 days is below the
+        # per-entity noise floor, so this contributes no strong finding.
         assert result.n_strong == 0
 
 
@@ -1241,8 +1238,8 @@ class TestMultipleDrugEntries:
 class TestAlignmentBehaviour:
     """Cases A–G covering the alignment-based counterpart selection."""
 
-    def test_A_two_to_two_alignment_picks_closest_pairs(self):
-        """R1=[Jan1, Jun1], R2=[Jan20, Jun22] → two minor pairs, zero moderate."""
+    def test_A_two_to_two_selects_single_closest_pair(self):
+        """R1=[Jan1, Jun1], R2=[Jan20, Jun22] → one minor from the closest pair."""
         r1 = _report(
             "R1",
             drugs=[
@@ -1253,28 +1250,34 @@ class TestAlignmentBehaviour:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-01-20"),  # 19 days
-                _drug("A", start="2020-06-22"),  # 21 days
+                _drug("A", start="2020-01-20"),  # 19 days from Jan1
+                _drug("A", start="2020-06-22"),  # 21 days from Jun1
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # With alignment, both regimens line up with their nearest
-        # counterpart. Both gaps are above the 7d noise floor but below
-        # the 70d moderate threshold → minor.
+        # Single-best-pair selection: the closest pair is (Jan1, Jan20) at
+        # 19 days — above the 7d noise floor, below the 70d moderate
+        # threshold → minor. The (Jun1, Jun22) pair is a leftover and
+        # produces nothing.
         assert result.n_strong == 0
         assert result.n_moderate == 0
-        # After cross-direction dedup, we expect one selected finding per
-        # aligned pair (i.e. two distinct pair keys).
+        assert result.n_minor == 1
         drug_selected = [
             f for f in _selected_findings(result)
             if f.entity_label == "drug_start:a"
             and f.final_severity not in (Severity.NONE, Severity.IGNORED)
         ]
         pair_keys = {_finding_pair_key(f) for f in drug_selected}
-        assert len(pair_keys) == 2
+        assert len(pair_keys) == 1
+        assert drug_selected[0].final_severity == Severity.MINOR
+        # The further-apart regimen dates are leftovers → absent.
+        involved: set[str] = set()
         for f in drug_selected:
-            assert f.final_severity == Severity.MINOR
-        assert result.n_minor == 2
+            involved.add(f.source_date.value)
+            if f.matched_date is not None:
+                involved.add(f.matched_date.value)
+        assert "2020-06-01" not in involved
+        assert "2020-06-22" not in involved
 
     def test_B_leftover_unmatched_dates_create_no_findings(self):
         """R1 has extra dates that find no counterpart — they must be silent."""
@@ -1291,7 +1294,7 @@ class TestAlignmentBehaviour:
             drugs=[_drug("A", start="2020-01-03")],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # Alignment selects (2020-01-01, 2020-01-03) → 2 days, minor.
+        # Single-best-pair selection picks (2020-01-01, 2020-01-03) → 2 days.
         # The leftover dates 2020-03-01 and 2020-06-01 must not produce
         # any moderate or strong findings.
         assert result.n_moderate == 0
@@ -1325,10 +1328,10 @@ class TestAlignmentBehaviour:
             drugs=[_drug("A", start="2020-04-01")],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
-        # After dedup, R1 has a single start-date entry for A, so only
-        # one aligned pair is produced. Across both directions we expect
-        # at most two findings for this pair; after cross-direction
-        # dedup only one survives per pair-key.
+        # After dedup, R1 has a single start-date entry for A, so the
+        # best pair is unambiguous. Across both directions we get two
+        # findings for this pair; after cross-direction dedup only one
+        # survives per pair-key.
         drug_selected = [
             f for f in _selected_findings(result)
             if f.entity_label == "drug_start:a"
@@ -1369,8 +1372,8 @@ class TestAlignmentBehaviour:
             "concomitant" in d for d in selected[0].downgrades
         )
 
-    def test_E_multi_ae_onset_alignment(self):
-        """Same PT on both reports with multiple onsets → pairwise alignment."""
+    def test_E_multi_ae_onset_selects_single_closest_pair(self):
+        """Same PT on both reports with multiple onsets → single best pair."""
         # A suspected drug dated far in the future forces the derived
         # overall-AE-onset to None (no AE onset qualifies), so the
         # source-date bucketing does not let a higher-priority
@@ -1387,8 +1390,8 @@ class TestAlignmentBehaviour:
             "R2",
             drugs=[_drug("X", start="2099-01-01")],
             aes=[
-                _ae("headache", onset="2020-01-20"),  # 19 days
-                _ae("headache", onset="2020-06-22"),  # 21 days
+                _ae("headache", onset="2020-01-20"),  # 19 days from Jan1
+                _ae("headache", onset="2020-06-22"),  # 21 days from Jun1
             ],
         )
         result = compute_clinical_date_inconsistencies(r1, r2)
@@ -1398,14 +1401,13 @@ class TestAlignmentBehaviour:
             and f.final_severity not in (Severity.NONE, Severity.IGNORED)
         ]
         pair_keys = {_finding_pair_key(f) for f in ae_selected}
-        assert len(pair_keys) == 2
-        # Both pairs are above the 7d noise floor but below the 70d
-        # moderate threshold → minor.
-        for f in ae_selected:
-            assert f.final_severity == Severity.MINOR
+        # Only the closest onset pair (Jan1, Jan20) is emitted → one minor.
+        assert len(pair_keys) == 1
+        assert result.n_minor == 1
+        assert ae_selected[0].final_severity == Severity.MINOR
 
     def test_F_role_agnostic_counterpart_selection(self):
-        """Alignment cost ignores role; concomitant downgrade still applies."""
+        """Best-pair selection ignores role; concomitant downgrade still applies."""
         r1 = _report(
             "R1",
             drugs=[
@@ -1446,8 +1448,8 @@ class TestAlignmentBehaviour:
                 vals.add(f.matched_date.value)
             assert "2020-06-01" not in vals
 
-    def test_G_cross_direction_dedup_is_per_pair(self):
-        """Two aligned pairs survive dedup independently (not collapsed)."""
+    def test_G_only_single_best_pair_emitted(self):
+        """Two mismatched regimens → only the single closest pair is flagged."""
         r1 = _report(
             "R1",
             drugs=[
@@ -1459,7 +1461,7 @@ class TestAlignmentBehaviour:
         r2 = _report(
             "R2",
             drugs=[
-                _drug("A", start="2020-04-01"),   # 91 days from Jan1
+                _drug("A", start="2020-04-01"),   # 61 days from Jun1
                 _drug("A", start="2020-08-30"),   # 90 days from Jun1
             ],
             aes=[_ae("headache", onset="2019-12-02")],
@@ -1471,14 +1473,66 @@ class TestAlignmentBehaviour:
             and f.final_severity not in (Severity.NONE, Severity.IGNORED)
         ]
         pair_keys = {_finding_pair_key(f) for f in drug_selected}
-        # Two distinct aligned pairs must survive per-pair dedup.
-        assert len(pair_keys) == 2
-        # Each pair contributes exactly one selected finding.
-        assert len(drug_selected) == 2
-        # Both aligned pairs are 90–91 days → moderate (≥70 day cutoff).
-        for f in drug_selected:
-            assert f.final_severity == Severity.MODERATE
-        assert result.n_moderate == 2
+        # Single-best-pair selection: the closest pair is (Jun1, Apr1) at
+        # 61 days → moderate, downgraded one step per-entity → minor. Every
+        # other date (Jan1, Aug30) is a leftover and produces nothing, so
+        # the more distant regimen mismatch is masked by design.
+        assert len(pair_keys) == 1
+        assert len(drug_selected) == 1
+        assert drug_selected[0].final_severity == Severity.MINOR
+        assert result.n_minor == 1
+        assert result.n_moderate == 0
+        assert result.n_strong == 0
+
+    def test_H_shared_date_plus_extras_yields_no_finding(self):
+        """Both reports share a date exactly, each with a distinct extra →
+        no finding.
+
+        Regression for the force-pairing artifact: previously the exact
+        match was consumed and the two unrelated leftovers were force-paired,
+        flagging their distance. Single-best-pair selection picks the
+        zero-difference shared date, so the entity is clean.
+        """
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("paroxetine", start="2025-03-04"),
+                _drug("paroxetine", start="2025-04-04"),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[
+                _drug("paroxetine", start="2024-02-06"),
+                _drug("paroxetine", start="2025-04-04"),
+            ],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_minor == 0
+        assert result.n_moderate == 0
+        assert result.n_strong == 0
+
+    def test_I_second_regimen_mismatch_is_masked(self):
+        """A shared start date masks a far-apart second regimen date — the
+        masking is intentional under single-best-pair selection.
+        """
+        r1 = _report(
+            "R1",
+            drugs=[
+                _drug("A", start="2020-01-01"),
+                _drug("A", start="2019-06-06"),
+            ],
+        )
+        r2 = _report(
+            "R2",
+            drugs=[
+                _drug("A", start="2020-01-01"),   # exact shared start date
+                _drug("A", start="2025-04-04"),   # years apart — masked
+            ],
+        )
+        result = compute_clinical_date_inconsistencies(r1, r2)
+        assert result.n_minor == 0
+        assert result.n_moderate == 0
         assert result.n_strong == 0
 
 
