@@ -12,18 +12,29 @@ from llm_dup_dev.models.report import (
 )
 from llm_dup_dev.feature_generation.matching import (
     _compare_partial_dates,
+    _match_age,
     _match_measurement,
     _numeric_resolution_match,
+    _quantize_floor,
     compute_matching_aes,
     compute_matching_clinical_dates,
     compute_matching_drugs,
     compute_matches,
 )
-from llm_dup_dev.models.report import MeasurementValue
+from llm_dup_dev.models.report import AgeValue, MeasurementValue
 
 
 def _mv(v, unit="cm"):
     return MeasurementValue(value=v, unit=unit, sources=["x"])
+
+
+def _age_report(*ages_years):
+    return Report(
+        report_id="r",
+        patient_age_values=[
+            AgeValue(value=v, unit="years", sources=["x"]) for v in ages_years
+        ],
+    )
 
 
 class TestNumericResolutionMatching:
@@ -67,6 +78,43 @@ class TestNumericResolutionMatching:
         assert m.value_resolution == 1.0
         m2 = _match_measurement("patient_weight", [_mv(75.2, "kg")], [_mv(75.2, "kg")])
         assert m2.value_resolution == pytest.approx(0.1)
+
+
+class TestAgeFloorMatching:
+    """Age uses floor (completed-age) bins, unlike height/weight which round
+    to nearest: a value 74.x describes a 74-year-old until the 75th birthday."""
+
+    def test_high_fraction_floors_into_lower_bin(self):
+        """74.6 vs 74 → match at 1-year resolution, value 74 (would NOT match
+        under nearest rounding, which puts 74.6 in the 75 bin)."""
+        m = _match_age(_age_report(74.6), _age_report(74.0))
+        assert m.matched is True
+        assert m.matched_value == 74.0
+        assert m.value_resolution == 1.0
+
+    def test_full_within_year_span_matches(self):
+        """74.0 and 74.9 are both 'age 74' → match."""
+        assert _match_age(_age_report(74.0), _age_report(74.9)).matched is True
+
+    def test_crossing_a_birthday_does_not_match(self):
+        """74.9 vs 75.0 straddle the 74/75 boundary → no match."""
+        assert _match_age(_age_report(74.9), _age_report(75.0)).matched is False
+
+    def test_height_weight_still_round_to_nearest(self):
+        """Contrast: the shared helper defaults to nearest rounding, so 74.6
+        and 74 do NOT match for height/weight."""
+        assert _numeric_resolution_match([74.6], [74.0])[0] is False
+
+    def test_exact_fine_age_match_keeps_resolution(self):
+        """74.6 vs 74.6 → exact match retained at 0.1 resolution."""
+        m = _match_age(_age_report(74.6), _age_report(74.6))
+        assert m.matched is True
+        assert m.value_resolution == pytest.approx(0.1)
+
+    def test_quantize_floor_absorbs_float_noise_at_grid_point(self):
+        """A stored 75.0 that evaluates just below 75 still floors to 75."""
+        assert _quantize_floor(75.0 - 1e-12, 1.0) == 75
+        assert _quantize_floor(74.99, 1.0) == 74
 
 
 class TestDrugMatching:

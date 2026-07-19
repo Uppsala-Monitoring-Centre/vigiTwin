@@ -186,18 +186,35 @@ def _quantize(value: float, resolution: float) -> int:
     return int(value / resolution + 0.5 + 1e-9)
 
 
+def _quantize_floor(value: float, resolution: float) -> int:
+    """Truncate *value* down to the grid step of *resolution* (floor).
+
+    Returns the integer grid index for the bin ``[index·r, (index+1)·r)``.
+    Used for age: people report their *completed* age (74 until their 75th
+    birthday), so 74.6 years floors into the 74-year bin rather than rounding
+    up to 75. Ages are non-negative, so ``int`` truncation is a floor; the
+    epsilon absorbs binary-float noise just below a grid point (a stored 75.0
+    that evaluates to 74.9999999 still floors to 75).
+    """
+    return int(value / resolution + 1e-9)
+
+
 def _numeric_resolution_match(
-    values_1: list[float], values_2: list[float]
+    values_1: list[float],
+    values_2: list[float],
+    *,
+    quantize: Callable[[float, float], int] = _quantize,
 ) -> tuple[bool, float | None, float | None]:
     """Match numeric demographics at the coarser of two decimal resolutions.
 
-    Two values match when they round (to nearest, half-up) to the same grid
-    point at the coarser of their two decimal resolutions — e.g. 75.2 and 75
-    both fall in the 1-unit bin centred on 75, so they match, while 75.6 does
-    not. Among all matching cross-report pairs the finest-resolution match is
-    returned, since an exact fine-grained match (75.2 ↔ 75.2) is stronger
-    evidence than a coarse one (75.2 ↔ 75) and should earn the correspondingly
-    larger domain.
+    Two values match when they map (via *quantize*) to the same grid point at
+    the coarser of their two decimal resolutions. With the default half-up
+    ``_quantize``, 75.2 and 75 both fall in the 1-unit bin centred on 75 and
+    match, while 75.6 does not. Age passes ``_quantize_floor`` instead, so the
+    bins are ``[index·r, (index+1)·r)`` (completed-age semantics). Among all
+    matching cross-report pairs the finest-resolution match is returned, since
+    an exact fine-grained match (75.2 ↔ 75.2) is stronger evidence than a
+    coarse one (75.2 ↔ 75) and should earn the correspondingly larger domain.
 
     Returns ``(matched, matched_value, resolution)``; the value and resolution
     are ``None`` when nothing matches.
@@ -207,8 +224,8 @@ def _numeric_resolution_match(
     for v1 in values_1:
         for v2 in values_2:
             res = max(_decimal_resolution(v1), _decimal_resolution(v2))
-            index = _quantize(v1, res)
-            if index == _quantize(v2, res):
+            index = quantize(v1, res)
+            if index == quantize(v2, res):
                 if best_res is None or res < best_res:
                     best_res = res
                     ndec = max(0, -round(math.log10(res)))
@@ -236,8 +253,12 @@ def _match_age(r1: Report, r2: Report) -> DemographicMatch:
     """Match patient age at the coarser of the two values' decimal resolutions.
 
     Values are compared **within the same unit** (years with years, months
-    with months). The finest-resolution match is recorded, together with its
-    unit and decimal resolution, for domain-size computation.
+    with months). Unlike height and weight, age uses **floor** (completed-age)
+    bins rather than nearest rounding: 74.6 y and 74 y describe the same age
+    (one is 74 until the 75th birthday), so they match, whereas nearest
+    rounding would place 74.6 in the 75 bin. The finest-resolution match is
+    recorded, together with its unit and decimal resolution, for domain-size
+    computation.
     """
     by_unit_1: dict[str, list[float]] = {}
     by_unit_2: dict[str, list[float]] = {}
@@ -249,7 +270,7 @@ def _match_age(r1: Report, r2: Report) -> DemographicMatch:
     best: tuple[float, float, str] | None = None  # (resolution, value, unit)
     for unit in set(by_unit_1) & set(by_unit_2):
         matched, val, res = _numeric_resolution_match(
-            by_unit_1[unit], by_unit_2[unit]
+            by_unit_1[unit], by_unit_2[unit], quantize=_quantize_floor
         )
         if matched and val is not None and res is not None:
             if best is None or res < best[0]:
