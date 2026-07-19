@@ -42,7 +42,7 @@ from enum import Enum
 class NarrativeConsistency(str, Enum):
     """Narrative consistency categories from LLM assessment.
 
-    See: docs/duplicate_adjudication_spec.md § Narrative Consistency Assessment
+    See: docs/duplicate_adjudication_spec.md § Narrative-derived features
 
     Values
     ------
@@ -160,7 +160,7 @@ class IndependenceAssessment(str, Enum):
     same-source scenarios. ``IndependenceAssessment.ABSTAIN`` itself is
     kept as a defensive backstop but is not emitted by standard paths.
 
-    See: docs/duplicate_adjudication_spec.md § Decision logic
+    See: docs/duplicate_adjudication_spec.md § Independence assessment and § Relationship assessment
     """
 
     NON_INDEPENDENT = "Non-independent"
@@ -182,7 +182,7 @@ class IndependenceReason(str, Enum):
     for paths not covered by the above; it is not emitted by any
     standard code path.
 
-    See: docs/duplicate_adjudication_spec.md § Decision logic
+    See: docs/duplicate_adjudication_spec.md § Independence assessment and § Relationship assessment
     """
 
     RARITY_COMPELLING = "rarity_compelling"
@@ -212,7 +212,7 @@ class DuplicateRelationship(str, Enum):
     describe the same individual. It maps to the user-facing label
     ``Abstain`` via ``ClassificationResult.final_label``.
 
-    See: docs/duplicate_adjudication_spec.md § Decision logic
+    See: docs/duplicate_adjudication_spec.md § Independence assessment and § Relationship assessment
     """
 
     DUPLICATES = "Duplicates"

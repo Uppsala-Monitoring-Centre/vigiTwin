@@ -82,7 +82,7 @@ and to ``Otherwise_related`` otherwise. ``L_patient`` is carried on
 :func:`llm_dup_dev.feature_generation.probability.compute_l_patient`
 for its definition.
 
-See: docs/duplicate_adjudication_spec.md § Decision logic
+See: docs/duplicate_adjudication_spec.md § Independence assessment and § Relationship assessment
 """
 
 from __future__ import annotations

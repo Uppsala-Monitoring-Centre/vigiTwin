@@ -78,7 +78,7 @@ class InconsistencyThresholds(BaseModel):
     These are starting values from the specification and may need
     refinement based on evaluation results.
 
-    See: docs/duplicate_adjudication_spec.md § Structured Data Inconsistencies
+    See: docs/duplicate_adjudication_spec.md § Inconsistency signals
     """
 
     # Age (years). At or above ``age_decisive`` the gap is treated as
@@ -156,7 +156,7 @@ class DecisionThresholds(BaseModel):
     not ``L_match``. It is deliberately not one of the zone boundaries
     above — see the field comment.
 
-    See: docs/duplicate_adjudication_spec.md § Decision logic
+    See: docs/duplicate_adjudication_spec.md § Relationship assessment
     """
 
     # L_match zone boundaries

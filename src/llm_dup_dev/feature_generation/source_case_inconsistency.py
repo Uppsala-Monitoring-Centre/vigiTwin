@@ -33,7 +33,7 @@ The remaining verdicts likewise emit nothing — ``SINGLE_PATIENT`` /
 ``MULTI_PATIENT_CONTEXT_NO_LINK`` / ``NO_DECISIVE_SIGNAL`` /
 ``NOT_ASSESSED`` are advisory only.
 
-See: docs/duplicate_adjudication_spec.md § Decision logic
+See: docs/duplicate_adjudication_spec.md § Relationship assessment
 """
 
 from __future__ import annotations
