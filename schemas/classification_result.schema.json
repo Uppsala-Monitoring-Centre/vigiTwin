@@ -34,7 +34,7 @@
       "type": "object"
     },
     "InconsistencySeverity": {
-      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Severity Levels\n\nLevels:\n    minor     \u2013 small difference, weakly suggests different individuals\n    moderate  \u2013 meaningful difference, weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
+      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Severity levels\n\nLevels:\n    minor     \u2013 small difference, weakly suggests different individuals\n    moderate  \u2013 meaningful difference, weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
       "enum": [
         "minor",
         "moderate",

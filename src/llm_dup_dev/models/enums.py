@@ -61,7 +61,7 @@ class NarrativeConsistency(str, Enum):
 class InconsistencySeverity(str, Enum):
     """Severity levels for detected inconsistencies between reports.
 
-    See: docs/duplicate_adjudication_spec.md § Severity Levels
+    See: docs/duplicate_adjudication_spec.md § Severity levels
 
     Levels:
         minor     – small difference, weakly suggests different individuals
@@ -116,7 +116,7 @@ class DrugRole(str, Enum):
 class ReportingContextLevel(str, Enum):
     """Granularity of the reporting context used for probability estimation.
 
-    See: docs/duplicate_adjudication_spec.md § Reporting Context
+    See: docs/duplicate_adjudication_spec.md § Reporting context
     """
 
     COUNTRY_YEAR = "country_year"
@@ -127,7 +127,7 @@ class ReportingContextLevel(str, Enum):
 class AnchorType(str, Enum):
     """Type of anchor population selected for probability estimation.
 
-    See: docs/duplicate_adjudication_spec.md § Anchor Selection
+    See: docs/duplicate_adjudication_spec.md § Anchor selection
     """
 
     DRUGS = "drugs"

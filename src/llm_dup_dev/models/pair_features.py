@@ -31,7 +31,7 @@ class ReportingContext(BaseModel):
     Defines the subset of the database within which probabilities
     and frequencies are evaluated.
 
-    See: docs/duplicate_adjudication_spec.md § Reporting Context
+    See: docs/duplicate_adjudication_spec.md § Reporting context
     """
 
     level: ReportingContextLevel
@@ -44,7 +44,7 @@ class AnchorPopulation(BaseModel):
 
     Contains three candidate population sizes and the selected anchor.
 
-    See: docs/duplicate_adjudication_spec.md § Anchor Selection
+    See: docs/duplicate_adjudication_spec.md § Anchor selection
     """
 
     N_drugs: int
@@ -61,7 +61,7 @@ class FeatureContribution(BaseModel):
     together to form p_joint. Useful for debugging and method development:
     understanding which features contributed how much evidence.
 
-    See: docs/duplicate_adjudication_spec.md § Probability estimation
+    See: docs/duplicate_adjudication_spec.md § Rarity-based matching evidence
     """
 
     feature: str
@@ -78,7 +78,7 @@ class ProbabilityEstimate(BaseModel):
     opportunity; ``p_match`` adjusts it for the multiplicity of the anchor
     population. Both are probabilities in [0, 1] — neither is a p-value.
 
-    See: docs/duplicate_adjudication_spec.md § Probability estimation
+    See: docs/duplicate_adjudication_spec.md § Rarity-based matching evidence
     """
 
     p_joint: float = Field(

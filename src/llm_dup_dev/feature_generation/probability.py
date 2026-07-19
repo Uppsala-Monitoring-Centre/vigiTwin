@@ -19,7 +19,7 @@ that identify a patient and carrying no multiplicity adjustment. Both are
 evidence measures computed here; the decision logic only compares them to
 their respective thresholds.
 
-See: docs/duplicate_adjudication_spec.md § Probability estimation
+See: docs/duplicate_adjudication_spec.md § Rarity-based matching evidence
 """
 
 from __future__ import annotations

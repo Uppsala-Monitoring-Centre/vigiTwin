@@ -16,7 +16,7 @@ class DomainSizeConfig(BaseModel):
 
     Used when computing p_f = 1/D_f for matched features.
 
-    See: docs/duplicate_adjudication_spec.md § Determining Domain Size
+    See: docs/duplicate_adjudication_spec.md § Determining domain size
     """
 
     # Age
@@ -113,7 +113,7 @@ class InconsistencyThresholds(BaseModel):
 class AnchorConfig(BaseModel):
     """Parameters for anchor population selection.
 
-    See: docs/duplicate_adjudication_spec.md § Anchor Selection
+    See: docs/duplicate_adjudication_spec.md § Anchor selection
     """
 
     threshold: int = Field(
