@@ -160,11 +160,19 @@ class FrequencyStats(BaseModel):
 #: available, the floor is ``1 / max(N_total_global - 2, 1)`` instead.
 MARGINAL_FLOOR: float = 1e-6
 
-#: Features that do not identify a patient, and are therefore excluded from
-#: L_patient. Drugs and adverse events overlap by construction within a
-#: multi-patient publication / shared study context, so they are weak
-#: identifiers of patient identity in that setting.
-NON_PATIENT_SPECIFIC_FEATURES: frozenset[str] = frozenset({"drug_set", "ae_set"})
+#: Features that identify a patient, and are therefore the only contributions
+#: included in L_patient. Drugs and adverse events are deliberately absent:
+#: they overlap by construction within a multi-patient publication / shared
+#: study context, so they are weak identifiers of patient identity there. An
+#: explicit allowlist (rather than an exclusion set) keeps a future feature
+#: from silently leaking into L_patient.
+PATIENT_SPECIFIC_FEATURES: frozenset[str] = frozenset({
+    "patient_age",
+    "patient_sex",
+    "patient_height",
+    "patient_weight",
+    "clinical_date",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +183,7 @@ NON_PATIENT_SPECIFIC_FEATURES: frozenset[str] = frozenset({"drug_set", "ae_set"}
 def compute_l_patient(contributions: Iterable[_FeatureProbabilityLike]) -> float:
     """Sum ``-log10(p_f)`` over the patient-specific features.
 
-        L_patient = Σ  -log10(p_f)   for f ∉ NON_PATIENT_SPECIFIC_FEATURES
+        L_patient = Σ  -log10(p_f)   for f ∈ PATIENT_SPECIFIC_FEATURES
 
     Equivalently, ``-log10`` of the joint chance-match probability restricted
     to the patient-specific features: a measure of patient-specific
@@ -184,8 +192,9 @@ def compute_l_patient(contributions: Iterable[_FeatureProbabilityLike]) -> float
 
     Two deliberate departures from ``L_match``:
 
-    * Drug-set and AE-set contributions are dropped — see
-      :data:`NON_PATIENT_SPECIFIC_FEATURES`.
+    * Only patient-specific features contribute — see
+      :data:`PATIENT_SPECIFIC_FEATURES`; drug-set and AE-set contributions are
+      not on the allowlist.
     * **No multiplicity adjustment of any kind.** ``L_match`` asks how likely
       the match would be to arise by chance *somewhere in the anchor
       population*, and is adjusted for the M = C(N_anchor, 2) pairwise
@@ -220,7 +229,7 @@ def compute_l_patient(contributions: Iterable[_FeatureProbabilityLike]) -> float
     """
     total = 0.0
     for fc in contributions:
-        if fc.feature in NON_PATIENT_SPECIFIC_FEATURES:
+        if fc.feature not in PATIENT_SPECIFIC_FEATURES:
             continue
         if fc.p_f <= 0:
             # Guards log10(0); a non-positive p_f carries no evidence.
@@ -579,16 +588,6 @@ def _parse_date_string(val: str) -> "date | None":
         return None
 
 
-def _age_decimal_resolution(value: float) -> float:
-    """Return the decimal resolution of an age value (e.g. 54.2 → 0.1, 54 → 1.0)."""
-    s = str(value)
-    if "." in s:
-        decimal_places = len(s.split(".")[1].rstrip("0"))
-        if decimal_places > 0:
-            return 10.0 ** (-decimal_places)
-    return 1.0
-
-
 def _get_domain_size(
     dm: DemographicMatch,
     config: DomainSizeConfig,
@@ -601,9 +600,11 @@ def _get_domain_size(
     For date features, uses the matched resolution and reporting context
     to select the context-dependent default domain size.
 
-    For patient_age, uses the recorded unit and decimal precision.
-    For patient_height and patient_weight, uses matched_age_years to
-    select the child (<= child_age_threshold_years) or adult domain size.
+    For patient_age, patient_height, and patient_weight, the base domain is
+    divided by the matched decimal resolution, so a finer-grained match earns
+    proportionally more evidence. Height/weight additionally use
+    matched_age_years to select the child (<= child_age_threshold_years) or
+    adult base domain.
     """
     if dm.date_resolution is not None:
         return _context_default_for_resolution(
@@ -613,12 +614,10 @@ def _get_domain_size(
     if dm.feature == "patient_age":
         if dm.age_unit == "months":
             return config.age_months_range
-        # Years (integer or decimal)
-        resolution = (
-            _age_decimal_resolution(float(dm.matched_value))
-            if dm.matched_value is not None
-            else 1.0
-        )
+        # Years: scale the domain by the matched decimal resolution, so a
+        # match at 0.1-year precision earns ten times the evidence of a
+        # whole-year match.
+        resolution = dm.value_resolution or 1.0
         return config.age_years_range / resolution
 
     if dm.feature in ("patient_height", "patient_weight"):
@@ -626,9 +625,14 @@ def _get_domain_size(
             matched_age_years is not None
             and matched_age_years <= config.child_age_threshold_years
         )
-        if dm.feature == "patient_height":
-            return config.height_cm(is_child)
-        return config.weight_kg(is_child)
+        base = (
+            config.height_cm(is_child)
+            if dm.feature == "patient_height"
+            else config.weight_kg(is_child)
+        )
+        # Scale by the matched decimal resolution, as for age.
+        resolution = dm.value_resolution or 1.0
+        return base / resolution
 
     domain_map: dict[str, float] = {
         "patient_sex": config.sex_categories,

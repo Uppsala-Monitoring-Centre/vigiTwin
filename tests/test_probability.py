@@ -17,6 +17,7 @@ from llm_dup_dev.feature_generation.probability import (
     MARGINAL_FLOOR,
     FrequencyStats,
     _clinical_date_domain_sizes,
+    _get_domain_size,
     _marginal_with_backoff,
     compute_l_patient,
     compute_probability,
@@ -1609,6 +1610,41 @@ class TestDegenerateAnchorEvidence:
 # L_patient — patient-specific evidence
 # ===================================================================
 
+class TestMeasurementDomainScaling:
+    """Height/weight/age domains scale with the matched decimal resolution."""
+
+    def _dm(self, feature, value, resolution):
+        return DemographicMatch(
+            feature=feature, matched=True, matched_value=value,
+            value_resolution=resolution,
+        )
+
+    def test_adult_height_integer_resolution(self, domain_config):
+        dm = self._dm("patient_height", 170.0, 1.0)
+        assert _get_domain_size(dm, domain_config, matched_age_years=40.0) == 40.0
+
+    def test_adult_height_tenth_resolution_scales(self, domain_config):
+        """0.1 cm resolution → domain ×10 (40 → 400)."""
+        dm = self._dm("patient_height", 170.2, 0.1)
+        assert _get_domain_size(dm, domain_config, matched_age_years=40.0) == 400.0
+
+    def test_adult_weight_tenth_resolution_scales(self, domain_config):
+        dm = self._dm("patient_weight", 75.2, 0.1)
+        assert _get_domain_size(dm, domain_config, matched_age_years=40.0) == 400.0
+
+    def test_child_height_scales_from_child_base(self, domain_config):
+        """Child base 20 → 200 at 0.1 cm resolution."""
+        dm = self._dm("patient_height", 90.5, 0.1)
+        assert _get_domain_size(dm, domain_config, matched_age_years=5.0) == 200.0
+
+    def test_age_years_tenth_resolution_scales(self, domain_config):
+        dm = DemographicMatch(
+            feature="patient_age", matched=True, matched_value=40.5,
+            value_resolution=0.1, age_unit="years",
+        )
+        assert _get_domain_size(dm, domain_config) == 800.0
+
+
 class TestComputeLPatient:
     """compute_l_patient must:
 
@@ -1632,6 +1668,16 @@ class TestComputeLPatient:
         contributions = [_fc("drug_set", 1e-10), _fc("ae_set", 1e-10)]
         # These p_f would contribute +20 to L_match; L_patient must ignore them.
         assert compute_l_patient(contributions) == 0.0
+
+    def test_excludes_features_not_on_allowlist(self):
+        """Only allow-listed patient features contribute; anything else (a
+        future or unexpected feature name) is dropped, not silently summed."""
+        contributions = [
+            _fc("patient_age", 1.0 / 80.0),   # counted
+            _fc("report_date", 0.001),        # not on the allowlist → dropped
+            _fc("some_new_feature", 1e-6),    # not on the allowlist → dropped
+        ]
+        assert compute_l_patient(contributions) == pytest.approx(1.90309, abs=1e-4)
 
     def test_sums_patient_specific_contributions(self):
         """sex + age → -log10(0.5) + -log10(1/80) ≈ 0.30103 + 1.90309."""
