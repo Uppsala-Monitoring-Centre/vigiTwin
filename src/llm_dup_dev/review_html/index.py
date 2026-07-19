@@ -109,8 +109,8 @@ def build_batch_index_item(
             if vm.features_summary
             else None
         ),
-        duplicate_relationship=(
-            vm.classification_summary.duplicate_relationship
+        relationship_assessment=(
+            vm.classification_summary.relationship_assessment
             if vm.classification_summary
             else None
         ),

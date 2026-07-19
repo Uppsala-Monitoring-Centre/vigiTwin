@@ -20,7 +20,7 @@ from llm_dup_dev.classifier.decision_logic import classify
 from llm_dup_dev.feature_generation.probability import compute_l_patient
 from llm_dup_dev.models.enums import (
     AnchorType,
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
     NarrativeConsistency,
@@ -131,27 +131,27 @@ def _assessment(
     )
 
 
-def _assert_duplicates(result):
+def _assert_same_case(result):
     assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
-    assert result.duplicate_relationship == DuplicateRelationship.DUPLICATES
+    assert result.relationship_assessment == RelationshipAssessment.SAME_CASE
     assert result.final_label == "Duplicates"
 
 
-def _assert_otherwise_related(result):
+def _assert_different_case(result):
     assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
-    assert result.duplicate_relationship == DuplicateRelationship.OTHERWISE_RELATED
+    assert result.relationship_assessment == RelationshipAssessment.DIFFERENT_CASE
     assert result.final_label == "Otherwise_related"
 
 
 def _assert_independent(result):
     assert result.independence_assessment == IndependenceAssessment.INDEPENDENT
-    assert result.duplicate_relationship is None
+    assert result.relationship_assessment is None
     assert result.final_label == "Unrelated"
 
 
 def _assert_abstain(result):
     assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
-    assert result.duplicate_relationship == DuplicateRelationship.ABSTAIN
+    assert result.relationship_assessment == RelationshipAssessment.ABSTAIN
     assert result.final_label == "Abstain"
 
 
@@ -172,50 +172,50 @@ class TestStrongZone:
         """w_tot=0 < 4 → Duplicates."""
         f = _make_features(L_match=4.0)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_one_strong_zero_moderate_duplicates(self):
         """w_tot = 3*1 = 3 < 4 → Duplicates."""
         f = _make_features(L_match=4.0, strong=1)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_three_moderate_duplicates(self):
         """w_tot = 1*3 = 3 < 4 → Duplicates."""
         f = _make_features(L_match=4.0, moderate=3)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_one_strong_one_moderate_boundary_otherwise_related(self):
         """w_tot = 3 + 1 = 4, NOT < 4 → Otherwise_related."""
         f = _make_features(L_match=4.0, strong=1, moderate=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_two_strong_otherwise_related(self):
         """w_tot = 3*2 = 6 ≥ 4 → Otherwise_related."""
         f = _make_features(L_match=4.0, strong=2)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_four_moderate_boundary_otherwise_related(self):
         """w_tot = 1*4 = 4, NOT < 4 → Otherwise_related."""
         f = _make_features(L_match=4.0, moderate=4)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_boundary_lmatch_exactly_strong(self):
         """L_match == lmatch_compelling (3.0) → NOT in compelling zone, falls to medium."""
         f = _make_features(L_match=3.0)
         result = classify(f, THRESHOLDS)
         # 3.0 is NOT > 3.0, so falls to intermediate zone
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_just_above_strong(self):
         """L_match barely above strong threshold."""
         f = _make_features(L_match=3.01)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
 
 # ===================================================================
@@ -229,25 +229,25 @@ class TestMediumZone:
         """w_tot=0 < 3 → Duplicates."""
         f = _make_features(L_match=2.5)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_two_moderate_duplicates(self):
         """w_tot = 1*2 = 2 < 3 → Duplicates."""
         f = _make_features(L_match=2.5, moderate=2)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_one_strong_boundary_otherwise_related(self):
         """w_tot = 3*1 = 3, NOT < 3 → Otherwise_related."""
         f = _make_features(L_match=2.5, strong=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_three_moderate_boundary_otherwise_related(self):
         """w_tot = 1*3 = 3, NOT < 3 → Otherwise_related."""
         f = _make_features(L_match=2.5, moderate=3)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_boundary_lmatch_exactly_med(self):
         """L_match == lmatch_intermediate (2.0) → NOT in intermediate zone, falls to weak."""
@@ -255,13 +255,13 @@ class TestMediumZone:
         result = classify(f, THRESHOLDS)
         # 2.0 is NOT > 2.0, falls to limited zone
         # No inconsistencies → Duplicates
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
 
 # ===================================================================
 # Limited zone: lmatch_limited < L_match ≤ lmatch_intermediate — w_tot < 1 → Duplicates,
 # else Non-independent / Otherwise_related (matching evidence still
-# rejects independence; inconsistencies only downgrade the sub-label).
+# rejects independence; inconsistencies only downgrade the relationship).
 # ===================================================================
 
 class TestWeakZone:
@@ -271,19 +271,19 @@ class TestWeakZone:
         """w_tot=0 < 1 → Duplicates."""
         f = _make_features(L_match=1.5)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_one_moderate_boundary_otherwise_related(self):
         """w_tot = 1, NOT < 1 → Otherwise_related."""
         f = _make_features(L_match=1.5, moderate=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_one_strong_otherwise_related(self):
         """w_tot = 3 ≥ 1 → Otherwise_related."""
         f = _make_features(L_match=1.5, strong=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_boundary_lmatch_exactly_weak(self):
         """L_match == lmatch_limited (1.0) → NOT in limited zone, falls to below."""
@@ -329,26 +329,26 @@ class TestDecisiveInconsistency:
         """Decisive + L_match > lmatch_intermediate → Non-independent / Otherwise_related."""
         f = _make_features(L_match=5.0, decisive=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_decisive_with_medium_lmatch_otherwise_related(self):
         """Decisive + L_match just above lmatch_intermediate → Otherwise_related."""
         f = _make_features(L_match=2.5, decisive=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_decisive_with_weak_lmatch_otherwise_related(self):
         """Decisive + lmatch_limited < L_match ≤ lmatch_intermediate → Otherwise_related."""
         f = _make_features(L_match=1.5, decisive=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_decisive_boundary_at_med(self):
         """Decisive + L_match == lmatch_intermediate (2.0) → NOT > med, falls to weak
         zone → Otherwise_related."""
         f = _make_features(L_match=2.0, decisive=1)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_decisive_at_weak_boundary_independent(self):
         """Decisive + L_match == lmatch_limited (1.0) → falls to below-limited →
@@ -362,13 +362,13 @@ class TestDecisiveInconsistency:
         decisive forces Otherwise_related (not Duplicates)."""
         f = _make_features(L_match=10.0, decisive=1, strong=0, moderate=0)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_multiple_decisive(self):
         """Multiple decisive inconsistencies still handled correctly."""
         f = _make_features(L_match=4.0, decisive=3)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
         assert "decisive=3" in result.explanation
 
 
@@ -388,7 +388,7 @@ class TestCustomThresholds:
         # strong=1 → w_tot=3 < 4 → Duplicates
         f = _make_features(L_match=2.5, strong=1)
         result = classify(f, relaxed)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_strict_lmatch(self):
         """With higher L_match thresholds, same L_match falls to lower zone."""
@@ -399,7 +399,7 @@ class TestCustomThresholds:
         # moderate=1 → w_tot=1 ≥ 1 → Otherwise_related
         f = _make_features(L_match=3.5, moderate=1)
         result = classify(f, strict)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_custom_weights(self):
         """Custom weights change what w_tot value is produced."""
@@ -410,7 +410,7 @@ class TestCustomThresholds:
         )
         f = _make_features(L_match=4.0, strong=1)
         result = classify(f, custom)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_custom_weights_boundary(self):
         """Custom weights at boundary produce Otherwise_related."""
@@ -421,7 +421,7 @@ class TestCustomThresholds:
         )
         f = _make_features(L_match=4.0, strong=1, moderate=1)
         result = classify(f, custom)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
 
 # ===================================================================
@@ -465,7 +465,7 @@ class TestDefaultThresholds:
     def test_uses_defaults_duplicates(self):
         f = _make_features(L_match=4.0)
         result = classify(f)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_uses_defaults_independent(self):
         f = _make_features(L_match=0.5)
@@ -498,16 +498,16 @@ class TestIndependenceReasonFromRarity:
 
 
 # ===================================================================
-# Shared-source override path
+# Shared-source verdicts (direct evidence of shared provenance)
 # ===================================================================
 
-class TestSharedSourceOverride:
+class TestSharedSourceVerdicts:
     """A reliable shared source identifier rejects independence
     regardless of L_match."""
 
     def test_same_source_single_patient_forces_duplicates(self):
         """SAME_SOURCE_SINGLE_PATIENT with L=0 and no other
-        inconsistencies → Duplicates via override."""
+        inconsistencies → Same_case via the Identity zone."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -515,12 +515,12 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_same_case_forces_duplicates(self):
         """SAME_SOURCE_SAME_CASE with L=0 and no other
-        inconsistencies → Duplicates via override."""
+        inconsistencies → Same_case via the Identity zone."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -528,7 +528,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_same_case_downgrades_when_other_decisive(self):
@@ -558,7 +558,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_tolerates_two_moderates(self):
@@ -572,13 +572,13 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_tolerates_one_strong(self):
         """A single strong inconsistency (w_tot=3.0) is still below the
         compelling-zone threshold (4.0) and remains in the Duplicates
-        branch for a confirmed same-case verdict. The override shares
+        branch for a confirmed same-case verdict. The Identity zone shares
         the compelling-zone inconsistency budget: a single strong is
         tolerated."""
         f = _make_features(
@@ -589,7 +589,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_demotes_on_moderate_plus_strong(self):
@@ -612,7 +612,7 @@ class TestSharedSourceOverride:
 
     def test_same_source_different_case_forces_otherwise_related(self):
         """SAME_SOURCE_DIFFERENT_CASE → Otherwise_related pinned by the
-        override, even with L=0."""
+        shared-source evidence, even with L=0."""
         f = _make_features(
             L_match=0.0,
             # Decisive finding is synthesized by generate_pair_features;
@@ -623,14 +623,14 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     # SAME_SOURCE_UNCOMPARABLE_CASE has a two-way rule. The dedicated
     # test class TestUncomparableCaseThreeWayRule below covers branches
     # A (Duplicates), B (Otherwise_related), and C (Otherwise_related
     # default) in depth. The two tests below act as smoke tests for the
-    # override-path entry.
+    # source-context zone entry.
 
     def test_same_source_uncomparable_case_no_evidence_otherwise_related(self):
         """UNCOMPARABLE_CASE smoke test: no feature contributions, no
@@ -643,7 +643,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_same_source_uncomparable_case_otherwise_related_on_decisive(self):
@@ -658,11 +658,11 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_multi_patient_no_link_falls_through(self):
-        """Advisory verdict does not trigger the override — existing
+        """Advisory verdict selects no source-context zone — existing
         L_match logic applies."""
         f = _make_features(
             L_match=0.5,  # below limited threshold
@@ -684,7 +684,7 @@ class TestSharedSourceOverride:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.RARITY_COMPELLING
 
     def test_not_assessed_falls_through(self):
@@ -704,7 +704,7 @@ class TestSharedSourceOverride:
         _assert_independent(result)
         assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
 
-    def test_override_explanation_mentions_verdict_and_identifier(self):
+    def test_explanation_mentions_verdict_and_identifier(self):
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -718,11 +718,11 @@ class TestSharedSourceOverride:
 
 
 # ===================================================================
-# Abstain outcome — shared-source override path
+# Abstain outcome — Identity zone
 # ===================================================================
 
 class TestAbstainOutcome:
-    """Abstain is produced by the shared-source override for epistemically
+    """Abstain is produced by the Identity zone for epistemically
     underdetermined same-source scenarios."""
 
     def test_single_patient_strong_inconsistency_abstains(self):
@@ -767,7 +767,7 @@ class TestAbstainOutcome:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_abstain_explanation_contains_w_tot(self):
         """Abstain explanation includes the w_tot value for auditability."""
@@ -812,7 +812,7 @@ class TestAbstainOutcome:
         )
         result = classify(f, THRESHOLDS)
         assert result.independence_assessment == IndependenceAssessment.NON_INDEPENDENT
-        assert result.duplicate_relationship == DuplicateRelationship.ABSTAIN
+        assert result.relationship_assessment == RelationshipAssessment.ABSTAIN
 
 
 # ===================================================================
@@ -845,7 +845,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_branch_a_explanation_surfaces_l_patient(self):
@@ -880,7 +880,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_branch_a_tolerates_one_minor_inconsistency(self):
         """One minor inconsistency (w_tot=0.4 < 1.0) does not trigger
@@ -899,7 +899,7 @@ class TestUncomparableCaseThreeWayRule:
         from llm_dup_dev.models.pair_features import InconsistencyCounts
         f.inconsistency_counts = InconsistencyCounts(minor=1)
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
+        _assert_same_case(result)
 
     def test_branch_a_drops_on_sex_only(self):
         """sex only → L_patient ≈ 0.30, NOT > 2.0 → Otherwise_related
@@ -912,7 +912,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_branch_a_drug_ae_contributions_do_not_count(self):
         """drug_set p_f=1e-10 + ae_set p_f=1e-10 (full L_match would be huge)
@@ -927,7 +927,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     # ---------- Branch B: Otherwise_related ----------
 
@@ -943,7 +943,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_branch_b_decisive_inconsistency(self):
         """Decisive inconsistency (w_tot=100) → Otherwise_related."""
@@ -956,7 +956,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_branch_b_three_year_age_diff_triggers_otherwise_related(self):
         """3-year age difference → moderate inconsistency (w_tot=1.0) →
@@ -972,7 +972,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_branch_b_three_minors_accumulate_to_otherwise_related(self):
         """Three minor inconsistencies (w_tot=1.2) ≥ 1.0 → Otherwise_related.
@@ -988,7 +988,7 @@ class TestUncomparableCaseThreeWayRule:
         from llm_dup_dev.models.pair_features import InconsistencyCounts
         f.inconsistency_counts = InconsistencyCounts(minor=3)
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     # ---------- Branch C: Otherwise_related (default) ----------
 
@@ -1002,7 +1002,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     def test_branch_c_explanation_surfaces_both_quantities(self):
         """The (C) explanation must surface L_patient and w_tot."""
@@ -1037,7 +1037,7 @@ class TestUncomparableCaseThreeWayRule:
         )
         assert THRESHOLDS.lpatient_compelling == 2.0  # guards the fixture
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
 
 class TestLPatientThresholdIsIndependent:
@@ -1074,14 +1074,14 @@ class TestLPatientThresholdIsIndependent:
                 f, DecisionThresholds(lmatch_intermediate=lmatch_intermediate)
             )
             # Duplicates at every setting: the bar is lpatient_compelling.
-            _assert_duplicates(result)
+            _assert_same_case(result)
 
     def test_lpatient_compelling_does_move_the_bar(self):
         """The dedicated threshold is the one that governs the branch."""
         f = self._uncomparable_sex_plus_age()
         # 2.204 > 2.0 → Duplicates; 2.204 < 8.0 → Otherwise_related (branch C).
-        _assert_duplicates(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
-        _assert_otherwise_related(
+        _assert_same_case(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
+        _assert_different_case(
             classify(f, DecisionThresholds(lpatient_compelling=8.0))
         )
 
@@ -1092,7 +1092,7 @@ class TestLPatientThresholdIsIndependent:
             f, DecisionThresholds(lpatient_compelling=1.0, lmatch_intermediate=9.0)
         )
         # L_patient=2.20 > 1.0 → Duplicates, quoting 1.0 and never 9.0.
-        _assert_duplicates(result)
+        _assert_same_case(result)
         assert "L_patient=2.20 > 1.0" in result.explanation
         assert "9.0" not in result.explanation
 
@@ -1109,8 +1109,8 @@ class TestLPatientThresholdIsIndependent:
                 SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
             ),
         )
-        _assert_duplicates(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
-        _assert_otherwise_related(
+        _assert_same_case(classify(f, DecisionThresholds(lpatient_compelling=2.0)))
+        _assert_different_case(
             classify(f, DecisionThresholds(lpatient_compelling=8.0))
         )
 
@@ -1120,14 +1120,15 @@ class TestLPatientThresholdIsIndependent:
 # ===================================================================
 
 class TestMultiPatientContextNoLink:
-    """``MULTI_PATIENT_CONTEXT_NO_LINK`` is routed through the same
-    two-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` *only* when
-    ``L_match > lmatch_limited``. Below that threshold the verdict is
-    treated as advisory and the pair falls through to the standard
-    weak-threshold branch (→ Independent). The two verdicts share the
-    drug-set / AE-set inflation concern but only UNCOMPARABLE_CASE
-    carries positive shared-source evidence, so MULTI_PATIENT is gated
-    on enough matching evidence to take the override seriously."""
+    """``MULTI_PATIENT_CONTEXT_NO_LINK`` reaches the Unresolved zone —
+    the same two-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` — *only*
+    when independence is rejected, which for this verdict requires
+    ``L_match > lmatch_limited`` (it carries no shared-source evidence,
+    so the independence reason is the rarity zone, not shared_source).
+    Below that threshold the verdict is advisory and the pair stays
+    Independent. The two verdicts share the drug-set / AE-set inflation
+    concern but only UNCOMPARABLE_CASE carries positive shared-source
+    evidence."""
 
     # ---------- Below / at the weak threshold: fall through ----------
 
@@ -1151,7 +1152,7 @@ class TestMultiPatientContextNoLink:
     def test_branch_a_above_weak_duplicates(self):
         """L_match=2.5 (above weak), w_tot=0, L_patient ≈ 2.20 > 2.0 →
         Duplicates via Branch A. Standard zone logic would also yield
-        Duplicates here, so this confirms the override path produces
+        Duplicates here, so this confirms the Unresolved zone produces
         the same outcome when patient-specific evidence is strong."""
         f = _make_features(
             L_match=2.5,
@@ -1162,8 +1163,8 @@ class TestMultiPatientContextNoLink:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_duplicates(result)
-        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+        _assert_same_case(result)
+        assert result.independence_reason == IndependenceReason.RARITY_INTERMEDIATE
 
     def test_branch_b_one_moderate_otherwise_related(self):
         """The motivating case: L_match=3.3 (compelling zone) with one
@@ -1181,13 +1182,13 @@ class TestMultiPatientContextNoLink:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
-        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+        _assert_different_case(result)
+        assert result.independence_reason == IndependenceReason.RARITY_COMPELLING
 
     def test_branch_c_above_weak_insufficient_l_patient_otherwise_related(self):
         """L_match=2.5 with only sex contribution (L_patient ≈ 0.30 ≤
         2.0) and no inconsistencies → Branch C Otherwise_related default.
-        Standard zone logic would have returned Duplicates; the override
+        Standard zone logic would have returned Duplicates; the Unresolved zone
         withholds the Duplicates call but no longer abstains."""
         f = _make_features(
             L_match=2.5,
@@ -1198,8 +1199,8 @@ class TestMultiPatientContextNoLink:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
-        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+        _assert_different_case(result)
+        assert result.independence_reason == IndependenceReason.RARITY_INTERMEDIATE
 
     def test_branch_c_drug_ae_contributions_do_not_count(self):
         """Huge drug/AE concordance must not move a no-shared-source
@@ -1215,7 +1216,7 @@ class TestMultiPatientContextNoLink:
             ),
         )
         result = classify(f, THRESHOLDS)
-        _assert_otherwise_related(result)
+        _assert_different_case(result)
 
     # ---------- Explanation surface ----------
 

@@ -6,7 +6,7 @@ from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AnchorType,
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     InconsistencySeverity,
     NarrativeConsistency,
@@ -509,7 +509,7 @@ def _make_classification(pair_id: str = "R001__R002") -> ClassificationResult:
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        duplicate_relationship=DuplicateRelationship.DUPLICATES,
+        relationship_assessment=RelationshipAssessment.SAME_CASE,
         explanation="High L_match with minor inconsistencies.",
     )
 
@@ -800,7 +800,7 @@ class TestPredictionRendering:
         classification = ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+            relationship_assessment=RelationshipAssessment.DIFFERENT_CASE,
             explanation="Related but not the same case.",
         )
         vm = build_pair_view_model(
@@ -959,8 +959,8 @@ class TestAnnotationRendering:
         abstain_classification = ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.ABSTAIN,
-            explanation="Shared-source override; identity indeterminate.",
+            relationship_assessment=RelationshipAssessment.ABSTAIN,
+            explanation="Shared source; identity indeterminate.",
         )
         for human_label in ("duplicates", "otherwise_related", "unrelated"):
             vm = build_pair_view_model(

@@ -702,14 +702,14 @@ class TestClinicalDateCountsInViewModels:
         """features_summary.clinical_date_counts must be populated."""
         from llm_dup_dev.models.classification import ClassificationResult
         from llm_dup_dev.models.enums import (
-            DuplicateRelationship,
+            RelationshipAssessment,
             IndependenceAssessment,
         )
 
         classification = ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
             explanation="test",
         )
         vm = build_pair_view_model(
@@ -733,14 +733,14 @@ class TestClinicalDateCountsInViewModels:
         """decision_summary.clinical_date_counts must be populated."""
         from llm_dup_dev.models.classification import ClassificationResult
         from llm_dup_dev.models.enums import (
-            DuplicateRelationship,
+            RelationshipAssessment,
             IndependenceAssessment,
         )
 
         classification = ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
             explanation="test",
         )
         vm = build_pair_view_model(
@@ -764,20 +764,20 @@ class TestClinicalDateCountsInViewModels:
 
 class TestDecisionSummarySourceCase:
     """The Decision summary must surface source_case_assessment (the
-    classifier consumes it via the shared-source override) and must
+    classifier consumes it via the source-context zones) and must
     no longer surface narrative_consistency (which the classifier
     does not consult)."""
 
     def _classification(self):
         from llm_dup_dev.models.classification import ClassificationResult
         from llm_dup_dev.models.enums import (
-            DuplicateRelationship,
+            RelationshipAssessment,
             IndependenceAssessment,
         )
         return ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
             explanation="test",
         )
 

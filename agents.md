@@ -17,12 +17,13 @@ Historically the pipeline was framed as a "same-individual assessment".
 The current framing is **report-pair adjudication / duplicate
 adjudication**, and the rarity-based matching component is treated as a
 test of the **independence null** (was it plausible that the two reports
-were independent draws from the comparison population?). Internally the
-decision logic produces two layered labels — an `IndependenceAssessment`
-plus a `DuplicateRelationship` sub-label — that are mapped to the
-user-facing `Duplicates / Otherwise_related / Unrelated / Abstain`
-labels by `ClassificationResult.final_label`. See
-`docs/duplicate_adjudication_spec.md` § Decision logic for the full
+were independent draws from the comparison population?). The decision
+logic answers two questions in sequence — an `IndependenceAssessment`
+(`Non-independent / Independent`) and, for non-independent pairs, a
+`RelationshipAssessment` (`Same_case / Different_case / Abstain`) —
+which `ClassificationResult.final_label` maps to the user-facing
+`Duplicates / Otherwise_related / Unrelated / Abstain` labels. See
+`docs/duplicate_adjudication_spec.md` § Final output for the full
 mapping and rationale.
 
 ## Core principles

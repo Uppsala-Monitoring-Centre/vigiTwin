@@ -7,7 +7,7 @@ evidential weight. Conversely, an unnarrowed anchor means the reports
 share no clinical context, so the matching evidence is correspondingly
 weak — see ``select_anchor`` on why that is N_total and never zero.
 
-See: docs/duplicate_adjudication_spec.md § Anchor Selection
+See: docs/duplicate_adjudication_spec.md § Anchor selection
 """
 
 from llm_dup_dev.models.enums import AnchorType

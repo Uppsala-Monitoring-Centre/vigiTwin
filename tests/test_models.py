@@ -6,7 +6,7 @@ import pytest
 
 from llm_dup_dev.models import (
     ClassificationResult,
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     Report,
 )
@@ -105,7 +105,7 @@ class TestClassificationResult:
         r = ClassificationResult(
             pair_id="A__B",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
         )
         assert r.final_label == "Duplicates"
 
@@ -113,7 +113,7 @@ class TestClassificationResult:
         r = ClassificationResult(
             pair_id="A__B",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+            relationship_assessment=RelationshipAssessment.DIFFERENT_CASE,
         )
         assert r.final_label == "Otherwise_related"
 
@@ -127,12 +127,13 @@ class TestClassificationResult:
     def test_abstain_label(self):
         r = ClassificationResult(
             pair_id="A__B",
-            independence_assessment=IndependenceAssessment.ABSTAIN,
+            independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
+            relationship_assessment=RelationshipAssessment.ABSTAIN,
         )
         assert r.final_label == "Abstain"
 
     def test_non_independent_no_relationship_defaults_to_abstain(self):
-        """If non-independent but no duplicate_relationship, label is Abstain."""
+        """If non-independent but no relationship_assessment, label is Abstain."""
         r = ClassificationResult(
             pair_id="A__B",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,

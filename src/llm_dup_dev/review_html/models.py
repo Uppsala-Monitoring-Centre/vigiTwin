@@ -320,7 +320,7 @@ class ClassificationSummaryVM(BaseModel):
     """View model for the optional classification result section."""
 
     independence_assessment: str
-    duplicate_relationship: str | None = None
+    relationship_assessment: str | None = None
     final_label: str
     explanation: str
     # Optional transparent breakdown of the aggregated discrepancy
@@ -384,7 +384,8 @@ class SourceCaseAssessmentVM(BaseModel):
 
     Mirrors the fields of
     :class:`llm_dup_dev.models.narrative_source_case.SourceCaseAssessment`
-    that the classifier consumes via the shared-source override.
+    that the classifier consumes via the source-context evidence
+    zones.
     """
 
     verdict: str
@@ -412,7 +413,7 @@ class DecisionSummaryVM(BaseModel):
     ae_clinical_picture_counts: AEClinicalPictureCountsVM | None = None
     ae_clinical_picture_status: str | None = None
     source_case: SourceCaseAssessmentVM | None = None
-    duplicate_relationship: str | None = None
+    relationship_assessment: str | None = None
     # See ClassificationSummaryVM.penalty_summary.
     penalty_summary: str | None = None
 
@@ -490,7 +491,7 @@ class BatchIndexItem(BaseModel):
     filename: str
     final_label: str | None = None
     l_match: float | None = None
-    duplicate_relationship: str | None = None
+    relationship_assessment: str | None = None
     inconsistency_items: list[IndexInconsistencyItem] = Field(
         default_factory=list
     )

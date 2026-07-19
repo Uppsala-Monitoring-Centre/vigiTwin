@@ -2,7 +2,7 @@
 
 This document explains how to run the **duplicate adjudication pipeline** (the report-pair classification pipeline implemented in this repo) and what needs to be implemented in the secure repository (`llm_dup_pv_secure`) to connect it to real data.
 
-The pipeline takes candidate report pairs (typically produced upstream by vigiMatch), computes structured pair features, and produces a final classification of `Duplicates`, `Otherwise_related`, or `Unrelated`. See [`pipeline_overview.md`](pipeline_overview.md) for the high-level description and [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md) for the full method specification.
+The pipeline takes candidate report pairs (typically produced upstream by vigiMatch), computes structured pair features, and produces a final classification of `Duplicates`, `Otherwise_related`, `Unrelated`, or `Abstain`. See [`pipeline_overview.md`](pipeline_overview.md) for the high-level description and [`duplicate_adjudication_spec.md`](duplicate_adjudication_spec.md) for the full method specification.
 
 ---
 
@@ -199,9 +199,9 @@ runner = PipelineRunner(
 )
 ```
 
-Partial bundles are allowed: `report_id` keys present in the bundle are served from it, and missing keys fall back to live extraction via `llm_client` (or to `None` if no client is configured). A `None` extraction does not fail the pair — the shared-source override is simply skipped and the decision falls through to the L_match zone logic.
+Partial bundles are allowed: `report_id` keys present in the bundle are served from it, and missing keys fall back to live extraction via `llm_client` (or to `None` if no client is configured). A `None` extraction does not fail the pair — the source-context evidence is simply absent and the decision rests on the rarity-based L_match evidence alone.
 
-> **⚠ Silent disable when neither path is wired.** With `llm_client=None` *and* no `frozen_source_case_extractions` covering the pair, the shared-source override (including DOI-based linkage) does not fire — there is no error, just a missing branch in the explanation and a missing `source_case_assessment` block in `features.json`. `PipelineRunner.run_batch` emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger when this configuration is detected, and the saved run manifest records `feature_flags.source_case_override_enabled = false`. For deployments that intentionally run without an LLM client at inference time, see *Wiring without an LLM client* below.
+> **⚠ Silent disable when neither path is wired.** With `llm_client=None` *and* no `frozen_source_case_extractions` covering the pair, the source-context evidence (including DOI-based linkage) never contributes — there is no error, just a missing `source_case_assessment` block in `features.json` and no source-context zone in the explanation. `PipelineRunner.run_batch` emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger when this configuration is detected, and the saved run manifest records `feature_flags.source_case_override_enabled = false`. For deployments that intentionally run without an LLM client at inference time, see *Wiring without an LLM client* below.
 
 The JSON artifact matches `schemas/frozen_source_case_extractions.schema.json` and is validated by `FrozenSourceCaseExtractions.model_validate_json` on load, so schema drift between preprocessing and evaluation surfaces as a `ValidationError` rather than silent misinterpretation.
 
@@ -446,7 +446,7 @@ If a deployment instead drops the `llm_client` entirely — for example, an envi
 
 ##### Wiring without an LLM client
 
-Some deployments must run inference without any LLM. With `ae_clinical_picture_mode = "rule_based"` and `llm_client = None`, the AE clinical-picture path is fully deterministic — but the **shared-source override** and **narrative-demographics merge** still need their per-report LLM extractions, which must therefore be produced **once at frozen-dataset creation time** and serialized as sidecars next to `validation_reports.json`. Without those sidecars the override silently disables (see *Freezing narrative source/case extractions* above) and `PipelineRunner.run_batch` logs a `WARNING` on first use.
+Some deployments must run inference without any LLM. With `ae_clinical_picture_mode = "rule_based"` and `llm_client = None`, the AE clinical-picture path is fully deterministic — but the **source-context evidence** and **narrative-demographics merge** still need their per-report LLM extractions, which must therefore be produced **once at frozen-dataset creation time** and serialized as sidecars next to `validation_reports.json`. Without those sidecars the source-context evidence silently disables (see *Freezing narrative source/case extractions* above) and `PipelineRunner.run_batch` logs a `WARNING` on first use.
 
 Two helper scripts ship with the dev repo for this purpose:
 
@@ -488,7 +488,7 @@ runner = PipelineRunner(
 )
 ```
 
-Omitting either bundle in this configuration silently disables the corresponding feature: missing source/case → no shared-source override (no DOI-based linkage); missing narrative demographics → no LLM-derived patient age/sex/weight/height candidates merged into reports. The runner emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger in either case, and the saved run manifest records `feature_flags.source_case_override_enabled = false` / `feature_flags.narrative_demographics_extraction_enabled = false` so the disabled state is auditable in archived runs.
+Omitting either bundle in this configuration silently disables the corresponding feature: missing source/case → no source-context evidence (no DOI-based linkage); missing narrative demographics → no LLM-derived patient age/sex/weight/height candidates merged into reports. The runner emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger in either case, and the saved run manifest records `feature_flags.source_case_override_enabled = false` / `feature_flags.narrative_demographics_extraction_enabled = false` so the disabled state is auditable in archived runs.
 
 ### 3. StatsProvider
 
@@ -576,7 +576,7 @@ pair = ReportPair(
 )
 result = runner.run_pair(pair)
 
-print(result.final_label)          # "Duplicates", "Otherwise_related", "Unrelated"
+print(result.final_label)          # "Duplicates", "Otherwise_related", "Unrelated", "Abstain"
 print(result.features.L_match)     # e.g. 4.2
 print(result.features.L_patient)   # e.g. 2.3 — patient-specific evidence
 print(result.classification.explanation)  # human-readable reasoning
@@ -720,19 +720,21 @@ Each annotation dict must contain:
 | `pair_id` | str | Must match pipeline output |
 | `duplicates_assessment` | str | "duplicates", "otherwise_related", "unrelated", "abstain" |
 
-The pipeline's two layered internal labels — an `IndependenceAssessment`
-(`Non-independent / Independent`) driven by the rarity-based matching
-evidence, plus a `DuplicateRelationship` sub-label (`Duplicates /
-Otherwise_related`) used when independence has been rejected — are
-mapped to the user-facing label by `ClassificationResult.final_label`:
+The pipeline's two internal assessments — an `IndependenceAssessment`
+(`Non-independent / Independent`), rejected on shared provenance or on
+the rarity-based matching evidence, plus a `RelationshipAssessment`
+(`Same_case / Different_case / Abstain`) produced when independence has
+been rejected — are mapped to the user-facing label by
+`ClassificationResult.final_label`:
 
-| Independence assessment / sub-label | User-facing final label |
+| Independence / relationship assessment | User-facing final label |
 |-----------------|------------------|
-| Non-independent + Duplicates | `Duplicates` |
-| Non-independent + Otherwise_related | `Otherwise_related` |
+| Non-independent + Same_case | `Duplicates` |
+| Non-independent + Different_case | `Otherwise_related` |
+| Non-independent + Abstain | `Abstain` |
 | Independent | `Unrelated` |
 
-Eval consumers should compare against `result.final_label` rather than the internal `independence_assessment` / `duplicate_relationship` fields.
+Eval consumers should compare against `result.final_label` rather than the internal `independence_assessment` / `relationship_assessment` fields.
 
 ### Threshold calibration (offline)
 
@@ -847,7 +849,7 @@ thresholds = DecisionThresholds(
     lmatch_compelling=3.0,    # compelling evidence zone
     lmatch_intermediate=2.0,  # intermediate evidence zone
     lmatch_limited=1.0,       # limited evidence zone
-    lpatient_compelling=2.0,  # L_patient bar (shared-source override; not an L_match zone)
+    lpatient_compelling=2.0,  # L_patient bar (Unresolved source-context zone; not an L_match zone)
     w_moderate=1.0,           # weight for moderate inconsistencies
     w_strong=3.0,             # weight for strong inconsistencies
     w_tot_compelling_zone=4.0,    # w_tot threshold for compelling zone
@@ -865,19 +867,30 @@ runner = PipelineRunner(
 
 ### Decision logic summary
 
-Inconsistencies are combined into a single weighted score:
+The decision logic answers two questions in sequence: an **independence
+assessment** (Non-independent when a shared-source verdict is present or
+`L_match > lmatch_limited`; else Independent → `Unrelated`), then — for
+non-independent pairs — a **relationship assessment** comparing the
+weighted inconsistency score against the tolerance of the applicable
+evidence zone:
 
     w_tot = w_minor × minor + w_moderate × moderate + w_strong × strong
     (defaults: 0.4 × minor + 1 × moderate + 3 × strong)
 
-| L_match zone | Duplicates if... | Otherwise → |
+| L_match zone | Same_case (`Duplicates`) if... | Otherwise → |
 |---|---|---|
-| > 3.0 (compelling)   | `w_tot < 4` | Non-independent / Otherwise_related |
-| > 2.0 (intermediate) | `w_tot < 3` | Non-independent / Otherwise_related |
-| > 1.0 (limited)      | `w_tot < 1` | Non-independent / Otherwise_related |
-| ≤ 1.0                | never | Independent (Unrelated) |
+| > 3.0 (compelling)   | `w_tot < 4` | Different_case (`Otherwise_related`) |
+| > 2.0 (intermediate) | `w_tot < 3` | Different_case (`Otherwise_related`) |
+| > 1.0 (limited)      | `w_tot < 1` | Different_case (`Otherwise_related`) |
+| ≤ 1.0                | never | Independent (`Unrelated`) — unless a shared-source verdict rejects independence |
 
-Decisive inconsistencies (e.g. distinct patient IDs from the same study) preclude `Duplicates`. The matching evidence then decides the surface label: `Otherwise_related` when `L_match > lmatch_limited` (independence still rejected), `Unrelated` otherwise.
+Source-context evidence zones (Identity / Distinct / Unresolved, derived
+from the shared-source verdict) take priority over these rarity zones —
+see the spec § Relationship classifier for the full priority-ordered
+table. Decisive inconsistencies (e.g. distinct patient IDs from the same
+study) preclude `Same_case`. The independence assessment then decides
+the surface label: `Otherwise_related` when independence is rejected,
+`Unrelated` otherwise.
 
 ---
 
@@ -1200,7 +1213,7 @@ Each page contains:
 - **Adverse events** — same union logic; onset date in `(YYYY-MM-DD)` format where available
 - **Narratives** — side-by-side free text (if present)
 - **Evidence summary** — L_match, anchor, reporting context, inconsistencies (if `features` supplied)
-- **Classification** — independence assessment, duplicate relationship, final label, explanation (if `classification` supplied)
+- **Classification** — independence assessment, relationship assessment, final label, explanation (if `classification` supplied)
 
 ---
 
