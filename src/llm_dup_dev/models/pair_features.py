@@ -6,7 +6,7 @@ otherwise related, or unrelated. These features are computed from the
 Report layer and statistical summaries of the database.
 
 See: docs/data_contracts.md § PairFeatures Layer
-See: docs/duplicate_adjudication_spec.md § Evidence components
+See: docs/duplicate_adjudication_spec.md § Rarity-based matching evidence
 """
 
 from __future__ import annotations
@@ -114,7 +114,7 @@ class Inconsistency(BaseModel):
     list for transparency in human review but are excluded from the
     severity counts that feed downstream decision logic.
 
-    See: docs/duplicate_adjudication_spec.md § Inconsistency Detection
+    See: docs/duplicate_adjudication_spec.md § Inconsistency signals
     """
 
     feature: str

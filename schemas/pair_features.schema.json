@@ -229,7 +229,7 @@
       "type": "string"
     },
     "Inconsistency": {
-      "description": "A detected inconsistency between two reports.\n\nCarries entries from all sources: rule-based demographic/drug-set\nchecks and LLM-assisted AE clinical-picture findings. The optional\n``source``, ``kind``, ``rationale``, ``terms``, ``cluster_label``,\n``suppressed`` and ``suppressed_by`` fields support the richer\nLLM-derived entries while remaining backwards-compatible defaults\nfor existing rule-based call sites.\n\nSuppressed entries (``suppressed=True``) are kept in the master\nlist for transparency in human review but are excluded from the\nseverity counts that feed downstream decision logic.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Inconsistency Detection",
+      "description": "A detected inconsistency between two reports.\n\nCarries entries from all sources: rule-based demographic/drug-set\nchecks and LLM-assisted AE clinical-picture findings. The optional\n``source``, ``kind``, ``rationale``, ``terms``, ``cluster_label``,\n``suppressed`` and ``suppressed_by`` fields support the richer\nLLM-derived entries while remaining backwards-compatible defaults\nfor existing rule-based call sites.\n\nSuppressed entries (``suppressed=True``) are kept in the master\nlist for transparency in human review but are excluded from the\nseverity counts that feed downstream decision logic.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Inconsistency signals",
       "properties": {
         "feature": {
           "title": "Feature",
@@ -365,7 +365,7 @@
       "type": "string"
     },
     "NarrativeConsistency": {
-      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Narrative Consistency Assessment\n\nValues\n------\nSTRONGLY_CONSISTENT : narratives clearly describe the same patient\nCONSISTENT : probable but not certain match\nNEUTRAL : narratives too sparse to judge\nINCONSISTENT : narratives clearly describe different patients\nNOT_AVAILABLE : LLM assessment was not performed or failed",
+      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Narrative-derived features\n\nValues\n------\nSTRONGLY_CONSISTENT : narratives clearly describe the same patient\nCONSISTENT : probable but not certain match\nNEUTRAL : narratives too sparse to judge\nINCONSISTENT : narratives clearly describe different patients\nNOT_AVAILABLE : LLM assessment was not performed or failed",
       "enum": [
         "strongly_consistent",
         "consistent",

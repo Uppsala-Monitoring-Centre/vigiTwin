@@ -5,7 +5,7 @@ and the duplicate-relationship sub-label (``DuplicateRelationship``) into
 the user-facing label vocabulary used by the eval framework, the review
 HTML, and human annotators.
 
-See: docs/duplicate_adjudication_spec.md § Decision logic
+See: docs/duplicate_adjudication_spec.md § Relationship assessment
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ class InconsistencyPenalty(BaseModel):
     ``w_tot``). In those cases the score is still recorded; there is simply no
     comparison to report.
 
-    See: docs/duplicate_adjudication_spec.md § Decision logic
+    See: docs/duplicate_adjudication_spec.md § Relationship assessment
     """
 
     w_tot: float
