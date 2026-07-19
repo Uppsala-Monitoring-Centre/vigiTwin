@@ -147,15 +147,31 @@ def iter_cells():
                         yield variant_name, thresholds, L_match, counts, verdict, L_patient
 
 
+# The golden file was generated before the relationship vocabulary rename
+# (Duplicates / Otherwise_related → Same_case / Different_case). Translate
+# current values back to the golden vocabulary so the committed golden
+# stays byte-stable across the rename.
+_GOLDEN_RELATIONSHIP = {
+    "Same_case": "Duplicates",
+    "Different_case": "Otherwise_related",
+    "Abstain": "Abstain",
+}
+
+
 def _cell_row(thresholds: DecisionThresholds, cell) -> list:
     """Classify one cell and return its golden row."""
     _, _, L_match, counts, verdict, L_patient = cell
     result = classify(_make_features(L_match, counts, verdict, L_patient), thresholds)
+    relationship = (
+        _GOLDEN_RELATIONSHIP[result.relationship_assessment.value]
+        if result.relationship_assessment
+        else None
+    )
     return [
         result.final_label,
         result.independence_assessment.value,
         result.independence_reason.value if result.independence_reason else None,
-        result.duplicate_relationship.value if result.duplicate_relationship else None,
+        relationship,
         round(result.penalty.w_tot, 6) if result.penalty else None,
         result.penalty.threshold if result.penalty else None,
     ]

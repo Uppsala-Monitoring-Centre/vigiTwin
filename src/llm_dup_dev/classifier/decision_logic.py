@@ -9,7 +9,7 @@ Two layered internal labels are produced:
   is strong enough to reject the null hypothesis that the two reports
   are independent draws from the comparison population
   (``NON_INDEPENDENT`` / ``INDEPENDENT``);
-* when independence has been rejected, a ``DuplicateRelationship``
+* when independence has been rejected, a ``RelationshipAssessment``
   sub-label that uses the inconsistency signals to distinguish a
   likely-duplicate case from one that is linked by something other
   than being the same individual case (``DUPLICATES`` /
@@ -94,7 +94,7 @@ from llm_dup_dev.models.classification import (
     PenaltyTerm,
 )
 from llm_dup_dev.models.enums import (
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
     InconsistencySeverity,
@@ -325,7 +325,7 @@ def _shared_source_override(
             penalty=penalty,
             explanation=(
                 f"Shared-source override ({verdict.value}{ident_str}); "
-                f"sub-label pinned to Otherwise_related."
+                f"relationship pinned to Different_case."
             ),
         )
 
@@ -447,9 +447,9 @@ def _multi_patient_three_way(
             f"L_patient={l_patient:.2f} (threshold "
             f"{thresholds.lpatient_compelling:.1f}), w_tot={w_tot:.1f} "
             f"(threshold {thresholds.w_tot_limited_zone:.1f}); "
-            f"patient-specific evidence insufficient to call Duplicates "
+            f"patient-specific evidence insufficient to call Same_case "
             f"in a multi-patient source context — defaulting to "
-            f"Otherwise_related."
+            f"Different_case."
         ),
     )
 
@@ -520,7 +520,7 @@ def _duplicates(
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        duplicate_relationship=DuplicateRelationship.DUPLICATES,
+        relationship_assessment=RelationshipAssessment.SAME_CASE,
         independence_reason=reason,
         explanation=explanation,
         penalty=penalty,
@@ -537,7 +537,7 @@ def _otherwise_related(
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        duplicate_relationship=DuplicateRelationship.OTHERWISE_RELATED,
+        relationship_assessment=RelationshipAssessment.DIFFERENT_CASE,
         independence_reason=reason,
         explanation=explanation,
         penalty=penalty,
@@ -560,7 +560,7 @@ def _abstain(
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        duplicate_relationship=DuplicateRelationship.ABSTAIN,
+        relationship_assessment=RelationshipAssessment.ABSTAIN,
         independence_reason=reason,
         explanation=explanation,
         penalty=penalty,
@@ -577,7 +577,7 @@ def _independent(
     return ClassificationResult(
         pair_id=pair_id,
         independence_assessment=IndependenceAssessment.INDEPENDENT,
-        duplicate_relationship=None,
+        relationship_assessment=None,
         independence_reason=reason,
         explanation=explanation,
         penalty=penalty,

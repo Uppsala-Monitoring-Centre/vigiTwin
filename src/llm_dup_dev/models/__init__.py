@@ -11,7 +11,7 @@ Plus classification results and enumeration types.
 from .enums import (
     AnchorType,
     DrugRole,
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
     InconsistencySeverity,
@@ -56,7 +56,7 @@ __all__ = [
     # Enums
     "AnchorType",
     "DrugRole",
-    "DuplicateRelationship",
+    "RelationshipAssessment",
     "IndependenceAssessment",
     "IndependenceReason",
     "InconsistencySeverity",

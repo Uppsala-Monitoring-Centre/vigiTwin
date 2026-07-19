@@ -506,8 +506,8 @@ class TestOfflineEquivalenceToLive:
             == live_result.classification.independence_assessment
         )
         assert (
-            offline_result.classification.duplicate_relationship
-            == live_result.classification.duplicate_relationship
+            offline_result.classification.relationship_assessment
+            == live_result.classification.relationship_assessment
         )
 
 

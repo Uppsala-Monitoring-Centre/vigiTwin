@@ -5,7 +5,7 @@ from llm_dup_dev.eval.labels import AbstainMode
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AnchorType,
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     NarrativeConsistency,
     ReportingContextLevel,
@@ -27,7 +27,7 @@ from llm_dup_dev.pipeline.runner import BatchResult, PairResult
 def _make_pair_result(
     pair_id: str,
     independence_assessment: IndependenceAssessment,
-    duplicate_relationship: DuplicateRelationship | None = None,
+    relationship_assessment: RelationshipAssessment | None = None,
 ) -> PairResult:
     """Build a minimal PairResult for eval bridge testing."""
     features = PairFeatures(
@@ -46,7 +46,7 @@ def _make_pair_result(
     classification = ClassificationResult(
         pair_id=pair_id,
         independence_assessment=independence_assessment,
-        duplicate_relationship=duplicate_relationship,
+        relationship_assessment=relationship_assessment,
         explanation="test",
     )
     return PairResult(
@@ -60,7 +60,7 @@ def _make_duplicates(pair_id: str) -> PairResult:
     return _make_pair_result(
         pair_id,
         IndependenceAssessment.NON_INDEPENDENT,
-        DuplicateRelationship.DUPLICATES,
+        RelationshipAssessment.SAME_CASE,
     )
 
 
@@ -68,7 +68,7 @@ def _make_otherwise_related(pair_id: str) -> PairResult:
     return _make_pair_result(
         pair_id,
         IndependenceAssessment.NON_INDEPENDENT,
-        DuplicateRelationship.OTHERWISE_RELATED,
+        RelationshipAssessment.DIFFERENT_CASE,
     )
 
 
@@ -77,7 +77,11 @@ def _make_independent(pair_id: str) -> PairResult:
 
 
 def _make_abstain(pair_id: str) -> PairResult:
-    return _make_pair_result(pair_id, IndependenceAssessment.ABSTAIN)
+    return _make_pair_result(
+        pair_id,
+        IndependenceAssessment.NON_INDEPENDENT,
+        RelationshipAssessment.ABSTAIN,
+    )
 
 
 def _make_annotation(
@@ -258,7 +262,7 @@ class TestPipelineAbstainHandling:
         return _make_pair_result(
             "p_abstain",
             IndependenceAssessment.NON_INDEPENDENT,
-            DuplicateRelationship.ABSTAIN,
+            RelationshipAssessment.ABSTAIN,
         )
 
     def test_decided_only_excludes_pipeline_abstain(self):

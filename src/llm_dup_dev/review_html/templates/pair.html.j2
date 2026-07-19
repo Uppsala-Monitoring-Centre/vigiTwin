@@ -440,9 +440,9 @@ details.debug-section pre {
                 {{ vm.decision_summary.final_label }}
             </span>
         </dd>
-        {% if vm.decision_summary.duplicate_relationship %}
+        {% if vm.decision_summary.relationship_assessment %}
         <dt>Relationship</dt>
-        <dd>{{ vm.decision_summary.duplicate_relationship }}</dd>
+        <dd>{{ vm.decision_summary.relationship_assessment }}</dd>
         {% endif %}
         {% if vm.decision_summary.l_match is not none %}
         <dt>L<sub>match</sub></dt>
@@ -950,9 +950,9 @@ details.debug-section pre {
     <dl class="evidence-kv">
         <dt>Independence</dt>
         <dd>{{ vm.classification_summary.independence_assessment }}</dd>
-        {% if vm.classification_summary.duplicate_relationship %}
+        {% if vm.classification_summary.relationship_assessment %}
         <dt>Relationship</dt>
-        <dd>{{ vm.classification_summary.duplicate_relationship }}</dd>
+        <dd>{{ vm.classification_summary.relationship_assessment }}</dd>
         {% endif %}
         <dt>Pipeline label</dt>
         <dd>

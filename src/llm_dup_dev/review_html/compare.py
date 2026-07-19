@@ -838,9 +838,9 @@ def _build_classification_summary(
 ) -> ClassificationSummaryVM:
     return ClassificationSummaryVM(
         independence_assessment=classification.independence_assessment.value,
-        duplicate_relationship=(
-            classification.duplicate_relationship.value
-            if classification.duplicate_relationship
+        relationship_assessment=(
+            classification.relationship_assessment.value
+            if classification.relationship_assessment
             else None
         ),
         final_label=classification.final_label,
@@ -922,9 +922,9 @@ def _build_decision_summary(
             features.ae_clinical_picture_status.value if features else None
         ),
         source_case=_build_source_case_vm(features),
-        duplicate_relationship=(
-            classification.duplicate_relationship.value
-            if classification.duplicate_relationship
+        relationship_assessment=(
+            classification.relationship_assessment.value
+            if classification.relationship_assessment
             else None
         ),
         penalty_summary=_format_penalty_summary(classification.penalty),

@@ -702,14 +702,14 @@ class TestClinicalDateCountsInViewModels:
         """features_summary.clinical_date_counts must be populated."""
         from llm_dup_dev.models.classification import ClassificationResult
         from llm_dup_dev.models.enums import (
-            DuplicateRelationship,
+            RelationshipAssessment,
             IndependenceAssessment,
         )
 
         classification = ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
             explanation="test",
         )
         vm = build_pair_view_model(
@@ -733,14 +733,14 @@ class TestClinicalDateCountsInViewModels:
         """decision_summary.clinical_date_counts must be populated."""
         from llm_dup_dev.models.classification import ClassificationResult
         from llm_dup_dev.models.enums import (
-            DuplicateRelationship,
+            RelationshipAssessment,
             IndependenceAssessment,
         )
 
         classification = ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
             explanation="test",
         )
         vm = build_pair_view_model(
@@ -771,13 +771,13 @@ class TestDecisionSummarySourceCase:
     def _classification(self):
         from llm_dup_dev.models.classification import ClassificationResult
         from llm_dup_dev.models.enums import (
-            DuplicateRelationship,
+            RelationshipAssessment,
             IndependenceAssessment,
         )
         return ClassificationResult(
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-            duplicate_relationship=DuplicateRelationship.DUPLICATES,
+            relationship_assessment=RelationshipAssessment.SAME_CASE,
             explanation="test",
         )
 

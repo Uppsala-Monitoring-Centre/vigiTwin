@@ -1,7 +1,7 @@
 """Classification result models for the duplicate adjudication pipeline.
 
 Combines the internal independence assessment (``IndependenceAssessment``)
-and the duplicate-relationship sub-label (``DuplicateRelationship``) into
+and the relationship assessment (``RelationshipAssessment``) into
 the user-facing label vocabulary used by the eval framework, the review
 HTML, and human annotators.
 
@@ -13,7 +13,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from .enums import (
-    DuplicateRelationship,
+    RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
     InconsistencySeverity,
@@ -76,19 +76,22 @@ class InconsistencyPenalty(BaseModel):
 class ClassificationResult(BaseModel):
     """Full duplicate-adjudication output for a report pair.
 
-    Two layered internal labels are produced by the decision logic:
+    The decision logic answers two sequential questions:
 
-    * ``independence_assessment`` — whether the rarity-based matching
-      evidence is strong enough to reject the null hypothesis that the
-      two reports are independent draws from the comparison population.
-    * ``duplicate_relationship`` — when independence has been rejected,
-      a sub-label that uses inconsistency signals to distinguish a
-      likely-duplicate case from one that is linked by something other
-      than being the same individual case (e.g. same reporter, same
-      study).
+    * ``independence_assessment`` — did the two reports arise
+      independently? Independence is rejected either on direct evidence
+      of shared provenance (a shared source identifier) or when the
+      rarity-based matching evidence is strong enough to reject the
+      null hypothesis that the reports are independent draws from the
+      comparison population.
+    * ``relationship_assessment`` — for non-independent pairs, do the
+      reports describe the same underlying case (``Same_case``), a
+      demonstrably different case (``Different_case``), or is the
+      evidence insufficient to safely resolve the question
+      (``Abstain``)?
 
-    Use ``final_label`` for the user-facing label
-    (``Duplicates`` / ``Otherwise_related`` / ``Unrelated``); downstream
+    Use ``final_label`` for the user-facing label (``Duplicates`` /
+    ``Otherwise_related`` / ``Unrelated`` / ``Abstain``); downstream
     consumers should depend on this rather than on the raw internal
     fields. ``penalty`` is the exception: it is diagnostic, carried so that
     the inconsistency arithmetic behind the decision can be displayed and
@@ -97,7 +100,7 @@ class ClassificationResult(BaseModel):
 
     pair_id: str
     independence_assessment: IndependenceAssessment
-    duplicate_relationship: DuplicateRelationship | None = None
+    relationship_assessment: RelationshipAssessment | None = None
     independence_reason: IndependenceReason | None = None
     explanation: str = ""
     # Optional diagnostic: the weighted inconsistency score and the comparison
@@ -108,28 +111,23 @@ class ClassificationResult(BaseModel):
 
     @property
     def final_label(self) -> str:
-        """Map the internal labels to the user-facing label vocabulary.
+        """Map the two assessments to the user-facing label vocabulary.
 
         Mapping:
-            Non-independent + Duplicates         → Duplicates
-            Non-independent + Otherwise_related  → Otherwise_related
-            Non-independent + Abstain            → Abstain
-            Independent                          → Unrelated
-            Abstain (assessment)                 → Abstain (defensive)
+            Non-independent + Same_case       → Duplicates
+            Non-independent + Different_case  → Otherwise_related
+            Non-independent + Abstain         → Abstain
+            Independent                       → Unrelated
 
-        The rarity-zone path emits only ``NON_INDEPENDENT`` or
-        ``INDEPENDENT``. The shared-source override path additionally
-        emits ``NON_INDEPENDENT + DuplicateRelationship.ABSTAIN`` for
-        epistemically underdetermined same-source scenarios.
-        ``IndependenceAssessment.ABSTAIN`` is a defensive backstop.
+        A non-independent result with no relationship assessment maps to
+        ``Abstain`` as a defensive fallback; the decision logic always
+        sets the relationship assessment for non-independent pairs.
         """
-        if self.independence_assessment == IndependenceAssessment.ABSTAIN:
-            return "Abstain"
         if self.independence_assessment == IndependenceAssessment.INDEPENDENT:
             return "Unrelated"
-        # Non-independent — use the duplicate relationship sub-label
-        if self.duplicate_relationship == DuplicateRelationship.DUPLICATES:
+        # Non-independent — use the relationship assessment
+        if self.relationship_assessment == RelationshipAssessment.SAME_CASE:
             return "Duplicates"
-        if self.duplicate_relationship == DuplicateRelationship.OTHERWISE_RELATED:
+        if self.relationship_assessment == RelationshipAssessment.DIFFERENT_CASE:
             return "Otherwise_related"
         return "Abstain"
