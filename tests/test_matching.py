@@ -12,11 +12,61 @@ from llm_dup_dev.models.report import (
 )
 from llm_dup_dev.feature_generation.matching import (
     _compare_partial_dates,
+    _match_measurement,
+    _numeric_resolution_match,
     compute_matching_aes,
     compute_matching_clinical_dates,
     compute_matching_drugs,
     compute_matches,
 )
+from llm_dup_dev.models.report import MeasurementValue
+
+
+def _mv(v, unit="cm"):
+    return MeasurementValue(value=v, unit=unit, sources=["x"])
+
+
+class TestNumericResolutionMatching:
+    """Numeric demographics match at the coarser of the two decimal
+    resolutions (round-to-nearest bin), crediting the finest matching pair."""
+
+    def test_coarser_resolution_match(self):
+        """75.2 and 75 match at 1-unit resolution → matched value 75, res 1.0."""
+        matched, val, res = _numeric_resolution_match([75.2], [75.0])
+        assert matched is True
+        assert val == 75.0
+        assert res == 1.0
+
+    def test_exact_fine_match_keeps_fine_resolution(self):
+        """75.2 vs 75.2 → matched at 0.1 resolution (stronger evidence)."""
+        matched, val, res = _numeric_resolution_match([75.2], [75.2])
+        assert matched is True
+        assert val == pytest.approx(75.2)
+        assert res == pytest.approx(0.1)
+
+    def test_finest_matching_pair_is_credited(self):
+        """[75, 75.2] vs [75.2] → the exact 75.2 pair wins over the coarse one."""
+        matched, val, res = _numeric_resolution_match([75.0, 75.2], [75.2])
+        assert matched is True
+        assert res == pytest.approx(0.1)
+
+    def test_outside_bin_does_not_match(self):
+        """75.6 is in the 76 bin, not the 75 bin → no match."""
+        matched, _, _ = _numeric_resolution_match([75.6], [75.0])
+        assert matched is False
+
+    def test_half_up_bin_boundaries(self):
+        """Bin is [v-0.5, v+0.5): 74.5 matches 75, 75.5 does not (symmetric)."""
+        assert _numeric_resolution_match([74.5], [75.0])[0] is True
+        assert _numeric_resolution_match([75.5], [75.0])[0] is False
+
+    def test_match_measurement_records_resolution(self):
+        """_match_measurement surfaces matched flag, value, and resolution."""
+        m = _match_measurement("patient_weight", [_mv(75.2, "kg")], [_mv(75.0, "kg")])
+        assert m.matched is True
+        assert m.value_resolution == 1.0
+        m2 = _match_measurement("patient_weight", [_mv(75.2, "kg")], [_mv(75.2, "kg")])
+        assert m2.value_resolution == pytest.approx(0.1)
 
 
 class TestDrugMatching:

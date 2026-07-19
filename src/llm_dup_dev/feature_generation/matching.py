@@ -12,6 +12,7 @@ See: docs/duplicate_adjudication_spec.md § Matching Clinical Feature Sets
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -70,6 +71,7 @@ class DemographicMatch:
     matched_value: object = None
     date_resolution: str | None = None  # for date features: "day"/"month"/"year"
     age_unit: str | None = None  # for patient_age: "years" or "months"
+    value_resolution: float | None = None  # decimal resolution of a matched age/height/weight
 
 
 @dataclass
@@ -163,6 +165,59 @@ def compute_matching_aes(
 # ---------------------------------------------------------------------------
 
 
+def _decimal_resolution(value: float) -> float:
+    """Resolution implied by a numeric value's decimal places (54.2 → 0.1, 54 → 1.0)."""
+    s = str(value)
+    if "." in s:
+        decimal_places = len(s.split(".")[1].rstrip("0"))
+        if decimal_places > 0:
+            return 10.0 ** (-decimal_places)
+    return 1.0
+
+
+def _quantize(value: float, resolution: float) -> int:
+    """Round *value* to the nearest grid step of *resolution* (half-up).
+
+    Returns the integer grid index, so the grid value is
+    ``index * resolution``. Half-up (rather than Python's banker's ``round``)
+    makes the bin ``[v − r/2, v + r/2)`` symmetric across all grid points; the
+    tiny epsilon absorbs binary-float noise at the half-step boundary.
+    """
+    return int(value / resolution + 0.5 + 1e-9)
+
+
+def _numeric_resolution_match(
+    values_1: list[float], values_2: list[float]
+) -> tuple[bool, float | None, float | None]:
+    """Match numeric demographics at the coarser of two decimal resolutions.
+
+    Two values match when they round (to nearest, half-up) to the same grid
+    point at the coarser of their two decimal resolutions — e.g. 75.2 and 75
+    both fall in the 1-unit bin centred on 75, so they match, while 75.6 does
+    not. Among all matching cross-report pairs the finest-resolution match is
+    returned, since an exact fine-grained match (75.2 ↔ 75.2) is stronger
+    evidence than a coarse one (75.2 ↔ 75) and should earn the correspondingly
+    larger domain.
+
+    Returns ``(matched, matched_value, resolution)``; the value and resolution
+    are ``None`` when nothing matches.
+    """
+    best_res: float | None = None
+    best_val: float | None = None
+    for v1 in values_1:
+        for v2 in values_2:
+            res = max(_decimal_resolution(v1), _decimal_resolution(v2))
+            index = _quantize(v1, res)
+            if index == _quantize(v2, res):
+                if best_res is None or res < best_res:
+                    best_res = res
+                    ndec = max(0, -round(math.log10(res)))
+                    best_val = round(index * res, ndec)
+    if best_res is None:
+        return False, None, None
+    return True, best_val, best_res
+
+
 def _match_sex(r1: Report, r2: Report) -> DemographicMatch:
     """Check if patient sex values overlap (case-insensitive)."""
     vals_1 = {v.value.lower() for v in r1.patient_sex_values}
@@ -178,30 +233,36 @@ def _match_sex(r1: Report, r2: Report) -> DemographicMatch:
 
 
 def _match_age(r1: Report, r2: Report) -> DemographicMatch:
-    """Check if patient age values overlap (exact numeric match).
+    """Match patient age at the coarser of the two values' decimal resolutions.
 
-    Records the unit of the matched value for domain-size computation.
-    When both reports record the same numeric value in the same unit, that
-    unit is preserved; otherwise defaults to "years".
+    Values are compared **within the same unit** (years with years, months
+    with months). The finest-resolution match is recorded, together with its
+    unit and decimal resolution, for domain-size computation.
     """
-    units_1: dict[float, str] = {v.value: v.unit for v in r1.patient_age_values}
-    units_2: dict[float, str] = {v.value: v.unit for v in r2.patient_age_values}
-    overlap = set(units_1) & set(units_2)
-    matched_value = next(iter(overlap), None)
+    by_unit_1: dict[str, list[float]] = {}
+    by_unit_2: dict[str, list[float]] = {}
+    for v in r1.patient_age_values:
+        by_unit_1.setdefault(v.unit, []).append(v.value)
+    for v in r2.patient_age_values:
+        by_unit_2.setdefault(v.unit, []).append(v.value)
 
-    matched_unit: str | None = None
-    if matched_value is not None:
-        u1 = units_1[matched_value]
-        u2 = units_2[matched_value]
-        matched_unit = u1 if u1 == u2 else "years"
+    best: tuple[float, float, str] | None = None  # (resolution, value, unit)
+    for unit in set(by_unit_1) & set(by_unit_2):
+        matched, val, res = _numeric_resolution_match(
+            by_unit_1[unit], by_unit_2[unit]
+        )
+        if matched and val is not None and res is not None:
+            if best is None or res < best[0]:
+                best = (res, val, unit)
 
     return DemographicMatch(
         feature="patient_age",
-        matched=bool(overlap),
+        matched=best is not None,
         values_r1=[v.value for v in r1.patient_age_values],
         values_r2=[v.value for v in r2.patient_age_values],
-        matched_value=matched_value,
-        age_unit=matched_unit,
+        matched_value=best[1] if best is not None else None,
+        age_unit=best[2] if best is not None else None,
+        value_resolution=best[0] if best is not None else None,
     )
 
 
@@ -210,16 +271,17 @@ def _match_measurement(
     values_r1: list[MeasurementValue],
     values_r2: list[MeasurementValue],
 ) -> DemographicMatch:
-    """Check if measurement values overlap (exact numeric match)."""
-    nums_1 = {v.value for v in values_r1}
-    nums_2 = {v.value for v in values_r2}
-    overlap = nums_1 & nums_2
+    """Match height/weight at the coarser of the two values' decimal resolutions."""
+    matched, val, res = _numeric_resolution_match(
+        [v.value for v in values_r1], [v.value for v in values_r2]
+    )
     return DemographicMatch(
         feature=feature_name,
-        matched=bool(overlap),
+        matched=matched,
         values_r1=[v.value for v in values_r1],
         values_r2=[v.value for v in values_r2],
-        matched_value=next(iter(overlap), None),
+        matched_value=val,
+        value_resolution=res,
     )
 
 

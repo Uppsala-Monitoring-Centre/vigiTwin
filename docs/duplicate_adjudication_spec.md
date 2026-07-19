@@ -253,7 +253,7 @@ Equivalently, \(L_{\text{patient}} = -\log_{10}\!\left(\prod_{f \in F_{\text{pat
 
 Two deliberate departures from the standard \(L_{\text{match}}\):
 
-- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. The exclusion is enforced at the feature-name level (`NON_PATIENT_SPECIFIC_FEATURES = {"drug_set", "ae_set"}` in `feature_generation/probability.py`).
+- **Drug-set and AE-set contributions excluded.** In a multi-patient publication / shared study context, drugs and adverse events overlap by construction across patients and are therefore weak identifiers of patient identity. Per the spec: *"do not rely on shared drugs or shared adverse events as primary evidence"*. This is enforced with an explicit allowlist (`PATIENT_SPECIFIC_FEATURES = {"patient_age", "patient_sex", "patient_height", "patient_weight", "clinical_date"}` in `feature_generation/probability.py`), so only patient-identifying features contribute and any other feature name is dropped.
 - **No anchor multiplicity adjustment.** \(L_{\text{match}}\) asks how probable the observed match would be to arise by chance *somewhere in the anchor population* (e.g. "all reports on drug X"), and is adjusted for the \(M = \binom{N_{\text{anchor}}}{2}\) pairwise opportunities that population affords. For `UNCOMPARABLE_CASE` the relevant comparison universe is instead the unknown small set of K patients within the shared publication, so adjusting for the anchor would correct for opportunities that are not the ones actually taken. \(L_{\text{patient}}\) therefore stays at the per-pair level.
 
 Note this is **not** \(L_{\text{match}}\) minus a penalty term. Since \(L_{\text{match}} = \max(0, -\log_{10}(P_{\text{match}} + \varepsilon))\) with \(P_{\text{match}} = 1-(1-p_{\text{joint}})^{M}\), it does not decompose additively; the two quantities coincide in that form only in the rare-event limit. \(L_{\text{patient}}\) is defined in its own right, and is judged against its own bar, `lpatient_compelling`.
@@ -602,6 +602,8 @@ The domain size depends on:
 - the clinically plausible value range
 - the temporal context when applicable
 
+When the two reports record a numeric demographic at different resolutions (e.g. `75.2 kg` and `75 kg`), the values are compared at the **coarser** of the two resolutions: each is rounded to the nearest point on the coarser grid (the bin \([v - r/2,\, v + r/2)\)) and they match when they fall in the same bin. The domain size is then taken at that coarser matched resolution. An exact match at a finer resolution (`75.2 kg` ↔ `75.2 kg`) is retained at the finer resolution and earns the correspondingly larger domain; where several candidate values are present, the finest matching pair is credited. The same rule applies to age, height, and weight.
+
 ---
 
 #### Age
@@ -643,7 +645,7 @@ For height, the domain size depends on the patient’s age group and the measure
 | Child (≤15 years) | 0.1 cm     | \(D_f = 200\)    |
 | Adult (>15 years) | 0.1 cm     | \(D_f = 400\)    |
 
-Higher measurement precision increases domain size and therefore increases the evidential value of an exact match.
+Higher measurement precision increases domain size and therefore increases the evidential value of a match at that resolution.
 
 ---
 
@@ -658,7 +660,7 @@ Weight is handled analogously to height.
 | Child (≤15 years) | 0.1 kg     | \(D_f = 200\)    |
 | Adult (>15 years) | 0.1 kg     | \(D_f = 400\)    |
 
-Higher measurement precision increases domain size and therefore increases the evidential value of an exact match.
+Higher measurement precision increases domain size and therefore increases the evidential value of a match at that resolution.
 
 ---
 
