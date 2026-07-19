@@ -281,7 +281,9 @@ class PipelineRunner:
             ``NOT_ASSESSED`` with reason ``"no_llm_client"``.
         source_case_assessment : SourceCaseAssessment, optional
             Pre-computed narrative source/case verdict for the pair.
-            ``None`` disables the shared-source override path.
+            ``None`` disables the source-context evidence (shared
+            provenance in the independence assessment; evidence zones
+            in the relationship assessment).
         narrative_demographics_1 : NarrativeDemographics, optional
             Pre-extracted narrative demographics for the first report.
             When provided, merged into ``r1`` via
@@ -536,11 +538,11 @@ class PipelineRunner:
         """Run the deterministic pair-level comparator.
 
         Returns ``None`` when either extraction is missing (so the
-        shared-source override path is disabled for this pair). The
+        source-context evidence is disabled for this pair). The
         comparator itself also returns a ``NOT_ASSESSED`` verdict for
         this case, but ``None`` is a stronger signal downstream — it
-        lets the decision logic skip the override entirely rather than
-        inspect a verdict enum.
+        lets the decision logic skip the source-context zones entirely
+        rather than inspect a verdict enum.
         """
         if a is None or b is None:
             return None
@@ -588,18 +590,18 @@ class PipelineRunner:
         # Loud warning when the per-report LLM extraction paths are silently
         # disabled — neither a live ``llm_client`` nor a frozen sidecar is
         # configured. Without one of these the corresponding feature degrades
-        # silently: the shared-source override never fires, and the
+        # silently: the source-context evidence never contributes, and the
         # narrative-demographics merge is a no-op. Surfacing this once per
         # ``run_batch`` is the smallest signal that catches misconfigured
         # offline deployments. See ``docs/integration_guide.md`` §
         # *Wiring without an LLM client*.
         if self._llm_client is None and self._frozen_source_case is None:
             logger.warning(
-                "Shared-source override is disabled: no llm_client and no "
+                "Source-context evidence is disabled: no llm_client and no "
                 "frozen_source_case_extractions bundle configured. "
                 "Pre-extract per-report source/case at dataset-creation time "
                 "and pass the bundle via frozen_source_case_extractions= "
-                "to enable the override."
+                "to enable it."
             )
         if (
             self._llm_client is None

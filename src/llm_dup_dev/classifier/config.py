@@ -142,17 +142,17 @@ class DecisionThresholds(BaseModel):
 
     In all three non-trivial zones, matching evidence is treated as
     sufficient to reject independence; w_tot only decides the
-    duplicate-vs-otherwise-related sub-label. Only the below-limited
-    branch yields Unrelated.
+    same-case-vs-different-case relationship assessment. Only the
+    below-limited branch yields Unrelated.
 
     ``w_decisive`` is set far above any zone threshold so that a single
     decisive inconsistency always forces the failing-zone branch, which
-    in combination with the zone logic yields ``Otherwise_related``
-    whenever ``L_match > lmatch_limited`` and ``Unrelated`` otherwise.
+    in combination with the zone logic yields ``Different_case``
+    whenever independence is rejected and ``Unrelated`` otherwise.
     This is enforced by an invariant validator.
 
     ``lpatient_compelling`` is a separate bar for a separate quantity: the
-    shared-source / uncomparable-case branch adjudicates on ``L_patient``,
+    Unresolved source-context zone adjudicates on ``L_patient``,
     not ``L_match``. It is deliberately not one of the zone boundaries
     above — see the field comment.
 
@@ -164,9 +164,9 @@ class DecisionThresholds(BaseModel):
     lmatch_intermediate: float = 2.0
     lmatch_limited: float = 1.0
 
-    # L_patient bar for the shared-source / uncomparable-case branch
+    # L_patient bar for the Unresolved source-context zone
     # (SAME_SOURCE_UNCOMPARABLE_CASE and MULTI_PATIENT_CONTEXT_NO_LINK):
-    # L_patient > this → Duplicates, given minimal inconsistency.
+    # L_patient > this → Same_case, given minimal inconsistency.
     #
     # Kept separate from lmatch_intermediate, which it previously borrowed.
     # L_patient is a different quantity on a different scale — patient-

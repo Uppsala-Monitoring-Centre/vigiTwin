@@ -633,7 +633,7 @@ class TestFrozenSourceCaseExtractions:
         ]
         assert len(src_requests) == 2
 
-    def test_shared_source_override_fires_with_frozen_bundle_no_llm_deterministic_ae(
+    def test_shared_source_evidence_fires_with_frozen_bundle_no_llm_deterministic_ae(
         self, loader, stats_provider, pair_ab
     ):
         """Pins the LLM-free deployment path: deterministic AE +
@@ -704,7 +704,7 @@ class TestFrozenSourceCaseExtractions:
         )
         with caplog.at_level("WARNING", logger="llm_dup_dev.pipeline.runner"):
             runner_.run_batch([pair_ab])
-        assert "Shared-source override is disabled" not in caplog.text
+        assert "Source-context evidence is disabled" not in caplog.text
         assert "Narrative-demographics extraction is disabled" not in caplog.text
 
     def test_warns_when_no_llm_and_no_source_case_bundle(
@@ -720,7 +720,7 @@ class TestFrozenSourceCaseExtractions:
         )
         with caplog.at_level("WARNING", logger="llm_dup_dev.pipeline.runner"):
             runner_.run_batch([pair_ab])
-        assert "Shared-source override is disabled" in caplog.text
+        assert "Source-context evidence is disabled" in caplog.text
         assert "Narrative-demographics extraction is disabled" in caplog.text
 
 

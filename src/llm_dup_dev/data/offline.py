@@ -417,8 +417,8 @@ class FrozenSourceCaseExtractions(BaseModel):
     live extraction (or ``None`` if no LLM client is configured on the
     runner). This is intentionally more lenient than
     ``FrozenStatsProvider`` because source/case is advisory — only the
-    shared-source override path in the decision logic consumes it, and
-    the override is designed to be skippable.
+    source-context evidence in the decision logic consumes it, and that
+    evidence is designed to be skippable.
 
     Attributes
     ----------

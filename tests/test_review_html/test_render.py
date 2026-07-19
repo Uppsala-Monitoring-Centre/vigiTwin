@@ -960,7 +960,7 @@ class TestAnnotationRendering:
             pair_id="R001__R002",
             independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
             relationship_assessment=RelationshipAssessment.ABSTAIN,
-            explanation="Shared-source override; identity indeterminate.",
+            explanation="Shared source; identity indeterminate.",
         )
         for human_label in ("duplicates", "otherwise_related", "unrelated"):
             vm = build_pair_view_model(

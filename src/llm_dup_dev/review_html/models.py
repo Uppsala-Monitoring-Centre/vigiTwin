@@ -384,7 +384,8 @@ class SourceCaseAssessmentVM(BaseModel):
 
     Mirrors the fields of
     :class:`llm_dup_dev.models.narrative_source_case.SourceCaseAssessment`
-    that the classifier consumes via the shared-source override.
+    that the classifier consumes via the source-context evidence
+    zones.
     """
 
     verdict: str

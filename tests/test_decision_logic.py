@@ -261,7 +261,7 @@ class TestMediumZone:
 # ===================================================================
 # Limited zone: lmatch_limited < L_match ≤ lmatch_intermediate — w_tot < 1 → Duplicates,
 # else Non-independent / Otherwise_related (matching evidence still
-# rejects independence; inconsistencies only downgrade the sub-label).
+# rejects independence; inconsistencies only downgrade the relationship).
 # ===================================================================
 
 class TestWeakZone:
@@ -498,16 +498,16 @@ class TestIndependenceReasonFromRarity:
 
 
 # ===================================================================
-# Shared-source override path
+# Shared-source verdicts (direct evidence of shared provenance)
 # ===================================================================
 
-class TestSharedSourceOverride:
+class TestSharedSourceVerdicts:
     """A reliable shared source identifier rejects independence
     regardless of L_match."""
 
     def test_same_source_single_patient_forces_duplicates(self):
         """SAME_SOURCE_SINGLE_PATIENT with L=0 and no other
-        inconsistencies → Duplicates via override."""
+        inconsistencies → Same_case via the Identity zone."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -520,7 +520,7 @@ class TestSharedSourceOverride:
 
     def test_same_source_same_case_forces_duplicates(self):
         """SAME_SOURCE_SAME_CASE with L=0 and no other
-        inconsistencies → Duplicates via override."""
+        inconsistencies → Same_case via the Identity zone."""
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -578,7 +578,7 @@ class TestSharedSourceOverride:
     def test_same_source_tolerates_one_strong(self):
         """A single strong inconsistency (w_tot=3.0) is still below the
         compelling-zone threshold (4.0) and remains in the Duplicates
-        branch for a confirmed same-case verdict. The override shares
+        branch for a confirmed same-case verdict. The Identity zone shares
         the compelling-zone inconsistency budget: a single strong is
         tolerated."""
         f = _make_features(
@@ -612,7 +612,7 @@ class TestSharedSourceOverride:
 
     def test_same_source_different_case_forces_otherwise_related(self):
         """SAME_SOURCE_DIFFERENT_CASE → Otherwise_related pinned by the
-        override, even with L=0."""
+        shared-source evidence, even with L=0."""
         f = _make_features(
             L_match=0.0,
             # Decisive finding is synthesized by generate_pair_features;
@@ -630,7 +630,7 @@ class TestSharedSourceOverride:
     # test class TestUncomparableCaseThreeWayRule below covers branches
     # A (Duplicates), B (Otherwise_related), and C (Otherwise_related
     # default) in depth. The two tests below act as smoke tests for the
-    # override-path entry.
+    # source-context zone entry.
 
     def test_same_source_uncomparable_case_no_evidence_otherwise_related(self):
         """UNCOMPARABLE_CASE smoke test: no feature contributions, no
@@ -662,7 +662,7 @@ class TestSharedSourceOverride:
         assert result.independence_reason == IndependenceReason.SHARED_SOURCE
 
     def test_multi_patient_no_link_falls_through(self):
-        """Advisory verdict does not trigger the override — existing
+        """Advisory verdict selects no source-context zone — existing
         L_match logic applies."""
         f = _make_features(
             L_match=0.5,  # below limited threshold
@@ -704,7 +704,7 @@ class TestSharedSourceOverride:
         _assert_independent(result)
         assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
 
-    def test_override_explanation_mentions_verdict_and_identifier(self):
+    def test_explanation_mentions_verdict_and_identifier(self):
         f = _make_features(
             L_match=0.0,
             source_case_assessment=_assessment(
@@ -718,11 +718,11 @@ class TestSharedSourceOverride:
 
 
 # ===================================================================
-# Abstain outcome — shared-source override path
+# Abstain outcome — Identity zone
 # ===================================================================
 
 class TestAbstainOutcome:
-    """Abstain is produced by the shared-source override for epistemically
+    """Abstain is produced by the Identity zone for epistemically
     underdetermined same-source scenarios."""
 
     def test_single_patient_strong_inconsistency_abstains(self):
@@ -1120,14 +1120,15 @@ class TestLPatientThresholdIsIndependent:
 # ===================================================================
 
 class TestMultiPatientContextNoLink:
-    """``MULTI_PATIENT_CONTEXT_NO_LINK`` is routed through the same
-    two-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` *only* when
-    ``L_match > lmatch_limited``. Below that threshold the verdict is
-    treated as advisory and the pair falls through to the standard
-    weak-threshold branch (→ Independent). The two verdicts share the
-    drug-set / AE-set inflation concern but only UNCOMPARABLE_CASE
-    carries positive shared-source evidence, so MULTI_PATIENT is gated
-    on enough matching evidence to take the override seriously."""
+    """``MULTI_PATIENT_CONTEXT_NO_LINK`` reaches the Unresolved zone —
+    the same two-way rule as ``SAME_SOURCE_UNCOMPARABLE_CASE`` — *only*
+    when independence is rejected, which for this verdict requires
+    ``L_match > lmatch_limited`` (it carries no shared-source evidence,
+    so the independence reason is the rarity zone, not shared_source).
+    Below that threshold the verdict is advisory and the pair stays
+    Independent. The two verdicts share the drug-set / AE-set inflation
+    concern but only UNCOMPARABLE_CASE carries positive shared-source
+    evidence."""
 
     # ---------- Below / at the weak threshold: fall through ----------
 
@@ -1151,7 +1152,7 @@ class TestMultiPatientContextNoLink:
     def test_branch_a_above_weak_duplicates(self):
         """L_match=2.5 (above weak), w_tot=0, L_patient ≈ 2.20 > 2.0 →
         Duplicates via Branch A. Standard zone logic would also yield
-        Duplicates here, so this confirms the override path produces
+        Duplicates here, so this confirms the Unresolved zone produces
         the same outcome when patient-specific evidence is strong."""
         f = _make_features(
             L_match=2.5,
@@ -1163,7 +1164,7 @@ class TestMultiPatientContextNoLink:
         )
         result = classify(f, THRESHOLDS)
         _assert_same_case(result)
-        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+        assert result.independence_reason == IndependenceReason.RARITY_INTERMEDIATE
 
     def test_branch_b_one_moderate_otherwise_related(self):
         """The motivating case: L_match=3.3 (compelling zone) with one
@@ -1182,12 +1183,12 @@ class TestMultiPatientContextNoLink:
         )
         result = classify(f, THRESHOLDS)
         _assert_different_case(result)
-        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+        assert result.independence_reason == IndependenceReason.RARITY_COMPELLING
 
     def test_branch_c_above_weak_insufficient_l_patient_otherwise_related(self):
         """L_match=2.5 with only sex contribution (L_patient ≈ 0.30 ≤
         2.0) and no inconsistencies → Branch C Otherwise_related default.
-        Standard zone logic would have returned Duplicates; the override
+        Standard zone logic would have returned Duplicates; the Unresolved zone
         withholds the Duplicates call but no longer abstains."""
         f = _make_features(
             L_match=2.5,
@@ -1199,7 +1200,7 @@ class TestMultiPatientContextNoLink:
         )
         result = classify(f, THRESHOLDS)
         _assert_different_case(result)
-        assert result.independence_reason == IndependenceReason.SHARED_SOURCE
+        assert result.independence_reason == IndependenceReason.RARITY_INTERMEDIATE
 
     def test_branch_c_drug_ae_contributions_do_not_count(self):
         """Huge drug/AE concordance must not move a no-shared-source

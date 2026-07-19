@@ -4,7 +4,7 @@ Pins the full decision surface of ``classify`` across a grid of inputs so
 that restructurings of the decision logic can be verified to preserve
 behavior. The golden file records, per grid cell: ``final_label``, the
 independence assessment, the independence reason, the relationship
-sub-label, ``w_tot``, and the threshold the score was compared against.
+assessment, ``w_tot``, and the threshold the score was compared against.
 Explanation strings are deliberately excluded — they are presentation,
 not decision.
 
@@ -186,6 +186,36 @@ def _cell_id(cell) -> str:
     )
 
 
+def _adjust_for_multi_patient_reason(cell, expected: list) -> list:
+    """Apply the one intended deviation from the pre-restructure golden.
+
+    ``MULTI_PATIENT_CONTEXT_NO_LINK`` pairs above ``lmatch_limited``
+    used to record ``independence_reason = shared_source`` even though
+    no shared source identifier exists; independence rejection actually
+    comes from the rarity evidence. The restructured decision logic
+    records the rarity zone instead. Assert the golden held the old
+    value and substitute the expected new one — everything else in the
+    row must still match exactly.
+    """
+    _, thresholds, L_match, _, verdict, _ = cell
+    if (
+        verdict == SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK
+        and L_match > thresholds.lmatch_limited
+    ):
+        assert expected[2] == "shared_source", (
+            "golden drifted: multi-patient cells above lmatch_limited "
+            "were recorded with reason shared_source before the restructure"
+        )
+        if L_match > thresholds.lmatch_compelling:
+            new_reason = "rarity_compelling"
+        elif L_match > thresholds.lmatch_intermediate:
+            new_reason = "rarity_intermediate"
+        else:
+            new_reason = "rarity_limited"
+        return [expected[0], expected[1], new_reason, *expected[3:]]
+    return expected
+
+
 def _regenerate() -> int:
     GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
     rows = [_cell_row(cell[1], cell) for cell in iter_cells()]
@@ -217,6 +247,7 @@ def test_classify_matches_golden():
 
     mismatches = []
     for cell, expected in zip(cells, golden_rows):
+        expected = _adjust_for_multi_patient_reason(cell, expected)
         actual = _cell_row(cell[1], cell)
         if actual != expected:
             mismatches.append(f"{_cell_id(cell)}\n  expected {expected}\n  actual   {actual}")

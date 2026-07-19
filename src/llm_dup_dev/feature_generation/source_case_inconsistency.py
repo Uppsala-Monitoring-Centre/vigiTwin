@@ -18,12 +18,12 @@ for it would mislabel "we cannot tell" as "we found a moderate
 mismatch" and inflate ``w_tot`` accordingly.
 
 That distinction is load-bearing rather than cosmetic.  The
-shared-source override in :mod:`llm_dup_dev.classifier.decision_logic`
-routes this verdict to a two-way rule whose first branch is
-``w_tot >= w_tot_limited_zone`` → ``Otherwise_related``.  A synthesized
+relationship assessment in :mod:`llm_dup_dev.classifier.decision_logic`
+routes this verdict to the Unresolved zone, whose first branch is
+``w_tot >= w_tot_limited_zone`` → ``Different_case``.  A synthesized
 moderate row (``w_moderate`` = 1.0, meeting the default bar of 1.0)
 would therefore fire that branch on its own, foreclosing the
-``Duplicates`` outcome and denying the pair any adjudication on its
+``Same_case`` outcome and denying the pair any adjudication on its
 patient-specific evidence.  Emitting nothing keeps ``w_tot`` reflecting
 only non-source-case signals, which is what makes the two-way rule's
 comparison apples-to-apples.

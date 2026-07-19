@@ -1,91 +1,90 @@
 """Decision logic for the duplicate adjudication pipeline.
 
-Adjudicates a candidate report pair by jointly evaluating the rarity-based
-matching evidence (``L_match``) and the inconsistency signals.
+Adjudicates a candidate report pair by answering two sequential
+questions, mirroring the structure of the method specification:
 
-Two layered internal labels are produced:
+1. **Independence assessment** (:func:`assess_independence`) — did the
+   two reports arise independently? Independence is rejected either on
+   direct evidence of shared provenance (a shared-source verdict from
+   the source-case comparison) or when the rarity-based matching
+   evidence is strong enough (``L_match > lmatch_limited``) to reject
+   the null hypothesis that the reports are independent draws from the
+   comparison population. Output: ``NON_INDEPENDENT`` / ``INDEPENDENT``
+   plus an :class:`IndependenceReason` audit value.
+2. **Relationship assessment** (:func:`assess_relationship`) — for
+   non-independent pairs only: do the reports describe the same
+   underlying case? Output: ``SAME_CASE`` / ``DIFFERENT_CASE`` /
+   ``ABSTAIN``.
 
-* an ``IndependenceAssessment`` capturing whether the matching evidence
-  is strong enough to reject the null hypothesis that the two reports
-  are independent draws from the comparison population
-  (``NON_INDEPENDENT`` / ``INDEPENDENT``);
-* when independence has been rejected, a ``RelationshipAssessment``
-  sub-label that uses the inconsistency signals to distinguish a
-  likely-duplicate case from one that is linked by something other
-  than being the same individual case (``DUPLICATES`` /
-  ``OTHERWISE_RELATED`` / ``ABSTAIN``).
+:func:`classify` composes the two and maps them onto a
+:class:`ClassificationResult`; ``ClassificationResult.final_label``
+derives the user-facing labels (``Duplicates`` / ``Otherwise_related``
+/ ``Unrelated`` / ``Abstain``) at the very end.
 
-These are mapped by ``ClassificationResult.final_label`` to the
-user-facing labels ``Duplicates`` / ``Otherwise_related`` /
-``Unrelated`` / ``Abstain``.
-
+Relationship assessment
+-----------------------
 Inconsistencies are combined into a single weighted score::
 
     w_tot = w_minor × minor + w_moderate × moderate
           + w_strong × strong + w_decisive × decisive
 
-The decision space is divided into four zones by ``L_match`` thresholds.
-Each zone has its own tolerance for ``w_tot``::
+which is interpreted against a priority-ordered set of evidence zones.
+Source-context zones (derived from the source-case verdict) take
+priority; pairs without a zone-selecting verdict fall through to the
+rarity zones defined by ``L_match``::
 
-    L_match > compelling    →  w_tot < 4 ⇒ Non-independent / Duplicates
-                                else      ⇒ Non-independent / Otherwise_related
-    L_match > intermediate  →  w_tot < 3 ⇒ Non-independent / Duplicates
-                                else      ⇒ Non-independent / Otherwise_related
-    L_match > limited       →  w_tot < 1 ⇒ Non-independent / Duplicates
-                                else      ⇒ Non-independent / Otherwise_related
-    L_match ≤ limited       →  always Independent
+    1. Identity    (SAME_SOURCE_SINGLE_PATIENT / SAME_SOURCE_SAME_CASE):
+                     w_tot < 4 ⇒ Same_case, else Abstain
+    2. Distinct    (SAME_SOURCE_DIFFERENT_CASE):
+                     Different_case, pinned regardless of w_tot
+    3. Unresolved  (SAME_SOURCE_UNCOMPARABLE_CASE,
+                    MULTI_PATIENT_CONTEXT_NO_LINK):
+                     w_tot ≥ 1 ⇒ Different_case;
+                     else L_patient > 2 ⇒ Same_case, else Different_case
+    4. Rarity compelling   (L_match > 3): w_tot < 4 ⇒ Same_case else Different_case
+    5. Rarity intermediate (L_match > 2): w_tot < 3 ⇒ Same_case else Different_case
+    6. Rarity limited      (L_match > 1): w_tot < 1 ⇒ Same_case else Different_case
 
-All three non-trivial zones share the same structure: matching evidence
-above ``lmatch_limited`` is treated as sufficient to reject independence,
-and ``w_tot`` only decides the duplicate-vs-otherwise-related sub-label.
-Only when ``L_match`` falls at or below ``lmatch_limited`` is the matching
-evidence considered too weak to reject independence at all.
+(Defaults shown; all bounds come from :class:`DecisionThresholds`.)
+
+The Identity and Distinct zones reflect direct source-context evidence
+about case identity. The Unresolved zone covers multi-patient source
+contexts (literature case series, shared-study cohorts, …) where drug
+and AE overlap is expected by construction and would inflate
+``L_match``; the patient-specific log-evidence ``L_patient`` — which
+excludes ``drug_set`` / ``ae_set`` contributions — decides instead. A
+``MULTI_PATIENT_CONTEXT_NO_LINK`` verdict carries no shared-source
+evidence, so it only reaches the Unresolved zone when independence was
+rejected on rarity; below ``lmatch_limited`` it is advisory and the
+pair remains Independent.
 
 Decisive inconsistencies (e.g. distinct patient identifiers from the
-same study found in the narratives) participate through the same
-weighted score with a large weight (``w_decisive``, default 100) that
-always exceeds every zone threshold. As a result, any decisive count
-forces the failing-zone branch, which combined with the zone logic
-yields ``Otherwise_related`` whenever ``L_match > lmatch_limited`` and
-``Independent`` otherwise — with no separate override.
+same study found in the narratives) participate through the weighted
+score with a large weight (``w_decisive``, default 100) that always
+exceeds every zone tolerance, so any decisive count forces the
+failing branch of whichever zone applies — with no separate override.
 
 Abstain (same-source ambiguity)
---------------------------------
-The ``Abstain`` outcome is reserved exclusively for epistemically
-underdetermined same-source scenarios where:
-
-* non-independence is established (same source identifier confirmed), but
-* the available structured and narrative evidence is insufficient to
-  safely resolve whether the two reports describe the same individual.
-
-``Abstain`` is *not* generic uncertainty — it is a specific claim that
-the latent information required to decide (e.g. the full publication
-text, patient-level identifiers) is not present in the structured data.
-
-It is produced only by the shared-source override path and only for the
-following verdicts:
-
-* ``SAME_SOURCE_SINGLE_PATIENT`` — when ``w_tot ≥ w_tot_compelling_zone``
-  (substantial inconsistencies that are more plausibly explained by
-  extraction differences, reporting variation, or partial information
-  than by distinct patients).
-* ``SAME_SOURCE_SAME_CASE`` — same rule as SINGLE_PATIENT.
-
-The multi-patient verdicts ``SAME_SOURCE_UNCOMPARABLE_CASE`` and
-``MULTI_PATIENT_CONTEXT_NO_LINK`` (the latter gated on
-``L_match > lmatch_limited``) do *not* abstain. They are routed to the
-two-way rule in :func:`_multi_patient_three_way`, which resolves to
-``Duplicates`` when the patient-specific evidence is compelling
-(``L_patient > lpatient_compelling`` with ``w_tot < w_tot_limited_zone``)
-and to ``Otherwise_related`` otherwise. ``L_patient`` is carried on
-``PairFeatures``; see
-:func:`llm_dup_dev.feature_generation.probability.compute_l_patient`
-for its definition.
+-------------------------------
+``Abstain`` is reserved exclusively for epistemically underdetermined
+same-source scenarios: non-independence is established (same source
+identifier confirmed) and the source context claims a single patient or
+same case, but substantial inconsistencies (``w_tot ≥
+w_tot_compelling_zone``) are more plausibly explained by extraction
+differences, reporting variation, or partial information than by
+distinct patients. It is *not* generic uncertainty — it is a specific
+claim that the latent information required to decide (e.g. the full
+publication text, patient-level identifiers) is not present in the
+structured data. Only the Identity zone abstains; the Unresolved zone
+resolves to ``Different_case`` when patient-specific evidence is not
+compelling.
 
 See: docs/duplicate_adjudication_spec.md § Independence assessment and § Relationship assessment
 """
 
 from __future__ import annotations
+
+from typing import NamedTuple
 
 from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.models.classification import (
@@ -94,10 +93,10 @@ from llm_dup_dev.models.classification import (
     PenaltyTerm,
 )
 from llm_dup_dev.models.enums import (
-    RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
     InconsistencySeverity,
+    RelationshipAssessment,
 )
 from llm_dup_dev.models.narrative_source_case import (
     SourceCaseAssessment,
@@ -106,14 +105,12 @@ from llm_dup_dev.models.narrative_source_case import (
 from llm_dup_dev.models.pair_features import InconsistencyCounts, PairFeatures
 
 
-# Verdicts that prove a shared source exists and therefore trigger the
-# shared-source override path unconditionally. Advisory verdicts
-# (NO_DECISIVE_SIGNAL, NOT_ASSESSED) fall through to the standard L_match
-# zone logic. MULTI_PATIENT_CONTEXT_NO_LINK is handled separately by a
-# verdict-aware shim in ``classify`` that routes it through the
-# multi-patient two-way rule (the same rule used for
-# UNCOMPARABLE_CASE) only when ``L_match > lmatch_limited``; below that
-# threshold it still falls through to the standard logic.
+# Verdicts that prove a shared source exists: direct evidence of shared
+# provenance, rejecting independence regardless of L_match. Advisory
+# verdicts (NO_DECISIVE_SIGNAL, NOT_ASSESSED) and
+# MULTI_PATIENT_CONTEXT_NO_LINK (a multi-patient context claim without a
+# shared identifier) carry no such evidence; for them independence is
+# assessed on the rarity-based matching evidence alone.
 _SHARED_SOURCE_VERDICTS = frozenset({
     SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
     SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
@@ -128,6 +125,9 @@ def classify(
 ) -> ClassificationResult:
     """Adjudicate a report pair based on its computed features.
 
+    Composes the two assessments: independence first, then — only when
+    independence has been rejected — the relationship assessment.
+
     Parameters
     ----------
     features : PairFeatures
@@ -138,284 +138,244 @@ def classify(
     Returns
     -------
     ClassificationResult
-        Classification with internal independence assessment, optional
-        duplicate-relationship sub-label, and a human-readable explanation.
+        Classification with the independence assessment, the
+        relationship assessment (non-independent pairs only), and a
+        human-readable explanation.
     """
     if thresholds is None:
         thresholds = DecisionThresholds()
 
-    counts = features.inconsistency_counts
-    L = features.L_match
-    penalty = _inconsistency_penalty(counts, thresholds)
-    w_tot = penalty.w_tot
+    penalty = _inconsistency_penalty(features.inconsistency_counts, thresholds)
+    independence, reason = assess_independence(features, thresholds)
 
-    # --- Shared-source override ---
-    # A reliable shared source identifier is itself evidence against
-    # independence, regardless of L_match. Reject independence directly
-    # and pick the sub-label from the verdict (plus conservative fallback
-    # when non-source-case signals disagree).
-    asm = features.source_case_assessment
-    if asm is not None and asm.verdict in _SHARED_SOURCE_VERDICTS:
-        return _shared_source_override(features, asm, thresholds, penalty)
-
-    # --- Multi-patient context (no shared-source identifier) ---
-    # MULTI_PATIENT_CONTEXT_NO_LINK shares the drug-set / AE-set inflation
-    # concern with UNCOMPARABLE_CASE: both reports come from a multi-patient
-    # context (literature series, shared-study cohort, …) where drugs and
-    # AEs overlap by construction. Above lmatch_limited we route through the
-    # same two-way rule that UNCOMPARABLE_CASE uses, so a single moderate
-    # is enough to move the pair out of Duplicates. Below lmatch_limited the
-    # verdict is still purely advisory and falls through to the standard
-    # limited-threshold branch (→ Independent).
-    if (
-        asm is not None
-        and asm.verdict == SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK
-        and L > thresholds.lmatch_limited
-    ):
-        return _multi_patient_three_way(
-            features, asm.verdict,
-            _format_shared_identifier(asm), penalty, thresholds,
-        )
-
-    # --- Compelling zone: L_match > lmatch_compelling ---
-    if L > thresholds.lmatch_compelling:
-        if w_tot < thresholds.w_tot_compelling_zone:
-            return _duplicates(
-                pair_id=features.pair_id,
-                reason=IndependenceReason.RARITY_COMPELLING,
-                penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
-                explanation=(
-                    f"Compelling matching evidence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_compelling}); w_tot={w_tot:.1f} "
-                    f"< {thresholds.w_tot_compelling_zone:.1f}."
-                ),
-            )
-        return _otherwise_related(
+    if independence == IndependenceAssessment.INDEPENDENT:
+        # L_match decides here; w_tot is never consulted, so the penalty
+        # is recorded without a comparison.
+        return ClassificationResult(
             pair_id=features.pair_id,
-            reason=IndependenceReason.RARITY_COMPELLING,
-            penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
+            independence_assessment=independence,
+            relationship_assessment=None,
+            independence_reason=reason,
             explanation=(
-                f"Compelling matching evidence (L_match={L:.2f}) but "
-                f"w_tot={w_tot:.1f} >= {thresholds.w_tot_compelling_zone:.1f} "
-                f"(strong={counts.strong}, moderate={counts.moderate}, "
-                f"decisive={counts.decisive})."
+                f"Matching evidence below limited threshold "
+                f"(L_match={features.L_match:.2f} ≤ {thresholds.lmatch_limited}); "
+                f"independence cannot be rejected."
             ),
+            penalty=penalty,
         )
 
-    # --- Intermediate zone: L_match > lmatch_intermediate ---
-    if L > thresholds.lmatch_intermediate:
-        if w_tot < thresholds.w_tot_intermediate_zone:
-            return _duplicates(
-                pair_id=features.pair_id,
-                reason=IndependenceReason.RARITY_INTERMEDIATE,
-                penalty=penalty.compared_to(thresholds.w_tot_intermediate_zone),
-                explanation=(
-                    f"Intermediate matching evidence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_intermediate}); w_tot={w_tot:.1f} "
-                    f"< {thresholds.w_tot_intermediate_zone:.1f}."
-                ),
-            )
-        return _otherwise_related(
-            pair_id=features.pair_id,
-            reason=IndependenceReason.RARITY_INTERMEDIATE,
-            penalty=penalty.compared_to(thresholds.w_tot_intermediate_zone),
-            explanation=(
-                f"Intermediate matching evidence (L_match={L:.2f}) but "
-                f"w_tot={w_tot:.1f} >= {thresholds.w_tot_intermediate_zone:.1f} "
-                f"(strong={counts.strong}, moderate={counts.moderate}, "
-                f"decisive={counts.decisive})."
-            ),
-        )
-
-    # --- Limited zone: L_match > lmatch_limited ---
-    if L > thresholds.lmatch_limited:
-        if w_tot < thresholds.w_tot_limited_zone:
-            return _duplicates(
-                pair_id=features.pair_id,
-                reason=IndependenceReason.RARITY_LIMITED,
-                penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
-                explanation=(
-                    f"Limited matching evidence (L_match={L:.2f} > "
-                    f"{thresholds.lmatch_limited}); w_tot={w_tot:.1f} "
-                    f"< {thresholds.w_tot_limited_zone:.1f}."
-                ),
-            )
-        return _otherwise_related(
-            pair_id=features.pair_id,
-            reason=IndependenceReason.RARITY_LIMITED,
-            penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
-            explanation=(
-                f"Limited matching evidence (L_match={L:.2f}) but "
-                f"w_tot={w_tot:.1f} >= {thresholds.w_tot_limited_zone:.1f} "
-                f"(strong={counts.strong}, moderate={counts.moderate}, "
-                f"decisive={counts.decisive})."
-            ),
-        )
-
-    # --- Below limited threshold ---
-    # L_match decides here; w_tot is never consulted, so the penalty is
-    # recorded without a comparison.
-    return _independent(
+    decision = assess_relationship(features, thresholds, penalty)
+    return ClassificationResult(
         pair_id=features.pair_id,
-        reason=IndependenceReason.RARITY_INSUFFICIENT,
-        penalty=penalty,
-        explanation=(
-            f"Matching evidence below limited threshold "
-            f"(L_match={L:.2f} ≤ {thresholds.lmatch_limited}); "
-            f"independence cannot be rejected."
-        ),
+        independence_assessment=independence,
+        relationship_assessment=decision.relationship,
+        independence_reason=reason,
+        explanation=decision.explanation,
+        penalty=decision.penalty,
     )
 
 
 # ---------------------------------------------------------------------------
-# Shared-source override
+# Independence assessment
 # ---------------------------------------------------------------------------
 
 
-def _shared_source_override(
+def assess_independence(
     features: PairFeatures,
-    assessment: SourceCaseAssessment,
+    thresholds: DecisionThresholds,
+) -> tuple[IndependenceAssessment, IndependenceReason]:
+    """Decide whether the pair's independence can be rejected.
+
+    Two routes reject independence:
+
+    * **Direct evidence of shared provenance** — a shared-source verdict
+      from the source-case comparison. A reliable shared source
+      identifier is itself evidence against independence, regardless of
+      ``L_match``.
+    * **Rarity-based matching evidence** — ``L_match`` above
+      ``lmatch_limited``: the matched features are too unlikely to have
+      coincided if the reports were independent draws from the
+      comparison population. The returned ``RARITY_*`` reason records
+      which zone the evidence reached.
+
+    Otherwise the pair is ``INDEPENDENT`` (reason
+    ``RARITY_INSUFFICIENT``): independence cannot be rejected.
+    """
+    asm = features.source_case_assessment
+    if asm is not None and asm.verdict in _SHARED_SOURCE_VERDICTS:
+        return IndependenceAssessment.NON_INDEPENDENT, IndependenceReason.SHARED_SOURCE
+
+    reason = _rarity_zone(features.L_match, thresholds)
+    if reason == IndependenceReason.RARITY_INSUFFICIENT:
+        return IndependenceAssessment.INDEPENDENT, reason
+    return IndependenceAssessment.NON_INDEPENDENT, reason
+
+
+def _rarity_zone(L_match: float, thresholds: DecisionThresholds) -> IndependenceReason:
+    """Map ``L_match`` to its rarity zone (strict ``>`` at every bound)."""
+    if L_match > thresholds.lmatch_compelling:
+        return IndependenceReason.RARITY_COMPELLING
+    if L_match > thresholds.lmatch_intermediate:
+        return IndependenceReason.RARITY_INTERMEDIATE
+    if L_match > thresholds.lmatch_limited:
+        return IndependenceReason.RARITY_LIMITED
+    return IndependenceReason.RARITY_INSUFFICIENT
+
+
+# ---------------------------------------------------------------------------
+# Relationship assessment
+# ---------------------------------------------------------------------------
+
+
+class _RelationshipDecision(NamedTuple):
+    """Outcome of the relationship assessment for a non-independent pair."""
+
+    relationship: RelationshipAssessment
+    penalty: InconsistencyPenalty
+    explanation: str
+
+
+def assess_relationship(
+    features: PairFeatures,
     thresholds: DecisionThresholds,
     penalty: InconsistencyPenalty,
-) -> ClassificationResult:
-    """Reject independence based on a reliable shared source identifier.
+) -> _RelationshipDecision:
+    """Decide same case vs different case for a non-independent pair.
 
-    Sub-label mapping by verdict:
+    Selects the highest-priority applicable evidence zone (see the
+    module docstring's zone table): source-context zones first —
+    Identity, Distinct, Unresolved, derived from the source-case
+    verdict — then the rarity zones by ``L_match``.
 
-    ``SAME_SOURCE_DIFFERENT_CASE``
-        Pinned to ``OTHERWISE_RELATED`` regardless of ``w_tot``. A
-        decisive inconsistency is also emitted by the feature-generation
-        layer (informational; does not affect this pin).
-
-    ``SAME_SOURCE_UNCOMPARABLE_CASE``
-        Delegates to :func:`_multi_patient_three_way`, which decides
-        the sub-label from the patient-specific log-evidence
-        ``L_patient`` and ``w_tot``. The same helper is also used by
-        the multi-patient shim in :func:`classify` for
-        ``MULTI_PATIENT_CONTEXT_NO_LINK`` pairs above ``lmatch_limited``,
-        which share the same drug-set / AE-set inflation concern.
-
-    ``SAME_SOURCE_SINGLE_PATIENT`` / ``SAME_SOURCE_SAME_CASE``
-        Default to ``DUPLICATES``, but are raised to ``ABSTAIN`` when
-        ``w_tot ≥ w_tot_compelling_zone``. The rationale: for a genuinely
-        single-patient source (or one where the same case ID is
-        confirmed), substantial inconsistencies are more plausibly
-        extraction artefacts, reporting differences, or partial
-        information than evidence of distinct individuals — so the
-        pair is epistemically underdetermined rather than confidently
-        Otherwise_related. The threshold is shared with the compelling
-        L_match zone (default 4.0): a confirmed shared identifier with
-        a single-patient / same-case claim is at least as strong evidence
-        of identity as compelling rarity-based matching, so it deserves
-        the same inconsistency budget. A single strong inconsistency is
-        tolerated; reaching the threshold requires one strong + one
-        moderate, two strongs, or equivalent accumulated severity.
-        Decisive inconsistencies demote via their large weight
-        (``w_decisive = 100``).
+    Only meaningful for pairs whose independence has been rejected; for
+    a ``MULTI_PATIENT_CONTEXT_NO_LINK`` verdict that guarantee implies
+    ``L_match > lmatch_limited`` (the verdict itself carries no
+    shared-source evidence).
     """
-    verdict = assessment.verdict
-    ident_str = _format_shared_identifier(assessment)
-    w_tot = penalty.w_tot
+    asm = features.source_case_assessment
+    verdict = asm.verdict if asm is not None else None
+
+    if verdict in (
+        SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+        SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+    ):
+        return _identity_zone(features, verdict, asm, penalty, thresholds)
 
     if verdict == SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE:
-        # Pinned regardless of w_tot, so the penalty carries no comparison.
-        return _otherwise_related(
-            pair_id=features.pair_id,
-            reason=IndependenceReason.SHARED_SOURCE,
+        return _RelationshipDecision(
+            relationship=RelationshipAssessment.DIFFERENT_CASE,
+            # Pinned regardless of w_tot, so the penalty carries no comparison.
             penalty=penalty,
             explanation=(
-                f"Shared-source override ({verdict.value}{ident_str}); "
+                f"Shared source ({verdict.value}{_format_shared_identifier(asm)}); "
                 f"relationship pinned to Different_case."
             ),
         )
 
     if verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE:
-        return _multi_patient_three_way(
-            features, verdict, ident_str, penalty, thresholds,
+        prefix = f"Shared source ({verdict.value}{_format_shared_identifier(asm)})"
+        return _unresolved_zone(features, prefix, penalty, thresholds)
+
+    if verdict == SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK:
+        prefix = f"Multi-patient context ({verdict.value})"
+        return _unresolved_zone(features, prefix, penalty, thresholds)
+
+    return _rarity_relationship(features, penalty, thresholds)
+
+
+def _identity_zone(
+    features: PairFeatures,
+    verdict: SourceCaseVerdict,
+    assessment: SourceCaseAssessment,
+    penalty: InconsistencyPenalty,
+    thresholds: DecisionThresholds,
+) -> _RelationshipDecision:
+    """Identity zone: the source context claims a single patient / same case.
+
+    Defaults to ``SAME_CASE``, raised to ``ABSTAIN`` when ``w_tot ≥
+    w_tot_compelling_zone``. The rationale: for a genuinely
+    single-patient source (or one where the same case ID is confirmed),
+    substantial inconsistencies are more plausibly extraction artefacts,
+    reporting differences, or partial information than evidence of
+    distinct individuals — so the pair is epistemically underdetermined
+    rather than confidently Different_case. The tolerance is shared with
+    the rarity compelling zone (default 4.0): a confirmed shared
+    identifier with a single-patient / same-case claim is at least as
+    strong evidence of identity as compelling rarity-based matching, so
+    it deserves the same inconsistency budget. A single strong
+    inconsistency is tolerated; reaching the threshold requires one
+    strong + one moderate, two strongs, or equivalent accumulated
+    severity. Decisive inconsistencies demote via their large weight
+    (``w_decisive = 100``).
+    """
+    prefix = f"Shared source ({verdict.value}{_format_shared_identifier(assessment)})"
+    w_tot = penalty.w_tot
+    bound = thresholds.w_tot_compelling_zone
+
+    if w_tot < bound:
+        return _RelationshipDecision(
+            relationship=RelationshipAssessment.SAME_CASE,
+            penalty=penalty.compared_to(bound),
+            explanation=f"{prefix}; w_tot={w_tot:.1f} < {bound:.1f}.",
         )
 
-    # SAME_SOURCE_SINGLE_PATIENT or SAME_SOURCE_SAME_CASE
-    if w_tot < thresholds.w_tot_compelling_zone:
-        return _duplicates(
-            pair_id=features.pair_id,
-            reason=IndependenceReason.SHARED_SOURCE,
-            penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
-            explanation=(
-                f"Shared-source override ({verdict.value}{ident_str}); "
-                f"w_tot={w_tot:.1f} < {thresholds.w_tot_compelling_zone:.1f}."
-            ),
-        )
-
-    # w_tot >= w_tot_compelling_zone: substantial inconsistencies, but for a
-    # confirmed single-patient / same-case source these are more plausibly
-    # extraction artefacts or reporting differences than evidence of distinct
-    # individuals. Epistemically underdetermined → Abstain.
-    return _abstain(
-        pair_id=features.pair_id,
-        reason=IndependenceReason.SHARED_SOURCE,
-        penalty=penalty.compared_to(thresholds.w_tot_compelling_zone),
+    counts = features.inconsistency_counts
+    return _RelationshipDecision(
+        relationship=RelationshipAssessment.ABSTAIN,
+        penalty=penalty.compared_to(bound),
         explanation=(
-            f"Shared-source override ({verdict.value}{ident_str}); "
-            f"w_tot={w_tot:.1f} >= {thresholds.w_tot_compelling_zone:.1f} "
-            f"(strong={features.inconsistency_counts.strong}, "
-            f"moderate={features.inconsistency_counts.moderate}, "
-            f"decisive={features.inconsistency_counts.decisive}); "
-            f"abstained — inconsistencies may reflect extraction or "
-            f"reporting differences rather than distinct individuals."
+            f"{prefix}; w_tot={w_tot:.1f} >= {bound:.1f} "
+            f"(strong={counts.strong}, moderate={counts.moderate}, "
+            f"decisive={counts.decisive}); abstained — inconsistencies "
+            f"may reflect extraction or reporting differences rather "
+            f"than distinct individuals."
         ),
     )
 
 
-def _multi_patient_three_way(
+def _unresolved_zone(
     features: PairFeatures,
-    verdict: SourceCaseVerdict,
-    ident_str: str,
+    prefix: str,
     penalty: InconsistencyPenalty,
     thresholds: DecisionThresholds,
-) -> ClassificationResult:
-    """Two-way rule for multi-patient source contexts.
+) -> _RelationshipDecision:
+    """Unresolved zone: a multi-patient source context.
 
-    Used by two verdicts that share the same inflation concern — drug-set
-    and AE-set overlap inflating ``L_match`` while patient identity is
-    underdetermined:
+    Used for two verdicts that share the same inflation concern —
+    drug-set and AE-set overlap inflating ``L_match`` while patient
+    identity is underdetermined:
 
-    * ``SAME_SOURCE_UNCOMPARABLE_CASE`` — routed here unconditionally
-      from :func:`_shared_source_override`. Positive shared-source
+    * ``SAME_SOURCE_UNCOMPARABLE_CASE`` — positive shared-source
       evidence (DOI / PMID / …) is present; case identifiers are not
       safely comparable.
-    * ``MULTI_PATIENT_CONTEXT_NO_LINK`` — routed here from
-      :func:`classify` only when ``L_match > lmatch_limited``. No shared
-      source identifier exists, but both narratives indicate the report
-      originates from a multi-patient context. Below ``lmatch_limited`` the
-      verdict still falls through to the standard zone logic and
-      resolves to ``Independent``.
+    * ``MULTI_PATIENT_CONTEXT_NO_LINK`` — no shared source identifier,
+      but both narratives indicate a multi-patient context; reaches
+      this zone only when independence was rejected on rarity.
 
     Branches:
 
-    * ``w_tot >= w_tot_limited_zone`` → ``Otherwise_related``. Any
+    * ``w_tot ≥ w_tot_limited_zone`` → ``DIFFERENT_CASE``. Any
       moderate-or-stronger inconsistency (or three accumulated minors)
       clears the bar. A single minor is still tolerated.
-    * ``L_patient > lpatient_compelling`` (with ``w_tot < w_tot_limited_zone``
-      implied) → ``Duplicates``. Patient-specific log-evidence excludes
-      ``drug_set`` / ``ae_set`` contributions, so the matching evidence
-      must come from demographics + clinical-date coincidences.
-    * Otherwise → ``Otherwise_related``. Patient-specific evidence is not
-      compelling enough to call ``Duplicates``, but non-independence is
-      established, so the pair defaults to ``Otherwise_related`` rather
-      than abstaining. The rule is therefore effectively two-way:
-      ``Duplicates`` only when ``L_patient`` clears the bar, else
-      ``Otherwise_related``.
+    * ``L_patient > lpatient_compelling`` → ``SAME_CASE``. The
+      patient-specific log-evidence excludes ``drug_set`` / ``ae_set``
+      contributions, so the matching evidence must come from
+      demographics + clinical-date coincidences. See
+      :func:`llm_dup_dev.feature_generation.probability.compute_l_patient`.
+    * Otherwise → ``DIFFERENT_CASE``. Patient-specific evidence is not
+      compelling enough to call ``SAME_CASE``, but non-independence is
+      established, so the pair defaults to ``DIFFERENT_CASE`` rather
+      than abstaining. The rule is therefore effectively two-way.
     """
     counts = features.inconsistency_counts
     w_tot = penalty.w_tot
 
     if w_tot >= thresholds.w_tot_limited_zone:
-        return _otherwise_related(
-            pair_id=features.pair_id,
-            reason=IndependenceReason.SHARED_SOURCE,
+        return _RelationshipDecision(
+            relationship=RelationshipAssessment.DIFFERENT_CASE,
             penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
             explanation=(
-                f"Shared-source override ({verdict.value}{ident_str}); "
+                f"{prefix}; "
                 f"w_tot={w_tot:.1f} >= {thresholds.w_tot_limited_zone:.1f} "
                 f"(minor={counts.minor}, moderate={counts.moderate}, "
                 f"strong={counts.strong}, decisive={counts.decisive}); "
@@ -425,12 +385,11 @@ def _multi_patient_three_way(
 
     l_patient = features.L_patient
     if l_patient > thresholds.lpatient_compelling:
-        return _duplicates(
-            pair_id=features.pair_id,
-            reason=IndependenceReason.SHARED_SOURCE,
+        return _RelationshipDecision(
+            relationship=RelationshipAssessment.SAME_CASE,
             penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
             explanation=(
-                f"Shared-source override ({verdict.value}{ident_str}); "
+                f"{prefix}; "
                 f"L_patient={l_patient:.2f} > {thresholds.lpatient_compelling:.1f} "
                 f"and w_tot={w_tot:.1f} < {thresholds.w_tot_limited_zone:.1f}; "
                 f"compelling patient-specific evidence with minimal "
@@ -438,18 +397,68 @@ def _multi_patient_three_way(
             ),
         )
 
-    return _otherwise_related(
-        pair_id=features.pair_id,
-        reason=IndependenceReason.SHARED_SOURCE,
+    return _RelationshipDecision(
+        relationship=RelationshipAssessment.DIFFERENT_CASE,
         penalty=penalty.compared_to(thresholds.w_tot_limited_zone),
         explanation=(
-            f"Shared-source override ({verdict.value}{ident_str}); "
+            f"{prefix}; "
             f"L_patient={l_patient:.2f} (threshold "
             f"{thresholds.lpatient_compelling:.1f}), w_tot={w_tot:.1f} "
             f"(threshold {thresholds.w_tot_limited_zone:.1f}); "
             f"patient-specific evidence insufficient to call Same_case "
             f"in a multi-patient source context — defaulting to "
             f"Different_case."
+        ),
+    )
+
+
+def _rarity_relationship(
+    features: PairFeatures,
+    penalty: InconsistencyPenalty,
+    thresholds: DecisionThresholds,
+) -> _RelationshipDecision:
+    """Rarity zones: no zone-selecting source-context verdict.
+
+    Each zone tolerates progressively less inconsistency: the stronger
+    the matching evidence, the more of the observed inconsistency can
+    plausibly be extraction or reporting noise. ``L_match >
+    lmatch_limited`` is guaranteed here (independence was rejected on
+    rarity), so the limited zone is a total fall-through.
+    """
+    L = features.L_match
+    if L > thresholds.lmatch_compelling:
+        zone_name = "Compelling"
+        lmatch_bound = thresholds.lmatch_compelling
+        w_bound = thresholds.w_tot_compelling_zone
+    elif L > thresholds.lmatch_intermediate:
+        zone_name = "Intermediate"
+        lmatch_bound = thresholds.lmatch_intermediate
+        w_bound = thresholds.w_tot_intermediate_zone
+    else:
+        zone_name = "Limited"
+        lmatch_bound = thresholds.lmatch_limited
+        w_bound = thresholds.w_tot_limited_zone
+
+    w_tot = penalty.w_tot
+    if w_tot < w_bound:
+        return _RelationshipDecision(
+            relationship=RelationshipAssessment.SAME_CASE,
+            penalty=penalty.compared_to(w_bound),
+            explanation=(
+                f"{zone_name} matching evidence (L_match={L:.2f} > "
+                f"{lmatch_bound}); w_tot={w_tot:.1f} < {w_bound:.1f}."
+            ),
+        )
+
+    counts = features.inconsistency_counts
+    return _RelationshipDecision(
+        relationship=RelationshipAssessment.DIFFERENT_CASE,
+        penalty=penalty.compared_to(w_bound),
+        explanation=(
+            f"{zone_name} matching evidence (L_match={L:.2f}) but "
+            f"w_tot={w_tot:.1f} >= {w_bound:.1f} "
+            f"(strong={counts.strong}, moderate={counts.moderate}, "
+            f"decisive={counts.decisive})."
         ),
     )
 
@@ -464,7 +473,6 @@ def _format_shared_identifier(assessment: SourceCaseAssessment) -> str:
         else "source_identifier"
     )
     return f", {id_type}={assessment.shared_source_identifier}"
-
 
 
 # ---------------------------------------------------------------------------
@@ -502,83 +510,4 @@ def _inconsistency_penalty(
     return InconsistencyPenalty(
         w_tot=sum(count * weight for _, count, weight in weights),
         terms=terms,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Result constructors
-# ---------------------------------------------------------------------------
-
-
-def _duplicates(
-    pair_id: str,
-    explanation: str,
-    reason: IndependenceReason,
-    penalty: InconsistencyPenalty | None = None,
-) -> ClassificationResult:
-    """Build a Non-independent / Duplicates result."""
-    return ClassificationResult(
-        pair_id=pair_id,
-        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        relationship_assessment=RelationshipAssessment.SAME_CASE,
-        independence_reason=reason,
-        explanation=explanation,
-        penalty=penalty,
-    )
-
-
-def _otherwise_related(
-    pair_id: str,
-    explanation: str,
-    reason: IndependenceReason,
-    penalty: InconsistencyPenalty | None = None,
-) -> ClassificationResult:
-    """Build a Non-independent / Otherwise_related result."""
-    return ClassificationResult(
-        pair_id=pair_id,
-        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        relationship_assessment=RelationshipAssessment.DIFFERENT_CASE,
-        independence_reason=reason,
-        explanation=explanation,
-        penalty=penalty,
-    )
-
-
-def _abstain(
-    pair_id: str,
-    explanation: str,
-    reason: IndependenceReason,
-    penalty: InconsistencyPenalty | None = None,
-) -> ClassificationResult:
-    """Build a Non-independent / Abstain result (user-facing label: Abstain).
-
-    Represents an epistemically underdetermined same-source scenario:
-    non-independence is established (same source identifier confirmed)
-    but the available evidence is insufficient to safely resolve whether
-    the two reports describe the same individual.
-    """
-    return ClassificationResult(
-        pair_id=pair_id,
-        independence_assessment=IndependenceAssessment.NON_INDEPENDENT,
-        relationship_assessment=RelationshipAssessment.ABSTAIN,
-        independence_reason=reason,
-        explanation=explanation,
-        penalty=penalty,
-    )
-
-
-def _independent(
-    pair_id: str,
-    explanation: str,
-    reason: IndependenceReason,
-    penalty: InconsistencyPenalty | None = None,
-) -> ClassificationResult:
-    """Build an Independent result (user-facing label: Unrelated)."""
-    return ClassificationResult(
-        pair_id=pair_id,
-        independence_assessment=IndependenceAssessment.INDEPENDENT,
-        relationship_assessment=None,
-        independence_reason=reason,
-        explanation=explanation,
-        penalty=penalty,
     )

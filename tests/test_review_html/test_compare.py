@@ -764,7 +764,7 @@ class TestClinicalDateCountsInViewModels:
 
 class TestDecisionSummarySourceCase:
     """The Decision summary must surface source_case_assessment (the
-    classifier consumes it via the shared-source override) and must
+    classifier consumes it via the source-context zones) and must
     no longer surface narrative_consistency (which the classifier
     does not consult)."""
 
