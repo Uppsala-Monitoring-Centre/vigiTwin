@@ -352,7 +352,9 @@ The domain size depends on:
 - the clinically plausible value range
 - the temporal context when applicable
 
-When the two reports record a numeric demographic at different resolutions (e.g. `75.2 kg` and `75 kg`), the values are compared at the **coarser** of the two resolutions: each is rounded to the nearest point on the coarser grid (the bin \([v - r/2,\, v + r/2)\)) and they match when they fall in the same bin. The domain size is then taken at that coarser matched resolution. An exact match at a finer resolution (`75.2 kg` ↔ `75.2 kg`) is retained at the finer resolution and earns the correspondingly larger domain; where several candidate values are present, the finest matching pair is credited. The same rule applies to age, height, and weight.
+When the two reports record a numeric demographic at different resolutions (e.g. `75.2 kg` and `75 kg`), the values are compared at the **coarser** of the two resolutions and they match when they fall in the same bin at that resolution. The domain size is then taken at that coarser matched resolution. An exact match at a finer resolution (`75.2 kg` ↔ `75.2 kg`) is retained at the finer resolution and earns the correspondingly larger domain; where several candidate values are present, the finest matching pair is credited.
+
+The binning differs by feature. **Height and weight** round to the nearest grid point (the bin \([v - r/2,\, v + r/2)\)), so `75.2 kg` and `75 kg` both fall in the 1 kg bin centred on 75. **Age** instead uses **floor** (completed-age) bins \([n\cdot r,\, (n+1)\cdot r)\): a person is reported by their completed age — 74 until their 75th birthday — so `74.6 y` and `74 y` are both "age 74" and match, whereas `74.9 y` and `75.0 y` straddle a birthday and do not. (Nearest rounding would instead place `74.6 y` in the 75 bin, spuriously failing the match against a report recording `74 y`.)
 
 **Age.** Age domain size depends on the resolution of the recorded age.
 
@@ -534,7 +536,7 @@ Decisive inconsistencies come from four sources: a sufficiently large age gap (�
 
 #### Features
 
-**Age.** Absolute difference in years.
+**Age.** Absolute difference in **completed** years.
 
 | Difference | Classification        |
 | ---------- | --------------------- |
@@ -542,6 +544,8 @@ Decisive inconsistencies come from four sources: a sufficiently large age gap (�
 | ≥ 2 years  | moderate inconsistency |
 | ≥ 5 years  | strong inconsistency  |
 | ≥ 11 years | decisive inconsistency |
+
+Each age is floored to its completed value in its recorded unit before differencing (a person is 74 until their 75th birthday, so 74.6 y counts as 74 y). Flooring in the recorded unit preserves infant distinctions — 6 vs 11 months stay apart rather than both collapsing to 0 completed years. This matches the completed-age binning used for positive age matching (§ Determining domain size), so a within-completed-age difference such as 74.6 y vs 74 y is neither a match failure nor an inconsistency; conversely 74.9 y vs 76.0 y yields a 2-year (moderate) difference, as the fractional parts are dropped rather than rounded.
 
 Gaps of 11 or more years cannot plausibly be explained by single-digit typos, digit transpositions, month-vs-year unit confusion, or extraction noise, so the pair is treated as decisively distinct individuals.
 

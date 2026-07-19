@@ -195,6 +195,64 @@ class TestAgeInconsistency:
         assert len(age_incs) == 1
         assert age_incs[0].severity == InconsistencySeverity.MODERATE
 
+    def test_within_completed_year_is_not_inconsistent(self, thresholds):
+        """74.6 y and 74 y are the same completed age → no inconsistency
+        (both floor to 74), consistent with them now matching."""
+        r1 = Report(
+            report_id="1",
+            patient_age_values=[
+                AgeValue(value=74.6, unit="years", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_age_values=[
+                AgeValue(value=74, unit="years", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        assert [i for i in result if i.feature == "patient_age"] == []
+
+    def test_completed_age_uses_floored_difference(self, thresholds):
+        """74.9 y vs 76.0 y → completed ages 74 and 76 → 2-year difference →
+        moderate (the fractional parts are dropped, not rounded)."""
+        r1 = Report(
+            report_id="1",
+            patient_age_values=[
+                AgeValue(value=74.9, unit="years", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_age_values=[
+                AgeValue(value=76.0, unit="years", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        age_incs = [i for i in result if i.feature == "patient_age"]
+        assert len(age_incs) == 1
+        assert age_incs[0].severity == InconsistencySeverity.MODERATE
+        assert age_incs[0].difference == 2.0
+
+    def test_fractional_months_floor_in_recorded_unit(self, thresholds):
+        """Fractional infant months floor in months, not years: 6.8 mo and
+        6.1 mo are both 'completed 6 months' → no inconsistency, while a
+        naive floor-in-years would zero out every infant comparison."""
+        r1 = Report(
+            report_id="1",
+            patient_age_values=[
+                AgeValue(value=6.8, unit="months", sources=["structured"])
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            patient_age_values=[
+                AgeValue(value=6.1, unit="months", sources=["structured"])
+            ],
+        )
+        result = detect_inconsistencies(r1, r2, thresholds)
+        assert [i for i in result if i.feature == "patient_age"] == []
+
 
 # ---- Sex ----
 

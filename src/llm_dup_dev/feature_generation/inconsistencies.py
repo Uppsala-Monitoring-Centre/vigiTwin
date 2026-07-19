@@ -17,6 +17,8 @@ See: docs/duplicate_adjudication_spec.md § Inconsistency signals
 
 from __future__ import annotations
 
+import math
+
 from llm_dup_dev.classifier.config import InconsistencyThresholds
 from llm_dup_dev.models.enums import DrugRole, InconsistencySeverity
 from llm_dup_dev.models.pair_features import Inconsistency
@@ -132,18 +134,28 @@ def _classify_numeric_difference(
 # ---------------------------------------------------------------------------
 
 
-def _ages_in_years(report: Report) -> list[float]:
-    """Extract all age values converted to years."""
+def _completed_ages_in_years(report: Report) -> list[float]:
+    """Extract age values as **completed** ages, converted to years.
+
+    Each age is floored to the completed integer of its *recorded* unit
+    before conversion — a person is 74 until their 75th birthday, so 74.6
+    years counts as 74. Flooring in the recorded unit (rather than in years)
+    preserves infant distinctions: 6 vs 11 months stay apart instead of both
+    collapsing to 0 completed years. This mirrors the completed-age (floor)
+    binning used for positive age matching in
+    :func:`llm_dup_dev.feature_generation.matching._match_age`, so a
+    within-completed-age difference (74.6 vs 74) is neither a match failure
+    nor an inconsistency.
+    """
     result: list[float] = []
     for av in report.patient_age_values:
-        if av.unit == "years":
-            result.append(av.value)
-        elif av.unit == "months":
-            result.append(av.value / 12.0)
+        completed = float(math.floor(av.value))
+        if av.unit == "months":
+            result.append(completed / 12.0)
         elif av.unit == "days":
-            result.append(av.value / 365.25)
-        else:
-            result.append(av.value)  # assume years
+            result.append(completed / 365.25)
+        else:  # years, or unknown unit assumed to be years
+            result.append(completed)
     return result
 
 
@@ -184,10 +196,10 @@ def _check_age(
     r2: Report,
     thresholds: InconsistencyThresholds,
 ) -> list[Inconsistency]:
-    """Check for age inconsistencies (in years)."""
+    """Check for age inconsistencies (in completed years)."""
     return _classify_numeric_inconsistency(
-        _ages_in_years(r1),
-        _ages_in_years(r2),
+        _completed_ages_in_years(r1),
+        _completed_ages_in_years(r2),
         feature="patient_age",
         units="years",
         moderate_threshold=thresholds.age_moderate,
