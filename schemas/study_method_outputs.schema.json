@@ -1,0 +1,216 @@
+{
+  "$defs": {
+    "AdjudicatorOutput": {
+      "description": "The frozen adjudicator verdict for one pair.\n\n``final_label`` is the decided outcome. ``classification`` is the optional\nfull decision trace (the same ``ClassificationResult`` the pipeline\nproduces); when present it is checked for consistency with ``final_label``\nand ``pair_id``, so a mismatched trace cannot slip through.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "final_label": {
+          "title": "Final Label",
+          "type": "string"
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClassificationResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "pair_id",
+        "final_label"
+      ],
+      "title": "AdjudicatorOutput",
+      "type": "object"
+    },
+    "ClassificationResult": {
+      "description": "Full duplicate-adjudication output for a report pair.\n\nThe decision logic answers two sequential questions:\n\n* ``independence_assessment`` \u2014 did the two reports arise\n  independently? Independence is rejected either on direct evidence\n  of shared provenance (a shared source identifier) or when the\n  rarity-based matching evidence is strong enough to reject the\n  null hypothesis that the reports are independent draws from the\n  comparison population.\n* ``relationship_assessment`` \u2014 for non-independent pairs, do the\n  reports describe the same underlying case (``Same_case``), a\n  demonstrably different case (``Different_case``), or is the\n  evidence insufficient to safely resolve the question\n  (``Abstain``)?\n\nUse ``final_label`` for the user-facing label (``Duplicates`` /\n``Otherwise_related`` / ``Unrelated`` / ``Abstain``); downstream\nconsumers should depend on this rather than on the raw internal\nfields. ``penalty`` is the exception: it is diagnostic, carried so that\nthe inconsistency arithmetic behind the decision can be displayed and\naudited without reconstructing it.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "independence_assessment": {
+          "$ref": "#/$defs/IndependenceAssessment"
+        },
+        "relationship_assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelationshipAssessment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "independence_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IndependenceReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "explanation": {
+          "default": "",
+          "title": "Explanation",
+          "type": "string"
+        },
+        "penalty": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InconsistencyPenalty"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "pair_id",
+        "independence_assessment"
+      ],
+      "title": "ClassificationResult",
+      "type": "object"
+    },
+    "InconsistencyPenalty": {
+      "description": "The weighted inconsistency score, and the comparison the decision made.\n\n    w_tot = \u03a3 (count \u00d7 weight)  over the severities present\n\nSelf-describing by design: the classifier is the only component that knows\nboth the inconsistency counts and the configured weights, so it records the\nresult rather than leaving consumers to recompute it. Recomputing requires\nthe run's ``DecisionThresholds``, and a consumer that assumes the defaults\nwill silently disagree with the decision whenever the run used custom\nweights.\n\n``threshold`` is the bar this score was tested against, or ``None`` when the\ndecision made no ``w_tot`` comparison at all \u2014 the below-limited zone (where\n``L_match`` decides) and ``SAME_SOURCE_DIFFERENT_CASE`` (pinned regardless of\n``w_tot``). In those cases the score is still recorded; there is simply no\ncomparison to report.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Relationship assessment",
+      "properties": {
+        "w_tot": {
+          "title": "W Tot",
+          "type": "number"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        },
+        "terms": {
+          "items": {
+            "$ref": "#/$defs/PenaltyTerm"
+          },
+          "title": "Terms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "w_tot"
+      ],
+      "title": "InconsistencyPenalty",
+      "type": "object"
+    },
+    "InconsistencySeverity": {
+      "description": "Severity levels for detected inconsistencies between reports.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Severity levels\n\nLevels:\n    minor     \u2013 small difference, weakly suggests different individuals\n    moderate  \u2013 meaningful difference, weakens the duplicate hypothesis\n    strong    \u2013 strongly suggests different individuals\n    decisive  \u2013 forces Different classification (e.g. distinct\n                patient IDs from the same study in the narratives)",
+      "enum": [
+        "minor",
+        "moderate",
+        "strong",
+        "decisive"
+      ],
+      "title": "InconsistencySeverity",
+      "type": "string"
+    },
+    "IndependenceAssessment": {
+      "description": "Internal independence assessment produced by the decision logic.\n\nCaptures whether the pair's independence can be rejected: either\ndirectly, via a reliable shared source identifier (shared\nprovenance), or via the rarity-based matching evidence \u2014 a\n``NON_INDEPENDENT`` verdict then means the matched features are too\nunlikely to have arisen by chance if the reports were independent\ndraws from the comparison population. The same-case vs\ndifferent-case distinction is made separately by the\n``RelationshipAssessment``.\n\nThe user-facing label is derived from this enum (plus\n``RelationshipAssessment``) by ``ClassificationResult.final_label``;\ndownstream consumers should depend on the final label rather than\non this raw enum.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Independence assessment",
+      "enum": [
+        "Non-independent",
+        "Independent"
+      ],
+      "title": "IndependenceAssessment",
+      "type": "string"
+    },
+    "IndependenceReason": {
+      "description": "Audit trail for which branch in the decision logic fired.\n\nAttached to :class:`ClassificationResult` so downstream review can\ntell *why* a pair landed on its independence assessment. The\n``RARITY_*`` values correspond to the four L_match zones of the\nrarity-based matching evidence; ``SHARED_SOURCE`` means independence\nwas rejected on direct evidence of shared provenance (a reliable\nshared source identifier derived from the narratives, or a\nshared-source verdict from the source-case comparison).\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Independence assessment",
+      "enum": [
+        "rarity_compelling",
+        "rarity_intermediate",
+        "rarity_limited",
+        "rarity_insufficient",
+        "shared_source"
+      ],
+      "title": "IndependenceReason",
+      "type": "string"
+    },
+    "PenaltyTerm": {
+      "description": "One severity's contribution to ``w_tot``.\n\nCarries the ``weight`` **actually applied** by the run, not the default,\nso the arithmetic can be reproduced from the result alone.",
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/InconsistencySeverity"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "weight": {
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": [
+        "severity",
+        "count",
+        "weight"
+      ],
+      "title": "PenaltyTerm",
+      "type": "object"
+    },
+    "RelationshipAssessment": {
+      "description": "Relationship assessment for pairs whose independence was rejected.\n\nAnswers the second adjudication question: do the two reports\ndescribe the same underlying case (``SAME_CASE``), or is the pair\nlinked by something other than being the same individual case \u2014\ne.g. same reporter, same study, two patients on the same unusual\nregimen (``DIFFERENT_CASE``)? The decision logic chooses based on\nthe inconsistency signals (weighted score ``w_tot``) interpreted\nagainst the strength of the matching evidence and the source\ncontext.\n\n``ABSTAIN`` is emitted for epistemically underdetermined\nsame-source scenarios: non-independence is established (same source\nidentifier confirmed) but the available evidence is insufficient to\nsafely determine whether the reports describe the same individual.\n\n``ClassificationResult.final_label`` maps these to the user-facing\nlabels: ``Same_case`` \u2192 ``Duplicates``, ``Different_case`` \u2192\n``Otherwise_related``, ``Abstain`` \u2192 ``Abstain``.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Relationship assessment",
+      "enum": [
+        "Same_case",
+        "Different_case",
+        "Abstain"
+      ],
+      "title": "RelationshipAssessment",
+      "type": "string"
+    }
+  },
+  "description": "A frozen bundle of method outputs for a set of pairs.\n\nOne bundle corresponds to one frozen run of the method. The two abstain /\notherwise-related *re-interpretation* secondary analyses do not need a new\nbundle \u2014 they re-read this one under a different positivity rule (see\n:mod:`llm_dup_dev.study_eval.aggregate`). The LLM-AE-clinical-picture\nsecondary analysis *does* produce genuinely different classifications and\ntherefore arrives as a second bundle with a distinct ``variant_id``.\n\n``adjudicator`` and ``vigimatch_retrieved`` are keyed by ``pair_id``.\n``vigimatch_retrieved[pair_id]`` is whether the screening method flagged\nthat pair as a suspected duplicate.",
+  "properties": {
+    "variant_id": {
+      "default": "primary",
+      "title": "Variant Id",
+      "type": "string"
+    },
+    "adjudicator": {
+      "additionalProperties": {
+        "$ref": "#/$defs/AdjudicatorOutput"
+      },
+      "title": "Adjudicator",
+      "type": "object"
+    },
+    "vigimatch_retrieved": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Vigimatch Retrieved",
+      "type": "object"
+    }
+  },
+  "required": [
+    "adjudicator",
+    "vigimatch_retrieved"
+  ],
+  "title": "MethodOutputs",
+  "type": "object"
+}

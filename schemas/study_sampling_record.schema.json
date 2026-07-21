@@ -1,0 +1,94 @@
+{
+  "description": "A reproducible record of one seeded sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nand the resulting selection in draw order. The protocol requires that \"the\nrandomization procedure and seed will be recorded\"; this is that record.",
+  "properties": {
+    "procedure_id": {
+      "title": "Procedure Id",
+      "type": "string"
+    },
+    "seed": {
+      "title": "Seed",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "package_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Package Version"
+    },
+    "python_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Python Version"
+    },
+    "target": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target"
+    },
+    "n_eligible_clusters": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "N Eligible Clusters"
+    },
+    "tier_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Tier Counts",
+      "type": "object"
+    },
+    "stratum_sizes": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Stratum Sizes",
+      "type": "object"
+    },
+    "selected_pair_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Pair Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "procedure_id",
+    "seed",
+    "created_at"
+  ],
+  "title": "SamplingRecord",
+  "type": "object"
+}

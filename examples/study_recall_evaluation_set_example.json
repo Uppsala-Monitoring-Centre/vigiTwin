@@ -1,0 +1,23 @@
+{
+  "reference_set_id": "fda_gold",
+  "reference_set_label": "FDA Gold",
+  "sampling_record": null,
+  "pairs": [
+    {
+      "pair_id": "R101__R102",
+      "report_id1": "R101",
+      "report_id2": "R102",
+      "cluster_id": "G1",
+      "provenance": "manual",
+      "eligible": true
+    },
+    {
+      "pair_id": "R103__R104",
+      "report_id1": "R103",
+      "report_id2": "R104",
+      "cluster_id": "G2",
+      "provenance": "e2b_derived",
+      "eligible": true
+    }
+  ]
+}

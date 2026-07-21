@@ -15,6 +15,12 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "openpyxl>=3.1",
+]
+# Reviewer/arbitration workbooks (study_eval.scle.workbook / arbitration).
+# The secure repo installs llm-dup-dev[study]; the core package stays lean.
+study = [
+    "openpyxl>=3.1",
 ]
 
 [build-system]
