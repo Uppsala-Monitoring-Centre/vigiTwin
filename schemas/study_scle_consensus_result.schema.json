@@ -1,0 +1,553 @@
+{
+  "$defs": {
+    "ArbitrationDecision": {
+      "description": "The arbiter's resolution for one pair.\n\n``consensus_dimensions`` carries a value only for the structured dimensions\nthe arbiter chose to set (required for those that disagreed; ignored for\nthose that already agreed). ``free_text_materially_different`` records the\narbiter's judgement on the two free-text assessments.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "consensus_dimensions": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Consensus Dimensions",
+          "type": "object"
+        },
+        "free_text_materially_different": {
+          "title": "Free Text Materially Different",
+          "type": "boolean"
+        },
+        "consensus_free_text": {
+          "title": "Consensus Free Text",
+          "type": "string"
+        },
+        "arbiter_rationale": {
+          "title": "Arbiter Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pair_id",
+        "consensus_dimensions",
+        "free_text_materially_different",
+        "consensus_free_text",
+        "arbiter_rationale"
+      ],
+      "title": "ArbitrationDecision",
+      "type": "object"
+    },
+    "ArbitrationSubmission": {
+      "description": "The arbiter's complete set of decisions for one component.",
+      "properties": {
+        "arbitration_id": {
+          "title": "Arbitration Id",
+          "type": "string"
+        },
+        "arbiter_id": {
+          "title": "Arbiter Id",
+          "type": "string"
+        },
+        "evaluation_component": {
+          "title": "Evaluation Component",
+          "type": "string"
+        },
+        "sample_checksum": {
+          "title": "Sample Checksum",
+          "type": "string"
+        },
+        "decisions": {
+          "items": {
+            "$ref": "#/$defs/ArbitrationDecision"
+          },
+          "title": "Decisions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "arbitration_id",
+        "arbiter_id",
+        "evaluation_component",
+        "sample_checksum",
+        "decisions"
+      ],
+      "title": "ArbitrationSubmission",
+      "type": "object"
+    },
+    "CaseDifficulty": {
+      "description": "Whether correct binary classification would be trivial for the method.",
+      "enum": [
+        "trivial",
+        "non_trivial",
+        "unclear"
+      ],
+      "title": "CaseDifficulty",
+      "type": "string"
+    },
+    "ConsensusAssessment": {
+      "description": "The resolved assessment for one pair, with per-dimension provenance.\n\nStructured dimension values are stored as their string form (enum value, or\n``None`` when the dimension does not apply). ``dimension_sources`` maps each\nstructured dimension to ``reviewer_agreement`` or ``arbitration``.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "free_text_assessment": {
+          "title": "Free Text Assessment",
+          "type": "string"
+        },
+        "case_difficulty": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Case Difficulty"
+        },
+        "reference_label_issue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Label Issue"
+        },
+        "never_event": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Never Event"
+        },
+        "unexpected_method_behaviour": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unexpected Method Behaviour"
+        },
+        "material_input_data_limitation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Material Input Data Limitation"
+        },
+        "input_data_limitation_category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Data Limitation Category"
+        },
+        "primary_error_source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Error Source"
+        },
+        "implicated_feature_domains": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Implicated Feature Domains",
+          "type": "array"
+        },
+        "dimension_sources": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Dimension Sources",
+          "type": "object"
+        },
+        "free_text_materially_different": {
+          "default": false,
+          "title": "Free Text Materially Different",
+          "type": "boolean"
+        },
+        "arbiter_rationale": {
+          "default": "",
+          "title": "Arbiter Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pair_id",
+        "free_text_assessment"
+      ],
+      "title": "ConsensusAssessment",
+      "type": "object"
+    },
+    "DimensionDisagreement": {
+      "description": "A single dimension on which the two reviewers differ.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "value_a": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value A"
+        },
+        "value_b": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value B"
+        }
+      },
+      "required": [
+        "field",
+        "value_a",
+        "value_b"
+      ],
+      "title": "DimensionDisagreement",
+      "type": "object"
+    },
+    "DiscrepancyReport": {
+      "description": "The structured-disagreement picture between two submissions.",
+      "properties": {
+        "evaluation_component": {
+          "title": "Evaluation Component",
+          "type": "string"
+        },
+        "reviewer_a": {
+          "title": "Reviewer A",
+          "type": "string"
+        },
+        "reviewer_b": {
+          "title": "Reviewer B",
+          "type": "string"
+        },
+        "pair_discrepancies": {
+          "items": {
+            "$ref": "#/$defs/PairDiscrepancy"
+          },
+          "title": "Pair Discrepancies",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evaluation_component",
+        "reviewer_a",
+        "reviewer_b",
+        "pair_discrepancies"
+      ],
+      "title": "DiscrepancyReport",
+      "type": "object"
+    },
+    "InputDataLimitationCategory": {
+      "description": "Category of a material input-data limitation, when one is present.",
+      "enum": [
+        "data_quality_or_encoding",
+        "missing_information",
+        "unavailable_to_method",
+        "other"
+      ],
+      "title": "InputDataLimitationCategory",
+      "type": "string"
+    },
+    "PairDiscrepancy": {
+      "description": "All structured disagreements on one pair (empty list means full agreement).",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "dimension_disagreements": {
+          "items": {
+            "$ref": "#/$defs/DimensionDisagreement"
+          },
+          "title": "Dimension Disagreements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pair_id",
+        "dimension_disagreements"
+      ],
+      "title": "PairDiscrepancy",
+      "type": "object"
+    },
+    "PrimaryErrorSource": {
+      "description": "Method component principally responsible for a misclassification.",
+      "enum": [
+        "evidence_extraction",
+        "independence_assessment",
+        "relationship_assessment",
+        "final_decision_mapping",
+        "component_interaction",
+        "input_or_reference_issue",
+        "unclear"
+      ],
+      "title": "PrimaryErrorSource",
+      "type": "string"
+    },
+    "ReferenceLabelIssue": {
+      "description": "Whether the reference label looks sound, suspect, or genuinely ambiguous.",
+      "enum": [
+        "no_apparent_issue",
+        "possibly_incorrect",
+        "genuinely_ambiguous"
+      ],
+      "title": "ReferenceLabelIssue",
+      "type": "string"
+    },
+    "ReviewerSubmission": {
+      "description": "A single reviewer's complete set of assessments for one component.\n\n``sample_checksum`` is the sha256 of the ``SCLESample`` JSON the workbook\nwas generated from, tying the submission to the exact sampled case list so a\nstale or mismatched workbook is caught on read-back.",
+      "properties": {
+        "workbook_id": {
+          "title": "Workbook Id",
+          "type": "string"
+        },
+        "reviewer_id": {
+          "title": "Reviewer Id",
+          "type": "string"
+        },
+        "evaluation_component": {
+          "enum": [
+            "precision",
+            "recall"
+          ],
+          "title": "Evaluation Component",
+          "type": "string"
+        },
+        "sample_checksum": {
+          "title": "Sample Checksum",
+          "type": "string"
+        },
+        "assessments": {
+          "items": {
+            "$ref": "#/$defs/SCLECaseAssessment"
+          },
+          "title": "Assessments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "workbook_id",
+        "reviewer_id",
+        "evaluation_component",
+        "sample_checksum",
+        "assessments"
+      ],
+      "title": "ReviewerSubmission",
+      "type": "object"
+    },
+    "SCLECaseAssessment": {
+      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` when they do not apply. The model\nenforces *internal* consistency (the misclassification block is all-present\nor all-absent; a limitation category is present exactly when a material\nlimitation is reported). The full check that presence matches the paired\n:class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "reviewer_id": {
+          "title": "Reviewer Id",
+          "type": "string"
+        },
+        "free_text_assessment": {
+          "title": "Free Text Assessment",
+          "type": "string"
+        },
+        "case_difficulty": {
+          "$ref": "#/$defs/CaseDifficulty"
+        },
+        "reference_label_issue": {
+          "$ref": "#/$defs/ReferenceLabelIssue"
+        },
+        "never_event": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/YesNoUnclear"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unexpected_method_behaviour": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/YesNoUnclear"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "material_input_data_limitation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/YesNoUnclear"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "input_data_limitation_category": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InputDataLimitationCategory"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "primary_error_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrimaryErrorSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "implicated_feature_domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Implicated Feature Domains",
+          "type": "array"
+        },
+        "method_difference_explanation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Method Difference Explanation"
+        }
+      },
+      "required": [
+        "pair_id",
+        "reviewer_id",
+        "free_text_assessment",
+        "case_difficulty",
+        "reference_label_issue"
+      ],
+      "title": "SCLECaseAssessment",
+      "type": "object"
+    },
+    "YesNoUnclear": {
+      "description": "Three-valued answer used by several misclassification dimensions.",
+      "enum": [
+        "yes",
+        "no",
+        "unclear"
+      ],
+      "title": "YesNoUnclear",
+      "type": "string"
+    }
+  },
+  "description": "The complete consensus record for one evaluation component.\n\nHolds the two original reviews verbatim (with their checksums), the\nstructured discrepancy report, the arbitration, the resolved consensus, and\nthe list of pairs flagged for a possible reference-label issue.",
+  "properties": {
+    "evaluation_component": {
+      "title": "Evaluation Component",
+      "type": "string"
+    },
+    "reviewer_submissions": {
+      "items": {
+        "$ref": "#/$defs/ReviewerSubmission"
+      },
+      "title": "Reviewer Submissions",
+      "type": "array"
+    },
+    "submission_checksums": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Submission Checksums",
+      "type": "object"
+    },
+    "discrepancy_report": {
+      "$ref": "#/$defs/DiscrepancyReport"
+    },
+    "arbitration": {
+      "$ref": "#/$defs/ArbitrationSubmission"
+    },
+    "consensus": {
+      "items": {
+        "$ref": "#/$defs/ConsensusAssessment"
+      },
+      "title": "Consensus",
+      "type": "array"
+    },
+    "reference_label_concerns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reference Label Concerns",
+      "type": "array"
+    }
+  },
+  "required": [
+    "evaluation_component",
+    "reviewer_submissions",
+    "submission_checksums",
+    "discrepancy_report",
+    "arbitration",
+    "consensus",
+    "reference_label_concerns"
+  ],
+  "title": "SCLEConsensusResult",
+  "type": "object"
+}

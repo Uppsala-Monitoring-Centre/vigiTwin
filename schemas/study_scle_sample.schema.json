@@ -1,0 +1,282 @@
+{
+  "$defs": {
+    "SCLEAutoContext": {
+      "description": "Case context populated from the frozen results, never by reviewers.\n\nCarries everything the reviewer should *see but not assess*: the reference\nlabel, the method output, the confusion cell (precision) or joint stratum\n(recall), whether the methods disagree, whether the case is a\nmisclassification by the adjudicator, a short decision-trace summary, and\nthe packet filename. ``is_misclassified`` and ``methods_disagree`` drive the\napplicability of the conditional dimensions.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "evaluation_component": {
+          "enum": [
+            "precision",
+            "recall"
+          ],
+          "title": "Evaluation Component",
+          "type": "string"
+        },
+        "reference_set_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Set Id"
+        },
+        "reference_label": {
+          "title": "Reference Label",
+          "type": "string"
+        },
+        "adjudicator_final_label": {
+          "title": "Adjudicator Final Label",
+          "type": "string"
+        },
+        "vigimatch_retrieved": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vigimatch Retrieved"
+        },
+        "confusion_cell": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confusion Cell"
+        },
+        "joint_stratum": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Joint Stratum"
+        },
+        "methods_disagree": {
+          "title": "Methods Disagree",
+          "type": "boolean"
+        },
+        "is_misclassified": {
+          "title": "Is Misclassified",
+          "type": "boolean"
+        },
+        "decision_trace_summary": {
+          "default": "",
+          "title": "Decision Trace Summary",
+          "type": "string"
+        },
+        "packet_filename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packet Filename"
+        }
+      },
+      "required": [
+        "pair_id",
+        "evaluation_component",
+        "reference_label",
+        "adjudicator_final_label",
+        "methods_disagree",
+        "is_misclassified"
+      ],
+      "title": "SCLEAutoContext",
+      "type": "object"
+    },
+    "SCLECase": {
+      "description": "One sampled SCLE case: a pair plus its stratum and auto-context.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "evaluation_component": {
+          "enum": [
+            "precision",
+            "recall"
+          ],
+          "title": "Evaluation Component",
+          "type": "string"
+        },
+        "reference_set_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Set Id"
+        },
+        "stratum": {
+          "title": "Stratum",
+          "type": "string"
+        },
+        "auto_context": {
+          "$ref": "#/$defs/SCLEAutoContext"
+        }
+      },
+      "required": [
+        "pair_id",
+        "evaluation_component",
+        "stratum",
+        "auto_context"
+      ],
+      "title": "SCLECase",
+      "type": "object"
+    },
+    "SamplingRecord": {
+      "description": "A reproducible record of one seeded sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nand the resulting selection in draw order. The protocol requires that \"the\nrandomization procedure and seed will be recorded\"; this is that record.",
+      "properties": {
+        "procedure_id": {
+          "title": "Procedure Id",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "package_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Package Version"
+        },
+        "python_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python Version"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "n_eligible_clusters": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Eligible Clusters"
+        },
+        "tier_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Tier Counts",
+          "type": "object"
+        },
+        "stratum_sizes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Stratum Sizes",
+          "type": "object"
+        },
+        "selected_pair_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Pair Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "procedure_id",
+        "seed",
+        "created_at"
+      ],
+      "title": "SamplingRecord",
+      "type": "object"
+    }
+  },
+  "description": "The full set of SCLE cases drawn for one evaluation component.\n\n``records`` holds one :class:`SamplingRecord` per stratum, so the exact\nsub-seed and available population size for each cell/stratum are auditable.",
+  "properties": {
+    "evaluation_component": {
+      "enum": [
+        "precision",
+        "recall"
+      ],
+      "title": "Evaluation Component",
+      "type": "string"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/SCLECase"
+      },
+      "title": "Cases",
+      "type": "array"
+    },
+    "records": {
+      "items": {
+        "$ref": "#/$defs/SamplingRecord"
+      },
+      "title": "Records",
+      "type": "array"
+    }
+  },
+  "required": [
+    "evaluation_component",
+    "cases",
+    "records"
+  ],
+  "title": "SCLESample",
+  "type": "object"
+}

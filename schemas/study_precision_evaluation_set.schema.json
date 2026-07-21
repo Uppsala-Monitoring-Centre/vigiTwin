@@ -1,0 +1,217 @@
+{
+  "$defs": {
+    "PrecisionPairRecord": {
+      "description": "One report pair in the precision evaluation set.\n\n``reference_label`` is the human annotator's verdict. ``cluster_id`` is the\nvigiMatch2025 cluster the pair was sampled from, when known \u2014 recorded for\nprovenance; the precision set already holds at most one pair per cluster by\nconstruction.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "report_id1": {
+          "title": "Report Id1",
+          "type": "string"
+        },
+        "report_id2": {
+          "title": "Report Id2",
+          "type": "string"
+        },
+        "cluster_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cluster Id"
+        },
+        "reference_label": {
+          "enum": [
+            "duplicate",
+            "non_duplicate",
+            "abstain"
+          ],
+          "title": "Reference Label",
+          "type": "string"
+        },
+        "annotator_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotator Id"
+        },
+        "annotated_at": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotated At"
+        }
+      },
+      "required": [
+        "pair_id",
+        "report_id1",
+        "report_id2",
+        "reference_label"
+      ],
+      "title": "PrecisionPairRecord",
+      "type": "object"
+    },
+    "SamplingRecord": {
+      "description": "A reproducible record of one seeded sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nand the resulting selection in draw order. The protocol requires that \"the\nrandomization procedure and seed will be recorded\"; this is that record.",
+      "properties": {
+        "procedure_id": {
+          "title": "Procedure Id",
+          "type": "string"
+        },
+        "seed": {
+          "title": "Seed",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "package_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Package Version"
+        },
+        "python_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Python Version"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "n_eligible_clusters": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "N Eligible Clusters"
+        },
+        "tier_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Tier Counts",
+          "type": "object"
+        },
+        "stratum_sizes": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Stratum Sizes",
+          "type": "object"
+        },
+        "selected_pair_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Pair Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "procedure_id",
+        "seed",
+        "created_at"
+      ],
+      "title": "SamplingRecord",
+      "type": "object"
+    }
+  },
+  "description": "The precision evaluation set: vigiMatch2025 candidates with human labels.\n\nEvery pair here was flagged as a suspected duplicate by the screening\nmethod, so the proportion the annotator labelled ``duplicate`` is the\nscreening method's precision within this sample.",
+  "properties": {
+    "set_id": {
+      "title": "Set Id",
+      "type": "string"
+    },
+    "screening_method": {
+      "default": "vigiMatch2025",
+      "title": "Screening Method",
+      "type": "string"
+    },
+    "snapshot_description": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Snapshot Description"
+    },
+    "sampling_record": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SamplingRecord"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "pairs": {
+      "items": {
+        "$ref": "#/$defs/PrecisionPairRecord"
+      },
+      "title": "Pairs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "set_id",
+    "pairs"
+  ],
+  "title": "PrecisionEvaluationSet",
+  "type": "object"
+}

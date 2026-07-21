@@ -1,0 +1,26 @@
+{
+  "set_id": "vigimatch2025_precision_50",
+  "screening_method": "vigiMatch2025",
+  "snapshot_description": "VigiBase up to 2026-01-28",
+  "sampling_record": null,
+  "pairs": [
+    {
+      "pair_id": "R001__R002",
+      "report_id1": "R001",
+      "report_id2": "R002",
+      "cluster_id": "C1",
+      "reference_label": "duplicate",
+      "annotator_id": "ref-annotator",
+      "annotated_at": "2026-03-15"
+    },
+    {
+      "pair_id": "R003__R004",
+      "report_id1": "R003",
+      "report_id2": "R004",
+      "cluster_id": "C2",
+      "reference_label": "non_duplicate",
+      "annotator_id": null,
+      "annotated_at": null
+    }
+  ]
+}

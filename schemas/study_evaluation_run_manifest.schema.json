@@ -1,0 +1,180 @@
+{
+  "$defs": {
+    "ArtifactRef": {
+      "description": "A content-addressed reference to one file on disk.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "n_bytes": {
+          "title": "N Bytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "n_bytes"
+      ],
+      "title": "ArtifactRef",
+      "type": "object"
+    },
+    "DevPackageInfo": {
+      "description": "Identity of the dev-side package producing the manifest.",
+      "properties": {
+        "name": {
+          "default": "llm-dup-dev",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "title": "DevPackageInfo",
+      "type": "object"
+    }
+  },
+  "description": "Record of one study-eval stage's provenance.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "stage": {
+      "enum": [
+        "sampling",
+        "packets",
+        "workbooks",
+        "submission_validation",
+        "arbitration",
+        "consensus",
+        "aggregate",
+        "results"
+      ],
+      "title": "Stage",
+      "type": "string"
+    },
+    "dev_package": {
+      "$ref": "#/$defs/DevPackageInfo"
+    },
+    "dev_git_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dev Git Commit"
+    },
+    "python_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Python Version"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "outputs": {
+      "items": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "title": "Outputs",
+      "type": "array"
+    },
+    "analysis_variant": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Analysis Variant"
+    },
+    "ci_method": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ci Method"
+    },
+    "secure_context": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Secure Context"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "created_at",
+    "run_id",
+    "stage"
+  ],
+  "title": "EvaluationRunManifest",
+  "type": "object"
+}

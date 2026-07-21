@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-03-01T12:00:00Z",
+  "run_id": "abc123def456",
+  "stage": "aggregate",
+  "dev_package": {
+    "name": "llm-dup-dev",
+    "version": null
+  },
+  "dev_git_commit": null,
+  "python_version": "3.11.8",
+  "inputs": [
+    {
+      "path": "inputs/pset.json",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "n_bytes": 1024
+    }
+  ],
+  "outputs": [
+    {
+      "path": "results/precision_metrics.csv",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "n_bytes": 2048
+    }
+  ],
+  "analysis_variant": null,
+  "ci_method": "wilson",
+  "secure_context": null,
+  "notes": null
+}
