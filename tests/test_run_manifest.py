@@ -416,3 +416,37 @@ def test_dataset_ref_from_manifest_copies_extraction_model() -> None:
     manifest = build_run_manifest(dataset_ref=ref)
     assert manifest.dataset_ref.llm_config["model"] == "gpt-5.4"
     assert manifest.llm_config is None
+
+
+def test_manifest_records_requested_temperature_when_omitted() -> None:
+    """A ``None`` request must be recorded, not dropped as "unset".
+
+    This field is the only record distinguishing "we asked for the
+    backend default" from "we asked for 0.0 and got it" — i.e. the only
+    way to tell a reproducible run from a non-reproducible one later.
+    """
+    from llm_dup_dev.llm.fake import FakeLLMClient
+
+    runner = PipelineRunner(
+        report_loader=SyntheticReportLoader({}),
+        stats_provider=SyntheticStatsProvider(),
+        llm_client=FakeLLMClient(),
+    )
+    manifest = build_run_manifest(runner=runner)
+
+    assert "llm_temperature_requested" in manifest.feature_flags
+    assert manifest.feature_flags["llm_temperature_requested"] is None
+
+
+def test_manifest_records_explicit_requested_temperature() -> None:
+    from llm_dup_dev.llm.fake import FakeLLMClient
+
+    runner = PipelineRunner(
+        report_loader=SyntheticReportLoader({}),
+        stats_provider=SyntheticStatsProvider(),
+        llm_client=FakeLLMClient(),
+        llm_temperature=0.0,
+    )
+    manifest = build_run_manifest(runner=runner)
+
+    assert manifest.feature_flags["llm_temperature_requested"] == 0.0

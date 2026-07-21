@@ -1,8 +1,11 @@
 """Tests for the end-to-end pipeline runner."""
 
+import logging
+
 import pytest
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
+from llm_dup_dev.llm import LLMConfigurationError
 from llm_dup_dev.data.offline import (
     FrozenNarrativeDemographics,
     FrozenSourceCaseExtractions,
@@ -1024,3 +1027,142 @@ class TestAEClinicalPictureMode:
         assert features.ae_clinical_picture_status == AEClinicalPictureStatus.NOT_ASSESSED
         assert features.ae_clinical_picture_reason == "no_llm_client"
         assert features.ae_clinical_picture_method == "llm"
+
+
+class TestLLMTemperature:
+    """Temperature is omitted by default and opt-in for determinism.
+
+    Newer reasoning-style models reject any explicit temperature, so the
+    default request omits the parameter. Runs that need reproducible
+    extractions have to ask for that explicitly.
+    """
+
+    @staticmethod
+    def _seed_full_chain(fake: FakeLLMClient) -> None:
+        """Seed the six responses one pair's worth of calls consumes."""
+        fake.seed_response(
+            NarrativeVerdict(
+                consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
+                evidence=["same patient"],
+            )
+        )
+        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeSourceCase())
+        fake.seed_response(NarrativeDemographics())
+        fake.seed_response(NarrativeDemographics())
+
+    def test_default_omits_temperature_on_every_call(
+        self, loader, stats_provider, pair_ab
+    ):
+        fake = FakeLLMClient()
+        self._seed_full_chain(fake)
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        runner.run_batch([pair_ab])
+
+        assert len(fake.requests) == 6
+        assert all(req.temperature is None for req in fake.requests)
+
+    def test_explicit_temperature_reaches_every_call(
+        self, loader, stats_provider, pair_ab
+    ):
+        fake = FakeLLMClient()
+        self._seed_full_chain(fake)
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+            llm_temperature=0.0,
+        )
+        runner.run_batch([pair_ab])
+
+        assert len(fake.requests) == 6
+        assert all(req.temperature == 0.0 for req in fake.requests)
+
+
+class TestLLMConfigurationErrorAborts:
+    """A misconfigured client aborts the run instead of emptying it.
+
+    Per-report tolerance exists so one bad narrative cannot take down a
+    batch. Applying it to a misconfiguration instead yields a run that
+    completes "successfully" with every LLM feature empty, which
+    downstream is indistinguishable from legitimately absent data.
+    """
+
+    def test_configuration_error_aborts_batch(
+        self, loader, stats_provider, pair_ab
+    ):
+        fake = FakeLLMClient()
+        fake.seed_error(
+            LLMConfigurationError("temperature 0.0 unsupported by this model")
+        )
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+
+        with pytest.raises(LLMConfigurationError, match="unsupported"):
+            runner.run_batch([pair_ab])
+
+    def test_configuration_error_ignores_continue_on_error(
+        self, loader, stats_provider, pair_ab
+    ):
+        """``continue_on_error`` tolerates bad data, not a broken backend."""
+        fake = FakeLLMClient()
+        fake.seed_error(LLMConfigurationError("unknown deployment"))
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+
+        with pytest.raises(LLMConfigurationError):
+            runner.run_batch([pair_ab], continue_on_error=True)
+
+    def test_ordinary_llm_error_still_degrades_per_pair(
+        self, loader, stats_provider, pair_ab
+    ):
+        """Regression guard: non-config failures stay tolerated."""
+        fake = FakeLLMClient()
+        for _ in range(6):
+            fake.seed_error(ValueError("unparseable completion"))
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        batch = runner.run_batch([pair_ab])
+
+        assert batch.n_processed == 1
+        assert (
+            batch.results[0].features.narrative_consistency
+            == NarrativeConsistency.NOT_AVAILABLE
+        )
+
+    def test_total_llm_failure_is_logged_as_error(
+        self, loader, stats_provider, pair_ab, caplog
+    ):
+        """A run where nothing succeeded must not look like absent data."""
+        fake = FakeLLMClient()
+        for _ in range(6):
+            fake.seed_error(ValueError("unparseable completion"))
+
+        runner = PipelineRunner(
+            report_loader=loader,
+            stats_provider=stats_provider,
+            llm_client=fake,
+        )
+        with caplog.at_level(logging.ERROR):
+            runner.run_batch([pair_ab])
+
+        assert "All 6 LLM calls in this run failed" in caplog.text

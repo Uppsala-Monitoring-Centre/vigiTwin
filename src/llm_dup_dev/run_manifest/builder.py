@@ -85,6 +85,13 @@ def _runner_feature_flags(runner: "PipelineRunner") -> dict[str, Any]:
             runner, "_ae_clinical_picture_mode", None
         ),
         "has_llm_client": has_llm_client,
+        # The temperature the run *asked* for, recorded unconditionally
+        # including when it is ``None``. Paired with the client's
+        # reported ``default_temperature`` in ``llm_config``, this is the
+        # only thing distinguishing "we requested the backend default"
+        # from "we requested 0.0 and got it" — i.e. the only way to tell
+        # a reproducible run from a non-reproducible one after the fact.
+        "llm_temperature_requested": getattr(runner, "_llm_temperature", None),
         "has_frozen_source_case": has_frozen_source_case,
         "has_frozen_narrative_demographics": has_frozen_narrative_demographics,
         # Derived: an LLM-derived feature is *enabled* when either a live

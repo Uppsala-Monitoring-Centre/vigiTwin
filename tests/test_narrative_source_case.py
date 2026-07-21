@@ -60,8 +60,12 @@ class TestBuildRequest:
         req = build_source_case_request(None)
         assert "missing" in req.user_prompt.lower()
 
-    def test_default_temperature_is_zero(self):
+    def test_default_temperature_is_omitted(self):
         req = build_source_case_request("N")
+        assert req.temperature is None
+
+    def test_explicit_temperature_is_forwarded(self):
+        req = build_source_case_request("N", temperature=0.0)
         assert req.temperature == 0.0
 
     def test_system_prompt_mentions_extraction(self):

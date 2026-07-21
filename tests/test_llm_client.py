@@ -52,9 +52,15 @@ class TestModels:
 
     def test_request_defaults(self):
         req = _make_request()
-        assert req.temperature == 0.0
+        # None means "omit temperature; let the backend default apply" —
+        # the only form some models accept. Determinism is opt-in.
+        assert req.temperature is None
         assert req.max_tokens is None
         assert req.extra == {}
+
+    def test_request_accepts_explicit_temperature(self):
+        req = _make_request(temperature=0.0)
+        assert req.temperature == 0.0
 
     def test_request_is_frozen(self):
         req = _make_request()

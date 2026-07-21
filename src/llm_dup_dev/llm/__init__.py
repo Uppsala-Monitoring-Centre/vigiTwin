@@ -30,11 +30,13 @@ Secure-repo wiring::
     assert isinstance(AzureOpenAIClient(), LLMClient)  # structural check
 """
 
+from .errors import LLMConfigurationError
 from .models import LLMInfo, LLMRequest, LLMResponse, TokenUsage
 from .protocols import LLMClient
 
 __all__ = [
     "LLMClient",
+    "LLMConfigurationError",
     "LLMInfo",
     "LLMRequest",
     "LLMResponse",

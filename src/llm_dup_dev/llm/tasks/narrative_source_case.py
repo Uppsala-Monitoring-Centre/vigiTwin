@@ -175,7 +175,7 @@ def build_source_case_request(
     narrative: str | None,
     *,
     literature_reference: str | None = None,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> LLMRequest:
     """Build an :class:`LLMRequest` for source/case extraction.
@@ -268,7 +268,7 @@ def extract_source_case(
     narrative: str | None,
     *,
     literature_reference: str | None = None,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> NarrativeSourceCase:
     """Extract source / case signals from a single report narrative.
@@ -289,8 +289,11 @@ def extract_source_case(
         the narrative on literature reports.  When provided it is added
         as a separate prompt block; when missing, the prompt is
         identical to the prior narrative-only version.
-    temperature : float
-        Sampling temperature.  Defaults to 0.0.
+    temperature : float or None
+        Sampling temperature.  ``None`` (the default) omits the
+        parameter and uses the backend's own default, which is not
+        generally deterministic.  Pass an explicit value only when the
+        model in use accepts one.
     max_tokens : int or None
         Maximum tokens for the completion.
 

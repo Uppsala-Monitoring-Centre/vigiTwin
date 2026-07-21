@@ -25,8 +25,19 @@ class LLMRequest:
         A Pydantic ``BaseModel`` subclass describing the expected
         structured output.  Concrete clients use this for guided
         generation or post-hoc validation.
-    temperature : float
-        Sampling temperature.  Defaults to 0.0 for deterministic output.
+    temperature : float or None
+        Sampling temperature.  ``None`` (the default) means *omit the
+        parameter entirely* and let the backend apply its own default —
+        the only option some models accept, as newer reasoning-style
+        models reject any explicit value other than their fixed default.
+
+        Because the backend default is generally not 0.0, leaving this
+        as ``None`` implies a potentially **non-deterministic** run.
+        Callers that need reproducible output must pass an explicit
+        value *and* use a model that honours it; a backend asked for a
+        temperature it cannot serve raises
+        :class:`~llm_dup_dev.llm.LLMConfigurationError` rather than
+        silently substituting one.
     max_tokens : int or None
         Maximum tokens in the completion.  ``None`` lets the backend
         choose its default.
@@ -39,7 +50,7 @@ class LLMRequest:
     system_prompt: str
     user_prompt: str
     response_model: type
-    temperature: float = 0.0
+    temperature: float | None = None
     max_tokens: int | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -83,8 +94,13 @@ class LLMInfo:
         Provider API version pin (Azure ``api-version``, OpenAI Beta
         header, etc.).
     default_temperature : float or None
-        Default sampling temperature applied when an :class:`LLMRequest`
-        does not override it.
+        The sampling temperature the backend *actually applies* when an
+        :class:`LLMRequest` leaves ``temperature`` as ``None``.  Report
+        the effective value, not the one a caller asked for — for
+        temperature-pinned models this is the model's fixed default.
+        Together with the run manifest's recorded requested value, this
+        is what lets a reader tell a reproducible run from a
+        non-reproducible one after the fact.
     default_max_tokens : int or None
         Default ``max_tokens`` cap applied when not overridden.
     extra : dict[str, Any]
