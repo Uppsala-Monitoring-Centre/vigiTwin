@@ -117,7 +117,7 @@ def build_narrative_request(
     narrative_1: str | None,
     narrative_2: str | None,
     *,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> LLMRequest:
     """Build an :class:`LLMRequest` for narrative comparison.
@@ -129,8 +129,11 @@ def build_narrative_request(
     ----------
     narrative_1, narrative_2 : str or None
         The two report narratives to compare.
-    temperature : float
-        Sampling temperature.
+    temperature : float or None
+        Sampling temperature.  ``None`` (the default) omits the
+        parameter and uses the backend's own default, which is not
+        generally deterministic.  Pass an explicit value only when the
+        model in use accepts one.
     max_tokens : int or None
         Maximum tokens for the completion.
 
@@ -165,7 +168,7 @@ def compare_narratives(
     narrative_1: str | None,
     narrative_2: str | None,
     *,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> NarrativeVerdict:
     """Compare two report narratives via an LLM call.
@@ -178,8 +181,11 @@ def compare_narratives(
         Identifier of the report pair (for logging/diagnostics).
     narrative_1, narrative_2 : str or None
         The two narratives to compare.
-    temperature : float
-        Sampling temperature.
+    temperature : float or None
+        Sampling temperature.  ``None`` (the default) omits the
+        parameter and uses the backend's own default, which is not
+        generally deterministic.  Pass an explicit value only when the
+        model in use accepts one.
     max_tokens : int or None
         Maximum tokens for the completion.
 

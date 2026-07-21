@@ -231,7 +231,7 @@ def build_ae_clinical_picture_request(
     r1: Report,
     r2: Report,
     *,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> LLMRequest:
     """Build an :class:`LLMRequest` for AE clinical-picture assessment.
@@ -389,7 +389,7 @@ def assess_ae_clinical_picture(
     r1: Report,
     r2: Report,
     *,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> AEClinicalPictureResult:
     """Assess AE clinical-picture inconsistency between two reports.

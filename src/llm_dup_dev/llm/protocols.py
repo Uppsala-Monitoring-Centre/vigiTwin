@@ -37,6 +37,21 @@ class LLMClient(Protocol):
     receives one via dependency injection (constructor argument or
     function parameter).
 
+    Sampling parameters
+    -------------------
+    When ``request.temperature`` is ``None``, the implementation must
+    **omit** the parameter from the provider payload rather than
+    substituting a value.  An explicit temperature equal to the model's
+    default and an omitted parameter produce the same call, but only
+    omission leaves the run manifest able to state honestly that no
+    temperature was requested.
+
+    Conversely, when a caller *does* supply a temperature the model
+    rejects, raise :class:`LLMConfigurationError` — never quietly
+    coerce it to an accepted value.  Silently rewriting ``0.0`` to the
+    model's default would make the manifest claim a determinism the run
+    did not have.
+
     Optional ``info()`` method
     --------------------------
     Implementations *should* additionally expose::
@@ -70,9 +85,14 @@ class LLMClient(Protocol):
 
         Raises
         ------
+        LLMConfigurationError
+            The request is invalid for this backend in a way that will
+            not resolve on retry (unsupported parameter or value,
+            unknown deployment, auth failure).  Pipeline code lets this
+            propagate and abort the run.
         Exception
             Concrete implementations may raise backend-specific errors
-            (rate limits, timeouts, auth failures).  Task-level code
-            should handle these as appropriate.
+            for transient failures (rate limits, timeouts, 5xx).
+            Task-level code should handle these as appropriate.
         """
         ...

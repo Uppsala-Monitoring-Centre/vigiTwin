@@ -90,6 +90,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Output path for the FrozenNarrativeDemographics JSON.",
     )
     parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help=(
+            "Sampling temperature. Omitted by default, so the backend "
+            "applies its own default — required by models that reject an "
+            "explicit temperature, and not generally deterministic. Pass "
+            "0.0 for a reproducible bundle, which requires a model that "
+            "accepts it."
+        ),
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -117,7 +129,8 @@ def main(argv: list[str] | None = None) -> int:
             continue
         logger.info("extracting demographics for %s", report.report_id)
         extractions[report.report_id] = extract_narrative_demographics(
-            client, report.report_id, report.narrative
+            client, report.report_id, report.narrative,
+            temperature=args.temperature,
         )
 
     bundle = FrozenNarrativeDemographics(extractions=extractions)

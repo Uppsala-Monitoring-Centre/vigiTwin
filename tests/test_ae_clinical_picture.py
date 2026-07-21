@@ -105,11 +105,11 @@ class TestBuildRequest:
         req = build_ae_clinical_picture_request(r1, r2)
         assert req.response_model is AEClinicalPictureVerdict
 
-    def test_default_temperature_is_zero(self):
+    def test_default_temperature_is_omitted(self):
         r1 = _report_with_aes("R1", ["a"])
         r2 = _report_with_aes("R2", ["b"])
         req = build_ae_clinical_picture_request(r1, r2)
-        assert req.temperature == 0.0
+        assert req.temperature is None
 
     def test_custom_temperature(self):
         r1 = _report_with_aes("R1", ["a"])

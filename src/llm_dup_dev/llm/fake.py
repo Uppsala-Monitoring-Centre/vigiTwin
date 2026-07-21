@@ -110,7 +110,13 @@ class FakeLLMClient:
     # ------------------------------------------------------------------
 
     def info(self) -> LLMInfo:
-        """Return the fake client's identity for run-manifest logging."""
+        """Return the fake client's identity for run-manifest logging.
+
+        ``default_temperature`` reports the *effective* temperature, and
+        for this client that is genuinely 0.0 whatever the request asks
+        for: responses come from a seeded queue, so output is fully
+        deterministic and no sampling occurs.
+        """
         return LLMInfo(
             provider="fake",
             model=self._model_name,

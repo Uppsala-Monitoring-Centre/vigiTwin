@@ -150,7 +150,7 @@ lists empty.\
 def build_narrative_demographics_request(
     narrative: str | None,
     *,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> LLMRequest:
     """Build an :class:`LLMRequest` for narrative demographics extraction.
@@ -182,7 +182,7 @@ def extract_narrative_demographics(
     report_id: str,
     narrative: str | None,
     *,
-    temperature: float = 0.0,
+    temperature: float | None = None,
     max_tokens: int | None = None,
 ) -> NarrativeDemographics:
     """Extract patient demographics from a single report narrative.
@@ -197,8 +197,11 @@ def extract_narrative_demographics(
         The narrative text.  Empty / whitespace / None triggers a short-
         circuit: no LLM call is made and an empty
         :class:`NarrativeDemographics` is returned.
-    temperature : float
-        Sampling temperature.  Defaults to 0.0.
+    temperature : float or None
+        Sampling temperature.  ``None`` (the default) omits the
+        parameter and uses the backend's own default, which is not
+        generally deterministic.  Pass an explicit value only when the
+        model in use accepts one.
     max_tokens : int or None
         Maximum tokens for the completion.
 

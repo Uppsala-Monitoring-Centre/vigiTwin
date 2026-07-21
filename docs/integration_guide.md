@@ -382,6 +382,27 @@ class AzureOpenAIClient:
 
 The client is injected via `PipelineRunner(llm_client=...)`. The protocol is structural (`@runtime_checkable`), so any class implementing `generate(request: LLMRequest) -> LLMResponse` will satisfy it. The dev repo never instantiates a concrete client — it only calls `client.generate(...)`.
 
+#### Sampling parameters and error mapping
+
+Two rules that concrete clients must get right, because both affect whether a run's recorded configuration is truthful:
+
+1. **`request.temperature is None` means omit the parameter.** Do not substitute a value. `None` is the default, because newer reasoning-style models reject any explicit temperature and accept only their own. An explicit temperature equal to the model's default and an omitted parameter produce the same call, but only omission lets the run manifest state honestly that no temperature was requested.
+
+2. **Never silently coerce a temperature the model rejects.** If a caller passes `0.0` and the backend cannot serve it, raise `LLMConfigurationError`. Quietly sending the model's default instead would make the manifest claim a determinism the run did not have.
+
+Map provider errors accordingly:
+
+| Provider failure | Raise | Pipeline behaviour |
+|---|---|---|
+| Non-retryable 4xx — unsupported parameter or value, unknown deployment, auth failure | `LLMConfigurationError` | Aborts the run immediately, even under `continue_on_error` |
+| Transient — rate limit, timeout, 5xx | anything else | Tolerated per report/pair; that item's LLM features are empty |
+
+The distinction matters because per-report tolerance is what stops one malformed narrative from taking down a batch. Applied to a misconfiguration it does the opposite: the run completes "successfully" with every LLM-derived feature empty, which downstream is indistinguishable from legitimately absent data. A run in which no LLM call ever succeeded is logged at ERROR for the same reason.
+
+`LLMInfo.default_temperature` returned from `info()` should report the temperature the backend **actually applies**, not the one requested — for a temperature-pinned model, its fixed default. Paired with the manifest's `feature_flags["llm_temperature_requested"]`, that is what lets a reader tell a reproducible run from a non-reproducible one after the fact.
+
+Determinism is therefore opt-in on both sides: pass `PipelineRunner(llm_temperature=0.0)` *and* use a model that accepts it. The frozen-extraction scripts expose the same choice as `--temperature`.
+
 **PairFeatures output fields added by this module:**
 
 | Field | Type | Description |

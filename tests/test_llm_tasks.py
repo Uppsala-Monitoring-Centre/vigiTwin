@@ -52,9 +52,9 @@ class TestBuildRequest:
         req = build_narrative_request(None, None)
         assert "missing" in req.user_prompt.lower()
 
-    def test_default_temperature_is_zero(self):
+    def test_default_temperature_is_omitted(self):
         req = build_narrative_request("A", "B")
-        assert req.temperature == 0.0
+        assert req.temperature is None
 
     def test_custom_temperature(self):
         req = build_narrative_request("A", "B", temperature=0.3)

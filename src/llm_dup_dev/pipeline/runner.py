@@ -58,6 +58,7 @@ from llm_dup_dev.feature_generation.reporting_context import (
     determine_reporting_context,
 )
 from llm_dup_dev.feature_generation.source_case_comparison import compare_source_case
+from llm_dup_dev.llm.errors import LLMConfigurationError
 from llm_dup_dev.llm.protocols import LLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import assess_ae_clinical_picture
 from llm_dup_dev.llm.tasks.narrative_comparison import (
@@ -195,6 +196,18 @@ class PipelineRunner:
         on every pair, and for narrative comparison during batch processing.
         Takes precedence over ``narrative_provider`` passed to
         :meth:`run_batch`.
+    llm_temperature : float or None, optional
+        Sampling temperature forwarded to every LLM task. ``None`` (the
+        default) omits the parameter so the backend applies its own
+        default — required by models that reject an explicit
+        temperature, and **not** generally deterministic.
+
+        Runs that need reproducible extractions must pass an explicit
+        value (``llm_temperature=0.0``) *and* use a model that accepts
+        it; a backend that cannot honour the request raises
+        :class:`~llm_dup_dev.llm.LLMConfigurationError` rather than
+        quietly sampling at some other temperature. The value requested
+        here is recorded in the run manifest.
     pipeline_config : PipelineConfig, optional
         Feature generation configuration.
     decision_thresholds : DecisionThresholds, optional
@@ -235,6 +248,7 @@ class PipelineRunner:
         report_loader: ReportLoader,
         stats_provider: StatsProvider,
         llm_client: LLMClient | None = None,
+        llm_temperature: float | None = None,
         pipeline_config: PipelineConfig | None = None,
         decision_thresholds: DecisionThresholds | None = None,
         frozen_source_case_extractions: FrozenSourceCaseExtractions | None = None,
@@ -244,6 +258,9 @@ class PipelineRunner:
         self._loader = report_loader
         self._stats_provider = stats_provider
         self._llm_client = llm_client
+        self._llm_temperature = llm_temperature
+        self._llm_successes = 0
+        self._llm_failures = 0
         self._pipeline_config = pipeline_config or PipelineConfig()
         self._decision_thresholds = decision_thresholds or DecisionThresholds()
         self._frozen_source_case = frozen_source_case_extractions
@@ -387,14 +404,19 @@ class PipelineRunner:
                 pair_id=pair_id,
                 narrative_1=narrative_1,
                 narrative_2=narrative_2,
+                temperature=self._llm_temperature,
             )
+            self._note_llm_success()
             return verdict.consistency, verdict
+        except LLMConfigurationError:
+            raise
         except Exception as exc:
             logger.warning(
                 "LLM narrative assessment failed for pair %s: %s",
                 pair_id,
                 exc,
             )
+            self._note_llm_failure(exc)
             return NarrativeConsistency.NOT_AVAILABLE, None
 
     def _assess_ae_clinical_picture(
@@ -432,18 +454,24 @@ class PipelineRunner:
             )
 
         try:
-            return assess_ae_clinical_picture(
+            result = assess_ae_clinical_picture(
                 self._llm_client,
                 pair_id=pair_id,
                 r1=r1,
                 r2=r2,
+                temperature=self._llm_temperature,
             )
+            self._note_llm_success()
+            return result
+        except LLMConfigurationError:
+            raise
         except Exception as exc:
             logger.warning(
                 "LLM AE clinical-picture assessment failed for pair %s: %s",
                 pair_id,
                 exc,
             )
+            self._note_llm_failure(exc)
             if mode == "auto":
                 return assess_ae_clinical_picture_rule_based(
                     r1, r2, fallback_from_llm=True
@@ -478,6 +506,56 @@ class PipelineRunner:
             )
         return source_case_cache, demographics_cache
 
+    def _note_llm_success(self) -> None:
+        """Record a successful LLM call for the run summary."""
+        self._llm_successes += 1
+
+    def _note_llm_failure(self, exc: Exception) -> None:
+        """Record a tolerated LLM failure for the run summary.
+
+        Deliberately does not abort. Failures reaching here are the
+        per-report kind — an unparseable completion, a transient error —
+        and swallowing them is what stops one malformed narrative from
+        taking down a batch.
+
+        Fatal misconfiguration takes the other path: clients raise
+        :class:`LLMConfigurationError`, which the extraction methods
+        re-raise rather than swallow. Counting here cannot substitute
+        for that, because a run of failures is indistinguishable from
+        bad luck at the point it happens — which is why the counts are
+        reported at the end of the batch instead.
+        """
+        self._llm_failures += 1
+
+    def _log_llm_call_summary(self) -> None:
+        """Report LLM success/failure counts at the end of a batch.
+
+        The per-call warnings are individually easy to miss in a large
+        run. A run where *nothing* succeeded completes normally with
+        every extraction empty, which downstream is indistinguishable
+        from legitimately absent data — so it gets an ERROR, not a
+        warning.
+        """
+        if not self._llm_failures:
+            return
+        total = self._llm_successes + self._llm_failures
+        if self._llm_successes == 0:
+            logger.error(
+                "All %d LLM calls in this run failed. Every LLM-derived "
+                "feature is empty; results are not trustworthy. This "
+                "usually means a misconfigured client (unsupported "
+                "parameter, wrong deployment, bad credentials) rather "
+                "than per-report failures.",
+                total,
+            )
+        else:
+            logger.warning(
+                "%d of %d LLM calls in this run failed; the affected "
+                "reports/pairs have empty LLM-derived features.",
+                self._llm_failures,
+                total,
+            )
+
     def _extract_source_case(self, report: Report) -> NarrativeSourceCase | None:
         """Extract narrative source/case signals for one report.
 
@@ -488,12 +566,17 @@ class PipelineRunner:
         if self._llm_client is None:
             return None
         try:
-            return extract_source_case(
+            result = extract_source_case(
                 self._llm_client,
                 report.report_id,
                 report.narrative,
                 literature_reference=report.literature_reference,
+                temperature=self._llm_temperature,
             )
+            self._note_llm_success()
+            return result
+        except LLMConfigurationError:
+            raise
         except Exception as exc:
             logger.warning(
                 "LLM narrative source/case extraction failed for "
@@ -501,6 +584,7 @@ class PipelineRunner:
                 report.report_id,
                 exc,
             )
+            self._note_llm_failure(exc)
             return None
 
     def _extract_narrative_demographics(
@@ -516,11 +600,16 @@ class PipelineRunner:
         if self._llm_client is None:
             return NarrativeDemographics()
         try:
-            return extract_narrative_demographics(
+            result = extract_narrative_demographics(
                 self._llm_client,
                 report.report_id,
                 report.narrative,
+                temperature=self._llm_temperature,
             )
+            self._note_llm_success()
+            return result
+        except LLMConfigurationError:
+            raise
         except Exception as exc:
             logger.warning(
                 "LLM narrative demographics extraction failed for "
@@ -528,6 +617,7 @@ class PipelineRunner:
                 report.report_id,
                 exc,
             )
+            self._note_llm_failure(exc)
             return NarrativeDemographics()
 
     def _assess_source_case(
@@ -684,6 +774,13 @@ class PipelineRunner:
                 )
                 batch.results.append(result)
 
+            except LLMConfigurationError:
+                # Not per-pair bad luck: the client is misconfigured and
+                # every remaining pair would fail the same way. Ignores
+                # ``continue_on_error``, which exists to tolerate bad
+                # data, not a broken backend.
+                self._log_llm_call_summary()
+                raise
             except Exception as exc:
                 if not continue_on_error:
                     raise
@@ -692,6 +789,7 @@ class PipelineRunner:
                 )
                 batch.errors.append((pair.pair_id, exc))
 
+        self._log_llm_call_summary()
         logger.info(
             "Batch complete: %d processed, %d errors",
             batch.n_processed,
