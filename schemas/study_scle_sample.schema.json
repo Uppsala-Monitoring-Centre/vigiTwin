@@ -35,7 +35,7 @@
           "title": "Adjudicator Final Label",
           "type": "string"
         },
-        "vigimatch_retrieved": {
+        "screening_retrieved": {
           "anyOf": [
             {
               "type": "boolean"
@@ -45,7 +45,7 @@
             }
           ],
           "default": null,
-          "title": "Vigimatch Retrieved"
+          "title": "Screening Retrieved"
         },
         "confusion_cell": {
           "anyOf": [
@@ -109,7 +109,7 @@
       "type": "object"
     },
     "SCLECase": {
-      "description": "One sampled SCLE case: a pair plus its stratum and auto-context.",
+      "description": "One sampled SCLE case: a pair plus its stratum and auto-context.\n\n``backup_rank`` is ``None`` for a primary pick, or a 1-based rank within its\nstratum for a backup (backups are consulted in ascending rank order when a\nprimary pair is disqualified).",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -139,6 +139,18 @@
           "title": "Stratum",
           "type": "string"
         },
+        "backup_rank": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Backup Rank"
+        },
         "auto_context": {
           "$ref": "#/$defs/SCLEAutoContext"
         }
@@ -153,7 +165,7 @@
       "type": "object"
     },
     "SamplingRecord": {
-      "description": "A reproducible record of one seeded sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nand the resulting selection in draw order. The protocol requires that \"the\nrandomization procedure and seed will be recorded\"; this is that record.",
+      "description": "A reproducible record of one seeded SCLE sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nthe available population per stratum, and the resulting selection in draw\norder. The protocol requires that \"the randomization procedure and seed will\nbe recorded\"; this is that record.\n\nThe dev side only samples SCLE cases (the recall/precision reference sets are\nconstructed on the secure side), so this record describes a stratified SCLE\ndraw \u2014 not any cluster-construction sampling.",
       "properties": {
         "procedure_id": {
           "title": "Procedure Id",
@@ -192,7 +204,7 @@
           "default": null,
           "title": "Python Version"
         },
-        "target": {
+        "per_stratum_target": {
           "anyOf": [
             {
               "type": "integer"
@@ -202,26 +214,7 @@
             }
           ],
           "default": null,
-          "title": "Target"
-        },
-        "n_eligible_clusters": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "N Eligible Clusters"
-        },
-        "tier_counts": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "title": "Tier Counts",
-          "type": "object"
+          "title": "Per Stratum Target"
         },
         "stratum_sizes": {
           "additionalProperties": {
@@ -236,6 +229,16 @@
           },
           "title": "Selected Pair Ids",
           "type": "array"
+        },
+        "backup_pair_ids": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Backup Pair Ids",
+          "type": "object"
         }
       },
       "required": [
@@ -247,7 +250,7 @@
       "type": "object"
     }
   },
-  "description": "The full set of SCLE cases drawn for one evaluation component.\n\n``records`` holds one :class:`SamplingRecord` per stratum, so the exact\nsub-seed and available population size for each cell/stratum are auditable.",
+  "description": "The SCLE cases drawn for one evaluation component.\n\n``cases`` are the primary picks (what goes into the reviewer workbook).\n``backups`` are the ordered reserve pairs per stratum, drawn from the same\npermutation, used to replace a disqualified primary pick. ``records`` holds\none :class:`SamplingRecord` per stratum, so the exact sub-seed and available\npopulation size are auditable.",
   "properties": {
     "evaluation_component": {
       "enum": [
@@ -264,6 +267,13 @@
       "title": "Cases",
       "type": "array"
     },
+    "backups": {
+      "items": {
+        "$ref": "#/$defs/SCLECase"
+      },
+      "title": "Backups",
+      "type": "array"
+    },
     "records": {
       "items": {
         "$ref": "#/$defs/SamplingRecord"
@@ -275,6 +285,7 @@
   "required": [
     "evaluation_component",
     "cases",
+    "backups",
     "records"
   ],
   "title": "SCLESample",

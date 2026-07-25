@@ -1,0 +1,99 @@
+{
+  "$defs": {
+    "DimensionAgreement": {
+      "description": "Agreement on one structured dimension.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "n_compared": {
+          "title": "N Compared",
+          "type": "integer"
+        },
+        "n_agree": {
+          "title": "N Agree",
+          "type": "integer"
+        },
+        "percent_agreement": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Percent Agreement"
+        },
+        "cohens_kappa": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Cohens Kappa"
+        }
+      },
+      "required": [
+        "field",
+        "n_compared",
+        "n_agree",
+        "percent_agreement",
+        "cohens_kappa"
+      ],
+      "title": "DimensionAgreement",
+      "type": "object"
+    }
+  },
+  "description": "Inter-reviewer agreement across all structured dimensions.",
+  "properties": {
+    "evaluation_component": {
+      "title": "Evaluation Component",
+      "type": "string"
+    },
+    "reviewer_a": {
+      "title": "Reviewer A",
+      "type": "string"
+    },
+    "reviewer_b": {
+      "title": "Reviewer B",
+      "type": "string"
+    },
+    "n_pairs": {
+      "title": "N Pairs",
+      "type": "integer"
+    },
+    "dimensions": {
+      "items": {
+        "$ref": "#/$defs/DimensionAgreement"
+      },
+      "title": "Dimensions",
+      "type": "array"
+    },
+    "overall_percent_agreement": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Overall Percent Agreement"
+    }
+  },
+  "required": [
+    "evaluation_component",
+    "reviewer_a",
+    "reviewer_b",
+    "n_pairs",
+    "dimensions",
+    "overall_percent_agreement"
+  ],
+  "title": "AgreementReport",
+  "type": "object"
+}

@@ -1,7 +1,9 @@
 {
-  "set_id": "vigimatch2025_precision_50",
-  "screening_method": "vigiMatch2025",
-  "snapshot_description": "VigiBase up to 2026-01-28",
+  "set_id": "precision_primary",
+  "role": "precision",
+  "label": "Screening candidate set",
+  "provenance": "model_v1_candidates",
+  "screening_required": true,
   "sampling_record": null,
   "pairs": [
     {

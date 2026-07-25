@@ -1,7 +1,7 @@
 {
   "$defs": {
-    "PrecisionPairRecord": {
-      "description": "One report pair in the precision evaluation set.\n\n``reference_label`` is the human annotator's verdict. ``cluster_id`` is the\nvigiMatch2025 cluster the pair was sampled from, when known \u2014 recorded for\nprovenance; the precision set already holds at most one pair per cluster by\nconstruction.",
+    "ReferencePair": {
+      "description": "One report pair in a reference set.\n\n``reference_label`` is the human annotator's verdict; it is required for a\nprecision set and absent (or ``\"duplicate\"``) for a recall set. ``cluster_id``\nis optional provenance metadata \u2014 the secure side has already reduced each\ncluster to at most one pair, so the dev side only sanity-checks it.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -28,13 +28,21 @@
           "title": "Cluster Id"
         },
         "reference_label": {
-          "enum": [
-            "duplicate",
-            "non_duplicate",
-            "abstain"
+          "anyOf": [
+            {
+              "enum": [
+                "duplicate",
+                "non_duplicate",
+                "abstain"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
           ],
-          "title": "Reference Label",
-          "type": "string"
+          "default": null,
+          "title": "Reference Label"
         },
         "annotator_id": {
           "anyOf": [
@@ -65,14 +73,13 @@
       "required": [
         "pair_id",
         "report_id1",
-        "report_id2",
-        "reference_label"
+        "report_id2"
       ],
-      "title": "PrecisionPairRecord",
+      "title": "ReferencePair",
       "type": "object"
     },
     "SamplingRecord": {
-      "description": "A reproducible record of one seeded sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nand the resulting selection in draw order. The protocol requires that \"the\nrandomization procedure and seed will be recorded\"; this is that record.",
+      "description": "A reproducible record of one seeded SCLE sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nthe available population per stratum, and the resulting selection in draw\norder. The protocol requires that \"the randomization procedure and seed will\nbe recorded\"; this is that record.\n\nThe dev side only samples SCLE cases (the recall/precision reference sets are\nconstructed on the secure side), so this record describes a stratified SCLE\ndraw \u2014 not any cluster-construction sampling.",
       "properties": {
         "procedure_id": {
           "title": "Procedure Id",
@@ -111,7 +118,7 @@
           "default": null,
           "title": "Python Version"
         },
-        "target": {
+        "per_stratum_target": {
           "anyOf": [
             {
               "type": "integer"
@@ -121,26 +128,7 @@
             }
           ],
           "default": null,
-          "title": "Target"
-        },
-        "n_eligible_clusters": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "N Eligible Clusters"
-        },
-        "tier_counts": {
-          "additionalProperties": {
-            "type": "integer"
-          },
-          "title": "Tier Counts",
-          "type": "object"
+          "title": "Per Stratum Target"
         },
         "stratum_sizes": {
           "additionalProperties": {
@@ -155,6 +143,16 @@
           },
           "title": "Selected Pair Ids",
           "type": "array"
+        },
+        "backup_pair_ids": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Backup Pair Ids",
+          "type": "object"
         }
       },
       "required": [
@@ -166,18 +164,21 @@
       "type": "object"
     }
   },
-  "description": "The precision evaluation set: vigiMatch2025 candidates with human labels.\n\nEvery pair here was flagged as a suspected duplicate by the screening\nmethod, so the proportion the annotator labelled ``duplicate`` is the\nscreening method's precision within this sample.",
+  "description": "A generic reference set with a declared role and provenance.\n\n``role`` selects the analysis: ``\"precision\"`` sets are the screening\nmethod's candidate set with per-pair human labels; ``\"recall\"`` sets are\nheld-out positive controls (known duplicates). ``provenance`` describes the\nset as a whole \u2014 each set is homogeneous in provenance (the secure side\nsends one set per provenance), so there is no per-pair provenance here.\n``sampling_record`` optionally carries the secure side's construction record.",
   "properties": {
     "set_id": {
       "title": "Set Id",
       "type": "string"
     },
-    "screening_method": {
-      "default": "vigiMatch2025",
-      "title": "Screening Method",
+    "role": {
+      "enum": [
+        "precision",
+        "recall"
+      ],
+      "title": "Role",
       "type": "string"
     },
-    "snapshot_description": {
+    "label": {
       "anyOf": [
         {
           "type": "string"
@@ -187,7 +188,24 @@
         }
       ],
       "default": null,
-      "title": "Snapshot Description"
+      "title": "Label"
+    },
+    "provenance": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provenance"
+    },
+    "screening_required": {
+      "default": true,
+      "title": "Screening Required",
+      "type": "boolean"
     },
     "sampling_record": {
       "anyOf": [
@@ -202,7 +220,7 @@
     },
     "pairs": {
       "items": {
-        "$ref": "#/$defs/PrecisionPairRecord"
+        "$ref": "#/$defs/ReferencePair"
       },
       "title": "Pairs",
       "type": "array"
@@ -210,8 +228,9 @@
   },
   "required": [
     "set_id",
+    "role",
     "pairs"
   ],
-  "title": "PrecisionEvaluationSet",
+  "title": "ReferenceSet",
   "type": "object"
 }

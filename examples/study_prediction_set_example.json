@@ -1,0 +1,17 @@
+{
+  "configuration_id": "primary",
+  "predictions": {
+    "R001__R002": {
+      "pair_id": "R001__R002",
+      "adjudicator_label": "Duplicates",
+      "screening_retrieved": true,
+      "classification": null
+    },
+    "R003__R004": {
+      "pair_id": "R003__R004",
+      "adjudicator_label": "Unrelated",
+      "screening_retrieved": true,
+      "classification": null
+    }
+  }
+}

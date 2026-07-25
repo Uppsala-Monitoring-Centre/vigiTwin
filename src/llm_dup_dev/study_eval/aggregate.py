@@ -1,17 +1,17 @@
 """Protocol-defined aggregate precision and recall calculations.
 
-The positive class is expressed as an explicit rule over the four-value
-adjudicator output rather than reusing :class:`llm_dup_dev.eval.labels.AbstainMode`.
-Two reasons: ``AbstainMode`` cannot express the "otherwise-related counts as
-positive" secondary analysis, and its ``DECIDED_ONLY`` mode *excludes*
-adjudicator abstains, which contradicts the protocol's primary rule that an
-abstention is a negative classification. Keeping the rule local also leaves the
-existing ``eval`` package untouched.
+Inputs are a generic :class:`ReferenceSet` plus a :class:`PredictionSet`; the
+functions here derive the per-pair truth/prediction join and compute the
+protocol quantities. The positive class is expressed as an explicit rule over
+the four-value evaluated-method output (:class:`AnalysisVariant`) rather than
+reusing :class:`llm_dup_dev.eval.labels.AbstainMode`, because ``AbstainMode``
+cannot express the "otherwise-related counts as positive" secondary analysis and
+its ``DECIDED_ONLY`` mode contradicts the protocol's primary rule (an abstention
+is a negative classification).
 
-Reference-label handling follows the protocol: pairs the human annotator marked
-``abstain`` are excluded from every precision estimate (and counted). All
-recall-reference pairs are positive controls, so recall estimates have no
-reference-abstain exclusion.
+Reference-abstain pairs (a human ``abstain``) are excluded from every precision
+estimate and counted. Recall-reference pairs are positive controls, so recall
+estimates have no reference-abstain exclusion.
 """
 
 from __future__ import annotations
@@ -20,15 +20,12 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from llm_dup_dev.study_eval.schemas import (
-    PrecisionAnalysisInput,
-    RecallAnalysisInput,
-)
+from llm_dup_dev.study_eval.schemas import PredictionSet, ReferenceSet
 from llm_dup_dev.study_eval.stats import EstimateWithCI, estimate
 
 
 class AnalysisVariant(str, Enum):
-    """How the four-value adjudicator output collapses to a positive class.
+    """How the four-value evaluated-method output collapses to a positive class.
 
     ``PRIMARY``
         Positive iff ``Duplicates``. ``Otherwise_related``, ``Unrelated`` and
@@ -45,7 +42,7 @@ class AnalysisVariant(str, Enum):
     OTHERWISE_RELATED_POSITIVE = "otherwise_related_positive"
 
 
-#: The re-interpretation variants that run over a single frozen output bundle.
+#: The re-interpretation variants that run over a single frozen prediction set.
 REINTERPRETATION_VARIANTS: tuple[AnalysisVariant, ...] = (
     AnalysisVariant.PRIMARY,
     AnalysisVariant.ABSTAIN_POSITIVE,
@@ -61,16 +58,16 @@ _POSITIVE_LABELS: dict[AnalysisVariant, frozenset[str]] = {
 }
 
 
-def is_positive(final_label: str, variant: AnalysisVariant) -> bool:
-    """Return whether ``final_label`` counts as a positive under ``variant``."""
-    return final_label in _POSITIVE_LABELS[variant]
+def is_positive(adjudicator_label: str, variant: AnalysisVariant) -> bool:
+    """Return whether ``adjudicator_label`` counts as positive under ``variant``."""
+    return adjudicator_label in _POSITIVE_LABELS[variant]
 
 
 # --- Precision ------------------------------------------------------------
 
 
 class PrecisionResult(BaseModel):
-    """Precision-evaluation results for one output bundle under one variant."""
+    """Precision-evaluation results for one reference set under one variant."""
 
     variant: str
     set_id: str
@@ -82,7 +79,7 @@ class PrecisionResult(BaseModel):
     n_adjudicator_positive: int
     n_adjudicator_abstain: int
 
-    vigimatch_baseline_precision: EstimateWithCI
+    screening_baseline_precision: EstimateWithCI
     adjudicator_precision: EstimateWithCI
     conditional_recall: EstimateWithCI
     fp_rejection: EstimateWithCI
@@ -101,24 +98,41 @@ _REF_LABELS = ("duplicate", "non_duplicate", "abstain")
 
 
 def run_precision_analysis(
-    input: PrecisionAnalysisInput,
+    reference_set: ReferenceSet,
+    predictions: PredictionSet,
     variant: AnalysisVariant = AnalysisVariant.PRIMARY,
 ) -> PrecisionResult:
-    """Compute the protocol precision-evaluation quantities."""
-    eval_set = input.evaluation_set
-    outputs = input.outputs
+    """Compute the protocol precision-evaluation quantities for one set."""
+    if reference_set.role != "precision":
+        raise ValueError(
+            f"run_precision_analysis needs a precision set; {reference_set.set_id!r} "
+            f"has role {reference_set.role!r}."
+        )
+    pair_ids = [p.pair_id for p in reference_set.pairs]
+    predictions.require_coverage(pair_ids, context=f"precision set {reference_set.set_id!r}")
+    if reference_set.screening_required:
+        not_screened = [
+            pid for pid in pair_ids if not predictions.predictions[pid].screening_retrieved
+        ]
+        if not_screened:
+            raise ValueError(
+                f"precision set {reference_set.set_id!r}: {len(not_screened)} pair(s) "
+                f"are not flagged as screening-retrieved, but the set is defined as "
+                f"the screening method's candidate set: {not_screened[:5]}"
+                f"{'...' if len(not_screened) > 5 else ''}"
+            )
 
     cross = {a: {r: 0 for r in _REF_LABELS} for a in _ADJ_LABELS}
     cells: dict[str, str] = {}
 
     n_ref_dup = n_ref_non = n_ref_abstain = 0
     n_adj_positive = n_adj_abstain = 0
-    # counters over evaluable pairs (reference abstain excluded)
     tp = fp = fn = tn = 0
 
-    for pair in eval_set.pairs:
-        adj = outputs.adjudicator[pair.pair_id].final_label
+    for pair in reference_set.pairs:
+        adj = predictions.predictions[pair.pair_id].adjudicator_label
         ref = pair.reference_label
+        assert ref is not None  # precision sets are validated to carry a label
         cross[adj][ref] += 1
         if adj == "Abstain":
             n_adj_abstain += 1
@@ -144,25 +158,26 @@ def run_precision_analysis(
 
     n_evaluable = n_ref_dup + n_ref_non
     n_removed_evaluable = fn + tn  # adjudicator-negative among evaluable
-    # "removed" over all candidates: negatives incl. those on reference-abstain.
     n_negative_all = sum(
         1
-        for pair in eval_set.pairs
-        if not is_positive(outputs.adjudicator[pair.pair_id].final_label, variant)
+        for pair in reference_set.pairs
+        if not is_positive(
+            predictions.predictions[pair.pair_id].adjudicator_label, variant
+        )
     )
 
     return PrecisionResult(
         variant=variant.value,
-        set_id=eval_set.set_id,
-        n_pairs=len(eval_set.pairs),
+        set_id=reference_set.set_id,
+        n_pairs=len(reference_set.pairs),
         n_reference_abstain=n_ref_abstain,
         n_evaluable=n_evaluable,
         n_reference_duplicate=n_ref_dup,
         n_reference_non_duplicate=n_ref_non,
         n_adjudicator_positive=n_adj_positive,
         n_adjudicator_abstain=n_adj_abstain,
-        vigimatch_baseline_precision=estimate(
-            "vigimatch_baseline_precision", n_ref_dup, n_evaluable
+        screening_baseline_precision=estimate(
+            "screening_baseline_precision", n_ref_dup, n_evaluable
         ),
         adjudicator_precision=estimate("adjudicator_precision", tp, tp + fp),
         conditional_recall=estimate("conditional_recall", tp, n_ref_dup),
@@ -171,10 +186,10 @@ def run_precision_analysis(
             "proportion_removed_evaluable", n_removed_evaluable, n_evaluable
         ),
         proportion_removed_all=estimate(
-            "proportion_removed_all", n_negative_all, len(eval_set.pairs)
+            "proportion_removed_all", n_negative_all, len(reference_set.pairs)
         ),
         abstention_proportion=estimate(
-            "abstention_proportion", n_adj_abstain, len(eval_set.pairs)
+            "abstention_proportion", n_adj_abstain, len(reference_set.pairs)
         ),
         cross_classification=cross,
         pair_cells=cells,
@@ -182,19 +197,23 @@ def run_precision_analysis(
 
 
 def run_precision_variants(
-    input: PrecisionAnalysisInput,
+    reference_set: ReferenceSet,
+    predictions: PredictionSet,
 ) -> dict[AnalysisVariant, PrecisionResult]:
-    """Run the three re-interpretation variants over one precision bundle."""
-    return {v: run_precision_analysis(input, v) for v in REINTERPRETATION_VARIANTS}
+    """Run the three re-interpretation variants over one precision set."""
+    return {
+        v: run_precision_analysis(reference_set, predictions, v)
+        for v in REINTERPRETATION_VARIANTS
+    }
 
 
 # --- Recall ---------------------------------------------------------------
 
-#: The four joint vigiMatch–adjudicator retrieval strata.
+#: The four joint screening–adjudicator retrieval strata.
 JOINT_STRATA: tuple[str, ...] = (
     "both",
     "neither",
-    "vigimatch_only",
+    "screening_only",
     "adjudicator_only",
 )
 
@@ -208,15 +227,15 @@ class RecallSetResult(BaseModel):
     n_pairs: int
     n_adjudicator_abstain: int
 
-    recall_vigimatch: EstimateWithCI
+    recall_screening: EstimateWithCI
     recall_serial: EstimateWithCI
     recall_adjudicator_ceiling: EstimateWithCI
 
-    #: stratum name -> count (both / neither / vigimatch_only / adjudicator_only).
+    #: stratum name -> count (both / neither / screening_only / adjudicator_only).
     joint_counts: dict[str, int]
     #: stratum name -> proportion of N, with CI.
     joint_proportions: dict[str, EstimateWithCI]
-    #: recall_vigimatch - recall_serial, point estimate (protocol: descriptive).
+    #: recall_screening - recall_serial, point estimate (protocol: descriptive).
     recall_reduction: float | None
 
     #: pair_id -> joint stratum, for SCLE sampling.
@@ -230,55 +249,80 @@ class RecallResult(BaseModel):
     sets: list[RecallSetResult]
 
 
-def _joint_stratum(vigimatch: bool, adjudicator_positive: bool) -> str:
-    if vigimatch and adjudicator_positive:
+def _joint_stratum(screening: bool, adjudicator_positive: bool) -> str:
+    if screening and adjudicator_positive:
         return "both"
-    if vigimatch and not adjudicator_positive:
-        return "vigimatch_only"
-    if not vigimatch and adjudicator_positive:
+    if screening and not adjudicator_positive:
+        return "screening_only"
+    if not screening and adjudicator_positive:
         return "adjudicator_only"
     return "neither"
 
 
 def run_recall_analysis(
-    input: RecallAnalysisInput,
+    reference_sets: list[ReferenceSet],
+    predictions: PredictionSet,
     variant: AnalysisVariant = AnalysisVariant.PRIMARY,
 ) -> RecallResult:
-    """Compute the protocol recall estimands for every reference set."""
+    """Compute the protocol recall estimands for every recall reference set.
+
+    The evaluated method is assumed to have been run under **complete candidate
+    coverage** — a prediction for every pair, regardless of screening retrieval —
+    because the recall-ceiling estimand needs a verdict for every pair.
+    """
+    ids = [s.set_id for s in reference_sets]
+    if len(ids) != len(set(ids)):
+        dupes = sorted({x for x in ids if ids.count(x) > 1})
+        raise ValueError(f"duplicate reference set id(s): {dupes}")
+
     sets: list[RecallSetResult] = []
-    for eval_set in input.evaluation_sets:
+    for eval_set in reference_sets:
+        if eval_set.role != "recall":
+            raise ValueError(
+                f"run_recall_analysis needs recall sets; {eval_set.set_id!r} has "
+                f"role {eval_set.role!r}."
+            )
+        pair_ids = [p.pair_id for p in eval_set.pairs]
+        predictions.require_coverage(
+            pair_ids, context=f"recall set {eval_set.set_id!r}"
+        )
+
         n = len(eval_set.pairs)
-        n_vig = n_serial = n_ceiling = n_abstain = 0
+        n_screen = n_serial = n_ceiling = n_abstain = 0
         counts = {s: 0 for s in JOINT_STRATA}
         strata: dict[str, str] = {}
 
         for pair in eval_set.pairs:
-            adj = input.outputs.adjudicator[pair.pair_id].final_label
-            vig = input.outputs.vigimatch_retrieved[pair.pair_id]
+            pred = predictions.predictions[pair.pair_id]
+            adj = pred.adjudicator_label
+            screened = pred.screening_retrieved
             positive = is_positive(adj, variant)
             if adj == "Abstain":
                 n_abstain += 1
-            n_vig += vig
+            n_screen += screened
             n_ceiling += positive
-            n_serial += vig and positive
-            stratum = _joint_stratum(vig, positive)
+            n_serial += screened and positive
+            stratum = _joint_stratum(screened, positive)
             counts[stratum] += 1
             strata[pair.pair_id] = stratum
 
-        recall_vig = estimate("recall_vigimatch", n_vig, n)
+        recall_screen = estimate("recall_screening", n_screen, n)
         recall_serial = estimate("recall_serial", n_serial, n)
         reduction: float | None = None
-        if recall_vig.proportion is not None and recall_serial.proportion is not None:
-            reduction = recall_vig.proportion - recall_serial.proportion
+        if (
+            recall_screen.proportion is not None
+            and recall_serial.proportion is not None
+        ):
+            reduction = recall_screen.proportion - recall_serial.proportion
 
         sets.append(
             RecallSetResult(
                 variant=variant.value,
-                reference_set_id=eval_set.reference_set_id,
-                reference_set_label=eval_set.reference_set_label,
+                reference_set_id=eval_set.set_id,
+                reference_set_label=eval_set.label or eval_set.set_id,
                 n_pairs=n,
                 n_adjudicator_abstain=n_abstain,
-                recall_vigimatch=recall_vig,
+                recall_screening=recall_screen,
                 recall_serial=recall_serial,
                 recall_adjudicator_ceiling=estimate(
                     "recall_adjudicator_ceiling", n_ceiling, n
@@ -295,10 +339,14 @@ def run_recall_analysis(
 
 
 def run_recall_variants(
-    input: RecallAnalysisInput,
+    reference_sets: list[ReferenceSet],
+    predictions: PredictionSet,
 ) -> dict[AnalysisVariant, RecallResult]:
-    """Run the three re-interpretation variants over one recall bundle."""
-    return {v: run_recall_analysis(input, v) for v in REINTERPRETATION_VARIANTS}
+    """Run the three re-interpretation variants over the recall sets."""
+    return {
+        v: run_recall_analysis(reference_sets, predictions, v)
+        for v in REINTERPRETATION_VARIANTS
+    }
 
 
 __all__ = [

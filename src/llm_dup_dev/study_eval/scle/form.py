@@ -113,7 +113,7 @@ class SCLEAutoContext(BaseModel):
 
     reference_label: str
     adjudicator_final_label: str
-    vigimatch_retrieved: bool | None = None
+    screening_retrieved: bool | None = None
 
     confusion_cell: str | None = None
     joint_stratum: str | None = None

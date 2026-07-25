@@ -1,5 +1,5 @@
 {
-  "description": "A reproducible record of one seeded sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nand the resulting selection in draw order. The protocol requires that \"the\nrandomization procedure and seed will be recorded\"; this is that record.",
+  "description": "A reproducible record of one seeded SCLE sampling draw.\n\nEverything needed to reproduce or audit a draw: the procedure, the exact\nseed string handed to :class:`random.Random`, the package/python versions,\nthe available population per stratum, and the resulting selection in draw\norder. The protocol requires that \"the randomization procedure and seed will\nbe recorded\"; this is that record.\n\nThe dev side only samples SCLE cases (the recall/precision reference sets are\nconstructed on the secure side), so this record describes a stratified SCLE\ndraw \u2014 not any cluster-construction sampling.",
   "properties": {
     "procedure_id": {
       "title": "Procedure Id",
@@ -38,7 +38,7 @@
       "default": null,
       "title": "Python Version"
     },
-    "target": {
+    "per_stratum_target": {
       "anyOf": [
         {
           "type": "integer"
@@ -48,26 +48,7 @@
         }
       ],
       "default": null,
-      "title": "Target"
-    },
-    "n_eligible_clusters": {
-      "anyOf": [
-        {
-          "type": "integer"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "N Eligible Clusters"
-    },
-    "tier_counts": {
-      "additionalProperties": {
-        "type": "integer"
-      },
-      "title": "Tier Counts",
-      "type": "object"
+      "title": "Per Stratum Target"
     },
     "stratum_sizes": {
       "additionalProperties": {
@@ -82,6 +63,16 @@
       },
       "title": "Selected Pair Ids",
       "type": "array"
+    },
+    "backup_pair_ids": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Backup Pair Ids",
+      "type": "object"
     }
   },
   "required": [

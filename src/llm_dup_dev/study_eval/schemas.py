@@ -1,29 +1,36 @@
-"""Canonical pair-level input schemas for the performance-evaluation study.
+"""Canonical, generic input schemas for the performance-evaluation workflow.
 
-These are the *generic* models the secure-side adapter fills in. The adapter's
-whole job is to map real reference sets and frozen method outputs into these
-shapes; nothing here knows about VigiBase, MedDRA, or any concrete database.
-See docs/study_eval.md § Secure-side integration.
+These are the models the secure-side adapter fills in. The adapter maps real
+reference sets and frozen method outputs into these shapes; nothing here knows
+about VigiBase, MedDRA, or any concrete database, screening method, or set of
+reference sets.
 
 Two label vocabularies are kept deliberately distinct:
 
 * the **human reference** label (:data:`ReferenceLabel`): ``duplicate`` /
-  ``non_duplicate`` / ``abstain``. This is what the precision annotator
-  assigned; every recall-reference pair is a ``duplicate`` by construction.
-* the **adjudicator** output label — the four-value vocabulary from
-  :meth:`ClassificationResult.final_label` (``Duplicates`` /
-  ``Otherwise_related`` / ``Unrelated`` / ``Abstain``), validated here against
-  :mod:`llm_dup_dev.eval.labels`.
+  ``non_duplicate`` / ``abstain``. In a precision reference set each pair carries
+  one; in a recall reference set every pair is a positive control (``duplicate``
+  by construction), so the per-pair label is optional there.
+* the **evaluated method** (the "adjudicator") output label — the four-value
+  vocabulary from :meth:`ClassificationResult.final_label` (``Duplicates`` /
+  ``Otherwise_related`` / ``Unrelated`` / ``Abstain``).
 
 Conflating the two is the classic way to score against the wrong ground truth,
 so they never share a field or a validator.
 
+Division of labour with the secure side
+---------------------------------------
+The secure side **constructs** the reference sets — it does all set-construction
+sampling (one pair per cluster to reach a target size, held-out eligibility
+filtering, any manual-vs-derived prioritisation) and sends one homogeneous set
+per provenance. The dev side receives already-constructed sets and computes
+estimates directly over the pairs it is given; it never samples *within* a
+reference set. The only sampling the dev side performs is SCLE case selection
+(see :mod:`llm_dup_dev.study_eval.sampling`).
+
 Pair identity follows the repo-wide convention
 (:func:`llm_dup_dev.eval.annotations.derive_pair_id`): ``pair_id`` is
-``{report_id1}__{report_id2}`` and is **orientation-sensitive**. The models
-below validate that every ``pair_id`` is consistent with its two report ids and
-that no unordered report-id pair appears twice (which would mean ``A__B`` and
-``B__A`` both slipped in for the same two reports).
+``{report_id1}__{report_id2}`` and is **orientation-sensitive**.
 """
 
 from __future__ import annotations
@@ -37,29 +44,22 @@ from llm_dup_dev.eval.annotations import derive_pair_id
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.study_eval.records import SamplingRecord
 
-# --- Reference (human) label vocabulary ------------------------------------
+# --- Vocabularies ----------------------------------------------------------
 
+#: The role a reference set plays in the evaluation.
+AnalysisRole = Literal["precision", "recall"]
+
+#: Human reference label vocabulary.
 ReferenceLabel = Literal["duplicate", "non_duplicate", "abstain"]
 
-#: Adjudicator output labels this package recognises. The three decided labels
-#: come from ``eval.labels.FINAL_LABELS``; ``Abstain`` is the fourth
-#: adjudicator outcome (see ``ClassificationResult.final_label``).
+#: Decided labels the evaluated method can emit. The three decided labels come
+#: from ``eval.labels.FINAL_LABELS``; ``Abstain`` is the fourth outcome (see
+#: ``ClassificationResult.final_label``).
 ADJUDICATOR_LABELS: tuple[str, ...] = (
     "Duplicates",
     "Otherwise_related",
     "Unrelated",
     "Abstain",
-)
-
-#: The five regulator-derived recall reference sets named in the protocol.
-#: An unknown ``reference_set_id`` is *warned about*, not rejected, so the
-#: package stays generic (a sixth set can be added without a code change).
-KNOWN_REFERENCE_SETS: tuple[str, ...] = (
-    "fda_gold",
-    "fda_silver",
-    "aemps",
-    "mhra",
-    "lareb",
 )
 
 
@@ -79,258 +79,162 @@ def _unordered_key(report_id1: str, report_id2: str) -> frozenset[str]:
     return frozenset((report_id1, report_id2))
 
 
-# --- Precision evaluation set ----------------------------------------------
+# --- Reference sets --------------------------------------------------------
 
 
-class PrecisionPairRecord(BaseModel):
-    """One report pair in the precision evaluation set.
+class ReferencePair(BaseModel):
+    """One report pair in a reference set.
 
-    ``reference_label`` is the human annotator's verdict. ``cluster_id`` is the
-    vigiMatch2025 cluster the pair was sampled from, when known — recorded for
-    provenance; the precision set already holds at most one pair per cluster by
-    construction.
+    ``reference_label`` is the human annotator's verdict; it is required for a
+    precision set and absent (or ``"duplicate"``) for a recall set. ``cluster_id``
+    is optional provenance metadata — the secure side has already reduced each
+    cluster to at most one pair, so the dev side only sanity-checks it.
     """
 
     pair_id: str
     report_id1: str
     report_id2: str
     cluster_id: str | None = None
-    reference_label: ReferenceLabel
+    reference_label: ReferenceLabel | None = None
     annotator_id: str | None = None
     annotated_at: date | None = None
 
     @model_validator(mode="after")
-    def _check_identity(self) -> "PrecisionPairRecord":
+    def _check_identity(self) -> "ReferencePair":
         _check_pair_id(self.pair_id, self.report_id1, self.report_id2)
         return self
 
 
-class PrecisionEvaluationSet(BaseModel):
-    """The precision evaluation set: vigiMatch2025 candidates with human labels.
+class ReferenceSet(BaseModel):
+    """A generic reference set with a declared role and provenance.
 
-    Every pair here was flagged as a suspected duplicate by the screening
-    method, so the proportion the annotator labelled ``duplicate`` is the
-    screening method's precision within this sample.
+    ``role`` selects the analysis: ``"precision"`` sets are the screening
+    method's candidate set with per-pair human labels; ``"recall"`` sets are
+    held-out positive controls (known duplicates). ``provenance`` describes the
+    set as a whole — each set is homogeneous in provenance (the secure side
+    sends one set per provenance), so there is no per-pair provenance here.
+    ``sampling_record`` optionally carries the secure side's construction record.
     """
 
     set_id: str
-    screening_method: str = "vigiMatch2025"
-    snapshot_description: str | None = None
-    sampling_record: "SamplingRecord | None" = None
-    pairs: list[PrecisionPairRecord]
+    role: AnalysisRole
+    label: str | None = None
+    provenance: str | None = None
+    screening_required: bool = True
+    sampling_record: SamplingRecord | None = None
+    pairs: list[ReferencePair]
 
     @model_validator(mode="after")
-    def _check_uniqueness(self) -> "PrecisionEvaluationSet":
+    def _check_set(self) -> "ReferenceSet":
         _validate_pair_uniqueness(self.pairs)
-        _validate_one_pair_per_cluster(self.pairs, required=False)
+        # cluster_id is optional metadata, but if present it must be unique
+        # (the secure side already reduced each cluster to one pair).
+        _validate_one_pair_per_cluster(self.pairs)
+
+        if self.role == "precision":
+            missing = [p.pair_id for p in self.pairs if p.reference_label is None]
+            if missing:
+                raise ValueError(
+                    f"precision set {self.set_id!r}: every pair needs a "
+                    f"reference_label; missing for {missing[:5]}"
+                    f"{'...' if len(missing) > 5 else ''}"
+                )
+        else:  # recall
+            labelled = [
+                p.pair_id
+                for p in self.pairs
+                if p.reference_label not in (None, "duplicate")
+            ]
+            if labelled:
+                raise ValueError(
+                    f"recall set {self.set_id!r}: pairs are positive controls, "
+                    f"so reference_label must be absent or 'duplicate'; got "
+                    f"other labels for {labelled[:5]}"
+                    f"{'...' if len(labelled) > 5 else ''}"
+                )
         return self
 
 
-# --- Recall evaluation sets ------------------------------------------------
+# --- Frozen method predictions ---------------------------------------------
 
 
-class RecallPairRecord(BaseModel):
-    """One reference-duplicate pair sampled from a recall reference set.
+class PairPrediction(BaseModel):
+    """The frozen prediction for one pair.
 
-    Every recall pair is a positive control (a known duplicate), so there is no
-    per-pair reference label. ``cluster_id`` is required because recall
-    sampling draws one pair per duplicate cluster. ``provenance`` distinguishes
-    manually classified pairs from E2B-field-linked pairs (the Spanish and
-    Dutch sets contain both, and the protocol prioritises manual pairs).
-    ``eligible`` records whether the pair belongs to the held-out test portion.
+    ``adjudicator_label`` is the evaluated method's decided outcome.
+    ``screening_retrieved`` is whether the upstream screening method flagged the
+    pair as a candidate. ``classification`` is the optional full decision trace
+    (the same ``ClassificationResult`` the pipeline produces); when present it is
+    checked for consistency with ``adjudicator_label`` and ``pair_id``.
     """
 
     pair_id: str
-    report_id1: str
-    report_id2: str
-    cluster_id: str
-    provenance: Literal["manual", "e2b_derived", "unspecified"] = "unspecified"
-    eligible: bool = True
-
-    @model_validator(mode="after")
-    def _check_identity(self) -> "RecallPairRecord":
-        _check_pair_id(self.pair_id, self.report_id1, self.report_id2)
-        return self
-
-
-class RecallEvaluationSet(BaseModel):
-    """One regulator-derived recall reference set (e.g. FDA Gold).
-
-    ``reference_set_id`` is validated against :data:`KNOWN_REFERENCE_SETS` with
-    a warning (not an error) for unknown ids, keeping the package generic.
-    """
-
-    reference_set_id: str
-    reference_set_label: str
-    sampling_record: "SamplingRecord | None" = None
-    pairs: list[RecallPairRecord]
-
-    @model_validator(mode="after")
-    def _check_set(self) -> "RecallEvaluationSet":
-        if self.reference_set_id not in KNOWN_REFERENCE_SETS:
-            import warnings
-
-            warnings.warn(
-                f"reference_set_id {self.reference_set_id!r} is not one of the "
-                f"known sets {KNOWN_REFERENCE_SETS}. Proceeding; results will "
-                f"still be computed for it.",
-                stacklevel=2,
-            )
-        _validate_pair_uniqueness(self.pairs)
-        return self
-
-
-# --- Frozen method outputs -------------------------------------------------
-
-
-class AdjudicatorOutput(BaseModel):
-    """The frozen adjudicator verdict for one pair.
-
-    ``final_label`` is the decided outcome. ``classification`` is the optional
-    full decision trace (the same ``ClassificationResult`` the pipeline
-    produces); when present it is checked for consistency with ``final_label``
-    and ``pair_id``, so a mismatched trace cannot slip through.
-    """
-
-    pair_id: str
-    final_label: str
+    adjudicator_label: str
+    screening_retrieved: bool
     classification: ClassificationResult | None = None
 
     @model_validator(mode="after")
-    def _check(self) -> "AdjudicatorOutput":
-        if self.final_label not in ADJUDICATOR_LABELS:
+    def _check(self) -> "PairPrediction":
+        if self.adjudicator_label not in ADJUDICATOR_LABELS:
             raise ValueError(
-                f"final_label {self.final_label!r} is not one of "
+                f"adjudicator_label {self.adjudicator_label!r} is not one of "
                 f"{ADJUDICATOR_LABELS}."
             )
         if self.classification is not None:
             if self.classification.pair_id != self.pair_id:
                 raise ValueError(
                     f"classification.pair_id {self.classification.pair_id!r} "
-                    f"does not match AdjudicatorOutput.pair_id {self.pair_id!r}."
+                    f"does not match PairPrediction.pair_id {self.pair_id!r}."
                 )
-            if self.classification.final_label != self.final_label:
+            if self.classification.final_label != self.adjudicator_label:
                 raise ValueError(
                     f"classification trace implies final_label "
-                    f"{self.classification.final_label!r} but AdjudicatorOutput "
-                    f"says {self.final_label!r} for pair {self.pair_id!r}."
+                    f"{self.classification.final_label!r} but PairPrediction "
+                    f"says {self.adjudicator_label!r} for pair {self.pair_id!r}."
                 )
         return self
 
 
-class MethodOutputs(BaseModel):
-    """A frozen bundle of method outputs for a set of pairs.
+class PredictionSet(BaseModel):
+    """A frozen bundle of per-pair predictions from one method configuration.
 
-    One bundle corresponds to one frozen run of the method. The two abstain /
-    otherwise-related *re-interpretation* secondary analyses do not need a new
-    bundle — they re-read this one under a different positivity rule (see
-    :mod:`llm_dup_dev.study_eval.aggregate`). The LLM-AE-clinical-picture
-    secondary analysis *does* produce genuinely different classifications and
-    therefore arrives as a second bundle with a distinct ``variant_id``.
+    One bundle corresponds to one frozen run/configuration. The abstain- and
+    otherwise-related-positive *re-interpretation* secondary analyses do not need
+    a new bundle — they re-read this one under a different positivity rule (see
+    :mod:`llm_dup_dev.study_eval.aggregate`). A configuration that produces
+    genuinely different classifications (e.g. an LLM-based component swap) arrives
+    as a second bundle with a distinct ``configuration_id``.
 
-    ``adjudicator`` and ``vigimatch_retrieved`` are keyed by ``pair_id``.
-    ``vigimatch_retrieved[pair_id]`` is whether the screening method flagged
-    that pair as a suspected duplicate.
+    ``predictions`` is keyed by ``pair_id``.
     """
 
-    variant_id: str = "primary"
-    adjudicator: dict[str, AdjudicatorOutput]
-    vigimatch_retrieved: dict[str, bool]
+    configuration_id: str = "primary"
+    predictions: dict[str, PairPrediction]
 
     @model_validator(mode="after")
-    def _check_keys(self) -> "MethodOutputs":
-        for key, output in self.adjudicator.items():
-            if output.pair_id != key:
+    def _check_keys(self) -> "PredictionSet":
+        for key, prediction in self.predictions.items():
+            if prediction.pair_id != key:
                 raise ValueError(
-                    f"adjudicator[{key!r}] has pair_id {output.pair_id!r}; the "
-                    f"dict key and the record's pair_id must match."
+                    f"predictions[{key!r}] has pair_id {prediction.pair_id!r}; "
+                    f"the dict key and the record's pair_id must match."
                 )
         return self
 
-
-# --- Analysis inputs (what the secure adapter hands to the entry points) ---
-
-
-class PrecisionAnalysisInput(BaseModel):
-    """Everything needed to run the precision analysis for one output bundle."""
-
-    evaluation_set: PrecisionEvaluationSet
-    outputs: MethodOutputs
-
-    @model_validator(mode="after")
-    def _check_coverage(self) -> "PrecisionAnalysisInput":
-        pair_ids = [p.pair_id for p in self.evaluation_set.pairs]
-        missing = [pid for pid in pair_ids if pid not in self.outputs.adjudicator]
+    def require_coverage(self, pair_ids: list[str], *, context: str) -> None:
+        """Raise if any of ``pair_ids`` lacks a prediction."""
+        missing = [pid for pid in pair_ids if pid not in self.predictions]
         if missing:
             raise ValueError(
-                f"adjudicator output missing for {len(missing)} precision "
-                f"pair(s): {missing[:5]}{'...' if len(missing) > 5 else ''}"
+                f"{context}: prediction missing for {len(missing)} pair(s): "
+                f"{missing[:5]}{'...' if len(missing) > 5 else ''}"
             )
-        missing_flag = [
-            pid for pid in pair_ids if pid not in self.outputs.vigimatch_retrieved
-        ]
-        if missing_flag:
-            raise ValueError(
-                f"vigimatch_retrieved flag missing for {len(missing_flag)} "
-                f"precision pair(s): {missing_flag[:5]}"
-                f"{'...' if len(missing_flag) > 5 else ''}"
-            )
-        not_screened = [
-            pid
-            for pid in pair_ids
-            if not self.outputs.vigimatch_retrieved.get(pid, False)
-        ]
-        if not_screened:
-            raise ValueError(
-                f"{len(not_screened)} precision pair(s) are not flagged as "
-                f"vigiMatch-retrieved, but the precision set is defined as the "
-                f"screening method's candidate set: {not_screened[:5]}"
-                f"{'...' if len(not_screened) > 5 else ''}"
-            )
-        return self
-
-
-class RecallAnalysisInput(BaseModel):
-    """Everything needed to run the recall analysis across the reference sets.
-
-    The adjudicator is assumed to have been run under **complete candidate
-    coverage** — i.e. on every sampled reference pair, regardless of whether
-    the screening method retrieved it — because estimand 2 (the recall ceiling)
-    needs an adjudicator verdict for every pair.
-    """
-
-    evaluation_sets: list[RecallEvaluationSet]
-    outputs: MethodOutputs
-
-    @model_validator(mode="after")
-    def _check_coverage(self) -> "RecallAnalysisInput":
-        ids = [s.reference_set_id for s in self.evaluation_sets]
-        if len(ids) != len(set(ids)):
-            dupes = sorted({x for x in ids if ids.count(x) > 1})
-            raise ValueError(f"duplicate reference_set_id(s): {dupes}")
-        for eval_set in self.evaluation_sets:
-            for pair in eval_set.pairs:
-                if pair.pair_id not in self.outputs.adjudicator:
-                    raise ValueError(
-                        f"adjudicator output missing for recall pair "
-                        f"{pair.pair_id!r} in set {eval_set.reference_set_id!r}. "
-                        f"The adjudicator must be run on every sampled pair "
-                        f"(complete candidate coverage)."
-                    )
-                if pair.pair_id not in self.outputs.vigimatch_retrieved:
-                    raise ValueError(
-                        f"vigimatch_retrieved flag missing for recall pair "
-                        f"{pair.pair_id!r} in set {eval_set.reference_set_id!r}."
-                    )
-        return self
 
 
 # --- Shared uniqueness validators ------------------------------------------
 
 
-def _validate_pair_uniqueness(
-    pairs: list[PrecisionPairRecord] | list[RecallPairRecord],
-) -> None:
+def _validate_pair_uniqueness(pairs: list[ReferencePair]) -> None:
     """Reject a repeated ``pair_id`` or a repeated unordered report-id pair."""
     seen_ids: set[str] = set()
     seen_unordered: dict[frozenset[str], str] = {}
@@ -348,51 +252,34 @@ def _validate_pair_uniqueness(
         seen_unordered[key] = pair.pair_id
 
 
-def _validate_one_pair_per_cluster(
-    pairs: list[PrecisionPairRecord] | list[RecallPairRecord],
-    *,
-    required: bool,
-) -> None:
-    """Reject more than one pair sharing a (non-null) ``cluster_id``.
-
-    When ``required`` is True a null ``cluster_id`` is itself an error.
-    """
+def _validate_one_pair_per_cluster(pairs: list[ReferencePair]) -> None:
+    """Reject more than one pair sharing a (non-null) ``cluster_id``."""
     seen: dict[str, str] = {}
     for pair in pairs:
         cluster_id = pair.cluster_id
         if cluster_id is None:
-            if required:
-                raise ValueError(
-                    f"pair {pair.pair_id!r} has no cluster_id, but this set "
-                    f"requires one per pair."
-                )
             continue
         if cluster_id in seen:
             raise ValueError(
                 f"cluster {cluster_id!r} contributes more than one pair: "
-                f"{seen[cluster_id]!r} and {pair.pair_id!r}. Sampling draws at "
-                f"most one pair per cluster."
+                f"{seen[cluster_id]!r} and {pair.pair_id!r}. The secure side "
+                f"should reduce each cluster to at most one pair."
             )
         seen[cluster_id] = pair.pair_id
 
 
-# ``SamplingRecord`` is imported at the top from ``.records``; the set models
-# reference it via a string annotation, so resolve those forward refs now.
-PrecisionEvaluationSet.model_rebuild()
-RecallEvaluationSet.model_rebuild()
+# ``SamplingRecord`` is imported at the top from ``.records``; the set model
+# references it via a string annotation, so resolve the forward ref now.
+ReferenceSet.model_rebuild()
 
 
 __all__ = [
+    "AnalysisRole",
     "ReferenceLabel",
     "ADJUDICATOR_LABELS",
-    "KNOWN_REFERENCE_SETS",
-    "PrecisionPairRecord",
-    "PrecisionEvaluationSet",
-    "RecallPairRecord",
-    "RecallEvaluationSet",
-    "AdjudicatorOutput",
-    "MethodOutputs",
-    "PrecisionAnalysisInput",
-    "RecallAnalysisInput",
+    "ReferencePair",
+    "ReferenceSet",
+    "PairPrediction",
+    "PredictionSet",
     "SamplingRecord",
 ]

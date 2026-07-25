@@ -1,113 +1,118 @@
-"""Tests for deterministic sampling — determinism, golden values, protocol caps."""
+"""Tests for deterministic SCLE sampling — determinism, golden order, backups."""
 
 from __future__ import annotations
 
+import pytest
+
 from llm_dup_dev.study_eval.aggregate import run_precision_analysis, run_recall_analysis
 from llm_dup_dev.study_eval.sampling import (
-    sample_one_per_cluster,
+    promote_backup,
     sample_scle_precision,
     sample_scle_recall,
 )
-from llm_dup_dev.study_eval.schemas import RecallPairRecord
 
-from tests.test_study_eval.conftest import make_precision_input, make_recall_input
+from tests.test_study_eval.conftest import make_precision, make_recall
 
-# Golden draws pinned for a fixed synthetic input + seed. A change here means
-# the sampling internals changed and must be consciously re-blessed.
-_CLUSTER_GOLDEN = ["P00__Q00", "P01__Q01", "P25__Q25", "P08__Q08", "P14__Q14", "P23__Q23"]
-_MANUAL_GOLDEN = ["P00__Q00", "P21__Q21", "P15__Q15", "P18__Q18", "P24__Q24", "P03__Q03"]
-
-
-def _golden_pairs():
-    return [
-        RecallPairRecord(
-            pair_id=f"P{i:02d}__Q{i:02d}",
-            report_id1=f"P{i:02d}",
-            report_id2=f"Q{i:02d}",
-            cluster_id=f"cl{i % 10}",
-            provenance="manual" if i % 3 == 0 else "e2b_derived",
-        )
-        for i in range(30)
-    ]
+# Golden order pinned for a fixed synthetic input + seed (20 TP pairs, per_cell=3).
+# A change here means the sampling internals changed and must be re-blessed.
+_PRIMARY_GOLDEN = ["A5__B5", "A10__B10", "A19__B19"]
+_BACKUP_HEAD_GOLDEN = ["A6__B6", "A0__B0", "A11__B11", "A8__B8"]
 
 
-def test_cluster_sampling_is_deterministic():
-    pairs = _golden_pairs()
-    a, _ = sample_one_per_cluster(pairs, target=6, seed="golden-seed-1")
-    b, _ = sample_one_per_cluster(pairs, target=6, seed="golden-seed-1")
-    assert [p.pair_id for p in a] == [p.pair_id for p in b]
+def _all_tp(n: int):
+    return make_precision([("duplicate", "Duplicates")] * n)
 
 
-def test_cluster_sampling_golden():
-    pairs = _golden_pairs()
-    selected, record = sample_one_per_cluster(pairs, target=6, seed="golden-seed-1")
-    assert [p.pair_id for p in selected] == _CLUSTER_GOLDEN
-    assert record.selected_pair_ids == _CLUSTER_GOLDEN
-    assert record.seed == "golden-seed-1"
+def test_precision_sampling_is_deterministic():
+    rset, preds = _all_tp(25)
+    res = run_precision_analysis(rset, preds)
+    a = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    b = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    assert [c.pair_id for c in a.cases] == [c.pair_id for c in b.cases]
+    assert [c.pair_id for c in a.backups] == [c.pair_id for c in b.backups]
 
 
-def test_manual_priority_golden_and_all_manual():
-    pairs = _golden_pairs()
-    selected, _ = sample_one_per_cluster(
-        pairs, target=6, seed="golden-seed-1", manual_priority=True
-    )
-    assert [p.pair_id for p in selected] == _MANUAL_GOLDEN
-    # Every chosen pair is manually classified.
-    assert all(p.provenance == "manual" for p in selected)
+def test_precision_sampling_golden_order():
+    rset, preds = _all_tp(20)
+    res = run_precision_analysis(rset, preds)
+    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="golden-seed-1")
+    assert [c.pair_id for c in s.cases] == _PRIMARY_GOLDEN
+    assert [c.pair_id for c in s.backups[:4]] == _BACKUP_HEAD_GOLDEN
+    assert [c.backup_rank for c in s.backups[:4]] == [1, 2, 3, 4]
 
 
-def test_one_pair_per_cluster_invariant():
-    pairs = _golden_pairs()
-    selected, _ = sample_one_per_cluster(pairs, target=100, seed="s")
-    clusters = [p.cluster_id for p in selected]
-    assert len(clusters) == len(set(clusters))
-    # 10 distinct clusters exist; target 100 -> all 10 taken.
-    assert len(selected) == 10
+def test_precision_cap_and_backups():
+    rset, preds = _all_tp(25)
+    res = run_precision_analysis(rset, preds)
+    s = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    tp_primary = [c for c in s.cases if c.stratum == "TP"]
+    tp_backups = [c for c in s.backups if c.stratum == "TP"]
+    assert len(tp_primary) == 10
+    assert len(tp_backups) == 15  # 25 - 10
+    # Primary and backups are disjoint and cover the whole stratum.
+    assert set(c.pair_id for c in tp_primary).isdisjoint(c.pair_id for c in tp_backups)
+    assert len(tp_primary) + len(tp_backups) == 25
+
+
+def test_takes_all_when_under_cap_no_backups():
+    rset, preds = _all_tp(3)
+    res = run_precision_analysis(rset, preds)
+    s = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    assert len([c for c in s.cases if c.stratum == "TP"]) == 3
+    assert s.backups == []
 
 
 def test_different_seed_changes_draw():
-    pairs = _golden_pairs()
-    a, _ = sample_one_per_cluster(pairs, target=5, seed="seedA")
-    b, _ = sample_one_per_cluster(pairs, target=5, seed="seedB")
-    assert [p.pair_id for p in a] != [p.pair_id for p in b]
+    rset, preds = _all_tp(20)
+    res = run_precision_analysis(rset, preds)
+    a = sample_scle_precision(rset, res, preds, per_cell=5, seed="A")
+    b = sample_scle_precision(rset, res, preds, per_cell=5, seed="B")
+    assert [c.pair_id for c in a.cases] != [c.pair_id for c in b.cases]
 
 
-def test_ineligible_pairs_excluded():
-    pairs = _golden_pairs()
-    for p in pairs:
-        if p.cluster_id in {"cl0", "cl1"}:
-            object.__setattr__(p, "eligible", False)
-    selected, _ = sample_one_per_cluster(pairs, target=100, seed="s")
-    assert all(p.cluster_id not in {"cl0", "cl1"} for p in selected)
-
-
-def test_scle_precision_respects_cell_cap():
-    # 25 pairs, all TP.
-    inp = make_precision_input([("duplicate", "Duplicates")] * 25)
-    result = run_precision_analysis(inp)
-    sample = sample_scle_precision(inp, result, per_cell=10, seed="s")
-    tp_cases = [c for c in sample.cases if c.stratum == "TP"]
-    assert len(tp_cases) == 10  # capped
-    # Determinism.
-    sample2 = sample_scle_precision(inp, result, per_cell=10, seed="s")
-    assert [c.pair_id for c in sample.cases] == [c.pair_id for c in sample2.cases]
-
-
-def test_scle_precision_takes_all_when_under_cap():
-    inp = make_precision_input([("duplicate", "Duplicates")] * 3)
-    result = run_precision_analysis(inp)
-    sample = sample_scle_precision(inp, result, per_cell=10, seed="s")
-    assert len([c for c in sample.cases if c.stratum == "TP"]) == 3
-
-
-def test_scle_recall_caps_per_stratum_per_set():
-    inp = make_recall_input(
+def test_recall_caps_per_stratum_per_set():
+    rsets, preds = make_recall(
         {"fda_gold": [(True, "Duplicates")] * 8 + [(False, "Unrelated")] * 8}
     )
-    result = run_recall_analysis(inp)
-    sample = sample_scle_recall(inp, result, per_stratum=5, seed="s")
-    both = [c for c in sample.cases if c.stratum == "both"]
-    neither = [c for c in sample.cases if c.stratum == "neither"]
+    result = run_recall_analysis(rsets, preds)
+    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+    both = [c for c in s.cases if c.stratum == "both"]
+    neither = [c for c in s.cases if c.stratum == "neither"]
     assert len(both) == 5
     assert len(neither) == 5
-    assert all(c.reference_set_id == "fda_gold" for c in sample.cases)
+    assert all(c.reference_set_id == "fda_gold" for c in s.cases)
+    # 8 per stratum, cap 5 -> 3 backups each.
+    assert len([c for c in s.backups if c.stratum == "both"]) == 3
+
+
+def test_promote_backup_swaps_in_next_ranked():
+    rset, preds = _all_tp(20)
+    res = run_precision_analysis(rset, preds)
+    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="golden-seed-1")
+    disq = s.cases[0].pair_id
+    promoted_expected = s.backups[0].pair_id  # rank 1, same TP stratum
+
+    new = promote_backup(s, disq)
+
+    assert disq not in {c.pair_id for c in new.cases}
+    assert promoted_expected in {c.pair_id for c in new.cases}
+    assert len(new.cases) == len(s.cases)
+    assert len(new.backups) == len(s.backups) - 1
+    # Original untouched.
+    assert disq in {c.pair_id for c in s.cases}
+
+
+def test_promote_backup_errors_when_no_backup():
+    rset, preds = _all_tp(3)  # cell has 3 == cap -> no backups
+    res = run_precision_analysis(rset, preds)
+    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="s")
+    with pytest.raises(ValueError, match="no backup available"):
+        promote_backup(s, s.cases[0].pair_id)
+
+
+def test_promote_backup_rejects_unknown_pair():
+    rset, preds = _all_tp(10)
+    res = run_precision_analysis(rset, preds)
+    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="s")
+    with pytest.raises(ValueError, match="not a primary"):
+        promote_backup(s, "does__notexist")

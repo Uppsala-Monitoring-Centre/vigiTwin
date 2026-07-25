@@ -110,13 +110,6 @@
     "sample_checksum": "0000000000000000000000000000000000000000000000000000000000000000",
     "decisions": [
       {
-        "pair_id": "R001__R002",
-        "consensus_dimensions": {},
-        "free_text_materially_different": false,
-        "consensus_free_text": "Agreed.",
-        "arbiter_rationale": ""
-      },
-      {
         "pair_id": "R003__R004",
         "consensus_dimensions": {
           "never_event": "no"
@@ -130,7 +123,6 @@
   "consensus": [
     {
       "pair_id": "R001__R002",
-      "free_text_assessment": "Agreed.",
       "case_difficulty": "non_trivial",
       "reference_label_issue": "no_apparent_issue",
       "never_event": null,
@@ -142,12 +134,17 @@
       "dimension_sources": {
         "case_difficulty": "reviewer_agreement"
       },
+      "reviewer_free_texts": {
+        "alice": "Decisive.",
+        "bob": "Clear duplicate."
+      },
+      "consensus_free_text": "",
       "free_text_materially_different": false,
-      "arbiter_rationale": ""
+      "arbiter_rationale": "",
+      "arbitrated": false
     },
     {
       "pair_id": "R003__R004",
-      "free_text_assessment": "Agreed after discussion.",
       "case_difficulty": "non_trivial",
       "reference_label_issue": "no_apparent_issue",
       "never_event": "no",
@@ -161,8 +158,14 @@
       "dimension_sources": {
         "never_event": "arbitration"
       },
+      "reviewer_free_texts": {
+        "alice": "Root cause X.",
+        "bob": "Root cause Y."
+      },
+      "consensus_free_text": "Agreed after discussion.",
       "free_text_materially_different": false,
-      "arbiter_rationale": "No never-event."
+      "arbiter_rationale": "No never-event.",
+      "arbitrated": true
     }
   ],
   "reference_label_concerns": []

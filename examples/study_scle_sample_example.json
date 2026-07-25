@@ -6,13 +6,14 @@
       "evaluation_component": "precision",
       "reference_set_id": null,
       "stratum": "TP",
+      "backup_rank": null,
       "auto_context": {
         "pair_id": "R001__R002",
         "evaluation_component": "precision",
         "reference_set_id": null,
         "reference_label": "duplicate",
         "adjudicator_final_label": "Duplicates",
-        "vigimatch_retrieved": true,
+        "screening_retrieved": true,
         "confusion_cell": "TP",
         "joint_stratum": null,
         "methods_disagree": false,
@@ -26,13 +27,14 @@
       "evaluation_component": "precision",
       "reference_set_id": null,
       "stratum": "FN",
+      "backup_rank": null,
       "auto_context": {
         "pair_id": "R003__R004",
         "evaluation_component": "precision",
         "reference_set_id": null,
         "reference_label": "duplicate",
         "adjudicator_final_label": "Otherwise_related",
-        "vigimatch_retrieved": true,
+        "screening_retrieved": true,
         "confusion_cell": "FN",
         "joint_stratum": null,
         "methods_disagree": true,
@@ -42,22 +44,49 @@
       }
     }
   ],
+  "backups": [
+    {
+      "pair_id": "R005__R006",
+      "evaluation_component": "precision",
+      "reference_set_id": null,
+      "stratum": "TP",
+      "backup_rank": 1,
+      "auto_context": {
+        "pair_id": "R005__R006",
+        "evaluation_component": "precision",
+        "reference_set_id": null,
+        "reference_label": "duplicate",
+        "adjudicator_final_label": "Duplicates",
+        "screening_retrieved": true,
+        "confusion_cell": "TP",
+        "joint_stratum": null,
+        "methods_disagree": false,
+        "is_misclassified": false,
+        "decision_trace_summary": "final_label=Duplicates; independence=Non-independent",
+        "packet_filename": "R005__R006.html"
+      }
+    }
+  ],
   "records": [
     {
       "procedure_id": "scle_precision_v1:TP",
       "seed": "study-2026",
       "created_at": "2026-03-01T12:00:00Z",
-      "package_version": null,
-      "python_version": null,
-      "target": 10,
-      "n_eligible_clusters": null,
-      "tier_counts": {},
+      "package_version": "0.1.0",
+      "python_version": "3.11.8",
+      "per_stratum_target": 10,
       "stratum_sizes": {
         "TP": 22
       },
       "selected_pair_ids": [
         "R001__R002"
-      ]
+      ],
+      "backup_pair_ids": {
+        "TP": [
+          "R005__R006",
+          "R007__R008"
+        ]
+      }
     }
   ]
 }
