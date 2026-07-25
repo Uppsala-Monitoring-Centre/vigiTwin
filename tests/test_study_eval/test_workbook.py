@@ -38,6 +38,45 @@ def test_write_then_read_roundtrip(tmp_path):
     assert by_pair[tp_pair].never_event is None
 
 
+def test_packet_hyperlinks_written(tmp_path):
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    targets = {c.pair_id: f"packets/{c.pair_id}.html" for c in sample.cases}
+    write_reviewer_workbook(sample, "alice", path, packet_targets=targets)
+
+    wb = openpyxl.load_workbook(path)
+    ws = wb["cases"]
+    hdr = [c.value for c in ws[1]]
+    pcol = hdr.index("Packet") + 1
+    pid_col = hdr.index("Pair ID") + 1
+    for r in range(2, ws.max_row + 1):
+        pid = ws.cell(row=r, column=pid_col).value
+        cell = ws.cell(row=r, column=pcol)
+        assert cell.hyperlink is not None
+        assert cell.hyperlink.target == targets[pid]
+        assert cell.value == f"{pid}.html"
+
+    # Read-back is unaffected by the hyperlinks.
+    fill_reviewer_workbook(path, "alice")
+    sub = read_reviewer_submission(path, sample)
+    assert len(sub.assessments) == len(sample.cases)
+
+
+def test_no_packet_targets_leaves_packet_blank(tmp_path):
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    write_reviewer_workbook(sample, "alice", path)  # no packet_targets
+
+    wb = openpyxl.load_workbook(path)
+    ws = wb["cases"]
+    hdr = [c.value for c in ws[1]]
+    pcol = hdr.index("Packet") + 1
+    for r in range(2, ws.max_row + 1):
+        cell = ws.cell(row=r, column=pcol)
+        assert cell.hyperlink is None
+        assert cell.value in (None, "")
+
+
 def test_read_rejects_checksum_mismatch(tmp_path):
     _, _, sample = build_scle_precision_sample(_SPEC)
     _, _, other = build_scle_precision_sample(

@@ -64,6 +64,19 @@ def packet_filename(pair_id: str) -> str:
     return f"{_safe_filename(pair_id)}.html"
 
 
+def packet_targets(sample: SCLESample, packet_dir: str = "packets") -> dict[str, str]:
+    """Relative hyperlink target per pair, for linking a workbook to its packets.
+
+    Returns ``{pair_id: "{packet_dir}/{packet_filename(pair_id)}"}`` for every
+    case in ``sample`` (forward slashes; relative to the workbook file). The
+    target is deterministic from ``pair_id`` and matches what
+    :func:`generate_packets` / ``review_html`` writes, so it resolves once the
+    packets are generated into ``packet_dir`` beside the workbook.
+    """
+    prefix = f"{packet_dir}/" if packet_dir else ""
+    return {case.pair_id: f"{prefix}{packet_filename(case.pair_id)}" for case in sample.cases}
+
+
 def generate_packets(
     sample: SCLESample,
     provider: PacketContentProvider,
@@ -106,6 +119,7 @@ def generate_packets(
 
 
 __all__ = [
+    "packet_targets",
     "PacketContent",
     "PacketContentProvider",
     "packet_filename",

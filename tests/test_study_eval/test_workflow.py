@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import openpyxl
+
 from llm_dup_dev.study_eval import workflow
 from llm_dup_dev.study_eval.aggregate import AnalysisVariant
 
@@ -11,6 +13,23 @@ from tests.test_study_eval.conftest import (
     make_precision,
     make_recall,
 )
+
+
+def _packet_hyperlinks(path):
+    """Return {pair_id: hyperlink_target} for the Packet column of a workbook."""
+    wb = openpyxl.load_workbook(path)
+    ws = wb["cases"]
+    hdr = [c.value for c in ws[1]]
+    pcol = hdr.index("Packet") + 1
+    pid_col = hdr.index("Pair ID") + 1
+    out = {}
+    for r in range(2, ws.max_row + 1):
+        pid = ws.cell(row=r, column=pid_col).value
+        if pid is None:
+            continue
+        cell = ws.cell(row=r, column=pcol)
+        out[pid] = cell.hyperlink.target if cell.hyperlink else None
+    return out
 
 _PRECISION_SPEC = (
     [("duplicate", "Duplicates")] * 4
@@ -113,3 +132,49 @@ def test_full_four_step_workflow(tmp_path):
     final_names = {p.name for p in (tmp_path / "final").iterdir()}
     assert "consensus_precision.json" in final_names
     assert "scle_consensus_precision.csv" in final_names
+
+
+def test_reviewer_workbooks_link_to_packets(tmp_path):
+    reference_sets, predictions = _combined_inputs()
+    analysis = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
+    )
+    sample = analysis.scle_samples["precision::prec"]
+    workbooks = workflow.generate_reviewer_workbooks(sample, ["alice"], tmp_path / "wb")
+
+    links = _packet_hyperlinks(workbooks[0])
+    assert links  # every row has a link
+    for pid, target in links.items():
+        assert target == f"packets/{pid}.html"
+
+
+def test_packet_dir_none_omits_links(tmp_path):
+    reference_sets, predictions = _combined_inputs()
+    analysis = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
+    )
+    sample = analysis.scle_samples["precision::prec"]
+    workbooks = workflow.generate_reviewer_workbooks(
+        sample, ["alice"], tmp_path / "wb", packet_dir=None
+    )
+    assert all(target is None for target in _packet_hyperlinks(workbooks[0]).values())
+
+
+def test_arbitration_workbook_links_to_packets(tmp_path):
+    reference_sets, predictions = _combined_inputs()
+    analysis = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
+    )
+    sample = analysis.scle_samples["precision::prec"]
+    workbooks = workflow.generate_reviewer_workbooks(sample, ["alice", "bob"], tmp_path / "wb")
+    # Make the reviewers disagree so the arbitration workbook has rows.
+    fill_reviewer_workbook(workbooks[0], "alice", never_event="no")
+    fill_reviewer_workbook(workbooks[1], "bob", never_event="yes")
+
+    build = workflow.build_arbitration(sample, workbooks, tmp_path / "arb")
+    assert build.discrepancy.n_pairs_with_disagreement > 0
+
+    links = _packet_hyperlinks(build.arbitration_workbook)
+    assert links
+    for pid, target in links.items():
+        assert target == f"packets/{pid}.html"

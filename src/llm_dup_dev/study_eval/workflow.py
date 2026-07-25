@@ -208,15 +208,22 @@ def generate_reviewer_workbooks(
     reviewers: list[str],
     output_dir: str | Path,
     *,
-    packet_filenames: dict[str, str] | None = None,
+    packet_dir: str | None = "packets",
 ) -> list[Path]:
-    """Step 2 — write one reviewer workbook per reviewer for ``sample``."""
+    """Step 2 — write one reviewer workbook per reviewer for ``sample``.
+
+    Each row's Packet cell links to ``{packet_dir}/<pair_id>.html`` (relative to
+    the workbook). Pass ``packet_dir=None`` to omit the links.
+    """
+    from llm_dup_dev.study_eval.scle.packets import packet_targets
+
     out = Path(output_dir)
+    targets = packet_targets(sample, packet_dir) if packet_dir else None
     written: list[Path] = []
     for reviewer in reviewers:
         path = out / f"reviewer_{reviewer}.xlsx"
         p, _ = write_reviewer_workbook(
-            sample, reviewer, path, packet_filenames=packet_filenames
+            sample, reviewer, path, packet_targets=targets
         )
         written.append(p)
     manifest = build_manifest("workbooks", _new_run_id(), outputs=written)
@@ -243,12 +250,16 @@ def build_arbitration(
     output_dir: str | Path,
     *,
     arbiter_id: str = "",
+    packet_dir: str | None = "packets",
 ) -> ArbitrationBuild:
     """Step 3 — agreement statistics + a disagreement-focused arbitration book.
 
     Exactly two completed reviewer workbooks are expected (the protocol's two
-    independent reviewers).
+    independent reviewers). Each arbitration row's Packet cell links to
+    ``{packet_dir}/<pair_id>.html``; pass ``packet_dir=None`` to omit the links.
     """
+    from llm_dup_dev.study_eval.scle.packets import packet_targets
+
     if len(reviewer_workbooks) != 2:
         raise ValueError(
             f"expected exactly two reviewer workbooks, got {len(reviewer_workbooks)}."
@@ -264,6 +275,7 @@ def build_arbitration(
     arb_path, arbitration_id = write_arbitration_workbook(
         discrepancy, sub_a, sub_b, sample, out / f"arbitration_{component}.xlsx",
         arbiter_id=arbiter_id,
+        packet_targets=packet_targets(sample, packet_dir) if packet_dir else None,
     )
     tables = results.write_study_artifacts(
         out,
