@@ -1,44 +1,39 @@
 """Synthetic builders and fixtures for the study_eval test suite.
 
 Everything here is synthetic; no real reports or database access. The builders
-let each test dial in exactly the label / retrieval distribution it needs.
+let each test dial in exactly the label / retrieval distribution it needs, over
+the generic :class:`ReferenceSet` / :class:`PredictionSet` inputs.
 """
 
 from __future__ import annotations
 
-import pytest
-
 from llm_dup_dev.study_eval.aggregate import run_precision_analysis
 from llm_dup_dev.study_eval.sampling import sample_scle_precision
 from llm_dup_dev.study_eval.schemas import (
-    AdjudicatorOutput,
-    MethodOutputs,
-    PrecisionAnalysisInput,
-    PrecisionEvaluationSet,
-    PrecisionPairRecord,
-    RecallAnalysisInput,
-    RecallEvaluationSet,
-    RecallPairRecord,
+    PairPrediction,
+    PredictionSet,
+    ReferencePair,
+    ReferenceSet,
 )
 
 
-def make_precision_input(
+def make_precision(
     spec: list[tuple[str, str]],
     *,
     set_id: str = "p_set",
-    vigimatch: dict[str, bool] | None = None,
-) -> PrecisionAnalysisInput:
-    """Build a precision analysis input from ``(reference_label, final_label)``.
+    screening: dict[str, bool] | None = None,
+) -> tuple[ReferenceSet, PredictionSet]:
+    """Build a precision set + predictions from ``(reference_label, adj_label)``.
 
-    Pairs are named ``A{i}__B{i}``. ``vigimatch`` defaults to all-True (the
+    Pairs are named ``A{i}__B{i}``. ``screening`` defaults to all-True (the
     precision set is the screening method's candidate set).
     """
     pairs = []
-    adjudicator = {}
-    for i, (ref, final) in enumerate(spec):
+    predictions = {}
+    for i, (ref, adj) in enumerate(spec):
         pid = f"A{i}__B{i}"
         pairs.append(
-            PrecisionPairRecord(
+            ReferencePair(
                 pair_id=pid,
                 report_id1=f"A{i}",
                 report_id2=f"B{i}",
@@ -46,61 +41,55 @@ def make_precision_input(
                 reference_label=ref,
             )
         )
-        adjudicator[pid] = AdjudicatorOutput(pair_id=pid, final_label=final)
-    vig = vigimatch or {pid: True for pid in adjudicator}
-    return PrecisionAnalysisInput(
-        evaluation_set=PrecisionEvaluationSet(set_id=set_id, pairs=pairs),
-        outputs=MethodOutputs(adjudicator=adjudicator, vigimatch_retrieved=vig),
-    )
+        predictions[pid] = PairPrediction(
+            pair_id=pid,
+            adjudicator_label=adj,
+            screening_retrieved=(screening or {}).get(pid, True),
+        )
+    reference_set = ReferenceSet(set_id=set_id, role="precision", pairs=pairs)
+    return reference_set, PredictionSet(predictions=predictions)
 
 
-def make_recall_input(
+def make_recall(
     specs: dict[str, list[tuple[bool, str]]],
-) -> RecallAnalysisInput:
-    """Build a recall analysis input from ``{set_id: [(vigimatch, final_label)]}``.
+) -> tuple[list[ReferenceSet], PredictionSet]:
+    """Build recall sets + predictions from ``{set_id: [(screening, adj_label)]}``.
 
     Pairs are named ``{set_id}_{i}__x``, one per cluster.
     """
-    eval_sets = []
-    adjudicator = {}
-    vig = {}
+    reference_sets = []
+    predictions = {}
     for set_id, rows in specs.items():
         pairs = []
-        for i, (retrieved, final) in enumerate(rows):
+        for i, (screened, adj) in enumerate(rows):
             pid = f"{set_id}_{i}__x"
             pairs.append(
-                RecallPairRecord(
+                ReferencePair(
                     pair_id=pid,
                     report_id1=f"{set_id}_{i}",
                     report_id2="x",
                     cluster_id=f"{set_id}_c{i}",
                 )
             )
-            adjudicator[pid] = AdjudicatorOutput(pair_id=pid, final_label=final)
-            vig[pid] = retrieved
-        eval_sets.append(
-            RecallEvaluationSet(
-                reference_set_id=set_id if set_id in {
-                    "fda_gold", "fda_silver", "aemps", "mhra", "lareb"
-                } else "fda_gold",
-                reference_set_label=set_id,
-                pairs=pairs,
+            predictions[pid] = PairPrediction(
+                pair_id=pid, adjudicator_label=adj, screening_retrieved=screened
             )
+        reference_sets.append(
+            ReferenceSet(set_id=set_id, role="recall", label=set_id, pairs=pairs)
         )
-    return RecallAnalysisInput(
-        evaluation_sets=eval_sets,
-        outputs=MethodOutputs(adjudicator=adjudicator, vigimatch_retrieved=vig),
-    )
+    return reference_sets, PredictionSet(predictions=predictions)
 
 
 def build_scle_precision_sample(
     spec: list[tuple[str, str]], *, seed: str = "s", per_cell: int = 10
 ):
-    """Return ``(input, result, sample)`` for a precision SCLE draw."""
-    inp = make_precision_input(spec)
-    result = run_precision_analysis(inp)
-    sample = sample_scle_precision(inp, result, per_cell=per_cell, seed=seed)
-    return inp, result, sample
+    """Return ``(reference_set, predictions, sample)`` for a precision SCLE draw."""
+    reference_set, predictions = make_precision(spec)
+    result = run_precision_analysis(reference_set, predictions)
+    sample = sample_scle_precision(
+        reference_set, result, predictions, per_cell=per_cell, seed=seed
+    )
+    return reference_set, predictions, sample
 
 
 def fill_reviewer_workbook(
@@ -134,7 +123,7 @@ def fill_reviewer_workbook(
     wb.save(path)
 
 
-def fill_arbitration_workbook(path, report) -> None:
+def fill_arbitration_workbook(path, discrepancy) -> None:
     """Fill an arbitration workbook, resolving each disagreement to reviewer A."""
     import openpyxl
 
@@ -146,7 +135,7 @@ def fill_arbitration_workbook(path, report) -> None:
     col = lambda n: hdr.index(n) + 1  # noqa: E731
     disc = {
         p.pair_id: {d.field for d in p.dimension_disagreements}
-        for p in report.pair_discrepancies
+        for p in discrepancy.pair_discrepancies
     }
     for r in range(2, ws.max_row + 1):
         pid = ws.cell(row=r, column=col("Pair ID")).value
@@ -157,18 +146,3 @@ def fill_arbitration_workbook(path, report) -> None:
             a_val = ws.cell(row=r, column=col(f"{_DIM_HEADER[field]} (A)")).value
             ws.cell(row=r, column=col(f"{_DIM_HEADER[field]} consensus")).value = a_val
     wb.save(path)
-
-
-@pytest.fixture
-def precision_input() -> PrecisionAnalysisInput:
-    # 2 TP, 1 FP, 1 FN, 1 TN, 1 reference-abstain.
-    return make_precision_input(
-        [
-            ("duplicate", "Duplicates"),  # TP
-            ("duplicate", "Duplicates"),  # TP
-            ("non_duplicate", "Duplicates"),  # FP
-            ("duplicate", "Otherwise_related"),  # FN
-            ("non_duplicate", "Unrelated"),  # TN
-            ("abstain", "Duplicates"),  # excluded
-        ]
-    )

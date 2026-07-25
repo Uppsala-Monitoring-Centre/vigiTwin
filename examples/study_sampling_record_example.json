@@ -1,18 +1,20 @@
 {
-  "procedure_id": "one_per_cluster_v1",
-  "seed": "study-2026:fda_gold",
+  "procedure_id": "scle_precision_v1:TP",
+  "seed": "study-2026",
   "created_at": "2026-03-01T12:00:00Z",
   "package_version": "0.1.0",
   "python_version": "3.11.8",
-  "target": 100,
-  "n_eligible_clusters": 87,
-  "tier_counts": {
-    "manual": 60,
-    "e2b_derived": 40
+  "per_stratum_target": 10,
+  "stratum_sizes": {
+    "TP": 22
   },
-  "stratum_sizes": {},
   "selected_pair_ids": [
-    "R101__R102",
-    "R103__R104"
-  ]
+    "R001__R002"
+  ],
+  "backup_pair_ids": {
+    "TP": [
+      "R005__R006",
+      "R007__R008"
+    ]
+  }
 }

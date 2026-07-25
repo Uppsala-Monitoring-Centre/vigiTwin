@@ -67,14 +67,11 @@
     },
     "stage": {
       "enum": [
-        "sampling",
-        "packets",
+        "analysis",
         "workbooks",
-        "submission_validation",
         "arbitration",
-        "consensus",
-        "aggregate",
-        "results"
+        "finalize",
+        "packets"
       ],
       "title": "Stage",
       "type": "string"

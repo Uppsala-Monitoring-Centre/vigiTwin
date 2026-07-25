@@ -1,9 +1,9 @@
 """Schema-drift and example round-trip tests for the study_eval models.
 
-Mirrors the convention in tests/test_schemas_examples.py: the committed
-schemas/study_*.schema.json must equal ``model.model_json_schema()`` and the
-examples/study_*_example.json must round-trip through the model. Regenerate both
-with scripts/... (see docs/study_eval.md) after changing a model.
+The committed schemas/study_*.schema.json must equal ``model.model_json_schema()``
+and the examples/study_*_example.json must round-trip through the model.
+Regenerate both with scripts/generate_study_eval_schemas.py after changing a
+model.
 """
 
 from __future__ import annotations
@@ -16,11 +16,8 @@ import pytest
 from llm_dup_dev.study_eval.manifest import EvaluationRunManifest
 from llm_dup_dev.study_eval.records import SamplingRecord
 from llm_dup_dev.study_eval.sampling import SCLESample
-from llm_dup_dev.study_eval.schemas import (
-    MethodOutputs,
-    PrecisionEvaluationSet,
-    RecallEvaluationSet,
-)
+from llm_dup_dev.study_eval.schemas import PredictionSet, ReferenceSet
+from llm_dup_dev.study_eval.scle.agreement import AgreementReport
 from llm_dup_dev.study_eval.scle.consensus import SCLEConsensusResult
 from llm_dup_dev.study_eval.scle.form import ReviewerSubmission
 
@@ -29,12 +26,12 @@ SCHEMAS_DIR = REPO_ROOT / "schemas"
 EXAMPLES_DIR = REPO_ROOT / "examples"
 
 MODEL_MAP = {
-    "study_precision_evaluation_set": PrecisionEvaluationSet,
-    "study_recall_evaluation_set": RecallEvaluationSet,
-    "study_method_outputs": MethodOutputs,
+    "study_reference_set": ReferenceSet,
+    "study_prediction_set": PredictionSet,
     "study_sampling_record": SamplingRecord,
     "study_scle_sample": SCLESample,
     "study_reviewer_submission": ReviewerSubmission,
+    "study_agreement_report": AgreementReport,
     "study_scle_consensus_result": SCLEConsensusResult,
     "study_evaluation_run_manifest": EvaluationRunManifest,
 }
@@ -46,7 +43,8 @@ def test_schema_matches_model(name, model):
     assert path.exists(), f"Missing schema file: {path}"
     on_disk = json.loads(path.read_text())
     assert on_disk == model.model_json_schema(), (
-        f"Schema for {name} is stale — regenerate with model.model_json_schema()"
+        f"Schema for {name} is stale — regenerate with "
+        f"scripts/generate_study_eval_schemas.py"
     )
 
 

@@ -81,7 +81,7 @@ _CONTEXT_COLS: tuple[_Col, ...] = (
     _Col("reference_set_id", "Reference set", "context"),
     _Col("reference_label", "Reference label", "context"),
     _Col("adjudicator_final_label", "Adjudicator output", "context"),
-    _Col("vigimatch_retrieved", "vigiMatch retrieved", "context"),
+    _Col("screening_retrieved", "Screening retrieved", "context"),
     _Col("confusion_cell", "Confusion cell", "context"),
     _Col("joint_stratum", "Joint stratum", "context"),
     _Col("methods_disagree", "Methods disagree", "context"),

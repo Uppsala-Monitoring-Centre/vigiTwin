@@ -85,14 +85,10 @@
       "type": "string"
     },
     "ConsensusAssessment": {
-      "description": "The resolved assessment for one pair, with per-dimension provenance.\n\nStructured dimension values are stored as their string form (enum value, or\n``None`` when the dimension does not apply). ``dimension_sources`` maps each\nstructured dimension to ``reviewer_agreement`` or ``arbitration``.",
+      "description": "The resolved assessment for one pair, with per-dimension provenance.\n\nStructured dimension values are stored as their string form (enum value, or\n``None`` when the dimension does not apply). ``dimension_sources`` maps each\nstructured dimension to ``reviewer_agreement`` or ``arbitration``.\n\nFree text is never merged automatically: both reviewers' assessments are\nretained in ``reviewer_free_texts``. ``consensus_free_text`` holds the\narbiter's text for a pair that went to arbitration (a structural\ndisagreement); it is empty for an agreement pair, where the two reviewer\ntexts stand on their own.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
-          "type": "string"
-        },
-        "free_text_assessment": {
-          "title": "Free Text Assessment",
           "type": "string"
         },
         "case_difficulty": {
@@ -195,6 +191,19 @@
           "title": "Dimension Sources",
           "type": "object"
         },
+        "reviewer_free_texts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Reviewer Free Texts",
+          "type": "object"
+        },
+        "consensus_free_text": {
+          "default": "",
+          "title": "Consensus Free Text",
+          "type": "string"
+        },
         "free_text_materially_different": {
           "default": false,
           "title": "Free Text Materially Different",
@@ -204,11 +213,15 @@
           "default": "",
           "title": "Arbiter Rationale",
           "type": "string"
+        },
+        "arbitrated": {
+          "default": false,
+          "title": "Arbitrated",
+          "type": "boolean"
         }
       },
       "required": [
-        "pair_id",
-        "free_text_assessment"
+        "pair_id"
       ],
       "title": "ConsensusAssessment",
       "type": "object"

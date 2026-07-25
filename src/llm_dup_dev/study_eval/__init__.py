@@ -1,24 +1,22 @@
-"""Fit-for-purpose evaluation package for the duplicate-adjudication study.
+"""Generic, reusable performance-evaluation package for method comparison.
 
-This package implements the deterministic and administrative parts of the
-performance-evaluation study described in
-``docs/performance_evaluation_description.md``:
+Implements the deterministic and administrative parts of a case-level
+performance-evaluation study, organised as four steps (see :mod:`.workflow`):
 
-1. validation of canonical pair-level evaluation inputs (:mod:`.schemas`);
-2. protocol-defined aggregate precision and recall (:mod:`.aggregate`,
-   :mod:`.stats`);
-3. deterministic SCLE sampling (:mod:`.sampling`);
-4. reviewer workbooks and static reviewer packets (:mod:`.scle`);
-5. validation and comparison of reviewer submissions (:mod:`.scle.discrepancy`);
-6. arbitration workbook creation (:mod:`.scle.arbitration`);
-7. consensus merge preserving originals (:mod:`.scle.consensus`);
-8. final result tables and summary artifacts (:mod:`.results`);
-9. provenance and reproducibility metadata (:mod:`.manifest`, :mod:`.checksums`).
+1. :func:`run_analysis` — validate reference sets + frozen predictions, compute
+   precision/recall confusion matrices and estimates, emit a per-pair
+   prediction/truth table, and draw the SCLE sample with ordered backups;
+2. :func:`generate_reviewer_workbooks` — reviewer XLSX files;
+3. :func:`build_arbitration` — inter-reviewer agreement + a disagreement-focused
+   arbitration workbook;
+4. :func:`finalize` — consensus (preserving the original reviews) + final tables.
 
-It is developed entirely against synthetic data in this repo; a thin secure-side
-adapter maps real reference sets and frozen method outputs into the generic
-schemas here and invokes it. See ``docs/study_eval.md`` for the workflow and the
-secure-side integration contract.
+Inputs are generic: a list of :class:`ReferenceSet` (each with a role and
+provenance) and a :class:`PredictionSet` of frozen per-pair predictions. Nothing
+here is specific to any one screening method or set of reference sets. The
+package is developed against synthetic data in this repo; a thin secure-side
+adapter builds the input models from a frozen run and invokes the steps. See
+``docs/study_eval.md``.
 """
 
 from __future__ import annotations
@@ -28,55 +26,60 @@ from llm_dup_dev.study_eval.aggregate import (
     PrecisionResult,
     RecallResult,
     run_precision_analysis,
-    run_precision_variants,
     run_recall_analysis,
-    run_recall_variants,
 )
 from llm_dup_dev.study_eval.records import SamplingRecord
 from llm_dup_dev.study_eval.sampling import (
     SCLECase,
     SCLESample,
-    sample_one_per_cluster,
+    promote_backup,
     sample_scle_precision,
     sample_scle_recall,
 )
 from llm_dup_dev.study_eval.schemas import (
-    AdjudicatorOutput,
-    MethodOutputs,
-    PrecisionAnalysisInput,
-    PrecisionEvaluationSet,
-    PrecisionPairRecord,
-    RecallAnalysisInput,
-    RecallEvaluationSet,
-    RecallPairRecord,
+    PairPrediction,
+    PredictionSet,
+    ReferencePair,
+    ReferenceSet,
 )
 from llm_dup_dev.study_eval.stats import EstimateWithCI, wilson_interval
+from llm_dup_dev.study_eval.workflow import (
+    AnalysisResult,
+    ArbitrationBuild,
+    FinalizeResult,
+    build_arbitration,
+    finalize,
+    generate_reviewer_workbooks,
+    run_analysis,
+)
 
 __all__ = [
     # schemas
-    "PrecisionPairRecord",
-    "PrecisionEvaluationSet",
-    "RecallPairRecord",
-    "RecallEvaluationSet",
-    "AdjudicatorOutput",
-    "MethodOutputs",
-    "PrecisionAnalysisInput",
-    "RecallAnalysisInput",
+    "ReferencePair",
+    "ReferenceSet",
+    "PairPrediction",
+    "PredictionSet",
     # aggregate + stats
     "AnalysisVariant",
     "PrecisionResult",
     "RecallResult",
     "run_precision_analysis",
-    "run_precision_variants",
     "run_recall_analysis",
-    "run_recall_variants",
     "EstimateWithCI",
     "wilson_interval",
     # sampling
     "SamplingRecord",
     "SCLECase",
     "SCLESample",
-    "sample_one_per_cluster",
     "sample_scle_precision",
     "sample_scle_recall",
+    "promote_backup",
+    # workflow (the four steps)
+    "run_analysis",
+    "generate_reviewer_workbooks",
+    "build_arbitration",
+    "finalize",
+    "AnalysisResult",
+    "ArbitrationBuild",
+    "FinalizeResult",
 ]

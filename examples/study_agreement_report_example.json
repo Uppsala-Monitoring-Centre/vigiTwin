@@ -1,0 +1,23 @@
+{
+  "evaluation_component": "precision",
+  "reviewer_a": "alice",
+  "reviewer_b": "bob",
+  "n_pairs": 2,
+  "dimensions": [
+    {
+      "field": "case_difficulty",
+      "n_compared": 2,
+      "n_agree": 2,
+      "percent_agreement": 1.0,
+      "cohens_kappa": null
+    },
+    {
+      "field": "never_event",
+      "n_compared": 1,
+      "n_agree": 0,
+      "percent_agreement": 0.0,
+      "cohens_kappa": null
+    }
+  ],
+  "overall_percent_agreement": 0.75
+}

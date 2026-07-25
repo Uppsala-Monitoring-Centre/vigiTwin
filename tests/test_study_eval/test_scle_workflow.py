@@ -1,7 +1,8 @@
-"""Discrepancy detection, arbitration, and consensus (incl. immutability)."""
+"""Discrepancy detection, disagreement-focused arbitration, and consensus."""
 
 from __future__ import annotations
 
+import openpyxl
 import pytest
 
 from llm_dup_dev.study_eval.scle.arbitration import (
@@ -45,9 +46,7 @@ def test_detect_discrepancies_finds_structured_disagreement(tmp_path):
     report = detect_discrepancies(sub_a, sub_b)
     assert report.n_pairs_with_disagreement == 1
     fields = {
-        d.field
-        for p in report.pair_discrepancies
-        for d in p.dimension_disagreements
+        d.field for p in report.pair_discrepancies for d in p.dimension_disagreements
     }
     assert "never_event" in fields
 
@@ -56,6 +55,21 @@ def test_no_disagreement_when_identical(tmp_path):
     _, sub_a, sub_b = _two_submissions(tmp_path, disagree=False)
     report = detect_discrepancies(sub_a, sub_b)
     assert report.n_pairs_with_disagreement == 0
+
+
+def test_arbitration_workbook_contains_only_disagreement_pairs(tmp_path):
+    sample, sub_a, sub_b = _two_submissions(tmp_path, disagree=True)
+    report = detect_discrepancies(sub_a, sub_b)
+    arb_path = tmp_path / "arb.xlsx"
+    write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
+
+    wb = openpyxl.load_workbook(arb_path)
+    ws = wb["cases"]
+    body_rows = [r for r in ws.iter_rows(min_row=2, values_only=True) if any(r)]
+    disagree_pairs = {
+        p.pair_id for p in report.pair_discrepancies if p.dimension_disagreements
+    }
+    assert len(body_rows) == len(disagree_pairs)
 
 
 def test_detect_rejects_mismatched_pairs():
@@ -107,14 +121,32 @@ def test_consensus_preserves_originals_and_tracks_sources(tmp_path):
     assert sub_b.model_dump_json() == before_b
     assert result.reviewer_submissions[0].model_dump_json() == before_a
 
-    # Every consensus dimension has a source; both kinds appear.
-    sources = {
-        src
-        for a in result.consensus
-        for src in a.dimension_sources.values()
-    }
+    sources = {src for a in result.consensus for src in a.dimension_sources.values()}
     assert "reviewer_agreement" in sources
     assert "arbitration" in sources
+    # Both reviewers' free-texts retained.
+    for a in result.consensus:
+        assert set(a.reviewer_free_texts) == {"alice", "bob"}
+
+
+def test_consensus_agreement_pairs_need_no_arbitration(tmp_path):
+    # No structural disagreement -> arbitration workbook is empty -> consensus
+    # must still resolve every pair from reviewer agreement.
+    sample, sub_a, sub_b = _two_submissions(tmp_path, disagree=False)
+    report = detect_discrepancies(sub_a, sub_b)
+    arb_path = tmp_path / "arb.xlsx"
+    write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
+    arbitration = read_arbitration(arb_path, sample)
+    assert arbitration.decisions == []
+
+    result = merge_consensus(sub_a, sub_b, arbitration, report)
+    assert len(result.consensus) == len(sub_a.assessments)
+    assert all(not a.arbitrated for a in result.consensus)
+    assert all(
+        src == "reviewer_agreement"
+        for a in result.consensus
+        for src in a.dimension_sources.values()
+    )
 
 
 def test_reference_label_concerns_collected(tmp_path):
@@ -125,8 +157,6 @@ def test_reference_label_concerns_collected(tmp_path):
     fill_arbitration_workbook(arb_path, report)
     arbitration = read_arbitration(arb_path, sample)
     result = merge_consensus(sub_a, sub_b, arbitration, report)
-    # Alice flagged the first case; both agree (bob also no_apparent_issue -> disagreement).
-    # The concern surfaces only if consensus reference_label_issue != no_apparent_issue.
     concern_pairs = set(result.reference_label_concerns)
     for a in result.consensus:
         if a.reference_label_issue not in (None, "no_apparent_issue"):
@@ -139,8 +169,6 @@ def test_consensus_requires_arbitration_for_disagreement(tmp_path):
     arb_path = tmp_path / "arb.xlsx"
     write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
     # Deliberately do NOT fill consensus values.
-    import openpyxl
-
     wb = openpyxl.load_workbook(arb_path)
     ws = wb["cases"]
     hdr = [c.value for c in ws[1]]

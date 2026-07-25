@@ -28,14 +28,11 @@ from llm_dup_dev.study_eval.checksums import sha256_canonical_json, sha256_file
 SCHEMA_VERSION = "1.0"
 
 Stage = Literal[
-    "sampling",
-    "packets",
+    "analysis",
     "workbooks",
-    "submission_validation",
     "arbitration",
-    "consensus",
-    "aggregate",
-    "results",
+    "finalize",
+    "packets",
 ]
 
 

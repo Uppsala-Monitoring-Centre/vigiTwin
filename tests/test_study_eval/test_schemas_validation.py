@@ -1,98 +1,114 @@
-"""Tests for the canonical input-schema validators."""
+"""Tests for the generic input-schema validators."""
 
 from __future__ import annotations
-
-import warnings
 
 import pytest
 from pydantic import ValidationError
 
 from llm_dup_dev.study_eval.schemas import (
-    AdjudicatorOutput,
-    MethodOutputs,
-    PrecisionAnalysisInput,
-    PrecisionEvaluationSet,
-    PrecisionPairRecord,
-    RecallEvaluationSet,
-    RecallPairRecord,
+    PairPrediction,
+    PredictionSet,
+    ReferencePair,
+    ReferenceSet,
 )
 
 
-def _prec_pair(pid, r1, r2, ref="duplicate", cluster=None):
-    return PrecisionPairRecord(
+def _pair(pid, r1, r2, ref=None, cluster=None):
+    return ReferencePair(
         pair_id=pid, report_id1=r1, report_id2=r2, reference_label=ref, cluster_id=cluster
     )
 
 
 def test_pair_id_must_match_report_ids():
     with pytest.raises(ValidationError):
-        _prec_pair("WRONG", "R1", "R2")
+        _pair("WRONG", "R1", "R2")
+
+
+def test_precision_set_requires_reference_label():
+    with pytest.raises(ValidationError, match="needs a reference_label"):
+        ReferenceSet(set_id="p", role="precision", pairs=[_pair("R1__R2", "R1", "R2")])
+
+
+def test_recall_set_rejects_non_duplicate_label():
+    with pytest.raises(ValidationError, match="positive controls"):
+        ReferenceSet(
+            set_id="r",
+            role="recall",
+            pairs=[_pair("R1__R2", "R1", "R2", ref="non_duplicate")],
+        )
+
+
+def test_recall_set_allows_missing_or_duplicate_label():
+    rset = ReferenceSet(
+        set_id="r",
+        role="recall",
+        pairs=[
+            _pair("R1__R2", "R1", "R2"),
+            _pair("R3__R4", "R3", "R4", ref="duplicate"),
+        ],
+    )
+    assert len(rset.pairs) == 2
 
 
 def test_duplicate_pair_id_rejected():
-    with pytest.raises(ValidationError):
-        PrecisionEvaluationSet(
-            set_id="s",
-            pairs=[_prec_pair("R1__R2", "R1", "R2"), _prec_pair("R1__R2", "R1", "R2")],
+    with pytest.raises(ValidationError, match="duplicate pair_id"):
+        ReferenceSet(
+            set_id="p",
+            role="precision",
+            pairs=[
+                _pair("R1__R2", "R1", "R2", ref="duplicate"),
+                _pair("R1__R2", "R1", "R2", ref="duplicate"),
+            ],
         )
 
 
 def test_flipped_orientation_of_same_pair_rejected():
     with pytest.raises(ValidationError, match="unordered pair"):
-        PrecisionEvaluationSet(
-            set_id="s",
-            pairs=[_prec_pair("R1__R2", "R1", "R2"), _prec_pair("R2__R1", "R2", "R1")],
+        ReferenceSet(
+            set_id="p",
+            role="precision",
+            pairs=[
+                _pair("R1__R2", "R1", "R2", ref="duplicate"),
+                _pair("R2__R1", "R2", "R1", ref="duplicate"),
+            ],
         )
 
 
 def test_two_pairs_same_cluster_rejected():
     with pytest.raises(ValidationError, match="more than one pair"):
-        PrecisionEvaluationSet(
-            set_id="s",
+        ReferenceSet(
+            set_id="p",
+            role="precision",
             pairs=[
-                _prec_pair("R1__R2", "R1", "R2", cluster="C1"),
-                _prec_pair("R3__R4", "R3", "R4", cluster="C1"),
+                _pair("R1__R2", "R1", "R2", ref="duplicate", cluster="C1"),
+                _pair("R3__R4", "R3", "R4", ref="duplicate", cluster="C1"),
             ],
         )
 
 
-def test_adjudicator_output_rejects_unknown_label():
+def test_prediction_rejects_unknown_label():
     with pytest.raises(ValidationError):
-        AdjudicatorOutput(pair_id="R1__R2", final_label="Bananas")
+        PairPrediction(pair_id="R1__R2", adjudicator_label="Bananas", screening_retrieved=True)
 
 
-def test_precision_input_requires_full_adjudicator_coverage():
-    pairs = [_prec_pair("R1__R2", "R1", "R2"), _prec_pair("R3__R4", "R3", "R4")]
-    eset = PrecisionEvaluationSet(set_id="s", pairs=pairs)
-    outputs = MethodOutputs(
-        adjudicator={"R1__R2": AdjudicatorOutput(pair_id="R1__R2", final_label="Duplicates")},
-        vigimatch_retrieved={"R1__R2": True, "R3__R4": True},
-    )
-    with pytest.raises(ValidationError, match="adjudicator output missing"):
-        PrecisionAnalysisInput(evaluation_set=eset, outputs=outputs)
-
-
-def test_precision_input_rejects_non_screened_pair():
-    pairs = [_prec_pair("R1__R2", "R1", "R2")]
-    eset = PrecisionEvaluationSet(set_id="s", pairs=pairs)
-    outputs = MethodOutputs(
-        adjudicator={"R1__R2": AdjudicatorOutput(pair_id="R1__R2", final_label="Duplicates")},
-        vigimatch_retrieved={"R1__R2": False},
-    )
-    with pytest.raises(ValidationError, match="not flagged as"):
-        PrecisionAnalysisInput(evaluation_set=eset, outputs=outputs)
-
-
-def test_unknown_reference_set_warns_but_proceeds():
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        RecallEvaluationSet(
-            reference_set_id="atypical_set",
-            reference_set_label="Atypical",
-            pairs=[
-                RecallPairRecord(
-                    pair_id="R1__R2", report_id1="R1", report_id2="R2", cluster_id="c1"
+def test_prediction_set_key_must_match_pair_id():
+    with pytest.raises(ValidationError, match="dict key and the record"):
+        PredictionSet(
+            predictions={
+                "R1__R2": PairPrediction(
+                    pair_id="X__Y", adjudicator_label="Duplicates", screening_retrieved=True
                 )
-            ],
+            }
         )
-    assert any("not one of the known sets" in str(w.message) for w in caught)
+
+
+def test_require_coverage_reports_missing():
+    ps = PredictionSet(
+        predictions={
+            "R1__R2": PairPrediction(
+                pair_id="R1__R2", adjudicator_label="Duplicates", screening_retrieved=True
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="prediction missing"):
+        ps.require_coverage(["R1__R2", "R3__R4"], context="test")

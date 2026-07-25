@@ -1,35 +1,5 @@
 {
   "$defs": {
-    "AdjudicatorOutput": {
-      "description": "The frozen adjudicator verdict for one pair.\n\n``final_label`` is the decided outcome. ``classification`` is the optional\nfull decision trace (the same ``ClassificationResult`` the pipeline\nproduces); when present it is checked for consistency with ``final_label``\nand ``pair_id``, so a mismatched trace cannot slip through.",
-      "properties": {
-        "pair_id": {
-          "title": "Pair Id",
-          "type": "string"
-        },
-        "final_label": {
-          "title": "Final Label",
-          "type": "string"
-        },
-        "classification": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClassificationResult"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "required": [
-        "pair_id",
-        "final_label"
-      ],
-      "title": "AdjudicatorOutput",
-      "type": "object"
-    },
     "ClassificationResult": {
       "description": "Full duplicate-adjudication output for a report pair.\n\nThe decision logic answers two sequential questions:\n\n* ``independence_assessment`` \u2014 did the two reports arise\n  independently? Independence is rejected either on direct evidence\n  of shared provenance (a shared source identifier) or when the\n  rarity-based matching evidence is strong enough to reject the\n  null hypothesis that the reports are independent draws from the\n  comparison population.\n* ``relationship_assessment`` \u2014 for non-independent pairs, do the\n  reports describe the same underlying case (``Same_case``), a\n  demonstrably different case (``Different_case``), or is the\n  evidence insufficient to safely resolve the question\n  (``Abstain``)?\n\nUse ``final_label`` for the user-facing label (``Duplicates`` /\n``Otherwise_related`` / ``Unrelated`` / ``Abstain``); downstream\nconsumers should depend on this rather than on the raw internal\nfields. ``penalty`` is the exception: it is diagnostic, carried so that\nthe inconsistency arithmetic behind the decision can be displayed and\naudited without reconstructing it.",
       "properties": {
@@ -151,6 +121,41 @@
       "title": "IndependenceReason",
       "type": "string"
     },
+    "PairPrediction": {
+      "description": "The frozen prediction for one pair.\n\n``adjudicator_label`` is the evaluated method's decided outcome.\n``screening_retrieved`` is whether the upstream screening method flagged the\npair as a candidate. ``classification`` is the optional full decision trace\n(the same ``ClassificationResult`` the pipeline produces); when present it is\nchecked for consistency with ``adjudicator_label`` and ``pair_id``.",
+      "properties": {
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "adjudicator_label": {
+          "title": "Adjudicator Label",
+          "type": "string"
+        },
+        "screening_retrieved": {
+          "title": "Screening Retrieved",
+          "type": "boolean"
+        },
+        "classification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClassificationResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "pair_id",
+        "adjudicator_label",
+        "screening_retrieved"
+      ],
+      "title": "PairPrediction",
+      "type": "object"
+    },
     "PenaltyTerm": {
       "description": "One severity's contribution to ``w_tot``.\n\nCarries the ``weight`` **actually applied** by the run, not the default,\nso the arithmetic can be reproduced from the result alone.",
       "properties": {
@@ -185,32 +190,24 @@
       "type": "string"
     }
   },
-  "description": "A frozen bundle of method outputs for a set of pairs.\n\nOne bundle corresponds to one frozen run of the method. The two abstain /\notherwise-related *re-interpretation* secondary analyses do not need a new\nbundle \u2014 they re-read this one under a different positivity rule (see\n:mod:`llm_dup_dev.study_eval.aggregate`). The LLM-AE-clinical-picture\nsecondary analysis *does* produce genuinely different classifications and\ntherefore arrives as a second bundle with a distinct ``variant_id``.\n\n``adjudicator`` and ``vigimatch_retrieved`` are keyed by ``pair_id``.\n``vigimatch_retrieved[pair_id]`` is whether the screening method flagged\nthat pair as a suspected duplicate.",
+  "description": "A frozen bundle of per-pair predictions from one method configuration.\n\nOne bundle corresponds to one frozen run/configuration. The abstain- and\notherwise-related-positive *re-interpretation* secondary analyses do not need\na new bundle \u2014 they re-read this one under a different positivity rule (see\n:mod:`llm_dup_dev.study_eval.aggregate`). A configuration that produces\ngenuinely different classifications (e.g. an LLM-based component swap) arrives\nas a second bundle with a distinct ``configuration_id``.\n\n``predictions`` is keyed by ``pair_id``.",
   "properties": {
-    "variant_id": {
+    "configuration_id": {
       "default": "primary",
-      "title": "Variant Id",
+      "title": "Configuration Id",
       "type": "string"
     },
-    "adjudicator": {
+    "predictions": {
       "additionalProperties": {
-        "$ref": "#/$defs/AdjudicatorOutput"
+        "$ref": "#/$defs/PairPrediction"
       },
-      "title": "Adjudicator",
-      "type": "object"
-    },
-    "vigimatch_retrieved": {
-      "additionalProperties": {
-        "type": "boolean"
-      },
-      "title": "Vigimatch Retrieved",
+      "title": "Predictions",
       "type": "object"
     }
   },
   "required": [
-    "adjudicator",
-    "vigimatch_retrieved"
+    "predictions"
   ],
-  "title": "MethodOutputs",
+  "title": "PredictionSet",
   "type": "object"
 }

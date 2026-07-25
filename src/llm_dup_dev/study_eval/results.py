@@ -21,6 +21,7 @@ from llm_dup_dev.study_eval.aggregate import (
     PrecisionResult,
     RecallResult,
 )
+from llm_dup_dev.study_eval.scle.agreement import AgreementReport
 from llm_dup_dev.study_eval.scle.consensus import SCLEConsensusResult
 from llm_dup_dev.study_eval.scle.discrepancy import DiscrepancyReport
 from llm_dup_dev.study_eval.stats import EstimateWithCI
@@ -29,7 +30,7 @@ _ADJ_LABELS = ("Duplicates", "Otherwise_related", "Unrelated", "Abstain")
 _REF_LABELS = ("duplicate", "non_duplicate", "abstain")
 
 _PRECISION_METRIC_FIELDS = (
-    "vigimatch_baseline_precision",
+    "screening_baseline_precision",
     "adjudicator_precision",
     "conditional_recall",
     "fp_rejection",
@@ -39,7 +40,7 @@ _PRECISION_METRIC_FIELDS = (
 )
 
 _RECALL_ESTIMANDS = (
-    "recall_vigimatch",
+    "recall_screening",
     "recall_serial",
     "recall_adjudicator_ceiling",
 )
@@ -282,6 +283,35 @@ def write_scle_reference_label_concerns_csv(
     return _write_csv(Path(path), ["pair_id", "reference_label_issue"], rows)
 
 
+def write_agreement_csv(report: AgreementReport, path: str | Path) -> Path:
+    rows = []
+    for d in report.dimensions:
+        rows.append(
+            [
+                d.field,
+                d.n_compared,
+                d.n_agree,
+                "" if d.percent_agreement is None else f"{d.percent_agreement:.4f}",
+                "" if d.cohens_kappa is None else f"{d.cohens_kappa:.4f}",
+            ]
+        )
+    rows.append(
+        [
+            "OVERALL",
+            "",
+            "",
+            "" if report.overall_percent_agreement is None
+            else f"{report.overall_percent_agreement:.4f}",
+            "",
+        ]
+    )
+    return _write_csv(
+        Path(path),
+        ["dimension", "n_compared", "n_agree", "percent_agreement", "cohens_kappa"],
+        rows,
+    )
+
+
 # --- Summary + orchestration ----------------------------------------------
 
 
@@ -307,8 +337,8 @@ def summary_to_markdown(
             "",
             f"- Evaluable pairs: {primary_p.n_evaluable} "
             f"(excluded reference-abstain: {primary_p.n_reference_abstain})",
-            f"- vigiMatch2025 baseline precision: "
-            f"{_ci_str(primary_p.vigimatch_baseline_precision)}",
+            f"- Screening baseline precision: "
+            f"{_ci_str(primary_p.screening_baseline_precision)}",
             f"- Adjudicator precision: {_ci_str(primary_p.adjudicator_precision)}",
             f"- Conditional recall: {_ci_str(primary_p.conditional_recall)}",
             f"- False positives rejected: {_ci_str(primary_p.fp_rejection)}",
@@ -324,7 +354,7 @@ def summary_to_markdown(
             reduction = "n/a" if s.recall_reduction is None else f"{s.recall_reduction:.4f}"
             lines.append(
                 f"- **{s.reference_set_label}** (n={s.n_pairs}): "
-                f"vigiMatch {_ci_str(s.recall_vigimatch)}, "
+                f"screening {_ci_str(s.recall_screening)}, "
                 f"serial {_ci_str(s.recall_serial)}, "
                 f"ceiling {_ci_str(s.recall_adjudicator_ceiling)}, "
                 f"reduction {reduction}"
@@ -349,6 +379,7 @@ def write_study_artifacts(
     recall_results: list[RecallResult] | None = None,
     consensus: dict[str, SCLEConsensusResult] | None = None,
     discrepancies: dict[str, DiscrepancyReport] | None = None,
+    agreements: dict[str, AgreementReport] | None = None,
 ) -> list[Path]:
     """Write the full set of result artifacts under ``output_dir``.
 
@@ -391,6 +422,10 @@ def write_study_artifacts(
         summary_path.write_text(summary, encoding="utf-8")
         written.append(summary_path)
 
+    for component, agreement in (agreements or {}).items():
+        written.append(
+            write_agreement_csv(agreement, out / f"scle_agreement_{component}.csv")
+        )
     for component, report in (discrepancies or {}).items():
         written.append(
             write_scle_discrepancies_csv(report, out / f"scle_discrepancies_{component}.csv")
@@ -431,6 +466,7 @@ __all__ = [
     "write_recall_joint_classification_csv",
     "write_secondary_comparison_csv",
     "write_evaluable_counts_csv",
+    "write_agreement_csv",
     "write_scle_consensus_csv",
     "write_scle_dimension_frequencies_csv",
     "write_scle_discrepancies_csv",

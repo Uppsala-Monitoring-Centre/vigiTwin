@@ -8,30 +8,16 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_dup_dev.study_eval.schemas import (
-    AdjudicatorOutput,
-    MethodOutputs,
-    PrecisionEvaluationSet,
-    PrecisionPairRecord,
-    RecallEvaluationSet,
-    RecallPairRecord,
-)
+from llm_dup_dev.study_eval.manifest import ArtifactRef, EvaluationRunManifest
 from llm_dup_dev.study_eval.records import SamplingRecord
 from llm_dup_dev.study_eval.sampling import SCLECase, SCLESample
-from llm_dup_dev.study_eval.scle.form import (
-    CaseDifficulty,
-    ReferenceLabelIssue,
-    ReviewerSubmission,
-    SCLEAutoContext,
-    SCLECaseAssessment,
-    YesNoUnclear,
-    PrimaryErrorSource,
+from llm_dup_dev.study_eval.schemas import (
+    PairPrediction,
+    PredictionSet,
+    ReferencePair,
+    ReferenceSet,
 )
-from llm_dup_dev.study_eval.scle.discrepancy import (
-    DimensionDisagreement,
-    DiscrepancyReport,
-    PairDiscrepancy,
-)
+from llm_dup_dev.study_eval.scle.agreement import AgreementReport, DimensionAgreement
 from llm_dup_dev.study_eval.scle.arbitration import (
     ArbitrationDecision,
     ArbitrationSubmission,
@@ -40,9 +26,19 @@ from llm_dup_dev.study_eval.scle.consensus import (
     ConsensusAssessment,
     SCLEConsensusResult,
 )
-from llm_dup_dev.study_eval.manifest import (
-    ArtifactRef,
-    EvaluationRunManifest,
+from llm_dup_dev.study_eval.scle.discrepancy import (
+    DimensionDisagreement,
+    DiscrepancyReport,
+    PairDiscrepancy,
+)
+from llm_dup_dev.study_eval.scle.form import (
+    CaseDifficulty,
+    PrimaryErrorSource,
+    ReferenceLabelIssue,
+    ReviewerSubmission,
+    SCLEAutoContext,
+    SCLECaseAssessment,
+    YesNoUnclear,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,13 +48,14 @@ EXAMPLES = ROOT / "examples"
 NOW = datetime(2026, 3, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
-def _precision_set():
-    return PrecisionEvaluationSet(
-        set_id="vigimatch2025_precision_50",
-        screening_method="vigiMatch2025",
-        snapshot_description="VigiBase up to 2026-01-28",
+def _reference_set():
+    return ReferenceSet(
+        set_id="precision_primary",
+        role="precision",
+        label="Screening candidate set",
+        provenance="model_v1_candidates",
         pairs=[
-            PrecisionPairRecord(
+            ReferencePair(
                 pair_id="R001__R002",
                 report_id1="R001",
                 report_id2="R002",
@@ -67,7 +64,7 @@ def _precision_set():
                 annotator_id="ref-annotator",
                 annotated_at="2026-03-15",
             ),
-            PrecisionPairRecord(
+            ReferencePair(
                 pair_id="R003__R004",
                 report_id1="R003",
                 report_id2="R004",
@@ -78,55 +75,31 @@ def _precision_set():
     )
 
 
-def _recall_set():
-    return RecallEvaluationSet(
-        reference_set_id="fda_gold",
-        reference_set_label="FDA Gold",
-        pairs=[
-            RecallPairRecord(
-                pair_id="R101__R102",
-                report_id1="R101",
-                report_id2="R102",
-                cluster_id="G1",
-                provenance="manual",
+def _prediction_set():
+    return PredictionSet(
+        configuration_id="primary",
+        predictions={
+            "R001__R002": PairPrediction(
+                pair_id="R001__R002", adjudicator_label="Duplicates", screening_retrieved=True
             ),
-            RecallPairRecord(
-                pair_id="R103__R104",
-                report_id1="R103",
-                report_id2="R104",
-                cluster_id="G2",
-                provenance="e2b_derived",
-            ),
-        ],
-    )
-
-
-def _method_outputs():
-    return MethodOutputs(
-        variant_id="primary",
-        adjudicator={
-            "R001__R002": AdjudicatorOutput(
-                pair_id="R001__R002", final_label="Duplicates"
-            ),
-            "R003__R004": AdjudicatorOutput(
-                pair_id="R003__R004", final_label="Unrelated"
+            "R003__R004": PairPrediction(
+                pair_id="R003__R004", adjudicator_label="Unrelated", screening_retrieved=True
             ),
         },
-        vigimatch_retrieved={"R001__R002": True, "R003__R004": True},
     )
 
 
 def _sampling_record():
     return SamplingRecord(
-        procedure_id="one_per_cluster_v1",
-        seed="study-2026:fda_gold",
+        procedure_id="scle_precision_v1:TP",
+        seed="study-2026",
         created_at=NOW,
         package_version="0.1.0",
         python_version="3.11.8",
-        target=100,
-        n_eligible_clusters=87,
-        tier_counts={"manual": 60, "e2b_derived": 40},
-        selected_pair_ids=["R101__R102", "R103__R104"],
+        per_stratum_target=10,
+        stratum_sizes={"TP": 22},
+        selected_pair_ids=["R001__R002"],
+        backup_pair_ids={"TP": ["R005__R006", "R007__R008"]},
     )
 
 
@@ -136,7 +109,7 @@ def _auto_context(pair_id, cell, mis, disagree):
         evaluation_component="precision",
         reference_label="duplicate",
         adjudicator_final_label="Duplicates" if not mis else "Otherwise_related",
-        vigimatch_retrieved=True,
+        screening_retrieved=True,
         confusion_cell=cell,
         methods_disagree=disagree,
         is_misclassified=mis,
@@ -162,16 +135,16 @@ def _scle_sample():
                 auto_context=_auto_context("R003__R004", "FN", True, True),
             ),
         ],
-        records=[
-            SamplingRecord(
-                procedure_id="scle_precision_v1:TP",
-                seed="study-2026",
-                created_at=NOW,
-                target=10,
-                stratum_sizes={"TP": 22},
-                selected_pair_ids=["R001__R002"],
-            )
+        backups=[
+            SCLECase(
+                pair_id="R005__R006",
+                evaluation_component="precision",
+                stratum="TP",
+                backup_rank=1,
+                auto_context=_auto_context("R005__R006", "TP", False, False),
+            ),
         ],
+        records=[_sampling_record()],
     )
 
 
@@ -197,10 +170,33 @@ def _reviewer_submission(reviewer):
         reviewer_id=reviewer,
         evaluation_component="precision",
         sample_checksum="0" * 64,
-        assessments=[
-            _assessment("R001__R002", False),
-            _assessment("R003__R004", True),
+        assessments=[_assessment("R001__R002", False), _assessment("R003__R004", True)],
+    )
+
+
+def _agreement_report():
+    return AgreementReport(
+        evaluation_component="precision",
+        reviewer_a="alice",
+        reviewer_b="bob",
+        n_pairs=2,
+        dimensions=[
+            DimensionAgreement(
+                field="case_difficulty",
+                n_compared=2,
+                n_agree=2,
+                percent_agreement=1.0,
+                cohens_kappa=None,
+            ),
+            DimensionAgreement(
+                field="never_event",
+                n_compared=1,
+                n_agree=0,
+                percent_agreement=0.0,
+                cohens_kappa=None,
+            ),
         ],
+        overall_percent_agreement=0.75,
     )
 
 
@@ -214,9 +210,7 @@ def _consensus_result():
             PairDiscrepancy(
                 pair_id="R003__R004",
                 dimension_disagreements=[
-                    DimensionDisagreement(
-                        field="never_event", value_a="no", value_b="yes"
-                    )
+                    DimensionDisagreement(field="never_event", value_a="no", value_b="yes")
                 ],
             ),
         ],
@@ -227,13 +221,6 @@ def _consensus_result():
         evaluation_component="precision",
         sample_checksum="0" * 64,
         decisions=[
-            ArbitrationDecision(
-                pair_id="R001__R002",
-                consensus_dimensions={},
-                free_text_materially_different=False,
-                consensus_free_text="Agreed.",
-                arbiter_rationale="",
-            ),
             ArbitrationDecision(
                 pair_id="R003__R004",
                 consensus_dimensions={"never_event": "no"},
@@ -246,14 +233,13 @@ def _consensus_result():
     consensus = [
         ConsensusAssessment(
             pair_id="R001__R002",
-            free_text_assessment="Agreed.",
             case_difficulty="non_trivial",
             reference_label_issue="no_apparent_issue",
             dimension_sources={"case_difficulty": "reviewer_agreement"},
+            reviewer_free_texts={"alice": "Decisive.", "bob": "Clear duplicate."},
         ),
         ConsensusAssessment(
             pair_id="R003__R004",
-            free_text_assessment="Agreed after discussion.",
             case_difficulty="non_trivial",
             reference_label_issue="no_apparent_issue",
             never_event="no",
@@ -262,7 +248,10 @@ def _consensus_result():
             primary_error_source="relationship_assessment",
             implicated_feature_domains=["narrative"],
             dimension_sources={"never_event": "arbitration"},
+            reviewer_free_texts={"alice": "Root cause X.", "bob": "Root cause Y."},
+            consensus_free_text="Agreed after discussion.",
             arbiter_rationale="No never-event.",
+            arbitrated=True,
         ),
     ]
     return SCLEConsensusResult(
@@ -280,27 +269,23 @@ def _manifest():
     return EvaluationRunManifest(
         created_at=NOW,
         run_id="abc123def456",
-        stage="aggregate",
+        stage="analysis",
         python_version="3.11.8",
-        inputs=[
-            ArtifactRef(path="inputs/pset.json", sha256="a" * 64, n_bytes=1024)
-        ],
+        inputs=[ArtifactRef(path="inputs/reference_set.json", sha256="a" * 64, n_bytes=1024)],
         outputs=[
-            ArtifactRef(
-                path="results/precision_metrics.csv", sha256="b" * 64, n_bytes=2048
-            )
+            ArtifactRef(path="results/precision_metrics.csv", sha256="b" * 64, n_bytes=2048)
         ],
         ci_method="wilson",
     )
 
 
 MODELS = {
-    "study_precision_evaluation_set": (PrecisionEvaluationSet, _precision_set()),
-    "study_recall_evaluation_set": (RecallEvaluationSet, _recall_set()),
-    "study_method_outputs": (MethodOutputs, _method_outputs()),
+    "study_reference_set": (ReferenceSet, _reference_set()),
+    "study_prediction_set": (PredictionSet, _prediction_set()),
     "study_sampling_record": (SamplingRecord, _sampling_record()),
     "study_scle_sample": (SCLESample, _scle_sample()),
     "study_reviewer_submission": (ReviewerSubmission, _reviewer_submission("alice")),
+    "study_agreement_report": (AgreementReport, _agreement_report()),
     "study_scle_consensus_result": (SCLEConsensusResult, _consensus_result()),
     "study_evaluation_run_manifest": (EvaluationRunManifest, _manifest()),
 }
@@ -310,14 +295,12 @@ def main():
     SCHEMAS.mkdir(exist_ok=True)
     EXAMPLES.mkdir(exist_ok=True)
     for name, (model, instance) in MODELS.items():
-        schema = model.model_json_schema()
         (SCHEMAS / f"{name}.schema.json").write_text(
-            json.dumps(schema, indent=2) + "\n"
+            json.dumps(model.model_json_schema(), indent=2) + "\n"
         )
         (EXAMPLES / f"{name}_example.json").write_text(
             instance.model_dump_json(indent=2) + "\n"
         )
-        # verify round-trip
         reloaded = model.model_validate_json((EXAMPLES / f"{name}_example.json").read_text())
         assert json.loads(reloaded.model_dump_json()) == json.loads(
             instance.model_dump_json()

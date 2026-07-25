@@ -66,7 +66,6 @@ _DIM_HEADER = {
 _MATERIALLY_DIFFERENT_HEADER = "Free-text materially different"
 _CONSENSUS_FREE_TEXT_HEADER = "Consensus free-text"
 _ARBITER_RATIONALE_HEADER = "Arbiter rationale"
-_HAS_DISAGREEMENT_HEADER = "Has structured disagreement"
 
 
 class ArbitrationDecision(BaseModel):
@@ -159,7 +158,6 @@ def write_arbitration_workbook(
         "Adjudicator output",
         "Confusion cell",
         "Joint stratum",
-        _HAS_DISAGREEMENT_HEADER,
     ]
     consensus_col_of: dict[str, int] = {}
     for field in STRUCTURED_DIMENSIONS:
@@ -186,7 +184,6 @@ def write_arbitration_workbook(
         "Adjudicator output",
         "Confusion cell",
         "Joint stratum",
-        _HAS_DISAGREEMENT_HEADER,
         "Free-text (A)",
         "Free-text (B)",
     }
@@ -209,11 +206,9 @@ def write_arbitration_workbook(
     dv_material = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
     ws.add_data_validation(dv_material)
 
-    # Sort: disagreements first, then by pair_id.
-    ordered = sorted(
-        ctx_by_pair,
-        key=lambda pid: (pid not in disagree_pairs, pid),
-    )
+    # Focus the workbook on the structurally-disagreeing pairs only; agreement
+    # pairs are auto-resolved from the reviews at finalize time.
+    ordered = sorted(disagree_pairs)
 
     for r_idx, pair_id in enumerate(ordered, start=2):
         ctx = ctx_by_pair[pair_id]
@@ -225,7 +220,6 @@ def write_arbitration_workbook(
             "Adjudicator output": ctx.adjudicator_final_label,
             "Confusion cell": ctx.confusion_cell or "",
             "Joint stratum": ctx.joint_stratum or "",
-            _HAS_DISAGREEMENT_HEADER: "yes" if pair_id in disagree_pairs else "no",
             "Free-text (A)": a.free_text_assessment if a else "",
             "Free-text (B)": b.free_text_assessment if b else "",
         }
@@ -280,7 +274,6 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
 
     sample_pairs = {c.pair_id for c in sample.cases}
     decisions: list[ArbitrationDecision] = []
-    seen: set[str] = set()
     problems: list[str] = []
 
     for row in rows[1:]:
@@ -292,7 +285,6 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
         if pair_id not in sample_pairs:
             problems.append(f"{path}: pair {pair_id!r} is not in the sample.")
             continue
-        seen.add(pair_id)
 
         consensus: dict[str, str] = {}
         for field in STRUCTURED_DIMENSIONS:
@@ -324,9 +316,9 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
             )
         )
 
-    missing = sorted(sample_pairs - seen)
-    if missing:
-        problems.append(f"{path}: missing rows for pair(s) {missing}.")
+    # The arbitration workbook is disagreement-focused, so it need not cover
+    # every sample pair — only rows for pairs outside the sample are an error
+    # (checked in the loop above).
     if problems:
         raise ValueError(
             f"{path}: arbitration workbook failed validation:\n"

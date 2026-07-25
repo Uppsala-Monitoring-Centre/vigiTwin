@@ -36,11 +36,16 @@ class ConsensusAssessment(BaseModel):
     Structured dimension values are stored as their string form (enum value, or
     ``None`` when the dimension does not apply). ``dimension_sources`` maps each
     structured dimension to ``reviewer_agreement`` or ``arbitration``.
+
+    Free text is never merged automatically: both reviewers' assessments are
+    retained in ``reviewer_free_texts``. ``consensus_free_text`` holds the
+    arbiter's text for a pair that went to arbitration (a structural
+    disagreement); it is empty for an agreement pair, where the two reviewer
+    texts stand on their own.
     """
 
     pair_id: str
 
-    free_text_assessment: str
     case_difficulty: str | None = None
     reference_label_issue: str | None = None
     never_event: str | None = None
@@ -51,8 +56,11 @@ class ConsensusAssessment(BaseModel):
     implicated_feature_domains: list[str] = []
 
     dimension_sources: dict[str, str] = {}
+    reviewer_free_texts: dict[str, str] = {}
+    consensus_free_text: str = ""
     free_text_materially_different: bool = False
     arbiter_rationale: str = ""
+    arbitrated: bool = False
 
 
 class SCLEConsensusResult(BaseModel):
@@ -102,9 +110,6 @@ def merge_consensus(
     arb_by_pair = {d.pair_id: d for d in arbitration.decisions}
     if set(a_by_pair) != set(b_by_pair):
         raise ValueError("the two reviews cover different pairs.")
-    missing_arb = sorted(set(a_by_pair) - set(arb_by_pair))
-    if missing_arb:
-        raise ValueError(f"arbitration is missing decisions for pair(s): {missing_arb}")
 
     consensus: list[ConsensusAssessment] = []
     concerns: list[str] = []
@@ -112,7 +117,9 @@ def merge_consensus(
     for pair_id in sorted(a_by_pair):
         a = a_by_pair[pair_id]
         b = b_by_pair[pair_id]
-        decision = arb_by_pair[pair_id]
+        # Arbitration only covers the structurally-disagreeing pairs; an
+        # agreement pair simply has no decision.
+        decision = arb_by_pair.get(pair_id)
 
         resolved: dict[str, str | None] = {}
         domains: list[str] = []
@@ -124,11 +131,11 @@ def merge_consensus(
                 value = va
                 sources[field] = _SOURCE_AGREEMENT
             else:
-                if field not in decision.consensus_dimensions:
+                if decision is None or field not in decision.consensus_dimensions:
                     raise ValueError(
                         f"pair {pair_id!r}: reviewers disagree on {field!r} "
                         f"({va!r} vs {vb!r}) but arbitration provides no "
-                        f"consensus value."
+                        f"consensus value (is it in the arbitration workbook?)."
                     )
                 value = decision.consensus_dimensions[field]
                 sources[field] = _SOURCE_ARBITRATION
@@ -139,7 +146,6 @@ def merge_consensus(
 
         assessment = ConsensusAssessment(
             pair_id=pair_id,
-            free_text_assessment=decision.consensus_free_text,
             case_difficulty=resolved["case_difficulty"],
             reference_label_issue=resolved["reference_label_issue"],
             never_event=resolved["never_event"],
@@ -149,8 +155,16 @@ def merge_consensus(
             primary_error_source=resolved["primary_error_source"],
             implicated_feature_domains=domains,
             dimension_sources=sources,
-            free_text_materially_different=decision.free_text_materially_different,
-            arbiter_rationale=decision.arbiter_rationale,
+            reviewer_free_texts={
+                a.reviewer_id: a.free_text_assessment,
+                b.reviewer_id: b.free_text_assessment,
+            },
+            consensus_free_text=decision.consensus_free_text if decision else "",
+            free_text_materially_different=(
+                decision.free_text_materially_different if decision else False
+            ),
+            arbiter_rationale=decision.arbiter_rationale if decision else "",
+            arbitrated=decision is not None,
         )
         consensus.append(assessment)
         if assessment.reference_label_issue not in (None, "no_apparent_issue"):
