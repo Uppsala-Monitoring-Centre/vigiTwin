@@ -6,6 +6,7 @@ from llm_dup_dev.study_eval.scle.packets import (
     PacketContent,
     generate_packets,
     packet_filename,
+    packet_targets,
 )
 
 from tests.test_study_eval.conftest import build_scle_precision_sample
@@ -35,3 +36,18 @@ def test_generate_packets_writes_html(tmp_path, report_a, report_b):
         assert expected.exists()
         assert filenames[case.pair_id] == expected.name
     assert (tmp_path / "index.html").exists()
+
+
+def test_packet_targets_relative_paths():
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    targets = packet_targets(sample)
+    assert set(targets) == {c.pair_id for c in sample.cases}
+    for pair_id, target in targets.items():
+        assert target == f"packets/{packet_filename(pair_id)}"
+
+
+def test_packet_targets_custom_dir():
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    targets = packet_targets(sample, packet_dir="review/html")
+    for pair_id, target in targets.items():
+        assert target == f"review/html/{packet_filename(pair_id)}"

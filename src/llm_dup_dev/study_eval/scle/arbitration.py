@@ -39,6 +39,7 @@ from llm_dup_dev.study_eval.scle.workbook import (
     CASES_SHEET,
     METADATA_SHEET,
     _cell_str,
+    _set_packet_hyperlink,
 )
 
 # Enum option lists per structured dimension (feature domains are free text).
@@ -112,11 +113,13 @@ def write_arbitration_workbook(
     *,
     arbiter_id: str = "",
     arbitration_id: str | None = None,
+    packet_targets: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
     """Write the arbitration workbook for one component.
 
-    All pairs appear; those with a structured disagreement are sorted first and
-    flagged. Returns the written path and the arbitration id.
+    Only the structurally-disagreeing pairs appear. Each row's Packet cell links
+    to the pair's HTML review file when a target is supplied in
+    ``packet_targets``. Returns the written path and the arbitration id.
     """
     import openpyxl  # type: ignore[import-untyped]
     from openpyxl.styles import Font, PatternFill  # type: ignore[import-untyped]
@@ -158,6 +161,7 @@ def write_arbitration_workbook(
         "Adjudicator output",
         "Confusion cell",
         "Joint stratum",
+        "Packet",
     ]
     consensus_col_of: dict[str, int] = {}
     for field in STRUCTURED_DIMENSIONS:
@@ -184,6 +188,7 @@ def write_arbitration_workbook(
         "Adjudicator output",
         "Confusion cell",
         "Joint stratum",
+        "Packet",
         "Free-text (A)",
         "Free-text (B)",
     }
@@ -214,12 +219,14 @@ def write_arbitration_workbook(
         ctx = ctx_by_pair[pair_id]
         a = a_by_pair.get(pair_id)
         b = b_by_pair.get(pair_id)
+        target = (packet_targets or {}).get(pair_id)
         row = {
             "Pair ID": pair_id,
             "Reference label": ctx.reference_label,
             "Adjudicator output": ctx.adjudicator_final_label,
             "Confusion cell": ctx.confusion_cell or "",
             "Joint stratum": ctx.joint_stratum or "",
+            "Packet": "",
             "Free-text (A)": a.free_text_assessment if a else "",
             "Free-text (B)": b.free_text_assessment if b else "",
         }
@@ -228,10 +235,15 @@ def write_arbitration_workbook(
             row[f"{h} (A)"] = _dim_value(a, field) if a else ""
             row[f"{h} (B)"] = _dim_value(b, field) if b else ""
         for c_idx, h in enumerate(headers, start=1):
-            if h in row:
-                cell = ws.cell(row=r_idx, column=c_idx, value=row[h])
-                if h in context_headers or h.endswith("(A)") or h.endswith("(B)"):
-                    cell.fill = grey
+            if h not in row:
+                continue
+            cell = ws.cell(row=r_idx, column=c_idx)
+            if h in context_headers or h.endswith("(A)") or h.endswith("(B)"):
+                cell.fill = grey
+            if h == "Packet" and target:
+                _set_packet_hyperlink(cell, target)
+            else:
+                cell.value = row[h]
         # Attach dropdowns to consensus + materially-different cells.
         for col_idx, dv in dv_by_col.items():
             dv.add(ws.cell(row=r_idx, column=col_idx))

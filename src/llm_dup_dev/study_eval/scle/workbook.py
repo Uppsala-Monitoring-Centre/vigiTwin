@@ -163,9 +163,7 @@ def _applies_to(col: _Col, ctx: SCLEAutoContext) -> bool:
     return True
 
 
-def _context_value(field: str, ctx: SCLEAutoContext, packet_name: str | None) -> str:
-    if field == "packet_filename":
-        return packet_name or (ctx.packet_filename or "")
+def _context_value(field: str, ctx: SCLEAutoContext) -> str:
     value = getattr(ctx, field)
     if value is None:
         return ""
@@ -174,12 +172,25 @@ def _context_value(field: str, ctx: SCLEAutoContext, packet_name: str | None) ->
     return str(value)
 
 
+def _set_packet_hyperlink(cell, target: str) -> None:
+    """Render ``cell`` as a clickable hyperlink to a local packet HTML file.
+
+    The displayed text is the target's basename; the link target is the given
+    relative path (resolved by Excel relative to the workbook's location).
+    """
+    from openpyxl.styles import Font  # type: ignore[import-untyped]
+
+    cell.value = target.rsplit("/", 1)[-1]
+    cell.hyperlink = target
+    cell.font = Font(color="0563C1", underline="single")
+
+
 def write_reviewer_workbook(
     sample: SCLESample,
     reviewer_id: str,
     path: str | Path,
     *,
-    packet_filenames: dict[str, str] | None = None,
+    packet_targets: dict[str, str] | None = None,
     workbook_id: str | None = None,
 ) -> tuple[Path, str]:
     """Write one reviewer's workbook for ``sample`` to ``path``.
@@ -195,7 +206,7 @@ def write_reviewer_workbook(
 
     workbook_id = workbook_id or uuid.uuid4().hex[:12]
     sample_checksum = sha256_canonical_json(sample)
-    packet_filenames = packet_filenames or {}
+    packet_targets = packet_targets or {}
 
     wb = openpyxl.Workbook()
 
@@ -247,12 +258,15 @@ def write_reviewer_workbook(
 
     for r_idx, case in enumerate(sample.cases, start=2):
         ctx = case.auto_context
-        packet_name = packet_filenames.get(case.pair_id)
+        target = packet_targets.get(case.pair_id)
         for c_idx, col in enumerate(_ALL_COLS, start=1):
             cell = ws.cell(row=r_idx, column=c_idx)
             if col.kind == "context":
-                cell.value = _context_value(col.field, ctx, packet_name)
                 cell.fill = grey
+                if col.field == "packet_filename" and target:
+                    _set_packet_hyperlink(cell, target)
+                else:
+                    cell.value = _context_value(col.field, ctx)
             elif not _applies_to(col, ctx):
                 cell.value = NOT_APPLICABLE
                 cell.fill = na_fill
@@ -431,6 +445,8 @@ _INSTRUCTION_LINES: tuple[str, ...] = (
     "method-difference note applies only where the methods disagree. Non-"
     "applicable cells are pre-filled 'not_applicable'.",
     "6. Implicated feature domains: comma-separated, from the prespecified list.",
+    "7. The Packet column links to the pair's HTML review file (in the "
+    "packets/ folder beside this workbook); click it to open the case.",
 )
 
 
@@ -438,4 +454,5 @@ __all__ = [
     "NOT_APPLICABLE",
     "write_reviewer_workbook",
     "read_reviewer_submission",
+    "_set_packet_hyperlink",
 ]
