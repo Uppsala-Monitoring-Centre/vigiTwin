@@ -38,10 +38,14 @@ object keyed by ``pair_id``, but each value carries every field of a
     }, ...}
 
 ``final_label`` is a derived :class:`PairResult` property, written for parity and
-readability but recomputed (not trusted) on read. The nested ``features`` and
-``classification`` are the same dumps :func:`write_pair_features` /
-:func:`write_classifications` produce, so ``pair_results.json`` is a superset of
-the split files and the two can be produced side by side.
+readability. On read it is not trusted as the source of truth (the label is
+recomputed from ``classification``) but, when present, it is *validated* to agree
+with that recomputed value — a disagreement rejects the artifact as inconsistent.
+The top-level ``source_case_assessment`` is likewise reconciled against
+``features.source_case_assessment``. The nested ``features`` and ``classification``
+are the same dumps :func:`write_pair_features` / :func:`write_classifications`
+produce, so ``pair_results.json`` is a superset of the split files and the two can
+be produced side by side. See :func:`read_pair_results` for the full contract.
 """
 
 from __future__ import annotations
@@ -50,6 +54,8 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ValidationError
 
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.pair_features import PairFeatures
@@ -174,16 +180,55 @@ def write_pair_results(
     )
 
 
+def _validate_submodel(
+    model_cls: type[BaseModel],
+    record: dict,
+    key: str,
+    prefix: str,
+    *,
+    required: bool,
+):
+    """Validate one optional/required sub-model of a pair-results record.
+
+    ``None`` (JSON null / absent) yields ``None`` unless ``required``. Any
+    :class:`pydantic.ValidationError` is re-raised as a ``ValueError`` carrying
+    the artifact/pair context ``prefix`` so every record-level error names the
+    file and pair_id.
+    """
+    value = record.get(key)
+    if value is None:
+        if required:
+            raise ValueError(f"{prefix}: missing required {key!r}.")
+        return None
+    try:
+        return model_cls.model_validate(value)
+    except ValidationError as exc:
+        raise ValueError(f"{prefix}: invalid {key!r}: {exc}") from exc
+
+
 def read_pair_results(path: str | Path) -> dict[str, PairResult]:
     """Read a {pair_id: PairResult} mapping written by :func:`write_pair_results`.
 
-    Every field of each :class:`~llm_dup_dev.pipeline.runner.PairResult` is
-    reconstructed from its persisted sub-model; JSON ``null`` becomes ``None``.
-    The stored ``final_label`` is ignored — it is a derived property and is
-    recomputed from the restored ``classification``.
+    Each :class:`~llm_dup_dev.pipeline.runner.PairResult` is reconstructed from
+    its persisted sub-models (JSON ``null`` becomes ``None``) and keyed by the
+    **outer mapping key**. The artifact is validated for integrity as it loads:
 
-    This also reads the secure runner's ``pair_results.json`` unchanged, since
-    both writers emit the identical keyed payload.
+    * the top level must be an object mapping ``pair_id`` to a record object,
+      and each record must itself be an object;
+    * a stored ``final_label``, when present, must equal the ``final_label``
+      derived from the restored ``classification`` — it is a derived property,
+      so a disagreement means the artifact is internally inconsistent;
+    * ``source_case_assessment`` is reconciled with
+      ``features.source_case_assessment``: when both are present they must
+      agree; when only the feature-level value is present it is used; otherwise
+      whichever is present (or ``None``).
+
+    Any record-level problem raises ``ValueError`` naming the artifact and pair::
+
+        Invalid pair-results artifact <path>, pair_id=<id>: <problem>
+
+    This reads the secure runner's ``pair_results.json`` unchanged, since both
+    writers emit the identical keyed payload.
     """
     # Imported here rather than at module load: PairResult lives in
     # ``pipeline.runner``, whose import pulls the LLM/feature-generation stack.
@@ -194,31 +239,73 @@ def read_pair_results(path: str | Path) -> dict[str, PairResult]:
     from llm_dup_dev.models.pair_features import AEClinicalPictureResult
     from llm_dup_dev.pipeline.runner import PairResult
 
-    def _validate(model_cls, data):
-        return None if data is None else model_cls.model_validate(data)
+    path = Path(path)
+    raw = _read_json(path)
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"Invalid pair-results artifact {path}: top-level JSON must be an "
+            f"object mapping pair_id to record, got {type(raw).__name__}."
+        )
 
     results: dict[str, PairResult] = {}
-    for pair_id, data in _read_json(Path(path)).items():
+    for pair_id, record in raw.items():
+        prefix = f"Invalid pair-results artifact {path}, pair_id={pair_id}"
+        if not isinstance(record, dict):
+            raise ValueError(
+                f"{prefix}: record must be an object, got "
+                f"{type(record).__name__}."
+            )
+
+        features = _validate_submodel(
+            PairFeatures, record, "features", prefix, required=True
+        )
+        classification = _validate_submodel(
+            ClassificationResult, record, "classification", prefix,
+            required=True,
+        )
+
+        stored_label = record.get("final_label")
+        if (
+            stored_label is not None
+            and stored_label != classification.final_label
+        ):
+            raise ValueError(
+                f"{prefix}: stored final_label {stored_label!r} disagrees with "
+                f"classification-derived {classification.final_label!r}."
+            )
+
+        top_sca = _validate_submodel(
+            SourceCaseAssessment, record, "source_case_assessment", prefix,
+            required=False,
+        )
+        feature_sca = features.source_case_assessment
+        if top_sca is not None and feature_sca is not None and top_sca != feature_sca:
+            raise ValueError(
+                f"{prefix}: top-level source_case_assessment disagrees with "
+                f"features.source_case_assessment."
+            )
+        source_case_assessment = top_sca if top_sca is not None else feature_sca
+
         results[pair_id] = PairResult(
             pair_id=pair_id,
-            features=PairFeatures.model_validate(data["features"]),
-            classification=ClassificationResult.model_validate(
-                data["classification"]
+            features=features,
+            classification=classification,
+            narrative_verdict=_validate_submodel(
+                NarrativeVerdict, record, "narrative_verdict", prefix,
+                required=False,
             ),
-            narrative_verdict=_validate(
-                NarrativeVerdict, data.get("narrative_verdict")
+            ae_clinical_picture=_validate_submodel(
+                AEClinicalPictureResult, record, "ae_clinical_picture", prefix,
+                required=False,
             ),
-            ae_clinical_picture=_validate(
-                AEClinicalPictureResult, data.get("ae_clinical_picture")
+            source_case_assessment=source_case_assessment,
+            narrative_demographics_1=_validate_submodel(
+                NarrativeDemographics, record, "narrative_demographics_1",
+                prefix, required=False,
             ),
-            source_case_assessment=_validate(
-                SourceCaseAssessment, data.get("source_case_assessment")
-            ),
-            narrative_demographics_1=_validate(
-                NarrativeDemographics, data.get("narrative_demographics_1")
-            ),
-            narrative_demographics_2=_validate(
-                NarrativeDemographics, data.get("narrative_demographics_2")
+            narrative_demographics_2=_validate_submodel(
+                NarrativeDemographics, record, "narrative_demographics_2",
+                prefix, required=False,
             ),
         )
     return results

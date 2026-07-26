@@ -321,7 +321,9 @@ def render_results_html(
 # Imported last: saved_run depends on ResultRenderInput / render_results_html
 # defined above, and imports them back via ``from . import ...``.
 from .saved_run import (  # noqa: E402
+    SavedRunSkip,
     SavedRunSummary,
+    SkipReason,
     load_saved_run,
     render_saved_run,
 )
@@ -336,7 +338,9 @@ __all__ = [
     "PairResult",
     "PairViewModel",
     "ResultRenderInput",
+    "SavedRunSkip",
     "SavedRunSummary",
+    "SkipReason",
     "load_saved_run",
     "render_batch_html",
     "render_pair_html",
