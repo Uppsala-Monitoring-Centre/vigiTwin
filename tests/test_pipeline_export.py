@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from llm_dup_dev.classifier.decision_logic import classify
 from llm_dup_dev.models.enums import (
     AnchorType,
@@ -284,11 +286,11 @@ class TestPairResultsRoundTrip:
             "narrative_demographics_2",
         }
 
-    def test_final_label_is_written_but_recomputed_on_read(self, tmp_path):
-        """final_label is a derived property: written for parity, not trusted.
+    def test_final_label_mismatch_raises(self, tmp_path):
+        """final_label is validated on read, not silently recomputed.
 
-        A tampered final_label in the file must not survive read — the value
-        is recomputed from the restored classification.
+        A tampered final_label disagrees with the classification-derived label,
+        so the artifact is rejected as internally inconsistent.
         """
         result = _full_result()
         path = tmp_path / "pair_results.json"
@@ -299,8 +301,71 @@ class TestPairResultsRoundTrip:
         raw["R001__R002"]["final_label"] = "Bogus"
         path.write_text(json.dumps(raw))
 
+        with pytest.raises(
+            ValueError,
+            match=r"Invalid pair-results artifact .*pair_id=R001__R002",
+        ):
+            read_pair_results(path)
+
+    def test_top_level_must_be_object(self, tmp_path):
+        path = tmp_path / "pair_results.json"
+        path.write_text(json.dumps([{"pair_id": "x"}]))
+        with pytest.raises(ValueError, match="top-level JSON must be an object"):
+            read_pair_results(path)
+
+    def test_record_must_be_object(self, tmp_path):
+        path = tmp_path / "pair_results.json"
+        path.write_text(json.dumps({"R001__R002": 5}))
+        with pytest.raises(ValueError, match="record must be an object"):
+            read_pair_results(path)
+
+    def test_source_case_disagreement_raises(self, tmp_path):
+        """Top-level and feature-level source/case, both present, must agree."""
+        sca_top = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.SAME_SOURCE_SAME_CASE, reasoning="top"
+        )
+        sca_feat = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.NO_DECISIVE_SIGNAL, reasoning="feat"
+        )
+        features = _features().model_copy(
+            update={"source_case_assessment": sca_feat}
+        )
+        result = PairResult(
+            pair_id="R001__R002",
+            features=features,
+            classification=classify(features),
+            source_case_assessment=sca_top,
+        )
+        path = tmp_path / "pair_results.json"
+        write_pair_results([result], path)
+
+        with pytest.raises(
+            ValueError, match="source_case_assessment disagrees"
+        ):
+            read_pair_results(path)
+
+    def test_feature_level_source_case_used_when_top_absent(self, tmp_path):
+        """Top-level null but feature-level present → feature-level is used."""
+        sca_feat = SourceCaseAssessment(
+            verdict=SourceCaseVerdict.NO_DECISIVE_SIGNAL, reasoning="feat"
+        )
+        features = _features().model_copy(
+            update={"source_case_assessment": sca_feat}
+        )
+        # PairResult.source_case_assessment defaults to None -> top-level null.
+        result = PairResult(
+            pair_id="R001__R002",
+            features=features,
+            classification=classify(features),
+        )
+        path = tmp_path / "pair_results.json"
+        write_pair_results([result], path)
+        assert json.loads(path.read_text())["R001__R002"][
+            "source_case_assessment"
+        ] is None
+
         restored = read_pair_results(path)["R001__R002"]
-        assert restored.final_label == result.classification.final_label
+        assert restored.source_case_assessment == sca_feat
 
     def test_empty_results_write_an_empty_mapping(self, tmp_path):
         path = tmp_path / "pair_results.json"

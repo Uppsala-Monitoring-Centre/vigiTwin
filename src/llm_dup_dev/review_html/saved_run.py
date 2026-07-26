@@ -37,12 +37,15 @@ from __future__ import annotations
 import json
 import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Callable
 
+from pydantic import BaseModel, ValidationError
+
 from llm_dup_dev.data.offline import (
+    FrozenNarrativeDemographics,
     FrozenPairBundle,
-    load_frozen_narrative_demographics,
 )
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
@@ -59,6 +62,40 @@ from llm_dup_dev.pipeline.runner import PairResult
 from . import ResultRenderInput, render_results_html
 
 
+class SkipReason(str, Enum):
+    """Stable, machine-comparable reasons a pair was skipped during load.
+
+    Subclasses ``str`` so a :class:`SavedRunSkip` round-trips through JSON and
+    compares equal to its literal value, while callers can match members
+    (``skip.reason is SkipReason.MISSING_REPORT_1``) without parsing strings.
+    """
+
+    MISSING_RESULT = "missing_result"
+    MISSING_FEATURES = "missing_features"
+    MISSING_CLASSIFICATION = "missing_classification"
+    MISSING_REPORT_1 = "missing_report_1"
+    MISSING_REPORT_2 = "missing_report_2"
+
+
+@dataclass(frozen=True)
+class SavedRunSkip:
+    """One pair that could not be loaded, as a typed record.
+
+    Attributes
+    ----------
+    pair_id : str
+        The pair that was skipped.
+    reason : SkipReason
+        A stable, enumerated reason (compare against :class:`SkipReason`).
+    detail : str
+        Human-readable specifics (e.g. the missing report id).
+    """
+
+    pair_id: str
+    reason: SkipReason
+    detail: str
+
+
 @dataclass
 class SavedRunSummary:
     """A structured account of what a saved-run load/render did.
@@ -73,8 +110,9 @@ class SavedRunSummary:
         Number of pairs considered (the length of the pairs artifact).
     n_loaded : int
         Number of ``ResultRenderInput`` objects successfully built.
-    skipped : list[str]
-        Human-readable reasons for each pair that could not be loaded.
+    skipped : list[SavedRunSkip]
+        A typed record for each pair that could not be loaded. Empty in
+        ``strict`` mode (the first skip raises instead).
     output_dir : Path or None
         Where HTML was written. Set by :func:`render_saved_run`; ``None`` after
         a bare :func:`load_saved_run`.
@@ -86,7 +124,7 @@ class SavedRunSummary:
     source: str
     n_pairs: int
     n_loaded: int
-    skipped: list[str] = field(default_factory=list)
+    skipped: list[SavedRunSkip] = field(default_factory=list)
     output_dir: Path | None = None
     n_rendered: int | None = None
 
@@ -96,55 +134,191 @@ def _load_json(path: str | Path):
         return json.load(f)
 
 
+def _index_by_id(
+    raw,
+    *,
+    id_attr: str,
+    model_cls: type[BaseModel],
+    artifact: str,
+    path: str | Path,
+) -> dict[str, BaseModel]:
+    """Index a list- or mapping-shaped artifact into ``{id: model}``.
+
+    The secure runner writes reports and pair-frequency bundles as JSON *lists*
+    of objects; the review CLI writes them as objects keyed by id. Both are
+    accepted, and both are validated hard:
+
+    * list  → every item must be an object; the id is taken from the validated
+      model's ``id_attr``; duplicate ids are rejected.
+    * mapping → every value is validated; the mapping key must equal the
+      validated model's ``id_attr`` (a key/id conflict is rejected); duplicate
+      ids are rejected.
+    * any other top-level shape is rejected.
+
+    ``artifact`` and ``path`` only shape the error messages.
+    """
+    prefix = f"Invalid {artifact} artifact {path}"
+    out: dict[str, BaseModel] = {}
+
+    def _add(key: str, model: BaseModel) -> None:
+        if key in out:
+            raise ValueError(f"{prefix}: duplicate {id_attr}={key!r}.")
+        out[key] = model
+
+    if isinstance(raw, list):
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"{prefix}: item {i} must be an object, got "
+                    f"{type(item).__name__}."
+                )
+            try:
+                model = model_cls.model_validate(item)
+            except ValidationError as exc:
+                raise ValueError(f"{prefix}: item {i} is invalid: {exc}") from exc
+            _add(str(getattr(model, id_attr)), model)
+    elif isinstance(raw, dict):
+        for key, value in raw.items():
+            try:
+                model = model_cls.model_validate(value)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"{prefix}: value for {key!r} is invalid: {exc}"
+                ) from exc
+            model_id = str(getattr(model, id_attr))
+            if model_id != str(key):
+                raise ValueError(
+                    f"{prefix}: mapping key {key!r} does not match "
+                    f"{id_attr}={model_id!r} in the record."
+                )
+            _add(model_id, model)
+    else:
+        raise ValueError(
+            f"{prefix}: top-level JSON must be a list or an object, got "
+            f"{type(raw).__name__}."
+        )
+    return out
+
+
 def _load_reports(path: str | Path) -> dict[str, Report]:
-    """Load ``{report_id: Report}`` from a dict-keyed reports artifact."""
-    return {
-        str(rid): Report.model_validate(rdata)
-        for rid, rdata in _load_json(path).items()
-    }
+    """Load ``{report_id: Report}`` from a list- or mapping-shaped artifact."""
+    return _index_by_id(
+        _load_json(path),
+        id_attr="report_id",
+        model_cls=Report,
+        artifact="reports",
+        path=path,
+    )
 
 
 def _load_pairs(path: str | Path) -> list[ReportPair]:
     """Load a list of ``ReportPair`` from a pairs artifact."""
-    return [ReportPair.model_validate(row) for row in _load_json(path)]
+    raw = _load_json(path)
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"Invalid pairs artifact {path}: top-level JSON must be a list, "
+            f"got {type(raw).__name__}."
+        )
+    return [ReportPair.model_validate(row) for row in raw]
 
 
 def _load_bundles(path: str | Path | None) -> dict[str, FrozenPairBundle]:
-    """Load ``{pair_id: FrozenPairBundle}``; ``{}`` when no path is given."""
+    """Load ``{pair_id: FrozenPairBundle}``; ``{}`` when no path is given.
+
+    Accepts a list of bundles (the secure runner's shape) or a mapping keyed by
+    ``pair_id`` (the review CLI's shape).
+    """
     if path is None:
         return {}
-    return {
-        str(pid): FrozenPairBundle.model_validate(bdata)
-        for pid, bdata in _load_json(path).items()
-    }
+    return _index_by_id(
+        _load_json(path),
+        id_attr="pair_id",
+        model_cls=FrozenPairBundle,
+        artifact="frozen bundles",
+        path=path,
+    )
 
 
 def _load_annotations(path: str | Path | None) -> dict[str, dict]:
     """Load ``{pair_id: annotation}``; ``{}`` when no path is given.
 
-    Accepts either a dict keyed by ``pair_id`` or a list of objects each
-    carrying a ``pair_id`` field.
+    Accepts either a list of objects each carrying a ``pair_id`` or a mapping
+    keyed by ``pair_id``. Validated hard: list items must be objects with a
+    ``pair_id``; a mapping value embedding a ``pair_id`` must match its key;
+    duplicate pair ids are rejected (never silently overwritten); any other
+    top-level shape is rejected.
     """
     if path is None:
         return {}
     raw = _load_json(path)
+    prefix = f"Invalid annotations artifact {path}"
+    out: dict[str, dict] = {}
+
+    def _add(pid: str, value: dict) -> None:
+        if pid in out:
+            raise ValueError(f"{prefix}: duplicate pair_id={pid!r}.")
+        out[pid] = value
+
     if isinstance(raw, list):
-        out: dict[str, dict] = {}
-        for row in raw:
-            pid = row.get("pair_id")
-            if pid is not None:
-                out[str(pid)] = row
-        return out
-    return {str(pid): value for pid, value in raw.items()}
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"{prefix}: item {i} must be an object, got "
+                    f"{type(item).__name__}."
+                )
+            pid = item.get("pair_id")
+            if pid is None:
+                raise ValueError(f"{prefix}: item {i} is missing 'pair_id'.")
+            _add(str(pid), item)
+    elif isinstance(raw, dict):
+        for key, value in raw.items():
+            if not isinstance(value, dict):
+                raise ValueError(
+                    f"{prefix}: value for {key!r} must be an object, got "
+                    f"{type(value).__name__}."
+                )
+            embedded = value.get("pair_id")
+            if embedded is not None and str(embedded) != str(key):
+                raise ValueError(
+                    f"{prefix}: mapping key {key!r} does not match embedded "
+                    f"pair_id={embedded!r}."
+                )
+            _add(str(key), value)
+    else:
+        raise ValueError(
+            f"{prefix}: top-level JSON must be a list or an object, got "
+            f"{type(raw).__name__}."
+        )
+    return out
 
 
 def _load_narrative_demographics(
     path: str | Path | None,
 ) -> dict[str, NarrativeDemographics]:
-    """Load ``{report_id: NarrativeDemographics}``; ``{}`` when no path given."""
+    """Load ``{report_id: NarrativeDemographics}``; ``{}`` when no path given.
+
+    Accepts the wrapper shape ``{"extractions": {report_id: {...}}}`` or the
+    plain mapping ``{report_id: {...}}``; the plain form is normalised into the
+    wrapper before validation, so the official
+    :class:`~llm_dup_dev.data.offline.FrozenNarrativeDemographics` model does the
+    per-item parsing rather than a bespoke loader.
+    """
     if path is None:
         return {}
-    return load_frozen_narrative_demographics(path).extractions
+    raw = _load_json(path)
+    if isinstance(raw, dict) and "extractions" in raw:
+        inner = raw["extractions"]
+    else:
+        inner = raw
+    try:
+        bundle = FrozenNarrativeDemographics.model_validate(
+            {"extractions": inner}
+        )
+    except ValidationError as exc:
+        raise ValueError(
+            f"Invalid narrative-demographics artifact {path}: {exc}"
+        ) from exc
+    return bundle.extractions
 
 
 def load_saved_run(
@@ -160,37 +334,49 @@ def load_saved_run(
     external_url_builder: Callable[[str, str], str | None] | None = None,
     external_url_label: str = "External link",
     include_debug: bool = True,
-    strict: bool = False,
+    strict: bool = True,
 ) -> tuple[list[ResultRenderInput], SavedRunSummary]:
     """Load a saved run into ``ResultRenderInput`` objects from explicit paths.
+
+    Source selection is by precedence, not existence:
+
+    * ``pair_results_path is not None`` → that artifact is used; a missing file
+      raises ``FileNotFoundError`` and a malformed one raises its parse/
+      validation error. There is no silent fall-back to the split files.
+    * ``pair_results_path is None`` → the split source is used, which requires
+      **both** ``features_path`` and ``classifications_path``.
 
     Parameters
     ----------
     reports_path, pairs_path : str or Path
-        Required. ``reports`` is a dict keyed by ``report_id``; ``pairs`` is a
-        list of :class:`ReportPair`.
+        Required. ``reports`` is either a list of report objects or a mapping
+        keyed by ``report_id``; ``pairs`` is a list of :class:`ReportPair`.
     pair_results_path : str or Path, optional
-        Preferred source. When given (and it exists), the whole
-        ``pair_results.json`` is used and the split files are ignored.
+        The preferred source. When given it is mandatory (see precedence above).
     features_path, classifications_path : str or Path, optional
-        The split fallback, used when ``pair_results_path`` is not given. Both
+        The split source, used only when ``pair_results_path`` is ``None``. Both
         must be provided together.
     annotations_path, bundles_path, narrative_demographics_path : str or Path, optional
-        Optional per-pair annotations, per-pair frozen frequency bundles, and a
-        per-report narrative-demographics bundle. The demographics bundle is
-        only consulted for the ``split`` source; a ``pair_results`` run already
-        carries its demographics.
+        Optional per-pair annotations, per-pair frozen frequency bundles (list
+        or mapping shaped), and a per-report narrative-demographics bundle
+        (wrapper or plain shaped). The demographics bundle is only consulted for
+        the ``split`` source; a ``pair_results`` run already carries its
+        demographics.
     external_url_builder : callable, optional
         ``(report_1_id, report_2_id) -> str | None``. Called per pair to build
-        the external header link; ``None`` (or no builder) means no link. Keeps
-        URL knowledge with the caller.
+        the external header link; ``None`` (or no builder) means no link, and a
+        builder that raises is caught (warning emitted, link omitted) — it never
+        drops the pair. Keeps URL knowledge with the caller.
     external_url_label : str
         Label for the external link.
     include_debug : bool
         Passed through to each ``ResultRenderInput``.
     strict : bool
-        When ``True``, a pair that cannot be loaded raises ``RuntimeError``
-        instead of being skipped.
+        The reusable-library default is ``True``: the first pair that cannot be
+        loaded raises ``RuntimeError``. Pass ``strict=False`` for warn-and-skip
+        (each skipped pair is recorded in ``SavedRunSummary.skipped``). A failing
+        ``external_url_builder`` is *not* governed by ``strict`` — it is always
+        tolerated by rendering the pair without a link.
 
     Returns
     -------
@@ -199,22 +385,25 @@ def load_saved_run(
     Raises
     ------
     ValueError
-        If neither ``pair_results_path`` nor both split paths are provided.
+        If ``pair_results_path`` is ``None`` and both split paths are not given.
+    FileNotFoundError
+        If ``pair_results_path`` is given but the file does not exist.
     RuntimeError
         In ``strict`` mode, on the first unloadable pair.
     """
-    use_pair_results = (
-        pair_results_path is not None and Path(pair_results_path).exists()
-    )
-
     pair_results: dict[str, PairResult] = {}
     features_by_pair: dict[str, PairFeatures] = {}
     classifications_by_pair: dict[str, ClassificationResult] = {}
     demographics_by_report: dict[str, NarrativeDemographics] = {}
 
-    if use_pair_results:
+    if pair_results_path is not None:
         source = "pair_results"
-        pair_results = read_pair_results(pair_results_path)  # type: ignore[arg-type]
+        if not Path(pair_results_path).exists():
+            raise FileNotFoundError(
+                f"pair_results_path does not exist: {pair_results_path}"
+            )
+        # A malformed artifact raises its parse/validation error here.
+        pair_results = read_pair_results(pair_results_path)
     else:
         if features_path is None or classifications_path is None:
             raise ValueError(
@@ -234,13 +423,14 @@ def load_saved_run(
     annotations = _load_annotations(annotations_path)
 
     items: list[ResultRenderInput] = []
-    skipped: list[str] = []
+    skipped: list[SavedRunSkip] = []
 
-    def skip(message: str) -> None:
+    def skip(pair_id: str, reason: SkipReason, detail: str) -> None:
         if strict:
-            raise RuntimeError(message)
-        skipped.append(message)
-        print(f"WARNING: {message}", file=sys.stderr)
+            raise RuntimeError(f"{reason.value}: {pair_id} — {detail}")
+        skipped.append(SavedRunSkip(pair_id=pair_id, reason=reason, detail=detail))
+        print(f"WARNING: skipping {pair_id} ({reason.value}): {detail}",
+              file=sys.stderr)
 
     for pair in pairs:
         pid = pair.pair_id
@@ -250,25 +440,28 @@ def load_saved_run(
         if source == "pair_results":
             result = pair_results.get(pid)
             if result is None:
-                skip(f"Skipping {pid}: no entry in pair_results.json")
+                skip(pid, SkipReason.MISSING_RESULT,
+                     "no entry in pair_results artifact")
                 continue
         else:
             features = features_by_pair.get(pid)
             if features is None:
-                skip(f"Skipping {pid}: missing features")
+                skip(pid, SkipReason.MISSING_FEATURES,
+                     "no entry in features artifact")
                 continue
             classification = classifications_by_pair.get(pid)
             if classification is None:
-                skip(f"Skipping {pid}: missing classification")
+                skip(pid, SkipReason.MISSING_CLASSIFICATION,
+                     "no entry in classifications artifact")
                 continue
 
         report_1 = reports.get(r1_id)
         report_2 = reports.get(r2_id)
         if report_1 is None:
-            skip(f"Skipping {pid}: missing report {r1_id}")
+            skip(pid, SkipReason.MISSING_REPORT_1, f"missing report {r1_id}")
             continue
         if report_2 is None:
-            skip(f"Skipping {pid}: missing report {r2_id}")
+            skip(pid, SkipReason.MISSING_REPORT_2, f"missing report {r2_id}")
             continue
 
         if source == "split":
@@ -281,11 +474,16 @@ def load_saved_run(
                 narrative_demographics_2=demographics_by_report.get(r2_id),
             )
 
-        external_url = (
-            external_url_builder(r1_id, r2_id)
-            if external_url_builder is not None
-            else None
-        )
+        external_url: str | None = None
+        if external_url_builder is not None:
+            try:
+                external_url = external_url_builder(r1_id, r2_id)
+            except Exception as exc:  # caller-supplied callback; never fatal
+                print(
+                    f"WARNING: external_url_builder failed for {pid} "
+                    f"({r1_id}, {r2_id}); rendering without a link: {exc}",
+                    file=sys.stderr,
+                )
         items.append(
             ResultRenderInput(
                 result=result,
