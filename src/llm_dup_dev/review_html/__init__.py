@@ -318,6 +318,14 @@ def render_results_html(
     )
 
 
+# Imported last: saved_run depends on ResultRenderInput / render_results_html
+# defined above, and imports them back via ``from . import ...``.
+from .saved_run import (  # noqa: E402
+    SavedRunSummary,
+    load_saved_run,
+    render_saved_run,
+)
+
 __all__ = [
     "AnnotationVM",
     "BatchIndexItem",
@@ -328,8 +336,11 @@ __all__ = [
     "PairResult",
     "PairViewModel",
     "ResultRenderInput",
+    "SavedRunSummary",
+    "load_saved_run",
     "render_batch_html",
     "render_pair_html",
     "render_result_html",
     "render_results_html",
+    "render_saved_run",
 ]
