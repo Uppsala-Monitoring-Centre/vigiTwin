@@ -16,11 +16,24 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
+from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
+from llm_dup_dev.models.enums import AEClinicalPictureStatus
+from llm_dup_dev.models.narrative_demographics import (
+    NarrativeAgeValue,
+    NarrativeDemographics,
+)
+from llm_dup_dev.models.narrative_source_case import (
+    SourceCaseAssessment,
+    SourceCaseVerdict,
+)
+from llm_dup_dev.models.pair_features import AEClinicalPictureResult
 from llm_dup_dev.pipeline.export import (
     read_classifications,
     read_pair_features,
+    read_pair_results,
     write_classifications,
     write_pair_features,
+    write_pair_results,
 )
 from llm_dup_dev.pipeline.runner import PairResult
 
@@ -51,6 +64,38 @@ def _features(pair_id="R001__R002", moderate=1):
 def _result(pair_id="R001__R002"):
     f = _features(pair_id)
     return PairResult(pair_id=pair_id, features=f, classification=classify(f))
+
+
+def _full_result(pair_id="R001__R002"):
+    """A PairResult with every optional field populated."""
+    f = _features(pair_id)
+    return PairResult(
+        pair_id=pair_id,
+        features=f,
+        classification=classify(f),
+        narrative_verdict=NarrativeVerdict(
+            consistency=NarrativeConsistency.CONSISTENT,
+            evidence=["both mention a 54-year-old female on pregabalin"],
+            reasoning="Narratives align.",
+        ),
+        ae_clinical_picture=AEClinicalPictureResult(
+            status=AEClinicalPictureStatus.ASSESSED,
+            method="rule_based",
+            reasoning="No decisive AE mismatch.",
+        ),
+        source_case_assessment=SourceCaseAssessment(
+            verdict=SourceCaseVerdict.NO_DECISIVE_SIGNAL,
+            reasoning="No shared source identifier.",
+        ),
+        narrative_demographics_1=NarrativeDemographics(
+            ages=[NarrativeAgeValue(value=54, evidence="54-year-old")],
+            notes="report 1",
+        ),
+        narrative_demographics_2=NarrativeDemographics(
+            ages=[NarrativeAgeValue(value=55, evidence="55yo")],
+            notes="report 2",
+        ),
+    )
 
 
 # ===================================================================
@@ -184,3 +229,114 @@ class TestStoredFeaturesReDecideIdentically:
                 classify(restored[result.pair_id]).explanation
                 == result.classification.explanation
             )
+
+
+# ===================================================================
+# PairResult (whole pair_results.json artifact)
+# ===================================================================
+
+class TestPairResultsRoundTrip:
+    def test_full_result_is_lossless(self, tmp_path):
+        """Every field, including all optionals, survives a round trip."""
+        original = _full_result()
+        path = tmp_path / "pair_results.json"
+        write_pair_results([original], path)
+
+        restored = read_pair_results(path)
+        assert set(restored) == {"R001__R002"}
+        assert restored["R001__R002"] == original
+
+    def test_minimal_result_keeps_optionals_none(self, tmp_path):
+        """Absent optionals write as JSON null and read back as None."""
+        path = tmp_path / "pair_results.json"
+        write_pair_results([_result()], path)
+
+        raw = json.loads(path.read_text())["R001__R002"]
+        for key in (
+            "narrative_verdict",
+            "ae_clinical_picture",
+            "source_case_assessment",
+            "narrative_demographics_1",
+            "narrative_demographics_2",
+        ):
+            assert raw[key] is None
+
+        restored = read_pair_results(path)["R001__R002"]
+        assert restored.narrative_verdict is None
+        assert restored.ae_clinical_picture is None
+        assert restored.source_case_assessment is None
+        assert restored.narrative_demographics_1 is None
+        assert restored.narrative_demographics_2 is None
+
+    def test_keyed_by_pair_id_with_documented_fields(self, tmp_path):
+        path = tmp_path / "pair_results.json"
+        write_pair_results([_full_result("A__B")], path)
+        raw = json.loads(path.read_text())
+        assert set(raw) == {"A__B"}
+        assert set(raw["A__B"]) == {
+            "final_label",
+            "features",
+            "classification",
+            "narrative_verdict",
+            "ae_clinical_picture",
+            "source_case_assessment",
+            "narrative_demographics_1",
+            "narrative_demographics_2",
+        }
+
+    def test_final_label_is_written_but_recomputed_on_read(self, tmp_path):
+        """final_label is a derived property: written for parity, not trusted.
+
+        A tampered final_label in the file must not survive read — the value
+        is recomputed from the restored classification.
+        """
+        result = _full_result()
+        path = tmp_path / "pair_results.json"
+        write_pair_results([result], path)
+
+        raw = json.loads(path.read_text())
+        assert raw["R001__R002"]["final_label"] == result.final_label
+        raw["R001__R002"]["final_label"] = "Bogus"
+        path.write_text(json.dumps(raw))
+
+        restored = read_pair_results(path)["R001__R002"]
+        assert restored.final_label == result.classification.final_label
+
+    def test_empty_results_write_an_empty_mapping(self, tmp_path):
+        path = tmp_path / "pair_results.json"
+        write_pair_results([], path)
+        assert read_pair_results(path) == {}
+
+    def test_reads_secure_shaped_payload(self, tmp_path):
+        """A hand-built payload mirroring the secure runner loads cleanly.
+
+        Guards compatibility with the secure ``pair_results.json``: an object
+        keyed by pair_id whose values carry the eight fields, optionals null.
+        """
+        result = _full_result("R001__R002")
+        payload = {
+            "R001__R002": {
+                "final_label": result.final_label,
+                "features": result.features.model_dump(mode="json"),
+                "classification": result.classification.model_dump(mode="json"),
+                "narrative_verdict": result.narrative_verdict.model_dump(
+                    mode="json"
+                ),
+                "ae_clinical_picture": result.ae_clinical_picture.model_dump(
+                    mode="json"
+                ),
+                "source_case_assessment": (
+                    result.source_case_assessment.model_dump(mode="json")
+                ),
+                "narrative_demographics_1": None,
+                "narrative_demographics_2": None,
+            }
+        }
+        path = tmp_path / "pair_results.json"
+        path.write_text(json.dumps(payload, indent=2))
+
+        restored = read_pair_results(path)["R001__R002"]
+        assert restored.pair_id == "R001__R002"
+        assert restored.features == result.features
+        assert restored.narrative_verdict == result.narrative_verdict
+        assert restored.narrative_demographics_1 is None

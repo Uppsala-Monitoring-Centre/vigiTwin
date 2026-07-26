@@ -42,3 +42,6 @@ outputs/
 # Allow JSON schemas and examples to be tracked
 !schemas/*.json
 !examples/*.json
+
+# Read-only secure-side architectural references — never tracked
+_reference_secure_side/
