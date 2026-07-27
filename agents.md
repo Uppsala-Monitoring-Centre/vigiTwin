@@ -167,6 +167,27 @@ DB connection details live in the secure companion repo.
 - Data files (`.csv`, `.parquet`, `.pkl`, `.json`, `.xlsx`) should not be saved 
 in this repo and as an extra precaution are gitignored — never commit them
 
+### Versioning
+- The single source of truth is `version` in `pyproject.toml`; it is
+  SemVer and consumed at runtime (baked into manifests as
+  `dev_package.version`).
+- **Exact identity vs. semantic meaning are split across two manifest
+  fields.** `dev_git_commit` records *which precise code ran* (unique,
+  automatic). `dev_package.version` records *the state of the consumer
+  contract* — it is deliberately sticky and changes only when that
+  contract changes. Don't couple the version to git; the commit already
+  identifies the code.
+- **The contract = the JSON schemas + the public API the secure repo
+  imports.** Bump the version in the *same PR* that changes any
+  `schemas/*.schema.json` or a public API shape:
+  - pre-1.0: breaking change (renamed/removed field, changed manifest
+    shape or label semantics) → minor (`0.2.0` → `0.3.0`); additive or
+    backward-compatible change / fix → patch (`0.2.0` → `0.2.1`).
+  - reserve `1.0.0` for a deliberately-declared stable schema/API.
+- Record every bump in `CHANGELOG.md` under a new version heading —
+  that file carries the "what changed for consumers" narrative that
+  neither the SHA nor the version number expresses on its own.
+
 ## What This Repo Is NOT
 - No UI layer — HTML snippets are embedded in a larger calling system
 - No real data or sensitive information — all credentials are in environment variables or the secure companion repo
