@@ -122,14 +122,25 @@ def run_analysis(
     """Step 1 — validate, compute estimates, and (optionally) sample SCLE cases.
 
     ``reference_sets`` may mix precision- and recall-role sets. ``sample_scle``
-    draws the SCLE case list; it is only defined for the primary variant, so a
-    non-primary variant must pass ``sample_scle=False`` (this is how the
-    secondary analyses run — aggregate only, no SCLE).
+    draws the SCLE case list; its strata (confusion cells / joint strata) are
+    computed under ``variant``. A study typically samples SCLE under the
+    ``PRIMARY`` configuration and runs secondary analyses aggregate-only
+    (``sample_scle=False``); sampling SCLE under a non-primary variant is allowed
+    but warns, since the resulting strata then reflect that variant's positivity
+    rule. Enforcing "SCLE only on primary" is a study-execution policy, so it
+    lives in the caller, not here.
     """
     if sample_scle and variant != AnalysisVariant.PRIMARY:
-        raise ValueError(
-            "SCLE sampling is only defined for the primary variant; pass "
-            "sample_scle=False for secondary analyses."
+        import warnings
+
+        warnings.warn(
+            f"Sampling SCLE cases under a non-primary variant "
+            f"({variant.value!r}): the SCLE strata will reflect that variant's "
+            f"positivity rule rather than the primary confusion matrix. Studies "
+            f"usually sample SCLE under the primary configuration — pass "
+            f"variant=AnalysisVariant.PRIMARY (or sample_scle=False) if that is "
+            f"what you intend.",
+            stacklevel=2,
         )
 
     precision_sets = [s for s in reference_sets if s.role == "precision"]

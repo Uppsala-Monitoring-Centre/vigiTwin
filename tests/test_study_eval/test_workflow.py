@@ -81,15 +81,18 @@ def test_secondary_analysis_is_step1_only_no_scle():
     assert result.variant == "abstain_positive"
 
 
-def test_scle_with_nonprimary_variant_is_rejected():
+def test_scle_with_nonprimary_variant_warns_but_samples():
     import pytest
 
     reference_sets, predictions = _combined_inputs()
-    with pytest.raises(ValueError, match="only defined for the primary"):
-        workflow.run_analysis(
+    with pytest.warns(UserWarning, match="non-primary variant"):
+        result = workflow.run_analysis(
             reference_sets, predictions, seed="s", sample_scle=True,
             variant=AnalysisVariant.ABSTAIN_POSITIVE,
         )
+    # Sampling still happens; strata reflect the chosen variant.
+    assert result.scle_samples != {}
+    assert result.variant == "abstain_positive"
 
 
 def _fill_arbitration(path, discrepancy):
