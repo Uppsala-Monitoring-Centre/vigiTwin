@@ -160,14 +160,17 @@ input contracts; use them as fixtures in the secure repo's tests.
    one *homogeneous* set per provenance. `role="precision"` carries a per-pair
    `reference_label`; `role="recall"` is positive controls (label absent or
    `"duplicate"`).
-2. **Build a `PredictionSet` per frozen configuration** from the frozen
-   `PipelineRunner` output: `PairResult.final_label` → `adjudicator_label`, the
-   pair's screening (vigiMatch) candidate membership → `screening_retrieved`, and
-   `PairResult.classification` → the optional `ClassificationResult` trace
-   (include it — it populates the reviewer workbook's Decision-trace column and
-   is consistency-checked). For **recall**, the adjudicator must be run under
-   **complete candidate coverage**: a prediction for *every* sampled pair,
-   regardless of screening.
+2. **Build a `PredictionSet` per frozen configuration** from the frozen run.
+   A frozen `PipelineRunner` run persists its `PairResult`s via
+   `pipeline.export.write_pair_results(...)`; read them back with
+   `pipeline.export.read_pair_results(path) -> {pair_id: PairResult}` and map:
+   `PairResult.final_label` → `adjudicator_label`, `PairResult.classification`
+   → the optional `ClassificationResult` trace (include it — it populates the
+   reviewer workbook's Decision-trace column and is consistency-checked), and the
+   pair's screening (vigiMatch) candidate membership → `screening_retrieved`
+   (secure-side knowledge, not part of `PairResult`). For **recall**, the
+   adjudicator must be run under **complete candidate coverage**: a prediction for
+   *every* sampled pair, regardless of screening.
 
 ### Worked example (secure side)
 
@@ -194,30 +197,39 @@ def to_reference_set(frozen_set) -> ReferenceSet:
         ],
     )
 
-def to_prediction_set(frozen_run) -> PredictionSet:
+# The frozen run persists its PairResults with
+# pipeline.export.write_pair_results(...); read them back keyed by pair_id.
+from llm_dup_dev.pipeline.export import read_pair_results
+
+def to_prediction_set(pair_results_path, config_id, screened_pair_ids) -> PredictionSet:
+    results = read_pair_results(pair_results_path)   # {pair_id: PairResult}
     return PredictionSet(
-        configuration_id=frozen_run.config_id,   # "primary", "llm_ae_clinical_picture", ...
+        configuration_id=config_id,               # "primary", "llm_ae_clinical_picture", ...
         predictions={
-            res.pair_id: PairPrediction(
-                pair_id=res.pair_id,
-                adjudicator_label=res.final_label,
-                screening_retrieved=frozen_run.vigimatch_flagged(res.pair_id),
-                classification=res.classification,   # the frozen decision trace
+            pid: PairPrediction(
+                pair_id=pid,
+                adjudicator_label=res.final_label,     # PairResult property
+                screening_retrieved=pid in screened_pair_ids,  # secure-side knowledge
+                classification=res.classification,     # the frozen decision trace
             )
-            for res in frozen_run.results
+            for pid, res in results.items()
         },
     )
 
 class SecurePacketProvider:                       # confidential content stays secure-side
+    def __init__(self, pair_results):             # {pair_id: PairResult}
+        self._results = pair_results
     def get(self, pair_id: str) -> PacketContent:
         r1, r2 = pair_id.split("__")
+        res = self._results[pair_id]
         return PacketContent(report_1=load_report(r1), report_2=load_report(r2),
-                             classification=frozen_run.classification(pair_id))
+                             features=res.features, classification=res.classification)
 
 # --- run the four steps (primary), all outputs inside the secure environment ---
 prec = to_reference_set(frozen_precision_set)
 recalls = [to_reference_set(s) for s in frozen_recall_sets]
-predictions = to_prediction_set(frozen_primary_run)
+predictions = to_prediction_set(
+    PRIMARY_RUN / "pair_results.json", "primary", screened_pair_ids)
 
 analysis = workflow.run_analysis(
     [prec, *recalls], predictions,
@@ -228,7 +240,9 @@ sample = analysis.scle_samples[f"precision::{prec.set_id}"]
 
 # render packets into a packets/ folder beside the workbooks so the links resolve
 from llm_dup_dev.study_eval.scle.packets import generate_packets
-generate_packets(sample, SecurePacketProvider(), SECURE_OUT / "review" / "packets")
+primary_results = read_pair_results(PRIMARY_RUN / "pair_results.json")
+generate_packets(sample, SecurePacketProvider(primary_results),
+                 SECURE_OUT / "review" / "packets")
 
 books = workflow.generate_reviewer_workbooks(sample, ["reviewer_1", "reviewer_2"],
                                              SECURE_OUT / "review")   # packet_dir="packets"
@@ -238,8 +252,10 @@ build = workflow.build_arbitration(sample, books, SECURE_OUT / "arb", arbiter_id
 final = workflow.finalize(sample, books, build.arbitration_workbook, SECURE_OUT / "final")
 
 # secondary analyses = Step 1 only, no SCLE:
-workflow.run_analysis([prec], to_prediction_set(frozen_llm_ae_run),
-                      seed=STUDY_SEED, sample_scle=False, output_dir=SECURE_OUT / "sec_llm")
+workflow.run_analysis(
+    [prec], to_prediction_set(LLM_AE_RUN / "pair_results.json",
+                              "llm_ae_clinical_picture", screened_pair_ids),
+    seed=STUDY_SEED, sample_scle=False, output_dir=SECURE_OUT / "sec_llm")
 from llm_dup_dev.study_eval import AnalysisVariant
 workflow.run_analysis([prec], predictions, seed=STUDY_SEED, sample_scle=False,
                       variant=AnalysisVariant.ABSTAIN_POSITIVE, output_dir=SECURE_OUT / "sec_abstain")
@@ -251,6 +267,15 @@ Implement `PacketContentProvider`
 confidential storage for the static review packets; confidential content never
 enters the generic schemas. Put the packets in a `packets/` subfolder **beside
 the workbooks** so the per-row Packet hyperlinks resolve.
+
+The packets can be produced two ways, and the workbook links resolve for either
+because both use the same filename scheme (`review_html`'s `_safe_filename`):
+`study_eval.scle.packets.generate_packets` (shown above — it also surfaces the
+reference label on the page), or, if you already have a saved run on disk,
+`review_html.load_saved_run` / `render_saved_run`
+([review_html/saved_run.py](../src/llm_dup_dev/review_html/saved_run.py)), which
+reconstructs the run from its `pair_results.json` and renders every pair. Render
+the SCLE-sampled pairs into `packets/` either way.
 
 ### Pre-flight checklist
 - [ ] `ReferenceSet` / `PredictionSet` round-trip against the committed schemas.
