@@ -172,6 +172,14 @@ input contracts; use them as fixtures in the secure repo's tests.
    adjudicator must be run under **complete candidate coverage**: a prediction for
    *every* sampled pair, regardless of screening.
 
+> **Data boundary.** In this repo the frozen run and its `pair_results.json` are
+> **synthetic** (tests, examples, the `outputs/` demo). On the secure side they
+> are **real** (real-derived `PairFeatures` / `ClassificationResult`, and packets
+> load real `Report`s) — that is what the study evaluates. Real `pair_results`
+> and packets stay inside the secure environment and never reach the dev repo;
+> `write_pair_results` / `read_pair_results` are just serialization and don't
+> change that boundary.
+
 ### Worked example (secure side)
 
 ```python
