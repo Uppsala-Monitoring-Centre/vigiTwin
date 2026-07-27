@@ -101,13 +101,24 @@ Two model families, both in
   ([stats.py](../src/llm_dup_dev/study_eval/stats.py)); `ci_method` is recorded
   on every estimate.
 
-## Secondary analyses
+## Analysis variants and secondary analyses
 
-Secondary analyses are **not** part of the SCLE workflow. Run them as **Step 1
-only** with `sample_scle=False`, either passing a different `PredictionSet`
-(a genuinely different frozen configuration) or a re-interpretation `variant`
-(`AnalysisVariant.ABSTAIN_POSITIVE` / `OTHERWISE_RELATED_POSITIVE`). They produce
+`run_analysis` takes a `variant` that sets the positive class over the four-value
+adjudicator output: `PRIMARY` (positive = `Duplicates`), `ABSTAIN_POSITIVE`, or
+`OTHERWISE_RELATED_POSITIVE`. The variant drives both the aggregate estimates and
+— when `sample_scle=True` — the SCLE strata (confusion cells / joint strata).
+
+For **this** study, SCLE is examined on the primary configuration and the
+secondary analyses are aggregate-only, so run secondaries as **Step 1 with
+`sample_scle=False`** (passing a re-interpretation `variant`, or a different
+`PredictionSet` for a genuinely different frozen configuration). That produces
 the aggregate tables and the per-pair prediction table, no SCLE artifacts.
+
+Sampling SCLE under a non-primary variant is **allowed but warns** — the strata
+then reflect that variant's positivity rule. "SCLE only on primary" is a
+study-execution policy, not a package rule, so the package permits either and
+leaves the choice to the caller; a future study could deliberately sample SCLE
+under a different rule.
 
 ## SCLE reviewer workflow details
 
@@ -131,26 +142,127 @@ the aggregate tables and the per-pair prediction table, no SCLE artifacts.
 
 ## Secure-side integration
 
-The secure adapter:
+The secure-side adapter is deliberately thin: its whole job is to **map frozen
+data into the two input models, then call the four workflow functions**. It does
+not reimplement metrics, CIs, sampling, or workbook logic — the package owns all
+of that. The package is installed into the secure repo as `llm-dup-dev[study]`
+(the `study` extra pulls `openpyxl`); pin the exact version you validate against.
 
-1. **Builds the input models** from the frozen run: a `ReferenceSet` per
-   reference set (already constructed), and one `PredictionSet` per frozen
-   configuration (`adjudicator_label` + `screening_retrieved`, optionally the
-   `ClassificationResult` trace). For recall, the adjudicator must be run under
-   complete candidate coverage (a prediction for every sampled pair). Pair ids
-   are orientation-sensitive (`{report_id1}__{report_id2}`) and must be
-   consistent across the reference sets and the predictions.
-2. **Implements `PacketContentProvider`**
-   ([scle/packets.py](../src/llm_dup_dev/study_eval/scle/packets.py)) over
-   confidential storage if it wants static per-pair review packets (built on
-   `review_html`). Confidential content never enters the generic schemas.
-3. **Runs the four steps in order**, storing all workbooks and outputs inside the
-   secure environment, and re-runs Step 1 (with `sample_scle=False`) for each
-   secondary configuration.
+The committed `schemas/study_reference_set.schema.json` and
+`schemas/study_prediction_set.schema.json` (with their `examples/`) are the exact
+input contracts; use them as fixtures in the secure repo's tests.
 
-Before workbooks are generated, freeze the `FEATURE_DOMAINS` list in
-[scle/form.py](../src/llm_dup_dev/study_eval/scle/form.py) and note the
-confidence-interval method (this package prespecifies Wilson).
+### The adapter's two responsibilities
+
+1. **Build a `ReferenceSet` per reference set.** These arrive **already
+   constructed** — the secure side does all set-construction sampling
+   (one-per-cluster, held-out eligibility, manual/E2B prioritisation) and sends
+   one *homogeneous* set per provenance. `role="precision"` carries a per-pair
+   `reference_label`; `role="recall"` is positive controls (label absent or
+   `"duplicate"`).
+2. **Build a `PredictionSet` per frozen configuration** from the frozen
+   `PipelineRunner` output: `PairResult.final_label` → `adjudicator_label`, the
+   pair's screening (vigiMatch) candidate membership → `screening_retrieved`, and
+   `PairResult.classification` → the optional `ClassificationResult` trace
+   (include it — it populates the reviewer workbook's Decision-trace column and
+   is consistency-checked). For **recall**, the adjudicator must be run under
+   **complete candidate coverage**: a prediction for *every* sampled pair,
+   regardless of screening.
+
+### Worked example (secure side)
+
+```python
+# secure repo — illustrative; the loaders/PipelineRunner are yours.
+from llm_dup_dev.study_eval import (
+    ReferencePair, ReferenceSet, PairPrediction, PredictionSet, workflow,
+)
+from llm_dup_dev.study_eval.scle.packets import PacketContent
+
+def to_reference_set(frozen_set) -> ReferenceSet:
+    return ReferenceSet(
+        set_id=frozen_set.id,
+        role=frozen_set.role,                     # "precision" | "recall"
+        provenance=frozen_set.provenance,         # one homogeneous set per provenance
+        pairs=[
+            ReferencePair(
+                pair_id=f"{r1}__{r2}",            # keep ONE orientation everywhere
+                report_id1=r1, report_id2=r2,
+                cluster_id=cluster,               # optional metadata
+                reference_label=label,            # required for precision; omit for recall
+            )
+            for (r1, r2, cluster, label) in frozen_set.rows
+        ],
+    )
+
+def to_prediction_set(frozen_run) -> PredictionSet:
+    return PredictionSet(
+        configuration_id=frozen_run.config_id,   # "primary", "llm_ae_clinical_picture", ...
+        predictions={
+            res.pair_id: PairPrediction(
+                pair_id=res.pair_id,
+                adjudicator_label=res.final_label,
+                screening_retrieved=frozen_run.vigimatch_flagged(res.pair_id),
+                classification=res.classification,   # the frozen decision trace
+            )
+            for res in frozen_run.results
+        },
+    )
+
+class SecurePacketProvider:                       # confidential content stays secure-side
+    def get(self, pair_id: str) -> PacketContent:
+        r1, r2 = pair_id.split("__")
+        return PacketContent(report_1=load_report(r1), report_2=load_report(r2),
+                             classification=frozen_run.classification(pair_id))
+
+# --- run the four steps (primary), all outputs inside the secure environment ---
+prec = to_reference_set(frozen_precision_set)
+recalls = [to_reference_set(s) for s in frozen_recall_sets]
+predictions = to_prediction_set(frozen_primary_run)
+
+analysis = workflow.run_analysis(
+    [prec, *recalls], predictions,
+    seed=STUDY_SEED, scle_precision_per_cell=10, scle_recall_per_stratum=10,
+    output_dir=SECURE_OUT / "analysis",
+)
+sample = analysis.scle_samples[f"precision::{prec.set_id}"]
+
+# render packets into a packets/ folder beside the workbooks so the links resolve
+from llm_dup_dev.study_eval.scle.packets import generate_packets
+generate_packets(sample, SecurePacketProvider(), SECURE_OUT / "review" / "packets")
+
+books = workflow.generate_reviewer_workbooks(sample, ["reviewer_1", "reviewer_2"],
+                                             SECURE_OUT / "review")   # packet_dir="packets"
+# ... two reviewers fill their workbooks ...
+build = workflow.build_arbitration(sample, books, SECURE_OUT / "arb", arbiter_id="annotator")
+# ... arbiter fills the arbitration workbook ...
+final = workflow.finalize(sample, books, build.arbitration_workbook, SECURE_OUT / "final")
+
+# secondary analyses = Step 1 only, no SCLE:
+workflow.run_analysis([prec], to_prediction_set(frozen_llm_ae_run),
+                      seed=STUDY_SEED, sample_scle=False, output_dir=SECURE_OUT / "sec_llm")
+from llm_dup_dev.study_eval import AnalysisVariant
+workflow.run_analysis([prec], predictions, seed=STUDY_SEED, sample_scle=False,
+                      variant=AnalysisVariant.ABSTAIN_POSITIVE, output_dir=SECURE_OUT / "sec_abstain")
+```
+
+### Confidential content
+Implement `PacketContentProvider`
+([scle/packets.py](../src/llm_dup_dev/study_eval/scle/packets.py)) over
+confidential storage for the static review packets; confidential content never
+enters the generic schemas. Put the packets in a `packets/` subfolder **beside
+the workbooks** so the per-row Packet hyperlinks resolve.
+
+### Pre-flight checklist
+- [ ] `ReferenceSet` / `PredictionSet` round-trip against the committed schemas.
+- [ ] `pair_id` orientation identical between reference sets and predictions.
+- [ ] Recall predictions cover **every** sampled pair; precision pairs are all
+  `screening_retrieved` (when `screening_required=True`).
+- [ ] `FEATURE_DOMAINS` ([scle/form.py](../src/llm_dup_dev/study_eval/scle/form.py)),
+  the CI method (Wilson), and the sampling `seed` are frozen and recorded.
+- [ ] Read submissions/arbitration back through `read_reviewer_submission` /
+  `read_arbitration` (Excel protection is advisory; these are the source of truth).
+- [ ] Secondary configurations run as Step-1-only (`sample_scle=False`).
+- [ ] All workbooks, packets, and outputs stored inside the secure environment.
 
 ## Regenerating schemas and examples
 
