@@ -107,6 +107,7 @@ def _auto_context(pair_id, cell, mis, disagree):
     return SCLEAutoContext(
         pair_id=pair_id,
         evaluation_component="precision",
+        reference_set_id="precision_primary",
         reference_label="duplicate",
         adjudicator_final_label="Duplicates" if not mis else "Otherwise_related",
         screening_retrieved=True,
@@ -125,12 +126,14 @@ def _scle_sample():
             SCLECase(
                 pair_id="R001__R002",
                 evaluation_component="precision",
+                reference_set_id="precision_primary",
                 stratum="TP",
                 auto_context=_auto_context("R001__R002", "TP", False, False),
             ),
             SCLECase(
                 pair_id="R003__R004",
                 evaluation_component="precision",
+                reference_set_id="precision_primary",
                 stratum="FN",
                 auto_context=_auto_context("R003__R004", "FN", True, True),
             ),
@@ -139,6 +142,7 @@ def _scle_sample():
             SCLECase(
                 pair_id="R005__R006",
                 evaluation_component="precision",
+                reference_set_id="precision_primary",
                 stratum="TP",
                 backup_rank=1,
                 auto_context=_auto_context("R005__R006", "TP", False, False),

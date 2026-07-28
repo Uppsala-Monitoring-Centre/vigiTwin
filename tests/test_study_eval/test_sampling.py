@@ -11,7 +11,11 @@ from llm_dup_dev.study_eval.sampling import (
     sample_scle_recall,
 )
 
-from tests.test_study_eval.conftest import make_precision, make_recall
+from tests.test_study_eval.conftest import (
+    build_scle_precision_sample,
+    make_precision,
+    make_recall,
+)
 
 # Golden order pinned for a fixed synthetic input + seed (20 TP pairs, per_cell=3).
 # A change here means the sampling internals changed and must be re-blessed.
@@ -62,6 +66,18 @@ def test_takes_all_when_under_cap_no_backups():
     assert s.backups == []
 
 
+def test_precision_preserves_reference_set_id():
+    # 15 pairs in one cell with per_cell=5 -> 5 primary + 10 backups, so the
+    # assertions below exercise both primary and backup cases.
+    spec = [("duplicate", "Duplicates")] * 15
+    reference_set, _preds, s = build_scle_precision_sample(spec, per_cell=5)
+    assert reference_set.set_id == "p_set"
+    assert s.cases and s.backups  # guard: the assertions below must see both kinds
+    for case in [*s.cases, *s.backups]:
+        assert case.reference_set_id == "p_set"
+        assert case.auto_context.reference_set_id == "p_set"
+
+
 def test_different_seed_changes_draw():
     rset, preds = _all_tp(20)
     res = run_precision_analysis(rset, preds)
@@ -83,6 +99,26 @@ def test_recall_caps_per_stratum_per_set():
     assert all(c.reference_set_id == "fda_gold" for c in s.cases)
     # 8 per stratum, cap 5 -> 3 backups each.
     assert len([c for c in s.backups if c.stratum == "both"]) == 3
+
+
+def test_recall_preserves_per_set_reference_set_id():
+    # Two reference sets in one recall sample; each pair's provenance must match
+    # the set it came from (pairs are named "{set_id}_{i}__x").
+    rsets, preds = make_recall(
+        {
+            "fda_gold": [(True, "Duplicates")] * 6 + [(False, "Unrelated")] * 6,
+            "cochrane_gold": [(True, "Duplicates")] * 6 + [(False, "Unrelated")] * 6,
+        }
+    )
+    result = run_recall_analysis(rsets, preds)
+    s = sample_scle_recall(result, preds, per_stratum=3, seed="s")
+    seen = set()
+    for case in [*s.cases, *s.backups]:
+        expected = case.pair_id.split("_")[0] + "_gold"
+        assert case.reference_set_id == expected
+        assert case.auto_context.reference_set_id == expected
+        seen.add(case.reference_set_id)
+    assert seen == {"fda_gold", "cochrane_gold"}  # both sets are represented
 
 
 def test_promote_backup_swaps_in_next_ranked():
