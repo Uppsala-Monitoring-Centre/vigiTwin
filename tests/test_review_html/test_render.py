@@ -477,19 +477,19 @@ def _make_features(pair_id: str = "R001__R002") -> PairFeatures:
         ),
         probability=ProbabilityEstimate(
             p_joint=1.5e-5, p_match=0.075,
+            # DRUGS_AES anchor: the drug and AE sets *are* the anchor, so the
+            # pipeline excludes them from the probability decomposition to
+            # avoid double-counting (see feature_generation.probability). The
+            # only additional matching evidence is therefore demographic.
             feature_contributions=[
                 FeatureContribution(
                     feature="patient_sex", p_f=0.5, method="domain_size",
                     domain_size=2, description="patient_sex: D_f=2",
                 ),
-                FeatureContribution(
-                    feature="drug_set", p_f=0.01, method="leave_pair_out",
-                    description="Drug set: (5-2)/(200-2)",
-                ),
             ],
         ),
         L_match=3.8,
-        # patient_sex only: -log10(0.5). drug_set is excluded from L_patient.
+        # patient_sex only: -log10(0.5).
         L_patient=0.30103,
         inconsistencies=[
             Inconsistency(
@@ -706,10 +706,13 @@ class TestPredictionRendering:
         assert item.anchor_n == 40
         # Context: country + year extracted from the reporting context
         assert item.context_label == "US 2020"
-        # Matching features shows the actual values behind each contribution
+        # Matching features shows the additional (non-anchor) evidence.
         assert item.matching_features is not None
         assert "female" in item.matching_features
-        assert "pregabalin" in item.matching_features
+        # The drug and AE sets ARE the anchor here, so they must not reappear
+        # as additional matching features (no double-counting).
+        assert "pregabalin" not in item.matching_features
+        assert "somnolence" not in item.matching_features
 
     def test_batch_index_renders_evaluation_columns(self, report_a, report_b):
         """Rendered index HTML includes the new column set."""
@@ -774,9 +777,6 @@ class TestPredictionRendering:
         assert "<strong>pregabalin</strong>" in item.anchor_label
         assert "<strong>somnolence" not in item.anchor_label
 
-        # Matching features: pregabalin bolded
-        assert "<strong>pregabalin</strong>" in item.matching_features
-
         # Rendered HTML: bold tags survive rendering
         html = render_index([item])
         assert "<strong>pregabalin</strong>" in html
@@ -794,6 +794,46 @@ class TestPredictionRendering:
         # No drugs have explicit suspected/interacting role → no bolding
         assert "<strong>" not in (item.anchor_label or "")
         assert "<strong>" not in (item.matching_features or "")
+
+    def test_key_drug_bolded_in_matching_features_aes_anchor(
+        self, report_a, report_b
+    ):
+        """With an AEs anchor the drug set is a legitimate additional feature,
+        so a suspected drug appears — bolded — in the matching-features chip.
+
+        The main ``_make_features`` fixture uses a DRUGS_AES anchor, where the
+        drug set is the anchor and thus never an additional feature; this
+        covers the complementary anchor type.
+        """
+        from llm_dup_dev.models.enums import AnchorType, DrugRole
+        from llm_dup_dev.models.pair_features import AnchorPopulation
+        from llm_dup_dev.models.report import Drug
+
+        r_a = report_a.model_copy(deep=True)
+        r_a.drugs = [Drug(substance="pregabalin", sources=["s"], role=DrugRole.SUSPECTED)]
+        r_b = report_b.model_copy(deep=True)
+        r_b.drugs = [Drug(substance="pregabalin", sources=["s"], role=DrugRole.SUSPECTED)]
+
+        features = _make_features()
+        # AEs anchor: the drug set is now an additional feature (not the anchor).
+        features.anchor = AnchorPopulation(
+            N_drugs=200, N_AEs=20, N_drugs_AEs=8,
+            type=AnchorType.AES, N_anchor=20,
+        )
+        features.probability.feature_contributions.append(
+            FeatureContribution(
+                feature="drug_set", p_f=0.01, method="leave_pair_out",
+                description="Drug set: leave-pair-out",
+            )
+        )
+        vm = build_pair_view_model(
+            r_a, r_b, pair_id="R001__R002",
+            features=features, classification=_make_classification(),
+        )
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+        item = build_batch_index_item(vm, "R001__R002.html")
+
+        assert "<strong>pregabalin</strong>" in item.matching_features
 
     def test_relationship_label_in_decision_summary(self, report_a, report_b):
         """Relationship label appears when classification is Otherwise_related."""
@@ -1417,7 +1457,7 @@ class TestLPatientRendering:
         """The value appears, and is the patient-specific one — not L_match."""
         features = _make_features()
         features.L_match = 3.8
-        features.L_patient = 0.30103          # sex only; drug_set excluded
+        features.L_patient = 0.30103          # sex only: -log10(0.5)
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002", features=features,
         )
