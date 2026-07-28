@@ -52,11 +52,25 @@ def _get_jinja_env() -> jinja2.Environment:
 # ---------------------------------------------------------------------------
 
 
-def render_pair(vm: PairViewModel) -> str:
-    """Render a single pair comparison to a standalone HTML string."""
+def render_pair(
+    vm: PairViewModel,
+    summary: BatchIndexItem | None = None,
+) -> str:
+    """Render a single pair comparison to a standalone HTML string.
+
+    The top-of-page summary panel is built from the same
+    :class:`BatchIndexItem` that drives the batch-index row, so the two
+    presentations stay identical. When *summary* is not supplied it is
+    built here (the ``filename`` arg is only used for the index
+    hyperlink, so an empty string is fine).
+    """
+    from .compare import build_batch_index_item
+
+    if summary is None:
+        summary = build_batch_index_item(vm, "")
     env = _get_jinja_env()
     template = env.get_template("pair.html.j2")
-    return template.render(vm=vm)
+    return template.render(vm=vm, summary=summary)
 
 
 def render_index(items: list[BatchIndexItem]) -> str:
@@ -156,8 +170,11 @@ def write_batch_html(
     for vm in view_models:
         filename = f"{_safe_filename(vm.pair_id)}.html"
         path = output_dir / filename
-        path.write_text(render_pair(vm), encoding="utf-8")
-        index_items.append(build_batch_index_item(vm, filename))
+        # Build the index item once and reuse it for both the pair-page
+        # summary panel and the index row so the two stay identical.
+        index_item = build_batch_index_item(vm, filename)
+        path.write_text(render_pair(vm, index_item), encoding="utf-8")
+        index_items.append(index_item)
 
     if write_index and index_items:
         index_path = output_dir / "index.html"
