@@ -583,7 +583,7 @@ class TestPredictionRendering:
             features=features, classification=classification,
         )
         html = render_pair(vm)
-        assert "Decision Summary" in html
+        assert "<h2>Summary</h2>" in html
         assert "Duplicates" in html
         assert "High L_match" in html
         assert "1 moderate" in html
@@ -639,7 +639,7 @@ class TestPredictionRendering:
         )
         assert path.exists()
         content = path.read_text(encoding="utf-8")
-        assert "Decision Summary" in content
+        assert "<h2>Summary</h2>" in content
         assert "Evidence Summary" in content
         assert "Duplicates" in content
 
@@ -846,9 +846,9 @@ class TestMissingOptionalFields:
             classification=_make_classification(),
         )
         html = render_pair(vm)
-        assert "Decision Summary" in html
+        assert "<h2>Summary</h2>" in html
         assert "Evidence Summary" not in html
-        # Decision summary should show label but no L_match
+        # Summary panel should show the label but no L_match
         assert "Duplicates" in html
 
     def test_decision_summary_no_l_match_without_features(self, report_a, report_b):

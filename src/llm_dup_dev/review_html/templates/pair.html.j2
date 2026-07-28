@@ -276,6 +276,29 @@ tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
     margin-right: 6px;
 }
 
+/* --- Source/case line in the summary panel (mirrors the index) --- */
+.source-case-line { margin-top: 3px; }
+.source-case-line code { font-size: 11px; }
+
+/* --- Inline inconsistency severity badges (mirrors the index).
+   Distinct from the .severity-* palette used by the Discrepancies table
+   below; both coexist. --- */
+.inc-minor,
+.inc-moderate,
+.inc-strong,
+.inc-decisive {
+    display: inline-block;
+    padding: 1px 5px;
+    margin-bottom: 3px;
+    border-radius: 3px;
+    color: #fff;
+    font-weight: 600;
+}
+.inc-minor    { background: #b8860b; }
+.inc-moderate { background: #e67e22; }
+.inc-strong   { background: #c0392b; }
+.inc-decisive { background: #7b2cbf; font-weight: 700; }
+
 /* --- Decision summary panel --- */
 .decision-summary {
     background: #f1f3f5;
@@ -285,7 +308,7 @@ tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
     margin-bottom: 16px;
 }
 .decision-summary h2 { margin-top: 0; border-bottom: none; }
-.decision-kv { display: grid; grid-template-columns: 160px 1fr; gap: 2px 12px; font-size: 13px; }
+.decision-kv { display: grid; grid-template-columns: 200px 1fr; gap: 2px 12px; font-size: 13px; }
 .decision-kv dt { font-weight: 600; color: #586069; }
 .decision-kv dd { margin: 0; }
 
@@ -429,62 +452,69 @@ details.debug-section pre {
     {% endif %}
 </div>
 
-{# ── Decision summary (prediction/evaluation mode) ── #}
+{# ── Summary (prediction/evaluation mode) ── #}
+{# Mirrors the batch-index row: fields and formatting come from the same
+   BatchIndexItem (`summary`) that drives the index page, so the two
+   presentations stay identical. #}
 {% if vm.decision_summary %}
 <div class="decision-summary">
-    <h2>Decision Summary</h2>
+    <h2>Summary</h2>
     <dl class="decision-kv">
-        <dt>Final label</dt>
+        <dt>Context</dt>
         <dd>
-            <span class="label-badge label-{{ vm.decision_summary.final_label }}">
-                {{ vm.decision_summary.final_label }}
+            {{ summary.context_label or '--' }}
+            {% if summary.source_case %}
+            <div class="source-case-line">
+                <span class="verdict-badge" title="{{ summary.source_case.verdict }}">
+                    {{ summary.source_case.short_label }}
+                </span>
+                {% if summary.source_case.shared_source_identifier %}
+                <code>{{ summary.source_case.shared_source_identifier_type or 'id' }}={{ summary.source_case.shared_source_identifier }}</code>
+                {% endif %}
+            </div>
+            {% endif %}
+        </dd>
+        <dt>Anchor</dt>
+        <dd>{{ summary.anchor_label | safe if summary.anchor_label else '--' }}</dd>
+        <dt>Anchor N</dt>
+        <dd>
+            {%- if summary.anchor_n is not none -%}
+                {{ summary.anchor_n }} reports
+                {%- if summary.anchor_penalty is not none %}
+                <span class="contrib {{ summary.anchor_penalty_class }}">(-{{ "%.1f"|format(-summary.anchor_penalty) }})</span>
+                {%- endif %}
+            {%- else -%}
+                --
+            {%- endif -%}
+        </dd>
+        <dt>Additional matching features</dt>
+        <dd>{{ summary.matching_features | safe if summary.matching_features else '--' }}</dd>
+        {% if summary.l_match is not none %}
+        <dt>L<sub>match</sub></dt>
+        <dd>{{ "%.2f"|format(summary.l_match) }}</dd>
+        {% endif %}
+        <dt>Inconsistencies</dt>
+        <dd>
+            {%- if summary.inconsistency_items -%}
+            {%- for ii in summary.inconsistency_items -%}
+            {%- if not loop.first %}<br>{% endif -%}
+            <span class="inc-{{ ii.severity }}">{{ ii.text | safe }}</span>
+            {%- endfor -%}
+            {%- else -%}
+            --
+            {%- endif -%}
+        </dd>
+        {% if summary.penalty_text %}
+        <dt>Penalty</dt>
+        <dd>{{ summary.penalty_text }}</dd>
+        {% endif %}
+        {% if summary.final_label %}
+        <dt>Classification</dt>
+        <dd>
+            <span class="label-badge label-{{ summary.final_label }}">
+                {{ summary.final_label }}
             </span>
         </dd>
-        {% if vm.decision_summary.relationship_assessment %}
-        <dt>Relationship</dt>
-        <dd>{{ vm.decision_summary.relationship_assessment }}</dd>
-        {% endif %}
-        {% if vm.decision_summary.l_match is not none %}
-        <dt>L<sub>match</sub></dt>
-        <dd>{{ "%.4f"|format(vm.decision_summary.l_match) }}</dd>
-        {% endif %}
-        {% if vm.decision_summary.inconsistency_counts %}
-        {%- set ic = vm.decision_summary.inconsistency_counts %}
-        <dt>Inconsistencies</dt>
-        <dd>{{ ic.minor }} minor, {{ ic.moderate }} moderate, {{ ic.strong }} strong, {{ ic.decisive }} decisive</dd>
-        {% endif %}
-        {% if vm.decision_summary.clinical_date_counts and vm.decision_summary.clinical_date_counts.total > 0 %}
-        {%- set cdc = vm.decision_summary.clinical_date_counts %}
-        <dt style="font-size: 0.85em; padding-left: 8px;">of which clinical dates</dt>
-        <dd style="font-size: 0.85em;">{{ cdc.n_minor }} minor, {{ cdc.n_moderate }} moderate, {{ cdc.n_strong }} strong, {{ cdc.n_decisive }} decisive</dd>
-        {% endif %}
-        {% if vm.decision_summary.ae_clinical_picture_counts and vm.decision_summary.ae_clinical_picture_counts.total > 0 %}
-        {%- set acp = vm.decision_summary.ae_clinical_picture_counts %}
-        <dt style="font-size: 0.85em; padding-left: 8px;">of which AE clinical-picture</dt>
-        <dd style="font-size: 0.85em;">{{ acp.n_minor }} minor, {{ acp.n_moderate }} moderate, {{ acp.n_strong }} strong, {{ acp.n_decisive }} decisive</dd>
-        {% elif vm.decision_summary.ae_clinical_picture_status == 'not_assessed' %}
-        <dt style="font-size: 0.85em; padding-left: 8px;">AE clinical-picture</dt>
-        <dd style="font-size: 0.85em; color: #586069;">not assessed</dd>
-        {% endif %}
-        {% if vm.decision_summary.source_case %}
-        {%- set sc = vm.decision_summary.source_case %}
-        <dt>Source/case</dt>
-        <dd>
-            <span class="verdict-badge">{{ sc.verdict }}</span>
-            {% if sc.shared_source_identifier %}
-            · {{ sc.shared_source_identifier_type or 'source_identifier' }}
-            = <code>{{ sc.shared_source_identifier }}</code>
-            {% endif %}
-            {% if sc.reasoning %}
-            <div style="font-size: 0.85em; color: #586069;">{{ sc.reasoning }}</div>
-            {% endif %}
-        </dd>
-        {% endif %}
-        <dt>Explanation</dt>
-        <dd>{{ vm.decision_summary.explanation }}</dd>
-        {% if vm.decision_summary.penalty_summary %}
-        <dt>Penalty</dt>
-        <dd>{{ vm.decision_summary.penalty_summary }}</dd>
         {% endif %}
     </dl>
 </div>
