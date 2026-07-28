@@ -166,12 +166,13 @@ def sample_scle_precision(
         return SCLECase(
             pair_id=pair_id,
             evaluation_component="precision",
-            reference_set_id=None,
+            reference_set_id=reference_set.set_id,
             stratum=cell,
             backup_rank=backup_rank,
             auto_context=SCLEAutoContext(
                 pair_id=pair_id,
                 evaluation_component="precision",
+                reference_set_id=reference_set.set_id,
                 reference_label=ref_by_pair[pair_id] or "",
                 adjudicator_final_label=pred.adjudicator_label,
                 screening_retrieved=pred.screening_retrieved,
@@ -265,6 +266,11 @@ def sample_scle_recall(
     backups: list[SCLECase] = []
     records: list[SamplingRecord] = []
 
+    # Per-pair reference-set provenance is preserved by iterating one
+    # ``set_result`` at a time: a pair that appears in two sets yields two
+    # cases, each attributed to its own set — never a silent single choice.
+    # ``set_id`` uniqueness across sets is enforced upstream in
+    # ``run_recall_analysis``.
     for set_result in result.sets:
         ref_set_id = set_result.reference_set_id
         by_stratum: dict[str, list[str]] = {s: [] for s in _RECALL_STRATA}
