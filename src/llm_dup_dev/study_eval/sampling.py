@@ -270,7 +270,14 @@ def sample_scle_recall(
                 screening_retrieved=(
                     pred.screening_retrieved if screening_observed else None
                 ),
-                confusion_cell=None,
+                # The reference label fixes the confusion cell independently of
+                # screening: every recall pair is a known duplicate, so a
+                # positive adjudicator call is a TP and a negative call an FN.
+                # Observed sets keep confusion_cell None and carry the joint
+                # stratum instead.
+                confusion_cell=(
+                    None if screening_observed else ("TP" if adj_positive else "FN")
+                ),
                 joint_stratum=stratum if screening_observed else None,
                 methods_disagree=(
                     stratum in ("screening_only", "adjudicator_only")
