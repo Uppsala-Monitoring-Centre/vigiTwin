@@ -150,8 +150,31 @@ def test_recall_not_evaluated_still_flags_misclassification():
     s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
     by_stratum = {c.stratum: c for c in s.cases}
 
-    assert by_stratum["adjudicator_positive"].auto_context.is_misclassified is False
-    assert by_stratum["adjudicator_negative"].auto_context.is_misclassified is True
+    pos = by_stratum["adjudicator_positive"].auto_context
+    neg = by_stratum["adjudicator_negative"].auto_context
+    assert pos.is_misclassified is False
+    assert neg.is_misclassified is True
+    # The confusion cell follows the reference label + adjudicator call, not
+    # screening: a known duplicate called positive is a TP, else an FN.
+    assert pos.confusion_cell == "TP"
+    assert neg.confusion_cell == "FN"
+    # Genuinely screening-dependent fields stay unset without a verdict.
+    for ctx in (pos, neg):
+        assert ctx.screening_retrieved is None
+        assert ctx.joint_stratum is None
+        assert ctx.methods_disagree is None
+
+
+def test_observed_recall_leaves_confusion_cell_unset():
+    """Observed sets carry the joint stratum, not a confusion cell."""
+    rsets, preds = make_recall(
+        {"fda_gold": [(True, "Duplicates")] * 5 + [(False, "Unrelated")] * 5}
+    )
+    result = run_recall_analysis(rsets, preds)
+    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+
+    assert s.cases  # guard against a vacuous assertion
+    assert all(c.auto_context.confusion_cell is None for c in s.cases)
 
 
 def test_observed_recall_draw_is_unchanged_by_a_mixed_bundle():
