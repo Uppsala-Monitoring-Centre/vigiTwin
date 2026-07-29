@@ -76,6 +76,80 @@ def test_run_analysis_precision_and_recall(tmp_path):
     assert "scle_sample_precision_prec.json" in names
 
 
+def _mixed_mode_inputs():
+    """The combined inputs plus a recall set with no screening results."""
+    reference_sets, predictions = _combined_inputs()
+    manual, mpreds = make_recall(
+        {"manual": [(None, "Duplicates")] * 3 + [(None, "Unrelated")] * 3},
+        modes={"manual": "not_evaluated"},
+    )
+    from llm_dup_dev.study_eval.schemas import PredictionSet
+
+    return [*reference_sets, *manual], PredictionSet(
+        predictions={**predictions.predictions, **mpreds.predictions}
+    )
+
+
+def test_run_analysis_handles_a_mixture_of_screening_modes(tmp_path):
+    reference_sets, predictions = _mixed_mode_inputs()
+    result = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
+        scle_recall_per_stratum=2, output_dir=tmp_path,
+    )
+
+    recall = result.recall_result
+    assert recall.screening_evaluated_set_ids == ["fda_gold"]
+    assert recall.screening_not_evaluated_set_ids == ["manual"]
+
+    manual = next(s for s in recall.sets if s.reference_set_id == "manual")
+    assert manual.recall_screening is None
+    assert manual.recall_adjudicator_ceiling.numerator == 3
+
+    summary = (tmp_path / "summary.md").read_text()
+    assert "screening not evaluated" in summary
+
+
+def test_predictions_table_keeps_screening_retrieved_boolean(tmp_path):
+    """The mode goes in its own column, never as a status in a boolean one."""
+    import csv
+
+    reference_sets, predictions = _mixed_mode_inputs()
+    workflow.run_analysis(
+        reference_sets, predictions, seed="s", sample_scle=False, output_dir=tmp_path
+    )
+    with open(tmp_path / "predictions_table.csv", newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+
+    manual = [r for r in rows if r["reference_set"] == "manual"]
+    assert manual
+    assert all(r["screening_mode"] == "not_evaluated" for r in manual)
+    assert all(r["screening_retrieved"] == "" for r in manual)
+    assert all(
+        r["joint_stratum"] in {"adjudicator_positive", "adjudicator_negative"}
+        for r in manual
+    )
+
+    observed = [r for r in rows if r["reference_set"] == "fda_gold"]
+    assert all(r["screening_mode"] == "observed" for r in observed)
+    assert {r["screening_retrieved"] for r in observed} <= {"yes", "no"}
+
+
+def test_manifest_records_every_screening_mode(tmp_path):
+    import json
+
+    reference_sets, predictions = _mixed_mode_inputs()
+    workflow.run_analysis(
+        reference_sets, predictions, seed="s", sample_scle=False, output_dir=tmp_path
+    )
+    manifest = json.loads((tmp_path / "evaluation_run_manifest.json").read_text())
+
+    assert manifest["screening_modes"] == {
+        "prec": "observed",
+        "fda_gold": "observed",
+        "manual": "not_evaluated",
+    }
+
+
 def test_secondary_analysis_is_step1_only_no_scle():
     reference_sets, predictions = _combined_inputs()
     result = workflow.run_analysis(

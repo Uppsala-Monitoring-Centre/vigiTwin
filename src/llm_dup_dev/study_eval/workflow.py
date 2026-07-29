@@ -37,6 +37,7 @@ from llm_dup_dev.study_eval.aggregate import (
     run_recall_analysis,
 )
 from llm_dup_dev.study_eval.manifest import build_manifest, write_manifest
+from llm_dup_dev.study_eval.preflight import preflight_reference_sets
 from llm_dup_dev.study_eval.sampling import (
     SCLESample,
     sample_scle_precision,
@@ -86,6 +87,18 @@ def _predictions_table_rows(
     precision_results: list[PrecisionResult],
     recall_result: RecallResult | None,
 ) -> list[list]:
+    """One row per (reference set, pair), showing the inputs the analysis used.
+
+    ``screening_retrieved`` stays a boolean column (``yes``/``no``) and is left
+    blank for a set with ``screening_mode: not_evaluated`` — no screening verdict
+    was used for such a set even where the prediction record happens to carry
+    one. The ``screening_mode`` column is what disambiguates that blank; a status
+    string is deliberately not written into the boolean column. The
+    ``joint_stratum`` column keeps its name for stability but holds a joint
+    screening–adjudicator stratum only under ``observed``; under
+    ``not_evaluated`` it holds an adjudicator-only stratum
+    (:data:`~llm_dup_dev.study_eval.aggregate.ADJUDICATOR_STRATA`).
+    """
     cells: dict[str, str] = {}
     for pr in precision_results:
         cells.update(pr.pair_cells)
@@ -96,6 +109,7 @@ def _predictions_table_rows(
 
     rows: list[list] = []
     for rset in reference_sets:
+        screening_observed = rset.screening_mode == "observed"
         for pair in rset.pairs:
             pred = predictions.predictions[pair.pair_id]
             rows.append(
@@ -104,7 +118,10 @@ def _predictions_table_rows(
                     rset.set_id,
                     rset.role,
                     pair.reference_label or ("duplicate" if rset.role == "recall" else ""),
-                    "yes" if pred.screening_retrieved else "no",
+                    rset.screening_mode,
+                    ("yes" if pred.screening_retrieved else "no")
+                    if screening_observed
+                    else "",
                     pred.adjudicator_label,
                     cells.get(pair.pair_id, ""),
                     strata.get(pair.pair_id, ""),
@@ -149,6 +166,10 @@ def run_analysis(
             stacklevel=2,
         )
 
+    # One preflight over the whole bundle first, so a caller sees every blocking
+    # input problem at once rather than the first one the analysis trips over.
+    preflight_reference_sets(reference_sets, predictions)
+
     precision_sets = [s for s in reference_sets if s.role == "precision"]
     recall_sets = [s for s in reference_sets if s.role == "recall"]
 
@@ -184,8 +205,8 @@ def run_analysis(
             writer = csv.writer(fh)
             writer.writerow(
                 ["pair_id", "reference_set", "role", "reference_label",
-                 "screening_retrieved", "adjudicator_label", "confusion_cell",
-                 "joint_stratum"]
+                 "screening_mode", "screening_retrieved", "adjudicator_label",
+                 "confusion_cell", "joint_stratum"]
             )
             writer.writerows(
                 _predictions_table_rows(
@@ -203,6 +224,7 @@ def run_analysis(
             outputs=paths,
             analysis_variant=variant.value,
             ci_method="wilson",
+            screening_modes={s.set_id: s.screening_mode for s in reference_sets},
             repo_path=repo_path,
         )
         write_manifest(out, manifest)

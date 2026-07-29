@@ -53,6 +53,12 @@ _RECALL_STRATA: tuple[str, ...] = (
     "screening_only",
     "adjudicator_only",
 )
+#: Strata for a recall set whose screening results were not evaluated; the joint
+#: strata above need a screening verdict that such a set does not have.
+_RECALL_STRATA_NO_SCREENING: tuple[str, ...] = (
+    "adjudicator_positive",
+    "adjudicator_negative",
+)
 
 
 def _versions() -> tuple[str | None, str]:
@@ -230,10 +236,19 @@ def sample_scle_recall(
     ``result`` must be the **primary** recall result. Sampling by joint stratum
     (rather than per method) avoids double-counting a disagreement pair.
     ``per_stratum`` sets the per-stratum sample size (default 10).
+
+    A set with ``screening_mode: not_evaluated`` has no joint strata, so its
+    pairs are drawn from the adjudicator-only strata instead; the cases carry no
+    screening verdict and no methods-disagree flag, since neither is observed.
     """
 
     def build(
-        pair_id: str, ref_set_id: str, stratum: str, backup_rank: int | None
+        pair_id: str,
+        ref_set_id: str,
+        stratum: str,
+        backup_rank: int | None,
+        *,
+        screening_observed: bool,
     ) -> SCLECase:
         pred = predictions.predictions[pair_id]
         adj_positive = is_positive(pred.adjudicator_label, AnalysisVariant.PRIMARY)
@@ -250,10 +265,18 @@ def sample_scle_recall(
                 # Every recall pair is a known duplicate.
                 reference_label="duplicate",
                 adjudicator_final_label=pred.adjudicator_label,
-                screening_retrieved=pred.screening_retrieved,
+                # Not read at all when screening was not evaluated for this set,
+                # even if the prediction record happens to carry a value.
+                screening_retrieved=(
+                    pred.screening_retrieved if screening_observed else None
+                ),
                 confusion_cell=None,
-                joint_stratum=stratum,
-                methods_disagree=stratum in ("screening_only", "adjudicator_only"),
+                joint_stratum=stratum if screening_observed else None,
+                methods_disagree=(
+                    stratum in ("screening_only", "adjudicator_only")
+                    if screening_observed
+                    else None
+                ),
                 # The adjudicator "misclassifies" a known duplicate when it fails
                 # to call it positive.
                 is_misclassified=not adj_positive,
@@ -273,17 +296,36 @@ def sample_scle_recall(
     # ``run_recall_analysis``.
     for set_result in result.sets:
         ref_set_id = set_result.reference_set_id
-        by_stratum: dict[str, list[str]] = {s: [] for s in _RECALL_STRATA}
+        screening_observed = set_result.screening_mode == "observed"
+        strata_names = (
+            _RECALL_STRATA if screening_observed else _RECALL_STRATA_NO_SCREENING
+        )
+        by_stratum: dict[str, list[str]] = {s: [] for s in strata_names}
         for pair_id, stratum in set_result.pair_strata.items():
             by_stratum[stratum].append(pair_id)
 
-        for stratum in _RECALL_STRATA:
+        for stratum in strata_names:
             candidates = sorted(by_stratum[stratum])
             rng = random.Random(f"{seed}:{procedure_id}:{ref_set_id}:{stratum}")
             primary, backup_ids = _split_primary_backups(rng, candidates, per_stratum)
-            cases.extend(build(pid, ref_set_id, stratum, None) for pid in primary)
+            cases.extend(
+                build(
+                    pid,
+                    ref_set_id,
+                    stratum,
+                    None,
+                    screening_observed=screening_observed,
+                )
+                for pid in primary
+            )
             backups.extend(
-                build(pid, ref_set_id, stratum, rank)
+                build(
+                    pid,
+                    ref_set_id,
+                    stratum,
+                    rank,
+                    screening_observed=screening_observed,
+                )
                 for rank, pid in enumerate(backup_ids, start=1)
             )
             records.append(

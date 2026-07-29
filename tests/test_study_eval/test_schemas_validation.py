@@ -86,6 +86,49 @@ def test_two_pairs_same_cluster_rejected():
         )
 
 
+def test_screening_mode_defaults_to_observed():
+    """not_evaluated is never inferred; it has to be selected explicitly."""
+    rset = ReferenceSet(set_id="r", role="recall", pairs=[_pair("R1__R2", "R1", "R2")])
+    assert rset.screening_mode == "observed"
+
+
+def test_recall_set_accepts_not_evaluated():
+    rset = ReferenceSet(
+        set_id="r",
+        role="recall",
+        screening_mode="not_evaluated",
+        pairs=[_pair("R1__R2", "R1", "R2")],
+    )
+    assert rset.screening_mode == "not_evaluated"
+
+
+def test_precision_set_rejects_not_evaluated():
+    """A precision set *is* the screening candidate set — the two contradict."""
+    with pytest.raises(ValidationError, match="contradictory for a precision set"):
+        ReferenceSet(
+            set_id="p",
+            role="precision",
+            screening_mode="not_evaluated",
+            pairs=[_pair("R1__R2", "R1", "R2", ref="duplicate")],
+        )
+
+
+def test_unknown_screening_mode_rejected():
+    with pytest.raises(ValidationError):
+        ReferenceSet(
+            set_id="r",
+            role="recall",
+            screening_mode="assume_perfect",
+            pairs=[_pair("R1__R2", "R1", "R2")],
+        )
+
+
+def test_screening_retrieved_may_be_omitted():
+    """A prediction bundle need carry no screening verdict at all."""
+    prediction = PairPrediction(pair_id="R1__R2", adjudicator_label="Duplicates")
+    assert prediction.screening_retrieved is None
+
+
 def test_prediction_rejects_unknown_label():
     with pytest.raises(ValidationError):
         PairPrediction(pair_id="R1__R2", adjudicator_label="Bananas", screening_retrieved=True)

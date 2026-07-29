@@ -69,6 +69,18 @@ class EvaluationRunManifest(BaseModel):
     analysis_variant: str | None = None
     ci_method: str | None = None
 
+    #: reference set id -> screening mode, as evaluated in this run.
+    #:
+    #: ``"observed"`` means screening-algorithm results were supplied for that
+    #: set and screening performance was estimated. ``"not_evaluated"`` records
+    #: that no screening results were available: screening performance was
+    #: outside the estimand, every supplied reference pair proceeded directly to
+    #: adjudicator evaluation, and screening-dependent measures (screening
+    #: recall, serial recall, the recall reduction and the joint strata) were
+    #: not estimated. It is **not** a record of screening having been perfect,
+    #: and the absent measures must not be read as ones or zeroes.
+    screening_modes: dict[str, str] | None = None
+
     secure_context: dict[str, Any] | None = None
     notes: str | None = None
 
@@ -105,6 +117,7 @@ def build_manifest(
     outputs: Sequence[str | Path] | None = None,
     analysis_variant: str | None = None,
     ci_method: str | None = None,
+    screening_modes: dict[str, str] | None = None,
     secure_context: dict[str, Any] | None = None,
     repo_path: str | Path | None = None,
     notes: str | None = None,
@@ -122,6 +135,7 @@ def build_manifest(
         outputs=[artifact_ref(p) for p in (outputs or [])],
         analysis_variant=analysis_variant,
         ci_method=ci_method,
+        screening_modes=screening_modes,
         secure_context=secure_context,
         notes=notes,
     )

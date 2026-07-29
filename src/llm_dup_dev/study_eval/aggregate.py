@@ -12,6 +12,15 @@ is a negative classification).
 Reference-abstain pairs (a human ``abstain``) are excluded from every precision
 estimate and counted. Recall-reference pairs are positive controls, so recall
 estimates have no reference-abstain exclusion.
+
+A recall set may declare ``screening_mode: not_evaluated`` (see
+:data:`~llm_dup_dev.study_eval.schemas.ScreeningMode`), meaning no
+screening-algorithm results exist for it and screening performance is outside
+its estimand. Every screening and end-to-end quantity is then left unset rather
+than given a value: the screening estimands are ``None``, not an estimate of
+zero, one or anything else, and no synthetic all-positive screening verdicts are
+constructed anywhere. What remains is the adjudicator's own performance over all
+supplied reference pairs, which is exactly the estimand such a set supports.
 """
 
 from __future__ import annotations
@@ -20,6 +29,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
+from llm_dup_dev.study_eval.preflight import preflight_reference_set
 from llm_dup_dev.study_eval.schemas import PredictionSet, ReferenceSet
 from llm_dup_dev.study_eval.stats import EstimateWithCI, estimate
 
@@ -71,6 +81,8 @@ class PrecisionResult(BaseModel):
 
     variant: str
     set_id: str
+    #: Always ``"observed"`` — a precision set is the screening candidate set.
+    screening_mode: str = "observed"
     n_pairs: int
     n_reference_abstain: int
     n_evaluable: int
@@ -108,19 +120,7 @@ def run_precision_analysis(
             f"run_precision_analysis needs a precision set; {reference_set.set_id!r} "
             f"has role {reference_set.role!r}."
         )
-    pair_ids = [p.pair_id for p in reference_set.pairs]
-    predictions.require_coverage(pair_ids, context=f"precision set {reference_set.set_id!r}")
-    if reference_set.screening_required:
-        not_screened = [
-            pid for pid in pair_ids if not predictions.predictions[pid].screening_retrieved
-        ]
-        if not_screened:
-            raise ValueError(
-                f"precision set {reference_set.set_id!r}: {len(not_screened)} pair(s) "
-                f"are not flagged as screening-retrieved, but the set is defined as "
-                f"the screening method's candidate set: {not_screened[:5]}"
-                f"{'...' if len(not_screened) > 5 else ''}"
-            )
+    preflight_reference_set(reference_set, predictions)
 
     cross = {a: {r: 0 for r in _REF_LABELS} for a in _ADJ_LABELS}
     cells: dict[str, str] = {}
@@ -169,6 +169,7 @@ def run_precision_analysis(
     return PrecisionResult(
         variant=variant.value,
         set_id=reference_set.set_id,
+        screening_mode=reference_set.screening_mode,
         n_pairs=len(reference_set.pairs),
         n_reference_abstain=n_ref_abstain,
         n_evaluable=n_evaluable,
@@ -209,7 +210,8 @@ def run_precision_variants(
 
 # --- Recall ---------------------------------------------------------------
 
-#: The four joint screening–adjudicator retrieval strata.
+#: The four joint screening–adjudicator retrieval strata. Used for a reference
+#: set with ``screening_mode: observed``.
 JOINT_STRATA: tuple[str, ...] = (
     "both",
     "neither",
@@ -217,36 +219,76 @@ JOINT_STRATA: tuple[str, ...] = (
     "adjudicator_only",
 )
 
+#: Strata for a reference set with ``screening_mode: not_evaluated``. Without a
+#: screening verdict the joint strata are undefined, so cases are stratified on
+#: the adjudicator outcome alone — the only dimension such a set observes.
+ADJUDICATOR_STRATA: tuple[str, ...] = (
+    "adjudicator_positive",
+    "adjudicator_negative",
+)
+
 
 class RecallSetResult(BaseModel):
-    """Recall results for one reference set under one variant."""
+    """Recall results for one reference set under one variant.
+
+    Under ``screening_mode: not_evaluated`` every screening-dependent field —
+    ``recall_screening``, ``recall_serial``, ``recall_reduction``,
+    ``joint_counts`` and ``joint_proportions`` — is ``None``, meaning *not
+    estimated*, and is distinct from an estimate that came out undefined (which
+    is a present :class:`EstimateWithCI` with ``proportion=None`` and
+    ``denominator=0``).
+    """
 
     variant: str
     reference_set_id: str
     reference_set_label: str
+    #: The set's screening mode: ``"observed"`` or ``"not_evaluated"``.
+    screening_mode: str = "observed"
     n_pairs: int
     n_adjudicator_abstain: int
 
-    recall_screening: EstimateWithCI
-    recall_serial: EstimateWithCI
+    #: ``None`` when screening was not evaluated for this set.
+    recall_screening: EstimateWithCI | None = None
+    #: ``None`` when screening was not evaluated for this set.
+    recall_serial: EstimateWithCI | None = None
+    #: Under ``observed``, the ceiling recall a perfect screening step would
+    #: allow. Under ``not_evaluated``, the directly estimated adjudicator recall
+    #: over all supplied reference pairs. Always present.
     recall_adjudicator_ceiling: EstimateWithCI
 
-    #: stratum name -> count (both / neither / screening_only / adjudicator_only).
-    joint_counts: dict[str, int]
-    #: stratum name -> proportion of N, with CI.
-    joint_proportions: dict[str, EstimateWithCI]
+    #: stratum name -> count. ``None`` when screening was not evaluated.
+    joint_counts: dict[str, int] | None = None
+    #: stratum name -> proportion of N, with CI. ``None`` when not evaluated.
+    joint_proportions: dict[str, EstimateWithCI] | None = None
     #: recall_screening - recall_serial, point estimate (protocol: descriptive).
+    #: ``None`` when screening was not evaluated, as both inputs are absent.
     recall_reduction: float | None
 
-    #: pair_id -> joint stratum, for SCLE sampling.
+    #: pair_id -> stratum, for SCLE sampling. The vocabulary is
+    #: :data:`JOINT_STRATA` under ``observed`` and :data:`ADJUDICATOR_STRATA`
+    #: under ``not_evaluated``.
     pair_strata: dict[str, str]
 
 
 class RecallResult(BaseModel):
-    """Recall-evaluation results across all reference sets under one variant."""
+    """Recall-evaluation results across all reference sets under one variant.
+
+    The protocol reports recall separately per reference set — the sets differ in
+    provenance and annotation procedure — so there is no pooled estimate to which
+    a mixture of screening modes could contribute. What the two id lists provide
+    instead is the *scope* of the screening estimands: which sets carry them and
+    which do not. A consumer building any screening aggregate must restrict
+    itself to ``screening_evaluated_set_ids`` and report that as its denominator
+    scope; a set in ``screening_not_evaluated_set_ids`` contributes nothing and
+    must never be counted as a zero or a one.
+    """
 
     variant: str
     sets: list[RecallSetResult]
+    #: Set ids whose screening estimands are present (``screening_mode: observed``).
+    screening_evaluated_set_ids: list[str] = []
+    #: Set ids with no screening estimands (``screening_mode: not_evaluated``).
+    screening_not_evaluated_set_ids: list[str] = []
 
 
 def _joint_stratum(screening: bool, adjudicator_positive: bool) -> str:
@@ -259,6 +301,10 @@ def _joint_stratum(screening: bool, adjudicator_positive: bool) -> str:
     return "neither"
 
 
+def _adjudicator_stratum(adjudicator_positive: bool) -> str:
+    return "adjudicator_positive" if adjudicator_positive else "adjudicator_negative"
+
+
 def run_recall_analysis(
     reference_sets: list[ReferenceSet],
     predictions: PredictionSet,
@@ -269,6 +315,10 @@ def run_recall_analysis(
     The evaluated method is assumed to have been run under **complete candidate
     coverage** — a prediction for every pair, regardless of screening retrieval —
     because the recall-ceiling estimand needs a verdict for every pair.
+
+    A set with ``screening_mode: not_evaluated`` contributes only its adjudicator
+    estimand; its screening and end-to-end fields are left ``None`` and its pairs
+    are stratified on the adjudicator outcome alone.
     """
     ids = [s.set_id for s in reference_sets]
     if len(ids) != len(set(ids)):
@@ -282,35 +332,45 @@ def run_recall_analysis(
                 f"run_recall_analysis needs recall sets; {eval_set.set_id!r} has "
                 f"role {eval_set.role!r}."
             )
-        pair_ids = [p.pair_id for p in eval_set.pairs]
-        predictions.require_coverage(
-            pair_ids, context=f"recall set {eval_set.set_id!r}"
-        )
+        preflight_reference_set(eval_set, predictions)
+        screening_observed = eval_set.screening_mode == "observed"
 
         n = len(eval_set.pairs)
         n_screen = n_serial = n_ceiling = n_abstain = 0
-        counts = {s: 0 for s in JOINT_STRATA}
+        counts = {s: 0 for s in JOINT_STRATA} if screening_observed else None
         strata: dict[str, str] = {}
 
         for pair in eval_set.pairs:
             pred = predictions.predictions[pair.pair_id]
             adj = pred.adjudicator_label
-            screened = pred.screening_retrieved
             positive = is_positive(adj, variant)
             if adj == "Abstain":
                 n_abstain += 1
-            n_screen += screened
             n_ceiling += positive
+            if counts is None:
+                # No screening verdict is read for this set, and none is
+                # invented: only the adjudicator dimension is observed.
+                strata[pair.pair_id] = _adjudicator_stratum(positive)
+                continue
+            screened = pred.screening_retrieved
+            assert screened is not None  # preflight requires it under 'observed'
+            n_screen += screened
             n_serial += screened and positive
             stratum = _joint_stratum(screened, positive)
             counts[stratum] += 1
             strata[pair.pair_id] = stratum
 
-        recall_screen = estimate("recall_screening", n_screen, n)
-        recall_serial = estimate("recall_serial", n_serial, n)
+        recall_screen = (
+            estimate("recall_screening", n_screen, n) if screening_observed else None
+        )
+        recall_serial = (
+            estimate("recall_serial", n_serial, n) if screening_observed else None
+        )
         reduction: float | None = None
         if (
-            recall_screen.proportion is not None
+            recall_screen is not None
+            and recall_serial is not None
+            and recall_screen.proportion is not None
             and recall_serial.proportion is not None
         ):
             reduction = recall_screen.proportion - recall_serial.proportion
@@ -320,6 +380,7 @@ def run_recall_analysis(
                 variant=variant.value,
                 reference_set_id=eval_set.set_id,
                 reference_set_label=eval_set.label or eval_set.set_id,
+                screening_mode=eval_set.screening_mode,
                 n_pairs=n,
                 n_adjudicator_abstain=n_abstain,
                 recall_screening=recall_screen,
@@ -328,14 +389,25 @@ def run_recall_analysis(
                     "recall_adjudicator_ceiling", n_ceiling, n
                 ),
                 joint_counts=counts,
-                joint_proportions={
-                    s: estimate(f"joint_{s}", counts[s], n) for s in JOINT_STRATA
-                },
+                joint_proportions=(
+                    {s: estimate(f"joint_{s}", counts[s], n) for s in JOINT_STRATA}
+                    if counts is not None
+                    else None
+                ),
                 recall_reduction=reduction,
                 pair_strata=strata,
             )
         )
-    return RecallResult(variant=variant.value, sets=sets)
+    return RecallResult(
+        variant=variant.value,
+        sets=sets,
+        screening_evaluated_set_ids=[
+            s.reference_set_id for s in sets if s.screening_mode == "observed"
+        ],
+        screening_not_evaluated_set_ids=[
+            s.reference_set_id for s in sets if s.screening_mode != "observed"
+        ],
+    )
 
 
 def run_recall_variants(
@@ -353,6 +425,7 @@ __all__ = [
     "AnalysisVariant",
     "REINTERPRETATION_VARIANTS",
     "JOINT_STRATA",
+    "ADJUDICATOR_STRATA",
     "is_positive",
     "PrecisionResult",
     "RecallSetResult",

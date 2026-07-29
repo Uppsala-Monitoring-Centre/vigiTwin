@@ -122,7 +122,7 @@
       "type": "string"
     },
     "PairPrediction": {
-      "description": "The frozen prediction for one pair.\n\n``adjudicator_label`` is the evaluated method's decided outcome.\n``screening_retrieved`` is whether the upstream screening method flagged the\npair as a candidate. ``classification`` is the optional full decision trace\n(the same ``ClassificationResult`` the pipeline produces); when present it is\nchecked for consistency with ``adjudicator_label`` and ``pair_id``.",
+      "description": "The frozen prediction for one pair.\n\n``adjudicator_label`` is the evaluated method's decided outcome.\n``screening_retrieved`` is whether the upstream screening method flagged the\npair as a candidate; ``None`` means no screening result was supplied. The\nfield is read only for sets with ``screening_mode: observed``, where\n:mod:`llm_dup_dev.study_eval.preflight` requires it \u2014 a\n``not_evaluated`` set neither needs it nor reads it, so the same prediction\nrecord can serve a pair belonging to sets of both modes.\n``classification`` is the optional full decision trace (the same\n``ClassificationResult`` the pipeline produces); when present it is checked\nfor consistency with ``adjudicator_label`` and ``pair_id``.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -133,8 +133,16 @@
           "type": "string"
         },
         "screening_retrieved": {
-          "title": "Screening Retrieved",
-          "type": "boolean"
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Screening Retrieved"
         },
         "classification": {
           "anyOf": [
@@ -150,8 +158,7 @@
       },
       "required": [
         "pair_id",
-        "adjudicator_label",
-        "screening_retrieved"
+        "adjudicator_label"
       ],
       "title": "PairPrediction",
       "type": "object"

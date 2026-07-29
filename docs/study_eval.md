@@ -85,8 +85,55 @@ Two model families, both in
   only sampling is SCLE case selection.
 - **`PredictionSet`** — `configuration_id` and `predictions: {pair_id:
   PairPrediction}`, where each `PairPrediction` carries the evaluated method's
-  `adjudicator_label` (the 4-value vocabulary), the `screening_retrieved` flag,
-  and an optional full `ClassificationResult` decision trace.
+  `adjudicator_label` (the 4-value vocabulary), the optional
+  `screening_retrieved` flag, and an optional full `ClassificationResult`
+  decision trace.
+
+## Screening modes
+
+Each reference set declares, in `screening_mode`, whether screening performance
+is part of **its** estimand. The mode is per set, never global, and is never
+inferred from a missing file — it must be selected explicitly.
+
+`observed` (the default) is the existing behaviour: screening results are
+supplied, every pair needs a `screening_retrieved` verdict, and the screening
+and end-to-end estimands are computed. A missing or unusable screening result is
+a hard preflight error.
+
+`not_evaluated` is for a reference set supplied directly to the adjudicator with
+**no screening-algorithm results at all** — a recall set whose pairs were never
+run through screening, for instance. Then:
+
+- no screening verdict is required for any pair;
+- all supplied reference pairs are evaluated against the adjudicator
+  predictions;
+- `recall_screening`, `recall_serial`, `recall_reduction` and the joint strata
+  are **not estimated** — they are `null` in `study_results.json`, omitted from
+  the recall CSVs, and stated as not evaluated in `summary.md`;
+- `recall_adjudicator_ceiling` is still computed, and is a *direct* estimate of
+  adjudicator recall over the supplied pairs rather than a ceiling, so the
+  human-readable summary labels it that way;
+- SCLE cases are drawn from the adjudicator-only strata
+  (`adjudicator_positive` / `adjudicator_negative`), since the joint strata need
+  a screening verdict.
+
+This is **not** an assumption of perfect screening, and no synthetic
+all-positive verdicts are created anywhere. An absent screening figure must not
+be read as a one or a zero.
+
+Two rules keep the intent unambiguous:
+
+- A **precision** set may not use `not_evaluated` — it *is* the screening
+  method's candidate set, so the combination is rejected by the model.
+- A `screening_retrieved` value supplied anyway for a pair in a `not_evaluated`
+  set is **accepted and never read**, not rejected. The mode describes the
+  estimand, not whether screening data physically exist, so a pair may belong to
+  an `observed` set where its verdict is analysed *and* to a separate set where
+  screening is deliberately out of scope. Preflight warns, naming the set and
+  the number of unused values, so this is never silent.
+
+`EvaluationRunManifest.screening_modes` records every set's mode alongside the
+analysis variant and CI method.
 
 ## Metrics
 
@@ -96,7 +143,12 @@ Two model families, both in
 - Recall (per set): `recall_screening`, `recall_serial` (retrieved by screening
   **and** adjudicator-positive), `recall_adjudicator_ceiling`, the joint 2×2
   (`both`/`neither`/`screening_only`/`adjudicator_only`), and the descriptive
-  recall reduction.
+  recall reduction. All but `recall_adjudicator_ceiling` need screening results,
+  so a set with `screening_mode: not_evaluated` reports only that one — see
+  [Screening modes](#screening-modes). Recall is reported per set, never pooled,
+  so a run mixing the two modes needs no combined screening denominator;
+  `RecallResult.screening_evaluated_set_ids` states the scope of the screening
+  figures for any consumer that builds one.
 - All proportions carry a two-sided 95% **Wilson** confidence interval
   ([stats.py](../src/llm_dup_dev/study_eval/stats.py)); `ci_method` is recorded
   on every estimate.
@@ -159,7 +211,10 @@ input contracts; use them as fixtures in the secure repo's tests.
    (one-per-cluster, held-out eligibility, manual/E2B prioritisation) and sends
    one *homogeneous* set per provenance. `role="precision"` carries a per-pair
    `reference_label`; `role="recall"` is positive controls (label absent or
-   `"duplicate"`).
+   `"duplicate"`). Set `screening_mode="not_evaluated"` on a recall set whose
+   pairs were never run through screening, so no screening estimand is computed
+   for it (see [Screening modes](#screening-modes)); leave it at the `"observed"`
+   default wherever screening candidate membership is known.
 2. **Build a `PredictionSet` per frozen configuration** from the frozen run.
    A frozen `PipelineRunner` run persists its `PairResult`s via
    `pipeline.export.write_pair_results(...)`; read them back with
@@ -168,9 +223,12 @@ input contracts; use them as fixtures in the secure repo's tests.
    → the optional `ClassificationResult` trace (include it — it populates the
    reviewer workbook's Decision-trace column and is consistency-checked), and the
    pair's screening (vigiMatch) candidate membership → `screening_retrieved`
-   (secure-side knowledge, not part of `PairResult`). For **recall**, the
-   adjudicator must be run under **complete candidate coverage**: a prediction for
-   *every* sampled pair, regardless of screening.
+   (secure-side knowledge, not part of `PairResult`). Leave `screening_retrieved`
+   unset for pairs that only belong to `not_evaluated` sets — never fill it in
+   with `True` to satisfy the schema, as that would report screening recall as
+   perfect. For **recall**, the adjudicator must be run under **complete
+   candidate coverage**: a prediction for *every* sampled pair, regardless of
+   screening.
 
 > **Data boundary.** In this repo the frozen run and its `pair_results.json` are
 > **synthetic** (tests, examples, the `outputs/` demo). On the secure side they
@@ -288,8 +346,13 @@ the SCLE-sampled pairs into `packets/` either way.
 ### Pre-flight checklist
 - [ ] `ReferenceSet` / `PredictionSet` round-trip against the committed schemas.
 - [ ] `pair_id` orientation identical between reference sets and predictions.
-- [ ] Recall predictions cover **every** sampled pair; precision pairs are all
-  `screening_retrieved` (when `screening_required=True`).
+- [ ] `screening_mode` set deliberately on every reference set — `not_evaluated`
+  only where screening results genuinely do not exist, never to work around a
+  missing file.
+- [ ] Recall predictions cover **every** sampled pair. For a set with
+  `screening_mode: observed`, every pair carries a `screening_retrieved` verdict
+  and every precision pair is `screening_retrieved`. `study_eval.preflight`
+  checks all of this and reports every problem at once.
 - [ ] `FEATURE_DOMAINS` ([scle/form.py](../src/llm_dup_dev/study_eval/scle/form.py)),
   the CI method (Wilson), and the sampling `seed` are frozen and recorded.
 - [ ] Read submissions/arbitration back through `read_reviewer_submission` /

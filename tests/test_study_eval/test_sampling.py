@@ -121,6 +121,62 @@ def test_recall_preserves_per_set_reference_set_id():
     assert seen == {"fda_gold", "cochrane_gold"}  # both sets are represented
 
 
+def test_recall_not_evaluated_uses_adjudicator_strata():
+    rsets, preds = make_recall(
+        {"manual": [(None, "Duplicates")] * 8 + [(None, "Unrelated")] * 8},
+        modes={"manual": "not_evaluated"},
+    )
+    result = run_recall_analysis(rsets, preds)
+    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+
+    assert {c.stratum for c in s.cases} == {
+        "adjudicator_positive",
+        "adjudicator_negative",
+    }
+    assert len([c for c in s.cases if c.stratum == "adjudicator_positive"]) == 5
+    # Without a screening verdict there is no second method to disagree with.
+    assert all(c.auto_context.methods_disagree is None for c in s.cases)
+    assert all(c.auto_context.screening_retrieved is None for c in s.cases)
+    assert all(c.auto_context.joint_stratum is None for c in s.cases)
+
+
+def test_recall_not_evaluated_still_flags_misclassification():
+    """The adjudicator dimension is fully observed, so SCLE still works on it."""
+    rsets, preds = make_recall(
+        {"manual": [(None, "Duplicates"), (None, "Unrelated")]},
+        modes={"manual": "not_evaluated"},
+    )
+    result = run_recall_analysis(rsets, preds)
+    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+    by_stratum = {c.stratum: c for c in s.cases}
+
+    assert by_stratum["adjudicator_positive"].auto_context.is_misclassified is False
+    assert by_stratum["adjudicator_negative"].auto_context.is_misclassified is True
+
+
+def test_observed_recall_draw_is_unchanged_by_a_mixed_bundle():
+    """Adding a not_evaluated set must not perturb the observed set's sample."""
+    alone, preds_alone = make_recall(
+        {"fda_gold": [(True, "Duplicates")] * 8 + [(False, "Unrelated")] * 8}
+    )
+    mixed, preds_mixed = make_recall(
+        {
+            "fda_gold": [(True, "Duplicates")] * 8 + [(False, "Unrelated")] * 8,
+            "manual": [(None, "Duplicates")] * 4,
+        },
+        modes={"manual": "not_evaluated"},
+    )
+    a = sample_scle_recall(
+        run_recall_analysis(alone, preds_alone), preds_alone, per_stratum=5, seed="s"
+    )
+    b = sample_scle_recall(
+        run_recall_analysis(mixed, preds_mixed), preds_mixed, per_stratum=5, seed="s"
+    )
+
+    picked = [c.pair_id for c in a.cases]
+    assert [c.pair_id for c in b.cases if c.reference_set_id == "fda_gold"] == picked
+
+
 def test_promote_backup_swaps_in_next_ranked():
     rset, preds = _all_tp(20)
     res = run_precision_analysis(rset, preds)

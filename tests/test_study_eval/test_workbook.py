@@ -38,6 +38,35 @@ def test_write_then_read_roundtrip(tmp_path):
     assert by_pair[tp_pair].never_event is None
 
 
+def test_not_evaluated_case_shows_screening_as_not_applicable(tmp_path):
+    """A reviewer sees "does not apply", not an ambiguous blank."""
+    from llm_dup_dev.study_eval.aggregate import run_recall_analysis
+    from llm_dup_dev.study_eval.sampling import sample_scle_recall
+    from tests.test_study_eval.conftest import make_recall
+
+    rsets, preds = make_recall(
+        {"manual": [(None, "Duplicates"), (None, "Unrelated")]},
+        modes={"manual": "not_evaluated"},
+    )
+    sample = sample_scle_recall(
+        run_recall_analysis(rsets, preds), preds, per_stratum=5, seed="s"
+    )
+    path = tmp_path / "reviewer_a.xlsx"
+    write_reviewer_workbook(sample, "alice", path)
+
+    ws = openpyxl.load_workbook(path)["cases"]
+    header = [c.value for c in ws[1]]
+    for name in ("Screening retrieved", "Methods disagree"):
+        column = header.index(name) + 1
+        values = {ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)}
+        assert values == {NOT_APPLICABLE}
+
+    # The disagreement dimension is switched off for such a case.
+    column = header.index("Method-difference explanation") + 1
+    values = {ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)}
+    assert values == {NOT_APPLICABLE}
+
+
 def test_packet_hyperlinks_written(tmp_path):
     _, _, sample = build_scle_precision_sample(_SPEC)
     path = tmp_path / "reviewer_a.xlsx"

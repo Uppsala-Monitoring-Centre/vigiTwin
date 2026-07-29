@@ -1,7 +1,7 @@
 {
   "$defs": {
     "SCLEAutoContext": {
-      "description": "Case context populated from the frozen results, never by reviewers.\n\nCarries everything the reviewer should *see but not assess*: the reference\nlabel, the method output, the confusion cell (precision) or joint stratum\n(recall), whether the methods disagree, whether the case is a\nmisclassification by the adjudicator, a short decision-trace summary, and\nthe packet filename. ``is_misclassified`` and ``methods_disagree`` drive the\napplicability of the conditional dimensions.",
+      "description": "Case context populated from the frozen results, never by reviewers.\n\nCarries everything the reviewer should *see but not assess*: the reference\nlabel, the method output, the confusion cell (precision) or joint stratum\n(recall), whether the methods disagree, whether the case is a\nmisclassification by the adjudicator, a short decision-trace summary, and\nthe packet filename. ``is_misclassified`` and ``methods_disagree`` drive the\napplicability of the conditional dimensions.\n\n``screening_retrieved`` and ``methods_disagree`` are ``None`` when the case\ncomes from a reference set with ``screening_mode: not_evaluated``: without a\nscreening verdict there is no second method to agree or disagree with, so\nthe disagreement dimension does not apply to such a case.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -72,8 +72,15 @@
           "title": "Joint Stratum"
         },
         "methods_disagree": {
-          "title": "Methods Disagree",
-          "type": "boolean"
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Methods Disagree"
         },
         "is_misclassified": {
           "title": "Is Misclassified",
