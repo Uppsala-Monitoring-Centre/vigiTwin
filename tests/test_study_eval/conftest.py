@@ -51,11 +51,17 @@ def make_precision(
 
 
 def make_recall(
-    specs: dict[str, list[tuple[bool, str]]],
+    specs: dict[str, list[tuple[bool | None, str]]],
+    *,
+    modes: dict[str, str] | None = None,
 ) -> tuple[list[ReferenceSet], PredictionSet]:
     """Build recall sets + predictions from ``{set_id: [(screening, adj_label)]}``.
 
-    Pairs are named ``{set_id}_{i}__x``, one per cluster.
+    Pairs are named ``{set_id}_{i}__x``, one per cluster. A ``screening`` entry
+    of ``None`` builds a prediction with no screening verdict at all. ``modes``
+    overrides ``screening_mode`` per set; it defaults to ``"observed"``, so a
+    set intended as ``not_evaluated`` must say so explicitly — exactly as a real
+    caller must.
     """
     reference_sets = []
     predictions = {}
@@ -75,7 +81,13 @@ def make_recall(
                 pair_id=pid, adjudicator_label=adj, screening_retrieved=screened
             )
         reference_sets.append(
-            ReferenceSet(set_id=set_id, role="recall", label=set_id, pairs=pairs)
+            ReferenceSet(
+                set_id=set_id,
+                role="recall",
+                label=set_id,
+                screening_mode=(modes or {}).get(set_id, "observed"),
+                pairs=pairs,
+            )
         )
     return reference_sets, PredictionSet(predictions=predictions)
 

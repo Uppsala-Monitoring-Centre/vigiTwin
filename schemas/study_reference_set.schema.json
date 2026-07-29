@@ -164,7 +164,7 @@
       "type": "object"
     }
   },
-  "description": "A generic reference set with a declared role and provenance.\n\n``role`` selects the analysis: ``\"precision\"`` sets are the screening\nmethod's candidate set with per-pair human labels; ``\"recall\"`` sets are\nheld-out positive controls (known duplicates). ``provenance`` describes the\nset as a whole \u2014 each set is homogeneous in provenance (the secure side\nsends one set per provenance), so there is no per-pair provenance here.\n``sampling_record`` optionally carries the secure side's construction record.",
+  "description": "A generic reference set with a declared role and provenance.\n\n``role`` selects the analysis: ``\"precision\"`` sets are the screening\nmethod's candidate set with per-pair human labels; ``\"recall\"`` sets are\nheld-out positive controls (known duplicates). ``provenance`` describes the\nset as a whole \u2014 each set is homogeneous in provenance (the secure side\nsends one set per provenance), so there is no per-pair provenance here.\n``sampling_record`` optionally carries the secure side's construction record.\n\n``screening_mode`` declares whether screening performance is part of this\nset's estimand (see :data:`ScreeningMode`). It is per set, never global, and\nis never inferred \u2014 ``not_evaluated`` must be selected explicitly. Only a\nrecall set may use it: a precision set *is* the screening method's candidate\nset, so \"screening was not evaluated\" cannot describe one.",
   "properties": {
     "set_id": {
       "title": "Set Id",
@@ -202,10 +202,14 @@
       "default": null,
       "title": "Provenance"
     },
-    "screening_required": {
-      "default": true,
-      "title": "Screening Required",
-      "type": "boolean"
+    "screening_mode": {
+      "default": "observed",
+      "enum": [
+        "observed",
+        "not_evaluated"
+      ],
+      "title": "Screening Mode",
+      "type": "string"
     },
     "sampling_record": {
       "anyOf": [

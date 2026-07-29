@@ -280,6 +280,11 @@ def _manifest():
             ArtifactRef(path="results/precision_metrics.csv", sha256="b" * 64, n_bytes=2048)
         ],
         ci_method="wilson",
+        # Both modes, so the committed example shows what a mixed run records.
+        screening_modes={
+            "precision_primary": "observed",
+            "recall_manual_review": "not_evaluated",
+        },
     )
 
 

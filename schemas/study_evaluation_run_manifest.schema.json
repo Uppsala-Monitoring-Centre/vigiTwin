@@ -141,6 +141,21 @@
       "default": null,
       "title": "Ci Method"
     },
+    "screening_modes": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Screening Modes"
+    },
     "secure_context": {
       "anyOf": [
         {

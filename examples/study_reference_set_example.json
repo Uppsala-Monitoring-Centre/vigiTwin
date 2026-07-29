@@ -3,7 +3,7 @@
   "role": "precision",
   "label": "Screening candidate set",
   "provenance": "model_v1_candidates",
-  "screening_required": true,
+  "screening_mode": "observed",
   "sampling_record": null,
   "pairs": [
     {

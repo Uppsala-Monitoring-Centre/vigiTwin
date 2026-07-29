@@ -52,6 +52,22 @@ AnalysisRole = Literal["precision", "recall"]
 #: Human reference label vocabulary.
 ReferenceLabel = Literal["duplicate", "non_duplicate", "abstain"]
 
+#: Whether screening-algorithm results are part of a reference set's estimand.
+#:
+#: ``observed``
+#:     Screening results exist and are evaluated. Every pair needs a
+#:     ``screening_retrieved`` verdict, screening and end-to-end estimands are
+#:     computed. This is the default and the pre-existing behaviour.
+#: ``not_evaluated``
+#:     No screening-algorithm results are available for this set; every supplied
+#:     pair went directly to the adjudicator. Screening performance is outside
+#:     the estimand, so screening and screening-dependent quantities are not
+#:     estimated at all — this is **not** an assumption of perfect screening.
+#:     The mode describes the *estimand*, not whether screening data happen to
+#:     exist: a ``screening_retrieved`` value supplied for such a pair is
+#:     accepted and never read (see :mod:`llm_dup_dev.study_eval.preflight`).
+ScreeningMode = Literal["observed", "not_evaluated"]
+
 #: Decided labels the evaluated method can emit. The three decided labels come
 #: from ``eval.labels.FINAL_LABELS``; ``Abstain`` is the fourth outcome (see
 #: ``ClassificationResult.final_label``).
@@ -114,13 +130,19 @@ class ReferenceSet(BaseModel):
     set as a whole — each set is homogeneous in provenance (the secure side
     sends one set per provenance), so there is no per-pair provenance here.
     ``sampling_record`` optionally carries the secure side's construction record.
+
+    ``screening_mode`` declares whether screening performance is part of this
+    set's estimand (see :data:`ScreeningMode`). It is per set, never global, and
+    is never inferred — ``not_evaluated`` must be selected explicitly. Only a
+    recall set may use it: a precision set *is* the screening method's candidate
+    set, so "screening was not evaluated" cannot describe one.
     """
 
     set_id: str
     role: AnalysisRole
     label: str | None = None
     provenance: str | None = None
-    screening_required: bool = True
+    screening_mode: ScreeningMode = "observed"
     sampling_record: SamplingRecord | None = None
     pairs: list[ReferencePair]
 
@@ -130,6 +152,14 @@ class ReferenceSet(BaseModel):
         # cluster_id is optional metadata, but if present it must be unique
         # (the secure side already reduced each cluster to one pair).
         _validate_one_pair_per_cluster(self.pairs)
+
+        if self.role == "precision" and self.screening_mode == "not_evaluated":
+            raise ValueError(
+                f"precision set {self.set_id!r}: screening_mode "
+                f"'not_evaluated' is contradictory for a precision set, which "
+                f"is by definition the screening method's candidate set. Use "
+                f"screening_mode 'observed', or declare the set as a recall set."
+            )
 
         if self.role == "precision":
             missing = [p.pair_id for p in self.pairs if p.reference_label is None]
@@ -163,14 +193,19 @@ class PairPrediction(BaseModel):
 
     ``adjudicator_label`` is the evaluated method's decided outcome.
     ``screening_retrieved`` is whether the upstream screening method flagged the
-    pair as a candidate. ``classification`` is the optional full decision trace
-    (the same ``ClassificationResult`` the pipeline produces); when present it is
-    checked for consistency with ``adjudicator_label`` and ``pair_id``.
+    pair as a candidate; ``None`` means no screening result was supplied. The
+    field is read only for sets with ``screening_mode: observed``, where
+    :mod:`llm_dup_dev.study_eval.preflight` requires it — a
+    ``not_evaluated`` set neither needs it nor reads it, so the same prediction
+    record can serve a pair belonging to sets of both modes.
+    ``classification`` is the optional full decision trace (the same
+    ``ClassificationResult`` the pipeline produces); when present it is checked
+    for consistency with ``adjudicator_label`` and ``pair_id``.
     """
 
     pair_id: str
     adjudicator_label: str
-    screening_retrieved: bool
+    screening_retrieved: bool | None = None
     classification: ClassificationResult | None = None
 
     @model_validator(mode="after")
@@ -276,6 +311,7 @@ ReferenceSet.model_rebuild()
 __all__ = [
     "AnalysisRole",
     "ReferenceLabel",
+    "ScreeningMode",
     "ADJUDICATOR_LABELS",
     "ReferencePair",
     "ReferenceSet",

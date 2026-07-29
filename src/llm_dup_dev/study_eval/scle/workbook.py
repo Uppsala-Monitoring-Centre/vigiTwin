@@ -159,14 +159,24 @@ def _applies_to(col: _Col, ctx: SCLEAutoContext) -> bool:
     if col.applies == "misclassified":
         return ctx.is_misclassified
     if col.applies == "disagreement":
-        return ctx.methods_disagree
+        # ``None`` means the case has no screening verdict to disagree with
+        # (screening_mode: not_evaluated), so the dimension does not apply.
+        return bool(ctx.methods_disagree)
     return True
+
+
+#: Context fields whose ``None`` means "does not apply to this case" rather than
+#: "not recorded" — both are absent exactly when screening was not evaluated for
+#: the case's reference set, and a reviewer should see that stated.
+_NOT_APPLICABLE_WHEN_NONE: frozenset[str] = frozenset(
+    {"screening_retrieved", "methods_disagree"}
+)
 
 
 def _context_value(field: str, ctx: SCLEAutoContext) -> str:
     value = getattr(ctx, field)
     if value is None:
-        return ""
+        return NOT_APPLICABLE if field in _NOT_APPLICABLE_WHEN_NONE else ""
     if isinstance(value, bool):
         return "yes" if value else "no"
     return str(value)

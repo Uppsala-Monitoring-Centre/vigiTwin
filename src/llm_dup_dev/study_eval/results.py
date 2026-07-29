@@ -121,20 +121,39 @@ def write_precision_cross_classification_csv(
 
 
 def write_recall_metrics_csv(results: list[RecallResult], path: str | Path) -> Path:
+    """Long-format recall estimands, one row per (variant, set, estimand).
+
+    A set whose ``screening_mode`` is ``not_evaluated`` contributes **no rows**
+    for the screening-dependent estimands rather than rows with blank values —
+    blank already means "estimate undefined at n=0" (see :func:`_estimate_cells`),
+    and reusing it would conflate the two. The ``screening_mode`` column tells a
+    reader why the rows are absent.
+    """
     rows = []
     for r in results:
         for s in r.sets:
             for estimand in _RECALL_ESTIMANDS:
-                est: EstimateWithCI = getattr(s, estimand)
-                rows.append([r.variant, s.reference_set_id, estimand, *_estimate_cells(est)])
-            reduction = "" if s.recall_reduction is None else f"{s.recall_reduction:.6f}"
-            rows.append(
-                [r.variant, s.reference_set_id, "recall_reduction", "", "", reduction, "", "", ""]
-            )
+                est: EstimateWithCI | None = getattr(s, estimand)
+                if est is None:  # not estimated for this set
+                    continue
+                rows.append(
+                    [r.variant, s.reference_set_id, s.screening_mode, estimand,
+                     *_estimate_cells(est)]
+                )
+            if s.screening_mode == "observed":
+                # Gated on the mode, not on the value: an observed set whose
+                # reduction is undefined still gets its row, blank as before.
+                reduction = (
+                    "" if s.recall_reduction is None else f"{s.recall_reduction:.6f}"
+                )
+                rows.append(
+                    [r.variant, s.reference_set_id, s.screening_mode,
+                     "recall_reduction", "", "", reduction, "", "", ""]
+                )
     return _write_csv(
         Path(path),
-        ["variant", "reference_set", "estimand", "numerator", "denominator",
-         "proportion", "ci_low", "ci_high", "ci_method"],
+        ["variant", "reference_set", "screening_mode", "estimand", "numerator",
+         "denominator", "proportion", "ci_low", "ci_high", "ci_method"],
         rows,
     )
 
@@ -142,20 +161,30 @@ def write_recall_metrics_csv(results: list[RecallResult], path: str | Path) -> P
 def write_recall_joint_classification_csv(
     results: list[RecallResult], path: str | Path
 ) -> Path:
+    """Joint screening–adjudicator strata, for the sets that have them.
+
+    The joint strata need a screening verdict, so a ``not_evaluated`` set has
+    none and contributes no rows. The ``screening_mode`` column makes the scope
+    of the table explicit in the file itself.
+    """
     rows = []
     for r in results:
         for s in r.sets:
+            if s.joint_counts is None or s.joint_proportions is None:
+                continue
             for stratum in JOINT_STRATA:
                 est = s.joint_proportions[stratum]
                 rows.append(
-                    [r.variant, s.reference_set_id, stratum, s.joint_counts[stratum],
+                    [r.variant, s.reference_set_id, s.screening_mode, stratum,
+                     s.joint_counts[stratum],
                      "" if est.proportion is None else f"{est.proportion:.6f}",
                      "" if est.ci_low is None else f"{est.ci_low:.6f}",
                      "" if est.ci_high is None else f"{est.ci_high:.6f}"]
                 )
     return _write_csv(
         Path(path),
-        ["variant", "reference_set", "stratum", "count", "proportion", "ci_low", "ci_high"],
+        ["variant", "reference_set", "screening_mode", "stratum", "count",
+         "proportion", "ci_low", "ci_high"],
         rows,
     )
 
@@ -188,8 +217,14 @@ def write_secondary_comparison_csv(
             for s in rr.sets:
                 base_set = base_by_set[s.reference_set_id]
                 for estimand in _RECALL_ESTIMANDS:
-                    bp = getattr(base_set, estimand).proportion
-                    vp = getattr(s, estimand).proportion
+                    base_est = getattr(base_set, estimand)
+                    var_est = getattr(s, estimand)
+                    if base_est is None or var_est is None:
+                        # Not estimated for this set (screening not evaluated);
+                        # there is nothing to compare a variant against.
+                        continue
+                    bp = base_est.proportion
+                    vp = var_est.proportion
                     rows.append(["recall", s.reference_set_id, estimand, rr.variant,
                                  _fmt(bp), _fmt(vp), _delta(bp, vp)])
     return _write_csv(
@@ -351,15 +386,43 @@ def summary_to_markdown(
     if primary_r is not None:
         lines += ["## Recall (primary), by reference set", ""]
         for s in primary_r.sets:
-            reduction = "n/a" if s.recall_reduction is None else f"{s.recall_reduction:.4f}"
-            lines.append(
-                f"- **{s.reference_set_label}** (n={s.n_pairs}): "
-                f"screening {_ci_str(s.recall_screening)}, "
-                f"serial {_ci_str(s.recall_serial)}, "
-                f"ceiling {_ci_str(s.recall_adjudicator_ceiling)}, "
-                f"reduction {reduction}"
-            )
+            if s.screening_mode == "observed":
+                reduction = (
+                    "n/a" if s.recall_reduction is None else f"{s.recall_reduction:.4f}"
+                )
+                lines.append(
+                    f"- **{s.reference_set_label}** (n={s.n_pairs}): "
+                    f"screening {_ci_str(s.recall_screening)}, "
+                    f"serial {_ci_str(s.recall_serial)}, "
+                    f"ceiling {_ci_str(s.recall_adjudicator_ceiling)}, "
+                    f"reduction {reduction}"
+                )
+            else:
+                # No screening figure of any kind is printed — not a number, and
+                # not `n/a` either, which here means "undefined at n=0". Under
+                # this mode the adjudicator estimand is a direct estimate over
+                # the supplied pairs, not a ceiling, so it is labelled as such.
+                lines.append(
+                    f"- **{s.reference_set_label}** (n={s.n_pairs}): "
+                    f"screening not evaluated — no screening-algorithm results "
+                    f"were supplied for this set, so screening performance is "
+                    f"outside the estimand and all {s.n_pairs} supplied pairs "
+                    f"went directly to the adjudicator; "
+                    f"adjudicator recall on the supplied reference set "
+                    f"{_ci_str(s.recall_adjudicator_ceiling)}"
+                )
         lines.append("")
+        if primary_r.screening_not_evaluated_set_ids:
+            lines += [
+                f"Screening estimands above cover only the reference set(s) with "
+                f"observed screening results "
+                f"({', '.join(primary_r.screening_evaluated_set_ids) or 'none'}). "
+                f"They are not estimated for "
+                f"{', '.join(primary_r.screening_not_evaluated_set_ids)}, which "
+                f"contribute nothing to any screening figure — an absent value "
+                f"there is not a zero and not a perfect score.",
+                "",
+            ]
     return "\n".join(lines)
 
 

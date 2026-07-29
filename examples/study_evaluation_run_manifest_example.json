@@ -25,6 +25,10 @@
   ],
   "analysis_variant": null,
   "ci_method": "wilson",
+  "screening_modes": {
+    "precision_primary": "observed",
+    "recall_manual_review": "not_evaluated"
+  },
   "secure_context": null,
   "notes": null
 }

@@ -146,3 +146,114 @@ def test_recall_pair_strata_cover_all_pairs():
         "adjudicator_only",
     }
     assert len(r.sets[0].pair_strata) == 2
+
+
+# --- screening_mode: not_evaluated -------------------------------------------
+
+
+def _not_evaluated_set():
+    # 2 of 3 supplied pairs are adjudicator-positive.
+    return make_recall(
+        {
+            "manual": [
+                (None, "Duplicates"),
+                (None, "Duplicates"),
+                (None, "Unrelated"),
+            ]
+        },
+        modes={"manual": "not_evaluated"},
+    )
+
+
+def test_not_evaluated_omits_every_screening_estimand():
+    rsets, preds = _not_evaluated_set()
+    s = run_recall_analysis(rsets, preds).sets[0]
+
+    assert s.screening_mode == "not_evaluated"
+    # Absent, not estimated as zero, one, or an undefined estimate at n=0.
+    assert s.recall_screening is None
+    assert s.recall_serial is None
+    assert s.recall_reduction is None
+    assert s.joint_counts is None
+    assert s.joint_proportions is None
+
+
+def test_not_evaluated_still_estimates_adjudicator_recall():
+    rsets, preds = _not_evaluated_set()
+    s = run_recall_analysis(rsets, preds).sets[0]
+
+    assert s.n_pairs == 3
+    assert s.recall_adjudicator_ceiling.numerator == 2
+    assert s.recall_adjudicator_ceiling.denominator == 3
+
+
+def test_not_evaluated_strata_are_adjudicator_only():
+    rsets, preds = _not_evaluated_set()
+    s = run_recall_analysis(rsets, preds).sets[0]
+
+    assert set(s.pair_strata.values()) <= {
+        "adjudicator_positive",
+        "adjudicator_negative",
+    }
+    assert len(s.pair_strata) == 3
+
+
+def test_not_evaluated_ignores_a_supplied_screening_verdict():
+    """No screening figure appears, whether or not the data happen to exist."""
+    with_data, preds_with = make_recall(
+        {"m": [(True, "Duplicates"), (True, "Unrelated")]},
+        modes={"m": "not_evaluated"},
+    )
+    without_data, preds_without = make_recall(
+        {"m": [(None, "Duplicates"), (None, "Unrelated")]},
+        modes={"m": "not_evaluated"},
+    )
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        a = run_recall_analysis(with_data, preds_with).sets[0]
+    b = run_recall_analysis(without_data, preds_without).sets[0]
+
+    assert a.model_dump() == b.model_dump()
+
+
+def test_mixed_modes_leave_the_observed_set_unchanged():
+    mixed, preds = make_recall(
+        {
+            "fda_gold": [
+                (True, "Duplicates"),
+                (True, "Unrelated"),
+                (False, "Duplicates"),
+                (False, "Unrelated"),
+            ],
+            "manual": [(None, "Duplicates"), (None, "Unrelated")],
+        },
+        modes={"manual": "not_evaluated"},
+    )
+    result = run_recall_analysis(mixed, preds)
+    observed = next(s for s in result.sets if s.reference_set_id == "fda_gold")
+
+    # Identical to the single-set observed expectations above.
+    assert observed.recall_screening.numerator == 2
+    assert observed.recall_serial.numerator == 1
+    assert observed.joint_counts == {
+        "both": 1,
+        "screening_only": 1,
+        "adjudicator_only": 1,
+        "neither": 1,
+    }
+
+
+def test_mixed_modes_expose_the_screening_scope():
+    mixed, preds = make_recall(
+        {
+            "fda_gold": [(True, "Duplicates")],
+            "manual": [(None, "Duplicates")],
+        },
+        modes={"manual": "not_evaluated"},
+    )
+    result = run_recall_analysis(mixed, preds)
+
+    assert result.screening_evaluated_set_ids == ["fda_gold"]
+    assert result.screening_not_evaluated_set_ids == ["manual"]

@@ -105,6 +105,11 @@ class SCLEAutoContext(BaseModel):
     misclassification by the adjudicator, a short decision-trace summary, and
     the packet filename. ``is_misclassified`` and ``methods_disagree`` drive the
     applicability of the conditional dimensions.
+
+    ``screening_retrieved`` and ``methods_disagree`` are ``None`` when the case
+    comes from a reference set with ``screening_mode: not_evaluated``: without a
+    screening verdict there is no second method to agree or disagree with, so
+    the disagreement dimension does not apply to such a case.
     """
 
     pair_id: str
@@ -118,7 +123,7 @@ class SCLEAutoContext(BaseModel):
     confusion_cell: str | None = None
     joint_stratum: str | None = None
 
-    methods_disagree: bool
+    methods_disagree: bool | None
     is_misclassified: bool
 
     decision_trace_summary: str = ""
