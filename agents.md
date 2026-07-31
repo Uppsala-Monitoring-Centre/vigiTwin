@@ -10,8 +10,8 @@ Report pairs that have been flagged as suspected duplicates by the vigiMatch
 transparent rule-based decision logic that classifies each pair as
 **Duplicates**, **Otherwise_related**, **Unrelated**, or **Abstain**. The
 pipeline combines probabilistic match signals, structured/clinical-date
-inconsistency signals, and (planned) LLM-based narrative consistency
-assessment.
+inconsistency signals, and LLM-based narrative-derived signals (AE
+clinical picture, narrative source/case, narrative demographics).
 
 Historically the pipeline was framed as a "same-individual assessment".
 The current framing is **report-pair adjudication / duplicate

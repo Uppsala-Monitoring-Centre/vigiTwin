@@ -14,7 +14,6 @@ from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProv
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
-from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
 from llm_dup_dev.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
@@ -32,7 +31,6 @@ from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
     IndependenceAssessment,
     IndependenceReason,
-    NarrativeConsistency,
 )
 from llm_dup_dev.models.report import AdverseEvent, AgeValue, Report, SourcedValue
 from llm_dup_dev.models.report_pair import ReportPair
@@ -40,7 +38,6 @@ from llm_dup_dev.pipeline.runner import (
     BatchResult,
     PairResult,
     PipelineRunner,
-    neutral_narrative_provider,
 )
 
 
@@ -127,23 +124,6 @@ class TestRunPair:
         result_ac = runner.run_pair(pair_ac)
         assert result_ac.features.L_match < result_ab.features.L_match
 
-    def test_narrative_consistency_passed_through(self, runner, pair_ab):
-        result = runner.run_pair(
-            pair_ab,
-            narrative_consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
-        )
-        assert (
-            result.features.narrative_consistency
-            == NarrativeConsistency.STRONGLY_CONSISTENT
-        )
-
-    def test_default_narrative_is_not_available(self, runner, pair_ab):
-        result = runner.run_pair(pair_ab)
-        assert (
-            result.features.narrative_consistency
-            == NarrativeConsistency.NOT_AVAILABLE
-        )
-
 
 # ===================================================================
 # Batch processing
@@ -162,17 +142,6 @@ class TestRunBatch:
         labels = result.labels()
         assert "R001__R002" in labels
         assert "R001__R003" in labels
-
-    def test_batch_with_narrative_provider(self, runner, pair_ab):
-        def always_consistent(pair_id, n1, n2):
-            return NarrativeConsistency.CONSISTENT
-
-        result = runner.run_batch([pair_ab], narrative_provider=always_consistent)
-        assert result.n_processed == 1
-        assert (
-            result.results[0].features.narrative_consistency
-            == NarrativeConsistency.CONSISTENT
-        )
 
     def test_batch_continue_on_error(self, loader, stats_provider, pair_ab):
         """If a pair references a missing report, batch skips it."""
@@ -247,173 +216,6 @@ class TestCustomConfig:
 
 
 # ===================================================================
-# Neutral narrative provider
-# ===================================================================
-
-class TestNeutralNarrativeProvider:
-
-    def test_always_returns_not_available(self):
-        result = neutral_narrative_provider("pair1", "text1", "text2")
-        assert result == NarrativeConsistency.NOT_AVAILABLE
-
-    def test_handles_none_narratives(self):
-        result = neutral_narrative_provider("pair1", None, None)
-        assert result == NarrativeConsistency.NOT_AVAILABLE
-
-
-# ===================================================================
-# LLM-based narrative integration
-# ===================================================================
-
-class TestLLMNarrativeIntegration:
-
-    def test_batch_uses_llm_client_for_narratives(
-        self, loader, stats_provider, pair_ab
-    ):
-        """When llm_client is provided, batch uses it for narrative assessment."""
-        fake = FakeLLMClient()
-        verdict = NarrativeVerdict(
-            consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
-            evidence=["Both describe same patient"],
-        )
-        fake.seed_response(verdict)
-        # The runner also makes an AE clinical-picture LLM call, a
-        # narrative source/case extraction per report, and a narrative
-        # demographics extraction per report; seed benign responses so
-        # the full chain succeeds.
-        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
-        fake.seed_response(NarrativeSourceCase())
-        fake.seed_response(NarrativeSourceCase())
-        fake.seed_response(NarrativeDemographics())
-        fake.seed_response(NarrativeDemographics())
-
-        runner = PipelineRunner(
-            report_loader=loader,
-            stats_provider=stats_provider,
-            llm_client=fake,
-        )
-        result = runner.run_batch([pair_ab])
-
-        assert result.n_processed == 1
-        assert (
-            result.results[0].features.narrative_consistency
-            == NarrativeConsistency.STRONGLY_CONSISTENT
-        )
-        assert result.results[0].narrative_verdict == verdict
-        # Six requests per pair: narrative + AE clinical-picture +
-        # narrative source/case per report + narrative demographics
-        # per report.
-        assert len(fake.requests) == 6
-
-    def test_narrative_provider_takes_precedence_over_llm(
-        self, loader, stats_provider, pair_ab
-    ):
-        """Explicit narrative_provider overrides llm_client (for narrative)."""
-        fake = FakeLLMClient()
-        # Narrative LLM call should NOT happen; AE clinical-picture +
-        # narrative source/case per report + narrative demographics
-        # per report still do.
-        fake.seed_response(AEClinicalPictureVerdict(findings=[]))
-        fake.seed_response(NarrativeSourceCase())
-        fake.seed_response(NarrativeSourceCase())
-        fake.seed_response(NarrativeDemographics())
-        fake.seed_response(NarrativeDemographics())
-
-        runner = PipelineRunner(
-            report_loader=loader,
-            stats_provider=stats_provider,
-            llm_client=fake,
-        )
-
-        def always_inconsistent(pair_id, n1, n2):
-            return NarrativeConsistency.INCONSISTENT
-
-        result = runner.run_batch([pair_ab], narrative_provider=always_inconsistent)
-
-        assert (
-            result.results[0].features.narrative_consistency
-            == NarrativeConsistency.INCONSISTENT
-        )
-        # Narrative LLM call skipped; AE clinical-picture (1) +
-        # narrative source/case (2 reports) + narrative demographics
-        # (2 reports) = 5 calls.
-        assert len(fake.requests) == 5
-        # No narrative verdict when using callback
-        assert result.results[0].narrative_verdict is None
-
-    def test_llm_failure_falls_back_to_not_available(
-        self, loader, stats_provider, pair_ab
-    ):
-        """When LLM call fails, narrative is NOT_AVAILABLE and pair still processes."""
-        fake = FakeLLMClient()
-        fake.seed_error(ConnectionError("LLM unavailable"))
-
-        runner = PipelineRunner(
-            report_loader=loader,
-            stats_provider=stats_provider,
-            llm_client=fake,
-        )
-        result = runner.run_batch([pair_ab])
-
-        assert result.n_processed == 1
-        assert result.n_errors == 0  # LLM failure is not a pair error
-        assert (
-            result.results[0].features.narrative_consistency
-            == NarrativeConsistency.NOT_AVAILABLE
-        )
-        assert result.results[0].narrative_verdict is None
-
-    def test_no_llm_client_defaults_to_not_available(
-        self, loader, stats_provider, pair_ab
-    ):
-        """Without llm_client or narrative_provider, defaults to NOT_AVAILABLE."""
-        runner = PipelineRunner(
-            report_loader=loader,
-            stats_provider=stats_provider,
-        )
-        result = runner.run_batch([pair_ab])
-
-        assert (
-            result.results[0].features.narrative_consistency
-            == NarrativeConsistency.NOT_AVAILABLE
-        )
-
-    def test_run_pair_with_verdict(self, runner, pair_ab):
-        """run_pair accepts a pre-computed NarrativeVerdict."""
-        verdict = NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-            evidence=["Age matches"],
-        )
-        result = runner.run_pair(pair_ab, narrative_verdict=verdict)
-
-        assert (
-            result.features.narrative_consistency
-            == NarrativeConsistency.CONSISTENT
-        )
-        assert result.narrative_verdict == verdict
-
-    def test_run_pair_verdict_overrides_consistency(self, runner, pair_ab):
-        """When both narrative_consistency and verdict are given, verdict wins."""
-        verdict = NarrativeVerdict(
-            consistency=NarrativeConsistency.INCONSISTENT,
-        )
-        result = runner.run_pair(
-            pair_ab,
-            narrative_consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
-            narrative_verdict=verdict,
-        )
-        assert (
-            result.features.narrative_consistency
-            == NarrativeConsistency.INCONSISTENT
-        )
-
-    def test_pair_result_has_no_verdict_by_default(self, runner, pair_ab):
-        """Without LLM, PairResult.narrative_verdict is None."""
-        result = runner.run_pair(pair_ab)
-        assert result.narrative_verdict is None
-
-
-# ===================================================================
 # Narrative source/case integration
 # ===================================================================
 
@@ -431,14 +233,11 @@ class TestSourceCaseIntegration:
     ):
         """Same report shared across two pairs → extracted once per report."""
         fake = FakeLLMClient()
-        # Two pairs, each needs: narrative comparison (1) +
-        # AE clinical-picture (1). Source/case extraction is per report,
+        # Two pairs, each needs an AE clinical-picture call (1).
+        # Source/case extraction is per report,
         # and R001 is shared across both pairs — we expect 3 source/case
         # extraction calls total (R001 once, R002, R003).
         for _ in range(2):
-            fake.seed_response(NarrativeVerdict(
-                consistency=NarrativeConsistency.CONSISTENT,
-            ))
             fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         # Source/case extractions: R001, R002, R001-again-memoized, R003
         # → only R001/R002/R003 actually fire.
@@ -467,10 +266,7 @@ class TestSourceCaseIntegration:
     ):
         """Extraction errors → source_case_assessment=None, pair still processes."""
         fake = FakeLLMClient()
-        # Successful narrative + AE, then two failing source/case calls.
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
+        # Successful AE, then two failing source/case calls.
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_error(RuntimeError("extraction failed"))
         fake.seed_error(RuntimeError("extraction failed"))
@@ -499,10 +295,7 @@ class TestFrozenSourceCaseExtractions:
     ):
         """Bundle covers both reports → zero NarrativeSourceCase LLM calls."""
         fake = FakeLLMClient()
-        # Still need narrative + AE calls per pair; no source/case seeds.
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
+        # Still need the AE call per pair; no source/case seeds.
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
 
         bundle = FrozenSourceCaseExtractions(
@@ -531,9 +324,6 @@ class TestFrozenSourceCaseExtractions:
     ):
         """Only R001 in bundle → one live source/case call (for R002)."""
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         # Exactly one source/case extraction call is expected — for R002.
         fake.seed_response(NarrativeSourceCase())
@@ -580,9 +370,6 @@ class TestFrozenSourceCaseExtractions:
         """Same report in two pairs → still zero live extractions when covered."""
         fake = FakeLLMClient()
         for _ in range(2):
-            fake.seed_response(NarrativeVerdict(
-                consistency=NarrativeConsistency.CONSISTENT,
-            ))
             fake.seed_response(AEClinicalPictureVerdict(findings=[]))
 
         bundle = FrozenSourceCaseExtractions(
@@ -612,9 +399,6 @@ class TestFrozenSourceCaseExtractions:
     ):
         """extractions={} behaves identically to passing no bundle."""
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         # Two source/case extractions still fire (R001 and R002).
         fake.seed_response(NarrativeSourceCase())
@@ -738,9 +522,6 @@ class TestFrozenNarrativeDemographics:
     ):
         """Bundle covers both reports → zero NarrativeDemographics calls."""
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         # Source/case extractions still fire per report.
         fake.seed_response(NarrativeSourceCase())
@@ -772,9 +553,6 @@ class TestFrozenNarrativeDemographics:
     ):
         """Only R001 in bundle → one live demographics call (for R002)."""
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
@@ -822,9 +600,6 @@ class TestFrozenNarrativeDemographics:
     ):
         """extractions={} behaves identically to passing no bundle."""
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
@@ -854,9 +629,6 @@ class TestFrozenNarrativeDemographics:
         """Same report in two pairs → one demographics extraction per report."""
         fake = FakeLLMClient()
         for _ in range(2):
-            fake.seed_response(NarrativeVerdict(
-                consistency=NarrativeConsistency.CONSISTENT,
-            ))
             fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         # Three unique reports across pair_ab and pair_ac:
         # R001, R002, R003 — each extracted once for source/case and
@@ -896,9 +668,6 @@ class TestFrozenNarrativeDemographics:
         glue.
         """
         fake = FakeLLMClient()
-        fake.seed_response(NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-        ))
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
@@ -996,8 +765,7 @@ class TestAEClinicalPictureMode:
     ):
         fake = FakeLLMClient()
         # Seed responses for the other LLM-driven steps that run_batch
-        # always invokes (narrative comparison, source-case extraction).
-        fake.seed_response(NarrativeVerdict(consistency=NarrativeConsistency.NEUTRAL))
+        # always invokes (AE clinical picture, source-case extraction).
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeDemographics())
@@ -1039,13 +807,7 @@ class TestLLMTemperature:
 
     @staticmethod
     def _seed_full_chain(fake: FakeLLMClient) -> None:
-        """Seed the six responses one pair's worth of calls consumes."""
-        fake.seed_response(
-            NarrativeVerdict(
-                consistency=NarrativeConsistency.STRONGLY_CONSISTENT,
-                evidence=["same patient"],
-            )
-        )
+        """Seed the five responses one pair's worth of calls consumes."""
         fake.seed_response(AEClinicalPictureVerdict(findings=[]))
         fake.seed_response(NarrativeSourceCase())
         fake.seed_response(NarrativeSourceCase())
@@ -1065,7 +827,7 @@ class TestLLMTemperature:
         )
         runner.run_batch([pair_ab])
 
-        assert len(fake.requests) == 6
+        assert len(fake.requests) == 5
         assert all(req.temperature is None for req in fake.requests)
 
     def test_explicit_temperature_reaches_every_call(
@@ -1082,7 +844,7 @@ class TestLLMTemperature:
         )
         runner.run_batch([pair_ab])
 
-        assert len(fake.requests) == 6
+        assert len(fake.requests) == 5
         assert all(req.temperature == 0.0 for req in fake.requests)
 
 
@@ -1144,10 +906,6 @@ class TestLLMConfigurationErrorAborts:
         batch = runner.run_batch([pair_ab])
 
         assert batch.n_processed == 1
-        assert (
-            batch.results[0].features.narrative_consistency
-            == NarrativeConsistency.NOT_AVAILABLE
-        )
 
     def test_total_llm_failure_is_logged_as_error(
         self, loader, stats_provider, pair_ab, caplog
@@ -1165,4 +923,4 @@ class TestLLMConfigurationErrorAborts:
         with caplog.at_level(logging.ERROR):
             runner.run_batch([pair_ab])
 
-        assert "All 6 LLM calls in this run failed" in caplog.text
+        assert "All 5 LLM calls in this run failed" in caplog.text

@@ -14,12 +14,12 @@ Usage::
     )
 
     # Single pair
-    result = runner.run_pair(pair, narrative_consistency)
+    result = runner.run_pair(pair)
 
     # Batch
-    results = runner.run_batch(pairs, narrative_provider)
+    results = runner.run_batch(pairs)
 
-With LLM-based narrative comparison::
+With LLM-backed assessments::
 
     from llm_dup_dev.pipeline.runner import PipelineRunner
 
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Callable, Literal, Sequence
+from typing import Literal, Sequence
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
 from llm_dup_dev.classifier.decision_logic import classify
@@ -61,10 +61,6 @@ from llm_dup_dev.feature_generation.source_case_comparison import compare_source
 from llm_dup_dev.llm.errors import LLMConfigurationError
 from llm_dup_dev.llm.protocols import LLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import assess_ae_clinical_picture
-from llm_dup_dev.llm.tasks.narrative_comparison import (
-    NarrativeVerdict,
-    compare_narratives,
-)
 from llm_dup_dev.llm.tasks.narrative_demographics import (
     extract_narrative_demographics,
 )
@@ -72,7 +68,6 @@ from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
@@ -90,24 +85,6 @@ from llm_dup_dev.models.report_pair import ReportPair
 logger = logging.getLogger(__name__)
 
 
-# Type alias for a function that provides narrative consistency.
-# Takes (pair_id, narrative_1, narrative_2) → NarrativeConsistency.
-# Retained for backward compatibility; prefer injecting an LLMClient.
-NarrativeProvider = Callable[[str, str | None, str | None], NarrativeConsistency]
-
-
-def neutral_narrative_provider(
-    pair_id: str,
-    narrative_1: str | None,
-    narrative_2: str | None,
-) -> NarrativeConsistency:
-    """Default narrative provider that always returns NOT_AVAILABLE.
-
-    Used when no LLM client or explicit narrative provider is configured.
-    """
-    return NarrativeConsistency.NOT_AVAILABLE
-
-
 @dataclass
 class PairResult:
     """Complete result for a single pair: features + classification.
@@ -120,11 +97,6 @@ class PairResult:
         Computed feature set (probability, inconsistencies, etc.).
     classification : ClassificationResult
         Final classification outcome.
-    narrative_verdict : NarrativeVerdict or None
-        Full LLM narrative assessment including evidence and reasoning,
-        when an LLM client was used.  ``None`` when the narrative was
-        provided via a simple ``NarrativeProvider`` callback or was not
-        assessed.
     ae_clinical_picture : AEClinicalPictureResult or None
         Full AE clinical-picture assessment result (status, counts and
         unified findings) when an LLM client was used.  ``None`` when
@@ -141,7 +113,6 @@ class PairResult:
     pair_id: str
     features: PairFeatures
     classification: ClassificationResult
-    narrative_verdict: NarrativeVerdict | None = None
     ae_clinical_picture: AEClinicalPictureResult | None = None
     source_case_assessment: SourceCaseAssessment | None = None
     narrative_demographics_1: NarrativeDemographics | None = None
@@ -180,8 +151,7 @@ class PipelineRunner:
         1. Report loading (via ReportLoader protocol)
         2. Feature matching and reporting context
         3. Stats retrieval (via StatsProvider protocol)
-        4. LLM assessment (AE clinical-picture inconsistency via LLMClient;
-           narrative comparison via LLMClient or NarrativeProvider)
+        4. LLM assessment (AE clinical-picture inconsistency via LLMClient)
         5. Feature generation (probability, inconsistencies, anchor)
         6. Decision logic classification
 
@@ -193,9 +163,8 @@ class PipelineRunner:
         Computes frequency statistics for clinical contexts.
     llm_client : LLMClient, optional
         If provided, used for AE clinical-picture inconsistency assessment
-        on every pair, and for narrative comparison during batch processing.
-        Takes precedence over ``narrative_provider`` passed to
-        :meth:`run_batch`.
+        on every pair, and for the per-report narrative source/case and
+        narrative-demographics extractions during batch processing.
     llm_temperature : float or None, optional
         Sampling temperature forwarded to every LLM task. ``None`` (the
         default) omits the parameter so the backend applies its own
@@ -270,8 +239,6 @@ class PipelineRunner:
     def run_pair(
         self,
         pair: ReportPair,
-        narrative_consistency: NarrativeConsistency = NarrativeConsistency.NOT_AVAILABLE,
-        narrative_verdict: NarrativeVerdict | None = None,
         ae_clinical_picture: AEClinicalPictureResult | None = None,
         source_case_assessment: SourceCaseAssessment | None = None,
         narrative_demographics_1: NarrativeDemographics | None = None,
@@ -283,14 +250,6 @@ class PipelineRunner:
         ----------
         pair : ReportPair
             The candidate pair to evaluate.
-        narrative_consistency : NarrativeConsistency, optional
-            Pre-computed narrative assessment.  Defaults to NOT_AVAILABLE.
-            Ignored when ``narrative_verdict`` is provided (the verdict's
-            consistency is used instead).
-        narrative_verdict : NarrativeVerdict, optional
-            Full LLM narrative assessment.  When provided, its
-            ``consistency`` field is used and the ``narrative_consistency``
-            parameter is ignored.
         ae_clinical_picture : AEClinicalPictureResult, optional
             Pre-computed AE clinical-picture assessment.  When ``None``
             and no in-pair assessment can be performed (no LLM client
@@ -316,12 +275,6 @@ class PipelineRunner:
         PairResult
             Features and classification for the pair.
         """
-        # Resolve narrative consistency
-        if narrative_verdict is not None:
-            effective_consistency = narrative_verdict.consistency
-        else:
-            effective_consistency = narrative_consistency
-
         # Step 1: Load reports
         r1, r2 = self._loader.load_pair(pair)
 
@@ -360,7 +313,6 @@ class PipelineRunner:
             r1=r1,
             r2=r2,
             stats=stats,
-            narrative_consistency=effective_consistency,
             config=self._pipeline_config,
             pair_id=pair.pair_id,
             ae_clinical_picture=ae_clinical_picture,
@@ -374,50 +326,11 @@ class PipelineRunner:
             pair_id=pair.pair_id,
             features=features,
             classification=classification,
-            narrative_verdict=narrative_verdict,
             ae_clinical_picture=ae_clinical_picture,
             source_case_assessment=source_case_assessment,
             narrative_demographics_1=narrative_demographics_1,
             narrative_demographics_2=narrative_demographics_2,
         )
-
-    def _assess_narrative(
-        self,
-        pair_id: str,
-        narrative_1: str | None,
-        narrative_2: str | None,
-    ) -> tuple[NarrativeConsistency, NarrativeVerdict | None]:
-        """Assess narrative consistency via the injected LLM client.
-
-        Returns
-        -------
-        tuple[NarrativeConsistency, NarrativeVerdict | None]
-            The consistency level and the full verdict (if LLM was used).
-            Falls back to NOT_AVAILABLE with no verdict on failure.
-        """
-        if self._llm_client is None:
-            return NarrativeConsistency.NOT_AVAILABLE, None
-
-        try:
-            verdict = compare_narratives(
-                self._llm_client,
-                pair_id=pair_id,
-                narrative_1=narrative_1,
-                narrative_2=narrative_2,
-                temperature=self._llm_temperature,
-            )
-            self._note_llm_success()
-            return verdict.consistency, verdict
-        except LLMConfigurationError:
-            raise
-        except Exception as exc:
-            logger.warning(
-                "LLM narrative assessment failed for pair %s: %s",
-                pair_id,
-                exc,
-            )
-            self._note_llm_failure(exc)
-            return NarrativeConsistency.NOT_AVAILABLE, None
 
     def _assess_ae_clinical_picture(
         self,
@@ -645,28 +558,14 @@ class PipelineRunner:
     def run_batch(
         self,
         pairs: Sequence[ReportPair],
-        narrative_provider: NarrativeProvider | None = None,
         continue_on_error: bool = True,
     ) -> BatchResult:
         """Process multiple pairs.
-
-        When an ``llm_client`` was provided at construction time, it is
-        used for narrative assessment automatically.  If the LLM call
-        fails for a pair the narrative is recorded as NOT_AVAILABLE and
-        processing continues.
-
-        An explicit ``narrative_provider`` callback takes precedence over
-        the LLM client — this allows callers to supply pre-computed
-        assessments when available.
 
         Parameters
         ----------
         pairs : Sequence[ReportPair]
             Pairs to evaluate.
-        narrative_provider : NarrativeProvider, optional
-            Callable that provides narrative consistency for each pair.
-            If None and no ``llm_client`` is configured, NOT_AVAILABLE
-            is used for all pairs.
         continue_on_error : bool
             If True, log errors and continue. If False, raise on first error.
 
@@ -718,22 +617,6 @@ class PipelineRunner:
                 # Load reports to get narratives
                 r1, r2 = self._loader.load_pair(pair)
 
-                # Determine narrative assessment
-                verdict: NarrativeVerdict | None = None
-
-                if narrative_provider is not None:
-                    # Explicit callback takes precedence
-                    consistency = narrative_provider(
-                        pair.pair_id, r1.narrative, r2.narrative
-                    )
-                elif self._llm_client is not None:
-                    # Use LLM client with graceful fallback
-                    consistency, verdict = self._assess_narrative(
-                        pair.pair_id, r1.narrative, r2.narrative
-                    )
-                else:
-                    consistency = NarrativeConsistency.NOT_AVAILABLE
-
                 # AE clinical-picture assessment (LLM-driven; graceful
                 # NOT_ASSESSED fallback when no LLM client or on error).
                 ae_result = self._assess_ae_clinical_picture(
@@ -765,8 +648,6 @@ class PipelineRunner:
 
                 result = self.run_pair(
                     pair,
-                    narrative_consistency=consistency,
-                    narrative_verdict=verdict,
                     ae_clinical_picture=ae_result,
                     source_case_assessment=source_case,
                     narrative_demographics_1=demographics_cache[r1.report_id],

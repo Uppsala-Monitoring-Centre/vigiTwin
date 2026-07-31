@@ -26,7 +26,6 @@ from llm_dup_dev.llm.tasks.ae_clinical_picture import (
 from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
     InconsistencySeverity,
-    NarrativeConsistency,
 )
 from llm_dup_dev.models.report import AdverseEvent, Report
 from llm_dup_dev.models.report_pair import ReportPair
@@ -498,7 +497,6 @@ class TestGeneratePairFeaturesNoAEResult:
             r1=report_a,
             r2=report_b,
             stats=stats,
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             config=PipelineConfig(),
         )
 
@@ -564,7 +562,6 @@ class TestPipelineFeatureMerge:
             r1=report_a,
             r2=report_b,
             stats=self._stats(),
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             ae_clinical_picture=ae_result,
         )
 
@@ -615,7 +612,6 @@ class TestPipelineFeatureMerge:
             r1=report_a,
             r2=report_b,
             stats=self._stats(),
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
         baseline_moderate = baseline.inconsistency_counts.moderate
 
@@ -623,7 +619,6 @@ class TestPipelineFeatureMerge:
             r1=report_a,
             r2=report_b,
             stats=self._stats(),
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             ae_clinical_picture=ae_result,
         )
 

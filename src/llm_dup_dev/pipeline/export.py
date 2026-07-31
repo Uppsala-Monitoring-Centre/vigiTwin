@@ -30,7 +30,6 @@ object keyed by ``pair_id``, but each value carries every field of a
         "final_label": ...,
         "features": {<PairFeatures>},
         "classification": {<ClassificationResult>},
-        "narrative_verdict": {<NarrativeVerdict>} | null,
         "ae_clinical_picture": {<AEClinicalPictureResult>} | null,
         "source_case_assessment": {<SourceCaseAssessment>} | null,
         "narrative_demographics_1": {<NarrativeDemographics>} | null,
@@ -162,7 +161,6 @@ def write_pair_results(
                 "final_label": r.final_label,
                 "features": r.features.model_dump(mode="json"),
                 "classification": r.classification.model_dump(mode="json"),
-                "narrative_verdict": _dump_optional(r.narrative_verdict),
                 "ae_clinical_picture": _dump_optional(r.ae_clinical_picture),
                 "source_case_assessment": _dump_optional(
                     r.source_case_assessment
@@ -233,7 +231,6 @@ def read_pair_results(path: str | Path) -> dict[str, PairResult]:
     # Imported here rather than at module load: PairResult lives in
     # ``pipeline.runner``, whose import pulls the LLM/feature-generation stack.
     # Offline consumers of this module (e.g. eval.sweep) must not pay that cost.
-    from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
     from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
     from llm_dup_dev.models.narrative_source_case import SourceCaseAssessment
     from llm_dup_dev.models.pair_features import AEClinicalPictureResult
@@ -290,10 +287,6 @@ def read_pair_results(path: str | Path) -> dict[str, PairResult]:
             pair_id=pair_id,
             features=features,
             classification=classification,
-            narrative_verdict=_validate_submodel(
-                NarrativeVerdict, record, "narrative_verdict", prefix,
-                required=False,
-            ),
             ae_clinical_picture=_validate_submodel(
                 AEClinicalPictureResult, record, "ae_clinical_picture", prefix,
                 required=False,

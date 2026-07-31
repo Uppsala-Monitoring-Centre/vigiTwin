@@ -115,11 +115,6 @@ def build_batch_index_item(
             else None
         ),
         inconsistency_items=inc_items,
-        narrative_consistency=(
-            vm.features_summary.narrative_consistency
-            if vm.features_summary
-            else None
-        ),
         anchor_label=anchor_label,
         anchor_n=anchor_n,
         context_label=_format_context_label(vm),

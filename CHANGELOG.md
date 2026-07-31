@@ -15,6 +15,41 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-31
+
+Removal of the standalone LLM narrative-consistency assessment, which was
+built but never wired into the decision logic.
+
+### Removed
+- `llm.tasks.narrative_comparison` (the `NarrativeVerdict` schema,
+  `build_narrative_request` and `compare_narratives`). Its verdict reached
+  `PairFeatures.narrative_consistency` and stopped there: unlike every other
+  assessor it never produced an `Inconsistency`, so it contributed nothing to
+  `inconsistency_counts`, the probability, or the final label. The classifier
+  never read the field.
+- `PairFeatures.narrative_consistency` and the `NarrativeConsistency` enum
+  (also dropped from the `llm_dup_dev.models` public exports).
+- `PairResult.narrative_verdict`, and the `narrative_verdict` key from the
+  `pair_results.json` artifact.
+- The `NarrativeProvider` type alias, `neutral_narrative_provider`, and the
+  `narrative_provider` parameter of `PipelineRunner.run_batch`. The callback
+  existed only to supply a value nothing consumed.
+- The `narrative_consistency` parameter of `generate_pair_features`, the
+  "Narrative consistency" row on the HTML pair page, and the unrendered
+  `narrative_consistency` field on the review index view model.
+
+### Changed
+- A configured `llm_client` now costs **five** LLM calls per pair instead of
+  six: the per-pair narrative comparison is gone, leaving the AE
+  clinical-picture call plus the two per-report source/case and two per-report
+  demographics extractions.
+
+### Migration
+Reading an existing `pair_results.json` or `features.json` still works — the
+removed keys are ignored on load, since no model forbids extra fields. Callers
+passing `narrative_consistency=` or `narrative_verdict=` to `run_pair`, or
+`narrative_provider=` to `run_batch`, must drop those arguments.
+
 ## [0.3.0] - 2026-07-29
 
 Support for reference sets where no screening-algorithm results exist, so that

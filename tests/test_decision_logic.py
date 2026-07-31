@@ -23,7 +23,6 @@ from llm_dup_dev.models.enums import (
     RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.narrative_source_case import (
@@ -87,7 +86,6 @@ def _make_features(
         inconsistency_counts=InconsistencyCounts(
             moderate=moderate, strong=strong, decisive=decisive,
         ),
-        narrative_consistency=NarrativeConsistency.NEUTRAL,
         source_case_assessment=source_case_assessment,
     )
 

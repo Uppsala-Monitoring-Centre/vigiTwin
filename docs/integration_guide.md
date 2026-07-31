@@ -17,7 +17,7 @@ decision logic, eval framework       LLM execution via Azure
 Defines:                             Implements:
   Report, ReportPair, PairFeatures     ReportLoader protocol
   FrequencyStats                       StatsProvider protocol (live or offline)
-  PipelineRunner                       NarrativeProvider (future)
+  PipelineRunner
   ClassificationResult
   EvalSummary
 
@@ -434,7 +434,7 @@ See `duplicate_adjudication_spec.md` § *AE clinical-picture inconsistency* for 
 
 ##### Wiring through `default_config.yaml`
 
-For deployments that flip between LLM and deterministic AE assessment per environment (e.g. an org that cannot use LLMs for AE clinical-picture specifically, but still uses one for narrative comparison), expose the mode in the secure repo's `configs/default_config.yaml`:
+For deployments that flip between LLM and deterministic AE assessment per environment (e.g. an org that cannot use LLMs for AE clinical-picture specifically, but still uses one for the per-report narrative extractions), expose the mode in the secure repo's `configs/default_config.yaml`:
 
 ```yaml
 # Selects the AE clinical-picture assessor.
@@ -637,25 +637,6 @@ print(f"Processed: {batch.n_processed}, Errors: {batch.n_errors}")
 # Get labels for all processed pairs
 labels = batch.labels()  # {"12345__67890": "Duplicates", ...}
 ```
-
-### With narrative consistency (future)
-
-When the narrative analysis module is implemented:
-
-```python
-from llm_dup_dev.models.enums import NarrativeConsistency
-
-def my_narrative_provider(pair_id, narrative_1, narrative_2):
-    """Call Azure OpenAI to assess narrative consistency."""
-    # Your LLM call here
-    return NarrativeConsistency.CONSISTENT
-
-batch = runner.run_batch(pairs, narrative_provider=my_narrative_provider)
-```
-
-Until then, the pipeline defaults to `NarrativeConsistency.NEUTRAL`, which has no effect on the classification.
-
----
 
 ## Running evaluation
 
@@ -1306,4 +1287,4 @@ print(f"Reason:  {result.classification.explanation}")
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Narrative analysis (Phase 9) | Deferred | LLM-based free-text narrative consistency assessment. The pipeline currently defaults to `NEUTRAL`. When implemented, the `NarrativeProvider` callback will supply narrative-derived inconsistencies (moderate, strong, decisive) that feed into the existing decision logic. This is distinct from the AE clinical-picture module (already implemented), which compares structured adverse-event terms and narratives via the `LLMClient` protocol. |
+| Narrative analysis (Phase 9) | Removed | A standalone LLM narrative-consistency assessment was built and then removed: its verdict never reached the decision logic, so it cost one LLM call per pair and surfaced only as a display field. The narrative signals that *do* feed classification are the AE clinical-picture module and the narrative source/case/demographics extractions, all already implemented via the `LLMClient` protocol. |

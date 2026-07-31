@@ -32,7 +32,6 @@ from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.classifier.decision_logic import classify
 from llm_dup_dev.models.enums import (
     AnchorType,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.narrative_source_case import (
@@ -130,7 +129,6 @@ def _make_features(
         inconsistency_counts=InconsistencyCounts(
             minor=minor, moderate=moderate, strong=strong, decisive=decisive,
         ),
-        narrative_consistency=NarrativeConsistency.NEUTRAL,
         source_case_assessment=(
             SourceCaseAssessment(verdict=verdict) if verdict is not None else None
         ),

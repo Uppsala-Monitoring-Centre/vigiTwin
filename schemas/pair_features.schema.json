@@ -364,18 +364,6 @@
       "title": "InconsistencySeverity",
       "type": "string"
     },
-    "NarrativeConsistency": {
-      "description": "Narrative consistency categories from LLM assessment.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Narrative-derived features\n\nValues\n------\nSTRONGLY_CONSISTENT : narratives clearly describe the same patient\nCONSISTENT : probable but not certain match\nNEUTRAL : narratives too sparse to judge\nINCONSISTENT : narratives clearly describe different patients\nNOT_AVAILABLE : LLM assessment was not performed or failed",
-      "enum": [
-        "strongly_consistent",
-        "consistent",
-        "neutral",
-        "inconsistent",
-        "not_available"
-      ],
-      "title": "NarrativeConsistency",
-      "type": "string"
-    },
     "ProbabilityEstimate": {
       "description": "Result of the collision probability computation.\n\n``p_joint`` is the chance-match probability for a single pairwise\nopportunity; ``p_match`` adjusts it for the multiplicity of the anchor\npopulation. Both are probabilities in [0, 1] \u2014 neither is a p-value.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Rarity-based matching evidence",
       "properties": {
@@ -709,9 +697,6 @@
       ],
       "default": null
     },
-    "narrative_consistency": {
-      "$ref": "#/$defs/NarrativeConsistency"
-    },
     "source_case_assessment": {
       "anyOf": [
         {
@@ -741,8 +726,7 @@
     "anchor",
     "probability",
     "L_match",
-    "L_patient",
-    "narrative_consistency"
+    "L_patient"
   ],
   "title": "PairFeatures",
   "type": "object"

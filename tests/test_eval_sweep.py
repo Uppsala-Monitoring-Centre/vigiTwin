@@ -15,7 +15,6 @@ from llm_dup_dev.eval.report import sweep_to_markdown, sweep_to_text
 from llm_dup_dev.feature_generation.probability import compute_l_patient
 from llm_dup_dev.models.enums import (
     AnchorType,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.narrative_source_case import (
@@ -58,7 +57,6 @@ def _features(pair_id, L_match, minor=0, moderate=0, strong=0,
         inconsistency_counts=InconsistencyCounts(
             minor=minor, moderate=moderate, strong=strong
         ),
-        narrative_consistency=NarrativeConsistency.NEUTRAL,
         source_case_assessment=assessment,
     )
 

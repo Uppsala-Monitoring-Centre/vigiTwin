@@ -37,27 +37,6 @@ is therefore a separate, second assessment.
 from enum import Enum
 
 
-class NarrativeConsistency(str, Enum):
-    """Narrative consistency categories from LLM assessment.
-
-    See: docs/duplicate_adjudication_spec.md § Narrative-derived features
-
-    Values
-    ------
-    STRONGLY_CONSISTENT : narratives clearly describe the same patient
-    CONSISTENT : probable but not certain match
-    NEUTRAL : narratives too sparse to judge
-    INCONSISTENT : narratives clearly describe different patients
-    NOT_AVAILABLE : LLM assessment was not performed or failed
-    """
-
-    STRONGLY_CONSISTENT = "strongly_consistent"
-    CONSISTENT = "consistent"
-    NEUTRAL = "neutral"
-    INCONSISTENT = "inconsistent"
-    NOT_AVAILABLE = "not_available"
-
-
 class InconsistencySeverity(str, Enum):
     """Severity levels for detected inconsistencies between reports.
 

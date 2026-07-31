@@ -15,7 +15,6 @@ from .enums import (
     IndependenceAssessment,
     IndependenceReason,
     InconsistencySeverity,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from .report import (
@@ -60,7 +59,6 @@ __all__ = [
     "IndependenceAssessment",
     "IndependenceReason",
     "InconsistencySeverity",
-    "NarrativeConsistency",
     "ReportingContextLevel",
     # Report layer
     "AdverseEvent",

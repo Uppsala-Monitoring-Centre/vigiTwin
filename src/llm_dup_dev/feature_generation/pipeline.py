@@ -29,7 +29,6 @@ from llm_dup_dev.feature_generation.reporting_context import (
 from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
     InconsistencySeverity,
-    NarrativeConsistency,
 )
 from llm_dup_dev.models.narrative_source_case import SourceCaseAssessment
 from llm_dup_dev.models.pair_features import (
@@ -47,7 +46,6 @@ def generate_pair_features(
     r1: Report,
     r2: Report,
     stats: FrequencyStats,
-    narrative_consistency: NarrativeConsistency,
     config: PipelineConfig | None = None,
     pair_id: str | None = None,
     ae_clinical_picture: AEClinicalPictureResult | None = None,
@@ -71,8 +69,6 @@ def generate_pair_features(
     stats : FrequencyStats
         Pre-computed database frequency statistics for the shared
         clinical context. Must be provided by the secure repo.
-    narrative_consistency : NarrativeConsistency
-        Result of LLM-based narrative assessment (computed externally).
     config : PipelineConfig, optional
         Pipeline configuration. Uses defaults if not provided.
     pair_id : str, optional
@@ -224,7 +220,6 @@ def generate_pair_features(
         ae_clinical_picture_rule_based_details=(
             ae_clinical_picture.rule_based_details
         ),
-        narrative_consistency=narrative_consistency,
         source_case_assessment=source_case_assessment,
         evidence_summary=evidence_summary,
     )

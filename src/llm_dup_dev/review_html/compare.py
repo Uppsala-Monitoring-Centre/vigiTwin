@@ -718,7 +718,6 @@ def _build_features_summary(
         anchor_type=features.anchor.type.value,
         anchor_n=features.anchor.N_anchor,
         reporting_context=ctx_str,
-        narrative_consistency=features.narrative_consistency.value,
         matching_drugs=features.matching_drugs,
         matching_aes=features.matching_AEs,
         inconsistencies=[

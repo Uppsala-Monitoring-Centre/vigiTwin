@@ -25,8 +25,8 @@ Two run shapes are supported:
     Pass both; each ``PairResult`` is reconstructed from them, taking
     ``source_case_assessment`` from the features and narrative demographics
     from an optional per-report ``narrative_demographics`` bundle. The
-    renderer consumes neither ``narrative_verdict`` nor ``ae_clinical_picture``,
-    so a split run renders identically to a ``pair_results`` run.
+    renderer does not consume ``ae_clinical_picture``, so a split run
+    renders identically to a ``pair_results`` run.
 
 When ``pair_results_path`` is given it wins, even if split files are also
 present.

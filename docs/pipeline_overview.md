@@ -6,7 +6,7 @@ The pipeline is primarily a transparent rule-based decision logic operating on s
 
 1. **Rarity-based matching evidence**, which evaluates how unlikely it would be for two unrelated reports to share the observed combination of clinical features.
 2. **Inconsistency signals** from structured data and clinical dates, which capture information arguing against the duplicate hypothesis.
-3. **Narrative consistency** (planned), assessed using a language model to determine whether free-text narratives are clinically compatible with the same case.
+3. **Narrative-derived signals**, assessed using a language model: the AE clinical-picture comparison (which also has a deterministic MedDRA-hierarchy fallback), plus per-report source/case and demographics extraction that feed the matching and inconsistency logic.
 
 The matching evidence is anchored in a **comparison population** (the *anchor population*) defined by the shared clinical context of the two reports. The method estimates the probability that **at least one** pair of reports anywhere in that population would share the observed feature pattern by chance, across all unordered pairs it contains; small probabilities produce strong evidence in favour of the duplicate hypothesis.
 
@@ -51,7 +51,7 @@ E["Determine Reporting Context"]
 F["Select Anchor Population<br>(drugs, AEs, drugs∩AEs)"]
 H["Assess Matching Evidence"]
 I["Assess Inconsistencies"]
-J["Assess Narrative Consistency (LLM)"]
+J["Assess AE Clinical Picture<br>(LLM or rule-based)"]
 S["Extract Narrative Source/Case (LLM)<br>+ Deterministic Pair Comparison"]
 K["Decision Logic<br>(independence assessment +<br>relationship assessment)"]
 end
@@ -70,6 +70,7 @@ A --> D
 B --> E
 B --> I
 C --> B
+B --> J
 C --> J
 C --> S
 D --> F
@@ -84,7 +85,6 @@ S --> K
 
 H --> K
 I --> K
-J --> K
 
 K --> M
 K --> N
