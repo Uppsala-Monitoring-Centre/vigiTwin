@@ -7,7 +7,6 @@ from llm_dup_dev.models.enums import (
     AnchorType,
     RelationshipAssessment,
     IndependenceAssessment,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.pair_features import (
@@ -41,7 +40,6 @@ def _make_pair_result(
         L_match=4.0,
         L_patient=0.0,  # no feature_contributions to decompose
         inconsistency_counts=InconsistencyCounts(),
-        narrative_consistency=NarrativeConsistency.NEUTRAL,
     )
     classification = ClassificationResult(
         pair_id=pair_id,

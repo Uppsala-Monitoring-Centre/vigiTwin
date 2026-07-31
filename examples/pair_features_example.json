@@ -89,7 +89,6 @@
   },
   "ae_clinical_picture_reasoning": "",
   "ae_clinical_picture_rule_based_details": null,
-  "narrative_consistency": "consistent",
   "source_case_assessment": null,
   "evidence_summary": {
     "shared": {

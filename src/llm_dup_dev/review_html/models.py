@@ -276,7 +276,6 @@ class FeaturesSummaryVM(BaseModel):
     anchor_type: str
     anchor_n: int
     reporting_context: str
-    narrative_consistency: str
     matching_drugs: list[str] = Field(default_factory=list)
     matching_aes: list[str] = Field(default_factory=list)
     inconsistencies: list[InconsistencyVM] = Field(default_factory=list)
@@ -495,7 +494,6 @@ class BatchIndexItem(BaseModel):
     inconsistency_items: list[IndexInconsistencyItem] = Field(
         default_factory=list
     )
-    narrative_consistency: str | None = None
     anchor_label: str | None = None              # e.g. "<strong>ranitidine</strong> + rash"
     anchor_n: int | None = None                  # anchor population count (own column)
     context_label: str | None = None             # e.g. "SE 2025" / "Global"

@@ -7,7 +7,6 @@ from llm_dup_dev.feature_generation.pipeline import generate_pair_features
 from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.models.enums import (
     InconsistencySeverity,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.narrative_source_case import (
@@ -39,7 +38,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
         )
 
@@ -60,9 +58,6 @@ class TestGeneratePairFeatures:
         assert features.L_match > 0
         assert features.probability.p_joint > 0
 
-        # Narrative
-        assert features.narrative_consistency == NarrativeConsistency.CONSISTENT
-
         # Version
         assert features.feature_version == "1.0"
 
@@ -77,7 +72,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_c,
             stats=stats,
-            narrative_consistency=NarrativeConsistency.INCONSISTENT,
             config=default_config,
         )
 
@@ -95,7 +89,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             config=default_config,
             pair_id="CUSTOM_PAIR_001",
         )
@@ -110,7 +103,6 @@ class TestGeneratePairFeatures:
             r1=report_empty,
             r2=report_empty,
             stats=stats,
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             config=default_config,
         )
 
@@ -130,7 +122,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_c,
             stats=stats,
-            narrative_consistency=NarrativeConsistency.INCONSISTENT,
             config=default_config,
         )
 
@@ -151,7 +142,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             config=default_config,
         )
         cdc = features.clinical_date_inconsistency_counts
@@ -172,7 +162,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
         )
         assert features.evidence_summary is not None
@@ -187,7 +176,6 @@ class TestGeneratePairFeatures:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
         )
         from llm_dup_dev.models.pair_features import PairFeatures
@@ -208,7 +196,6 @@ class TestSourceCaseAssessmentIntegration:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
             source_case_assessment=None,
         )
@@ -230,7 +217,6 @@ class TestSourceCaseAssessmentIntegration:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
             source_case_assessment=assessment,
         )
@@ -261,7 +247,6 @@ class TestSourceCaseAssessmentIntegration:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
             source_case_assessment=assessment,
         )
@@ -287,7 +272,6 @@ class TestSourceCaseAssessmentIntegration:
             r1=report_a,
             r2=report_b,
             stats=stats_similar,
-            narrative_consistency=NarrativeConsistency.CONSISTENT,
             config=default_config,
             source_case_assessment=assessment,
         )

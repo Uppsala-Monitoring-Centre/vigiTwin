@@ -1,9 +1,8 @@
 """Shared helper for coercing structured LLM responses into Pydantic models.
 
-The four per-report / per-pair LLM tasks
+The three per-report / per-pair LLM tasks
 (:mod:`llm_dup_dev.llm.tasks.narrative_source_case`,
 :mod:`llm_dup_dev.llm.tasks.narrative_demographics`,
-:mod:`llm_dup_dev.llm.tasks.narrative_comparison`,
 :mod:`llm_dup_dev.llm.tasks.ae_clinical_picture`) all need to coerce
 ``LLMResponse.parsed`` into a concrete Pydantic model and raise a
 descriptive ``ValueError`` when the backend did not produce a usable

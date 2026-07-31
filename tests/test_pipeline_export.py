@@ -7,7 +7,6 @@ import pytest
 from llm_dup_dev.classifier.decision_logic import classify
 from llm_dup_dev.models.enums import (
     AnchorType,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.pair_features import (
@@ -18,7 +17,6 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.llm.tasks.narrative_comparison import NarrativeVerdict
 from llm_dup_dev.models.enums import AEClinicalPictureStatus
 from llm_dup_dev.models.narrative_demographics import (
     NarrativeAgeValue,
@@ -59,7 +57,6 @@ def _features(pair_id="R001__R002", moderate=1):
         L_match=4.0,
         L_patient=0.30103,
         inconsistency_counts=InconsistencyCounts(moderate=moderate),
-        narrative_consistency=NarrativeConsistency.NEUTRAL,
     )
 
 
@@ -75,11 +72,6 @@ def _full_result(pair_id="R001__R002"):
         pair_id=pair_id,
         features=f,
         classification=classify(f),
-        narrative_verdict=NarrativeVerdict(
-            consistency=NarrativeConsistency.CONSISTENT,
-            evidence=["both mention a 54-year-old female on pregabalin"],
-            reasoning="Narratives align.",
-        ),
         ae_clinical_picture=AEClinicalPictureResult(
             status=AEClinicalPictureStatus.ASSESSED,
             method="rule_based",
@@ -255,7 +247,6 @@ class TestPairResultsRoundTrip:
 
         raw = json.loads(path.read_text())["R001__R002"]
         for key in (
-            "narrative_verdict",
             "ae_clinical_picture",
             "source_case_assessment",
             "narrative_demographics_1",
@@ -264,7 +255,6 @@ class TestPairResultsRoundTrip:
             assert raw[key] is None
 
         restored = read_pair_results(path)["R001__R002"]
-        assert restored.narrative_verdict is None
         assert restored.ae_clinical_picture is None
         assert restored.source_case_assessment is None
         assert restored.narrative_demographics_1 is None
@@ -279,7 +269,6 @@ class TestPairResultsRoundTrip:
             "final_label",
             "features",
             "classification",
-            "narrative_verdict",
             "ae_clinical_picture",
             "source_case_assessment",
             "narrative_demographics_1",
@@ -384,9 +373,6 @@ class TestPairResultsRoundTrip:
                 "final_label": result.final_label,
                 "features": result.features.model_dump(mode="json"),
                 "classification": result.classification.model_dump(mode="json"),
-                "narrative_verdict": result.narrative_verdict.model_dump(
-                    mode="json"
-                ),
                 "ae_clinical_picture": result.ae_clinical_picture.model_dump(
                     mode="json"
                 ),
@@ -403,5 +389,4 @@ class TestPairResultsRoundTrip:
         restored = read_pair_results(path)["R001__R002"]
         assert restored.pair_id == "R001__R002"
         assert restored.features == result.features
-        assert restored.narrative_verdict == result.narrative_verdict
         assert restored.narrative_demographics_1 is None

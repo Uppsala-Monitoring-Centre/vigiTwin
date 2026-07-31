@@ -28,7 +28,6 @@ from llm_dup_dev.models.enums import (
     AnchorType,
     IndependenceAssessment,
     IndependenceReason,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.pair_features import (
@@ -1439,7 +1438,6 @@ class TestEvidenceZoneRegression:
             L_match=l_match,
             L_patient=0.0,  # not exercised: this asserts on L_match zones
             inconsistency_counts=InconsistencyCounts(),
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
         result = classify(features)
         assert result.independence_reason == expected_reason
@@ -1512,7 +1510,6 @@ class TestDegenerateAnchorEvidence:
             L_match=result.L_match,
             L_patient=result.L_patient,
             inconsistency_counts=InconsistencyCounts(),
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
         return anchor, result, classify(features)
 
@@ -1791,7 +1788,6 @@ class TestLPatientSerialization:
             L_match=3.0,
             L_patient=2.31,
             inconsistency_counts=InconsistencyCounts(),
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
         restored = PairFeatures.model_validate_json(f.model_dump_json())
         assert restored.L_patient == pytest.approx(2.31)

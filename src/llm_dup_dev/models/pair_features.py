@@ -19,7 +19,6 @@ from .enums import (
     AEClinicalPictureStatus,
     AnchorType,
     InconsistencySeverity,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from .narrative_source_case import SourceCaseAssessment
@@ -337,9 +336,6 @@ class PairFeatures(BaseModel):
     ae_clinical_picture_rule_based_details: (
         RuleBasedAEClinicalPictureDetails | None
     ) = None
-
-    # Narrative assessment
-    narrative_consistency: NarrativeConsistency
 
     # Derived narrative source/case signals (pair-level deterministic
     # verdict from two per-report LLM extractions). ``None`` when the

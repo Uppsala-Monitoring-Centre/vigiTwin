@@ -476,8 +476,6 @@ Example structure:
   "ae_clinical_picture_reasoning": "",
   "ae_clinical_picture_rule_based_details": null,
 
-  "narrative_consistency": "consistent",
-
   "evidence_summary": {...}
 }
 ```
@@ -741,23 +739,6 @@ Suppressed entries (`suppressed = true`, `suppressed_by = "decisive_global_misma
 
 ------
 
-## Narrative Consistency
-
-```
-narrative_consistency: "consistent"
-```
-
-Allowed values:
-
-```
-strongly_consistent
-consistent
-neutral
-inconsistent
-```
-
-------
-
 ## Diagnostic Evidence Summary (Optional)
 
 For debugging and interpretability, PairFeatures may include a summary of shared and report-specific evidence.
@@ -815,7 +796,6 @@ anchor.N_anchor
 L_match
 L_patient
 inconsistencies
-narrative_consistency
 ```
 
 Additional fields support debugging, reproducibility, and interpretability.

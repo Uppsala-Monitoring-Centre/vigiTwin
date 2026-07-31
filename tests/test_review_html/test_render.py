@@ -9,7 +9,6 @@ from llm_dup_dev.models.enums import (
     RelationshipAssessment,
     IndependenceAssessment,
     InconsistencySeverity,
-    NarrativeConsistency,
     ReportingContextLevel,
 )
 from llm_dup_dev.models.pair_features import (
@@ -500,7 +499,6 @@ def _make_features(pair_id: str = "R001__R002") -> PairFeatures:
             ),
         ],
         inconsistency_counts=InconsistencyCounts(moderate=1, strong=0, decisive=0),
-        narrative_consistency=NarrativeConsistency.CONSISTENT,
     )
 
 
@@ -699,7 +697,6 @@ class TestPredictionRendering:
         assert len(item.inconsistency_items) == 1
         assert "68 kg vs 70 kg" in item.inconsistency_items[0].text
         assert item.inconsistency_items[0].severity == "moderate"
-        assert item.narrative_consistency == "consistent"
         # Anchor: drugs_AEs anchor type combines matching drugs and AEs
         # (descriptor only — count is in anchor_n)
         assert item.anchor_label == "pregabalin + somnolence"

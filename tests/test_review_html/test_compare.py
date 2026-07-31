@@ -4,7 +4,6 @@ import pytest
 
 from llm_dup_dev.feature_generation.pipeline import generate_pair_features
 from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.models.enums import NarrativeConsistency
 from llm_dup_dev.models.report import (
     AdverseEvent,
     AgeValue,
@@ -693,7 +692,6 @@ class TestClinicalDateCountsInViewModels:
             r1=report_a,
             r2=report_b,
             stats=stats,
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
         )
 
     def test_features_summary_has_clinical_date_counts(
@@ -758,15 +756,13 @@ class TestClinicalDateCountsInViewModels:
 
 
 # ===================================================================
-# Decision summary: source_case row + dropped narrative_consistency
+# Decision summary: source_case row
 # ===================================================================
 
 
 class TestDecisionSummarySourceCase:
     """The Decision summary must surface source_case_assessment (the
-    classifier consumes it via the source-context zones) and must
-    no longer surface narrative_consistency (which the classifier
-    does not consult)."""
+    classifier consumes it via the source-context zones)."""
 
     def _classification(self):
         from llm_dup_dev.models.classification import ClassificationResult
@@ -787,7 +783,6 @@ class TestDecisionSummarySourceCase:
         )
         return generate_pair_features(
             r1=report_a, r2=report_b, stats=stats,
-            narrative_consistency=NarrativeConsistency.NEUTRAL,
             source_case_assessment=assessment,
         )
 
@@ -854,18 +849,6 @@ class TestDecisionSummarySourceCase:
         assert sc is not None
         assert sc.verdict == "no_decisive_signal"
         assert sc.shared_source_identifier is None
-
-    def test_decision_summary_has_no_narrative_consistency_field(
-        self, report_a, report_b,
-    ):
-        """narrative_consistency is unused by the classifier and was
-        dropped from the Decision summary view model."""
-        features = self._features_with_assessment(report_a, report_b, None)
-        vm = build_pair_view_model(
-            report_a, report_b, pair_id="R001__R002",
-            features=features, classification=self._classification(),
-        )
-        assert not hasattr(vm.decision_summary, "narrative_consistency")
 
 
 # ===================================================================
@@ -1069,7 +1052,6 @@ def _make_pair_vm_for_format(
         anchor_type="drugs_aes",
         anchor_n=10,
         reporting_context="Country (US, 2020)",
-        narrative_consistency="consistent",
         matching_drugs=matching_drugs or [],
         matching_aes=matching_aes or [],
         feature_contributions=feature_contributions,
@@ -1209,7 +1191,6 @@ def _penalty_features(L_match, minor=0, moderate=0, strong=0, verdict=None,
         inconsistency_counts=InconsistencyCounts(
             minor=minor, moderate=moderate, strong=strong
         ),
-        narrative_consistency=NarrativeConsistency.NEUTRAL,
         source_case_assessment=assessment,
     )
 
