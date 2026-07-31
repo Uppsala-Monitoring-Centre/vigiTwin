@@ -79,6 +79,16 @@
       "title": "AnchorType",
       "type": "string"
     },
+    "CaseIdentifierKind": {
+      "description": "Which of a report's own case-number fields a value was read from.\n\nReports carry their own case numbers under three headings, and the\nsame identifier may be filed under different headings by different\nsenders \u2014 any of the three can hold a value that is in fact a\nworldwide-unique identifier. ``kind`` is therefore **provenance, not\na namespace**: it records where the value came from for audit and\ndisplay, never restricting what it may match. See\n:mod:`llm_dup_dev.feature_generation.explicit_link_comparison`.",
+      "enum": [
+        "safety_report_id",
+        "company_number",
+        "authority_number"
+      ],
+      "title": "CaseIdentifierKind",
+      "type": "string"
+    },
     "ClinicalDateFindingSummary": {
       "description": "Serializable summary of a single selected clinical-date finding.\n\nCaptures the key information needed for human review without\nexposing internal implementation details.",
       "properties": {
@@ -174,6 +184,82 @@
       },
       "title": "EvidenceSummary",
       "type": "object"
+    },
+    "ExplicitLinkAssessment": {
+      "description": "Pair-level explicit-link verdict with its supporting matches.\n\n``matches`` is empty for every verdict except ``EXPLICIT_LINK``, and\ncarries every resolved pointer found (not just the first) so a\nreviewer can see the full basis for the link.",
+      "properties": {
+        "verdict": {
+          "$ref": "#/$defs/ExplicitLinkVerdict"
+        },
+        "matches": {
+          "items": {
+            "$ref": "#/$defs/ExplicitLinkMatch"
+          },
+          "title": "Matches",
+          "type": "array"
+        },
+        "reasoning": {
+          "default": "",
+          "title": "Reasoning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "ExplicitLinkAssessment",
+      "type": "object"
+    },
+    "ExplicitLinkDirection": {
+      "description": "Which report carries the pointer at the other.\n\nBoth directions may fire for one pair (each report naming the\nother); each is recorded as a separate\n:class:`ExplicitLinkMatch`.",
+      "enum": [
+        "report_1_to_report_2",
+        "report_2_to_report_1"
+      ],
+      "title": "ExplicitLinkDirection",
+      "type": "string"
+    },
+    "ExplicitLinkMatch": {
+      "description": "One resolved pointer: a reference on one report naming the other.\n\n``target_kind`` records which of the *target's* own case-number\nfields the pointer resolved against. It is the only provenance\navailable \u2014 the referencing side is an untyped C.1.9 value \u2014 and it\nis audit/display information, never a constraint: matching is on\n``normalized_value`` alone.",
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/ExplicitLinkDirection"
+        },
+        "normalized_value": {
+          "title": "Normalized Value",
+          "type": "string"
+        },
+        "target_kind": {
+          "$ref": "#/$defs/CaseIdentifierKind"
+        },
+        "pointer_value": {
+          "title": "Pointer Value",
+          "type": "string"
+        },
+        "target_value": {
+          "title": "Target Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "normalized_value",
+        "target_kind",
+        "pointer_value",
+        "target_value"
+      ],
+      "title": "ExplicitLinkMatch",
+      "type": "object"
+    },
+    "ExplicitLinkVerdict": {
+      "description": "Deterministic pair-level verdict over the two reports' case identifiers.\n\n``NOT_ASSESSED`` distinguishes *did not look* from *looked and found\nnothing*: it is emitted when neither report carries any case\nidentifier data at all (the loader does not supply the fields, or the\nfeatures predate them). Downstream code must treat it as no\ninformation, never as \"assessed and unlinked\".",
+      "enum": [
+        "explicit_link",
+        "no_link",
+        "not_assessed"
+      ],
+      "title": "ExplicitLinkVerdict",
+      "type": "string"
     },
     "FeatureContribution": {
       "description": "Per-feature probability contribution to the composite p_joint.\n\nExposes the individual feature probabilities that are multiplied\ntogether to form p_joint. Useful for debugging and method development:\nunderstanding which features contributed how much evidence.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Rarity-based matching evidence",
@@ -701,6 +787,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/SourceCaseAssessment"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "explicit_link": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExplicitLinkAssessment"
         },
         {
           "type": "null"

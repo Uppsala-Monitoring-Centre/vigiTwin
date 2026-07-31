@@ -109,5 +109,18 @@
     "resolution": "day"
   },
   "narrative": "Patient experienced somnolence and dizziness after starting pregabalin.",
-  "literature_reference": null
+  "literature_reference": null,
+  "case_identifiers": [
+    {
+      "kind": "safety_report_id",
+      "value": "US-EXAMPLECO-2020-000123"
+    },
+    {
+      "kind": "company_number",
+      "value": "EXCO-2020-000123"
+    }
+  ],
+  "other_case_identifiers": [
+    "US-EXAMPLECO-2020-000456"
+  ]
 }

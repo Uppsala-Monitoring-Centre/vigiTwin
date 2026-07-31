@@ -15,6 +15,65 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-31
+
+Explicit inter-report links: the adjudicator now reads the reports'
+structured case-identifier fields (ICH E2B(R3) C.1.9 "Other case
+identifiers in previous transmissions"). When one report of a pair names
+the other, the sending organisation has declared them to be the same
+case — the most direct evidence of shared provenance the data can offer,
+and the pipeline previously ignored it.
+
+Minor rather than patch: `IndependenceReason` gains a member that
+consumers may switch on, and the review HTML gains a consumer-visible
+section and index column.
+
+### Added
+- `Report.case_identifiers` and `Report.other_case_identifiers`, both
+  optional and defaulting to `[]`, and deliberately asymmetric in shape.
+  `case_identifiers` holds the report's own case numbers as
+  `CaseIdentifierRef` entries typed by `CaseIdentifierKind`
+  (`safety_report_id` / `company_number` / `authority_number`), since the
+  source system records them in three named fields.
+  `other_case_identifiers` holds **plain strings** — the C.1.9 field
+  carries the identifier only, with no kind qualifier.
+  **Secure-repo action required** to realise the feature:
+  `ReportLoader.load_report` must populate both — a pointer on one report
+  can only be resolved against the other report's own identifiers. See
+  `integration_guide.md` § ReportLoader.
+- `feature_generation.explicit_link_comparison.compare_explicit_links` —
+  deterministic, LLM-free, DB-free pair comparator. Matches on the
+  normalized value alone, testing each pointer against every identifier
+  the other report holds regardless of which of its fields that value
+  came from (any of the three can carry a worldwide-unique identifier).
+  Drops self-pointers and degenerate values, and requires a *direct*
+  A→B / B→A reference — a shared pointer at a common third case does not
+  link.
+- `PairFeatures.explicit_link` carrying an `ExplicitLinkAssessment`
+  (`explicit_link` / `no_link` / `not_assessed`). `None` on features
+  generated before this release; `not_assessed` means neither report
+  carried identifier data and must be read as *no information*.
+- `IndependenceReason.EXPLICIT_LINK`. An explicit link rejects
+  independence outright and is recorded in preference to
+  `SHARED_SOURCE` when both apply.
+- Relationship-assessment **explicit-link zone** at priority 3 — below
+  Identity and Distinct, above Unresolved — adjudicating at the
+  compelling budget (`w_tot < w_tot_compelling_zone`, default 4.0) and
+  failing to `Different_case` rather than `Abstain`. No new threshold
+  parameter.
+- `DecisionThresholds.explicit_link_enabled` (default `True`). Placed on
+  `DecisionThresholds` so `classify` stays a pure function of
+  `(PairFeatures, DecisionThresholds)` and `eval.sweep` can replay
+  archived features with the signal on and off. This matters for
+  evaluation: some regulator reference sets were partly assembled from
+  E2B link fields, so recall on those pairs is circular while the signal
+  is enabled — see `duplicate_adjudication_spec.md` § Calibrating them.
+  Surfaced in run manifests as `feature_flags.explicit_link_enabled`.
+- Review HTML: an "Explicit Case Links" section on the pair page (match
+  table plus both reports' raw identifier lists, shown for `no_link` too
+  so a reviewer can see why nothing resolved) and an "Explicit link"
+  column on the batch index, present only when some pair is linked.
+
 ## [0.4.0] - 2026-07-31
 
 Removal of the standalone LLM narrative-consistency assessment, which was

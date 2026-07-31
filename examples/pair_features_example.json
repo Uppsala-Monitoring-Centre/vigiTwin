@@ -90,6 +90,19 @@
   "ae_clinical_picture_reasoning": "",
   "ae_clinical_picture_rule_based_details": null,
   "source_case_assessment": null,
+  "explicit_link": {
+    "verdict": "explicit_link",
+    "matches": [
+      {
+        "direction": "report_1_to_report_2",
+        "normalized_value": "us-exampleco-2020-000456",
+        "target_kind": "safety_report_id",
+        "pointer_value": "US-EXAMPLECO-2020-000456",
+        "target_value": "US-EXAMPLECO-2020-000456"
+      }
+    ],
+    "reasoning": "Explicit inter-report link: report 1 references report 2 via safety_report_id=US-EXAMPLECO-2020-000456."
+  },
   "evidence_summary": {
     "shared": {
       "drugs": [

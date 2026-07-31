@@ -15,11 +15,12 @@ It consists of three sequential steps:
    including per-report LLM extractions (narrative demographics;
    source-context information) and database-derived contextual frequencies.
 2. **Independence assessment** — did the two reports arise independently?
-   Independence is rejected either on **direct evidence of shared
-   provenance** (a reliable shared source identifier) or on **rarity-based
-   matching evidence**: how unlikely the observed combination of matched
-   features would be by chance within a relevant comparison population (the
-   *anchor population*).
+   Independence is rejected on an **explicit inter-report link** (one
+   report's structured case identifiers name the other), on **direct
+   evidence of shared provenance** (a reliable shared source identifier),
+   or on **rarity-based matching evidence**: how unlikely the observed
+   combination of matched features would be by chance within a relevant
+   comparison population (the *anchor population*).
 3. **Relationship assessment** — for non-independent pairs only: do the
    reports describe the **same case**, a demonstrably **different case**, or
    is the evidence insufficient to safely resolve the question
@@ -45,19 +46,19 @@ sequence (`classifier/decision_logic.py`: `assess_independence`, then
 `assess_relationship`, composed by `classify`):
 
 1. **Was there sufficient evidence that the reports did not arise
-   independently?** A shared-source verdict from the source-context
-   comparison rejects independence directly; otherwise the matching
-   evidence \(L_{\text{match}}\) must exceed the limited-zone threshold.
-   If neither holds, the pair is **Unrelated** and is not processed
-   further.
+   independently?** An explicit inter-report link, or a shared-source
+   verdict from the source-context comparison, rejects independence
+   directly; otherwise the matching evidence \(L_{\text{match}}\) must
+   exceed the limited-zone threshold. If none holds, the pair is
+   **Unrelated** and is not processed further.
 2. **If non-independence was established, did the reports most likely
    describe the same underlying case?** The weighted inconsistency score
    \(w_{\text{tot}}\) is compared against the tolerance of the
-   highest-priority applicable **evidence zone** — source-context zones
-   (Identity / Distinct / Unresolved, derived from the shared-source
-   verdict) take priority over the rarity zones defined by
-   \(L_{\text{match}}\) — yielding **Same case**, **Different case**, or
-   **Abstain**.
+   highest-priority applicable **evidence zone** — the source-context
+   Identity and Distinct zones first, then the explicit-link zone, then
+   the source-context Unresolved zone, all ahead of the rarity zones
+   defined by \(L_{\text{match}}\) — yielding **Same case**, **Different
+   case**, or **Abstain**.
 
 The tolerance for inconsistencies **scales with the strength of
 matching evidence**: in the compelling rarity zone the inconsistency budget
@@ -138,11 +139,74 @@ The fallback derivation aims to pick the earliest AE onset date and only refrain
 
 The independence assessment decides whether the two reports may be altogether
 independent draws from the comparison population. Independence is rejected in
-either of two ways: **direct evidence of shared provenance** (a reliable
-shared source identifier) establishes non-independence regardless of the
-clinical features, or, in its absence, the **rarity-based matching
+any of three ways: an **explicit inter-report link** (one report's structured
+case identifiers name the other) or **direct evidence of shared provenance**
+(a reliable shared source identifier) establishes non-independence regardless
+of the clinical features, or, in their absence, the **rarity-based matching
 evidence** \(L_{\text{match}}\) exceeds the limited-zone threshold. A pair for
-which neither holds is classified **Unrelated** and not processed further.
+which none holds is classified **Unrelated** and not processed further.
+
+### Explicit inter-report links
+
+Reports carry an ICH E2B(R3) C.1.9 *Other case identifiers in previous
+transmissions* field — a one-to-many list of case numbers referring to other
+reports. When one report of a candidate pair names the other there, the
+sending organisation has explicitly declared the two reports to describe the
+same case. This is the most direct evidence of shared provenance the
+structured data can supply, and it is available without any LLM or database
+access.
+
+A `Report` carries two lists, deliberately asymmetric. `case_identifiers`
+holds the report's **own** case numbers, each tagged with the field it came
+from — reports record their own numbers under three headings (**safety report
+id**, **company number**, **authority number**). `other_case_identifiers`
+holds the C.1.9 pointers as **bare values**: that field records identifiers
+only, with no qualifier saying which kind of case number each one is. Both
+lists are needed, since a pointer on one report can only be resolved against
+the *other* report's own numbers. The verdict is computed by
+`feature_generation/explicit_link_comparison.compare_explicit_links`,
+deterministically, and stored on `PairFeatures.explicit_link`.
+
+The comparison is therefore on the **normalized value alone**: a pointer is
+tested against every identifier the other report holds, whichever of its three
+fields that value came from. This follows from the shape of the data rather
+than from a policy choice, and it is also the correct behaviour — any of the
+three fields can hold a value that is in fact a worldwide-unique identifier, so
+the same ID may be filed under `safety_report_id` by one sender and
+`authority_number` by the other. The matched target's field is retained on the
+match for audit and display. Normalization NFKC-folds, trims surrounding
+whitespace and wrapping punctuation, collapses internal whitespace, and
+casefolds; internal hyphens and slashes are structural and are preserved.
+
+Three restrictions keep the signal precise, since it drives a strong
+conclusion:
+
+- **Direct links only.** A link requires one report to name *the other*. Both
+  reports pointing at a common third case does **not** link them — that
+  pattern also arises from a shared master or study record covering distinct
+  patients.
+- **Self-pointers are dropped.** C.1.9 is frequently populated with the
+  sender's own prior transmission IDs (follow-up versions of the same report);
+  a pointer whose value is also one of the pointing report's own identifiers
+  says nothing about the other report.
+- **Degenerate values never match.** Normalized values shorter than 6
+  characters, or in a small absence-sentinel vocabulary (`unknown`, `not
+  available`, `none`, …), are excluded. Since the pointers are untyped, this
+  bar carries the whole precision burden.
+
+The verdict is one of `explicit_link`, `no_link`, or `not_assessed`.
+`not_assessed` means neither report carried any case-identifier data (the
+loader does not supply the fields) and must be read as *no information*, never
+as an assessed absence of a link. An explicit link emits **no** `Inconsistency`
+row — it is positive evidence, not a discrepancy.
+
+The signal is gated by `explicit_link_enabled` (default `true`, on
+`DecisionThresholds`). When disabled, the verdict is still computed and
+displayed but selects no zone and no independence reason. The flag lives on
+`DecisionThresholds` rather than `PipelineConfig` precisely so that `classify`
+stays a pure function of `(PairFeatures, DecisionThresholds)` and `eval.sweep`
+can replay archived features both ways — see § Calibrating them for why that
+matters.
 
 ### Direct evidence of shared provenance
 
@@ -479,8 +543,9 @@ Unique matched dates: **{1994-03-30, 1994-05-12}** — count = 2. Note that for 
 
 ### Independence classifier
 
-Independence is rejected — the pair is **Non-independent** and proceeds to the relationship assessment — when either:
+Independence is rejected — the pair is **Non-independent** and proceeds to the relationship assessment — when any of the following holds:
 
+- an **explicit inter-report link** is present (§ Explicit inter-report links), recorded as `independence_reason = explicit_link`. This is checked first, so it is the recorded reason whenever it and a shared-source verdict both apply — an explicit reference is the more direct evidence; or
 - a **shared-source verdict** is present (`SAME_SOURCE_*`, § Direct evidence of shared provenance), recorded as `independence_reason = shared_source`; or
 - \(L_{\text{match}} > \) `lmatch_limited` (default 1.0), recorded as the rarity zone the evidence reaches (`rarity_compelling` for \(L_{\text{match}} >\) `lmatch_compelling`, `rarity_intermediate` for \(L_{\text{match}} >\) `lmatch_intermediate`, else `rarity_limited`).
 
@@ -785,6 +850,37 @@ The branch A bar `lpatient_compelling` (default 2.0) is set so that intuitively 
 
 The branch A inconsistency gate is `w_tot < w_tot_limited_zone` (default 1.0). Because branch B is checked first on the complementary condition, the two partition the \(w_{\text{tot}}\) axis at the same bar: any moderate-or-stronger inconsistency — or three accumulated minors (\(3 \times 0.4 = 1.2\)) — lands the pair in `Different case`, while a single minor (0.4) is tolerated. Below the bar the outcome rests entirely on \(L_{\text{patient}}\): compelling patient-specific evidence yields `Same case`, and everything else falls through branch C to `Different case`.
 
+### Explicit-link zone
+
+A pair with an explicit inter-report link (§ Explicit inter-report links) is
+adjudicated at the **compelling** inconsistency budget — the same
+`w_tot_compelling_zone` bound (default 4.0) used by the rarity compelling zone
+and the Identity zone. A declaration by the sending organisation that the two
+reports concern the same case is at least as strong as compelling rarity-based
+matching, so it earns the same latitude for recording noise: a single strong
+inconsistency is tolerated, while reaching the bar requires one strong + one
+moderate, two strongs, four moderates, or equivalent. No new threshold
+parameter is introduced.
+
+The failing branch is `Different case`, matching the rarity compelling zone
+rather than the Identity zone. `Abstain` remains reserved for the Identity
+zone's specific epistemic state — a single-patient *identity* claim about the
+source that the structured data cannot resolve. A declared link accompanied by
+substantial contradicting evidence is a different situation: the pair is
+related (independence is rejected) but the same-case claim does not survive,
+which is exactly `Otherwise related`. Decisive inconsistencies reach that
+branch through their oversized weight, as everywhere else.
+
+The zone sits **below Identity and Distinct** and **above Unresolved**. A
+source-context verdict that has resolved *individual* identity within a shared
+source is more specific than a case-level reference, so `SAME_SOURCE_SAME_CASE`
+/ `SAME_SOURCE_SINGLE_PATIENT` still abstain where the explicit-link zone would
+not, and `SAME_SOURCE_DIFFERENT_CASE` still pins to `Different case` — two
+reports sharing a source but carrying different comparable case labels identify
+distinct individuals whatever the C.1.9 fields say. Conversely the Unresolved
+zone's whole premise is that patient identity is underdetermined, which a
+declared link resolves, so the link takes priority over it.
+
 ### Relationship classifier
 
 The relationship assessment selects the highest-priority applicable evidence zone and compares \(w_{\text{tot}}\) against that zone's tolerance (higher rows take priority; implemented as `assess_relationship` in `classifier/decision_logic.py`):
@@ -793,12 +889,13 @@ The relationship assessment selects the highest-priority applicable evidence zon
 |---|---|---|---|---|
 | 1 | Identity | `SAME_SOURCE_SINGLE_PATIENT` or `SAME_SOURCE_SAME_CASE` | \(w_{\text{tot}} <\) `w_tot_compelling_zone` | Abstain |
 | 2 | Distinct | `SAME_SOURCE_DIFFERENT_CASE` | never | Different case (pinned) |
-| 3 | Unresolved | `SAME_SOURCE_UNCOMPARABLE_CASE`, or `MULTI_PATIENT_CONTEXT_NO_LINK` (non-independent ⇒ \(L_{\text{match}} >\) `lmatch_limited`) | \(L_{\text{patient}} >\) `lpatient_compelling` and \(w_{\text{tot}} <\) `w_tot_limited_zone` | Different case |
-| 4 | Compelling matches | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Different case |
-| 5 | Intermediate matches | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Different case |
-| 6 | Limited matches | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Different case |
+| 3 | Explicit link | `explicit_link` verdict on `PairFeatures.explicit_link`, with `explicit_link_enabled` | \(w_{\text{tot}} <\) `w_tot_compelling_zone` | Different case |
+| 4 | Unresolved | `SAME_SOURCE_UNCOMPARABLE_CASE`, or `MULTI_PATIENT_CONTEXT_NO_LINK` (non-independent ⇒ \(L_{\text{match}} >\) `lmatch_limited`) | \(L_{\text{patient}} >\) `lpatient_compelling` and \(w_{\text{tot}} <\) `w_tot_limited_zone` | Different case |
+| 5 | Compelling matches | \(L_{\text{match}} > 3.0\) | \(w_{\text{tot}} < 4\) | Different case |
+| 6 | Intermediate matches | \(L_{\text{match}} > 2.0\) | \(w_{\text{tot}} < 3\) | Different case |
+| 7 | Limited matches | \(L_{\text{match}} > 1.0\) | \(w_{\text{tot}} < 1\) | Different case |
 
-(Defaults shown for the rarity rows; all bounds are configurable — § Parameter tuning.) Rows 1–3 are the source-context zones defined in § Use of source-context information. Rows 4–6 apply to non-independent pairs without a zone-selecting verdict; since such pairs rejected independence on rarity, \(L_{\text{match}} >\) `lmatch_limited` is guaranteed and row 6 is a total fall-through.
+(Defaults shown for the rarity rows; all bounds are configurable — § Parameter tuning.) Rows 1–2 and 4 are the source-context zones defined in § Use of source-context information; row 3 is the explicit-link zone (§ Explicit-link zone). Rows 5–7 apply to non-independent pairs selecting none of the above; since such pairs rejected independence on rarity, \(L_{\text{match}} >\) `lmatch_limited` is guaranteed and row 7 is a total fall-through.
 
 The rarity-zone thresholds are strict upper bounds, and each zone tolerates progressively less inconsistency: a pair in the compelling zone remains `Same case` in the presence of one strong inconsistency (with the default weights), whereas the same inconsistency would preclude `Same case` in the intermediate or limited zones. This design reflects the possibility that isolated discrepancies arise from recording errors, extraction differences, follow-up, or source transformation: the more improbable the positive matching pattern, the more plausible that limited inconsistency reflects noise rather than different cases.
 
@@ -878,6 +975,7 @@ The following parameters define the decision behaviour and are configurable:
 | `w_tot_compelling_zone` | 4.0 | Strict upper bound on \(w_{\text{tot}}\) for `Same case` in the compelling and Identity zones |
 | `w_tot_intermediate_zone` | 3.0 | Strict upper bound on \(w_{\text{tot}}\) for `Same case` in the intermediate zone |
 | `w_tot_limited_zone` | 1.0 | Strict upper bound on \(w_{\text{tot}}\) for `Same case` in the limited and Unresolved zones |
+| `explicit_link_enabled` | `true` | Whether an explicit inter-report link rejects independence and selects the explicit-link zone (§ Explicit inter-report links). Not a tuning knob — an on/off switch for isolating the signal's contribution |
 
 These parameters may be refined during method development using annotated report pairs.
 
@@ -890,6 +988,8 @@ Three properties of the scoring must be respected when reading a sweep, each of 
 - **Abstained pairs leave the denominator.** Under `AbstainMode.DECIDED_ONLY` a pair the pipeline abstains on is excluded from \(n\) entirely, so a threshold setting that abstains on the pairs it would have misclassified scores *better* on fewer pairs. F1 is therefore not comparable across settings whose \(n\) differs, and no threshold should be selected by maximising it.
 - **Pair orientation is not canonical.** `pair_id` is `{report_id1}__{report_id2}` and nothing sorts the two, so an annotation file listing a pair in the opposite order matches nothing. Check the coverage report before reading any metric.
 - **Only ratios matter among the weights.** `w_minor` … `w_strong` and the `w_tot_*_zone` thresholds are not independent; sweeping both jointly explores a redundant space. Vary one side. `w_decisive` is not a free parameter — the validator requires it to exceed every zone threshold.
+
+**The explicit-link signal can make a reference set circular.** Some regulator reference sets — notably the Spanish (AEMPS) and Dutch (Lareb) ones — were partly assembled from pairs *linked through E2B fields*. A pair selected into the reference set because it carries a C.1.9 link is then retrieved by the adjudicator for the same reason, so recall measured on those pairs is not evidence about the method. `explicit_link_enabled` exists to make this measurable rather than merely acknowledged: because it lives on `DecisionThresholds` and `classify` is a pure function of `(PairFeatures, DecisionThresholds)`, the same persisted `PairFeatures` can be re-decided with the signal on and off, and the difference attributed. Recall on E2B-derived reference pairs should be reported both ways, or those pairs excluded; the evaluation protocol's existing preference for manually classified pairs (see `performance_evaluation_description.md`) reduces but does not remove the exposure.
 
 ## Secondary analyses
 

@@ -8,11 +8,26 @@ assessment, ``w_tot``, and the threshold the score was compared against.
 Explanation strings are deliberately excluded — they are presentation,
 not decision.
 
-The grid is defined in this module; the golden file stores only the
-outputs, in grid order (JSONL: one metadata line, then one row per cell).
+Two grids are defined in this module, each with its own golden file
+(JSONL: one metadata line, then one row per cell, in grid order):
+
+* ``decision_logic_golden.jsonl`` — pairs with no explicit inter-report
+  link. This is the *original* baseline, generated before the
+  relationship-vocabulary restructure, which is why
+  ``_adjust_for_multi_patient_reason`` exists.
+* ``decision_logic_explicit_link_golden.jsonl`` — the same decision
+  surface with an explicit link present.
+
 To regenerate after an *intended* behavior change::
 
-    REGENERATE_GOLDEN=1 uv run pytest tests/test_decision_logic_characterization.py
+    REGENERATE_GOLDEN=1 .venv/bin/python -m pytest \
+        tests/test_decision_logic_characterization.py -k explicit_link
+
+**Regenerate one at a time**, selecting with ``-k``: the env var fires
+both tests, and rewriting ``decision_logic_golden.jsonl`` bakes the
+deviation that ``_adjust_for_multi_patient_reason`` documents into the
+file, destroying the pre-restructure baseline (the shim then fails on
+the next run with "golden drifted").
 
 Grid values straddle every decision boundary of both threshold variants:
 ``L_match`` around the limited/intermediate/compelling bounds (strict >,
@@ -34,6 +49,12 @@ from llm_dup_dev.models.enums import (
     AnchorType,
     ReportingContextLevel,
 )
+from llm_dup_dev.models.explicit_link import (
+    ExplicitLinkAssessment,
+    ExplicitLinkDirection,
+    ExplicitLinkMatch,
+    ExplicitLinkVerdict,
+)
 from llm_dup_dev.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
@@ -45,9 +66,14 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
+from llm_dup_dev.models.report import CaseIdentifierKind
 
 GOLDEN_PATH = Path(__file__).parent / "data" / "decision_logic_golden.jsonl"
 GOLDEN_FORMAT = 1
+
+LINK_GOLDEN_PATH = (
+    Path(__file__).parent / "data" / "decision_logic_explicit_link_golden.jsonl"
+)
 
 # L_match values: default zone bounds are 1.0 / 2.0 / 3.0, the custom
 # variant's are 1.5 / 2.5 / 4.0. Exact-boundary values (strict >) and
@@ -113,10 +139,12 @@ def _make_features(
     counts: tuple[int, int, int, int],
     verdict: SourceCaseVerdict | None,
     L_patient: float,
+    explicit_link: ExplicitLinkAssessment | None = None,
 ) -> PairFeatures:
     """Minimal PairFeatures; only the decision-relevant fields vary."""
     minor, moderate, strong, decisive = counts
     return PairFeatures(
+        explicit_link=explicit_link,
         pair_id="golden",
         reporting_context=ReportingContext(level=ReportingContextLevel.GLOBAL),
         anchor=AnchorPopulation(
@@ -222,6 +250,123 @@ def _regenerate() -> int:
         for row in rows:
             fh.write(json.dumps(row) + "\n")
     return len(rows)
+
+
+# ===================================================================
+# Explicit-link grid
+#
+# Kept as a *separate* golden rather than as an extra dimension on the
+# grid above. The main golden predates the relationship-vocabulary
+# restructure and still carries ``_adjust_for_multi_patient_reason`` as
+# its record of the one intended deviation; regenerating it to widen the
+# grid would erase that baseline. This file is a fresh baseline for the
+# explicit-link zone alongside it.
+#
+# ``L_match`` and ``L_patient`` are reduced to the values that can still
+# change the outcome once a link is present. A link rejects independence
+# on its own and selects a zone above every rarity zone, so those two
+# axes only matter for the cells where a higher-priority source-context
+# verdict wins — the retained values cover below/above ``lmatch_limited``
+# and either side of ``lpatient_compelling`` for both variants.
+# ===================================================================
+
+LINK_L_MATCH_VALUES = (0.0, 1.001, 4.001)
+LINK_L_PATIENT_VALUES = (0.0, 3.001)
+
+
+def _link_assessment() -> ExplicitLinkAssessment:
+    """A single-match EXPLICIT_LINK assessment, identical across cells."""
+    value = "US-EXAMPLECO-2020-000123"
+    return ExplicitLinkAssessment(
+        verdict=ExplicitLinkVerdict.EXPLICIT_LINK,
+        matches=[
+            ExplicitLinkMatch(
+                direction=ExplicitLinkDirection.R1_TO_R2,
+                normalized_value=value.casefold(),
+                target_kind=CaseIdentifierKind.SAFETY_REPORT_ID,
+                pointer_value=value,
+                target_value=value,
+            )
+        ],
+    )
+
+
+def iter_link_cells():
+    """Yield every explicit-link grid cell in the fixed golden order."""
+    for variant_name, thresholds in THRESHOLD_VARIANTS:
+        for L_match in LINK_L_MATCH_VALUES:
+            for counts in COUNT_TUPLES:
+                for verdict in VERDICTS:
+                    for L_patient in LINK_L_PATIENT_VALUES:
+                        yield (
+                            variant_name, thresholds, L_match,
+                            counts, verdict, L_patient,
+                        )
+
+
+def _link_cell_row(thresholds: DecisionThresholds, cell) -> list:
+    """Classify one explicit-link cell and return its golden row."""
+    _, _, L_match, counts, verdict, L_patient = cell
+    features = _make_features(
+        L_match, counts, verdict, L_patient, explicit_link=_link_assessment()
+    )
+    result = classify(features, thresholds)
+    return [
+        result.final_label,
+        result.independence_assessment.value,
+        result.independence_reason.value if result.independence_reason else None,
+        (
+            result.relationship_assessment.value
+            if result.relationship_assessment
+            else None
+        ),
+        round(result.penalty.w_tot, 6) if result.penalty else None,
+        result.penalty.threshold if result.penalty else None,
+    ]
+
+
+def _regenerate_link_golden() -> int:
+    LINK_GOLDEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+    rows = [_link_cell_row(cell[1], cell) for cell in iter_link_cells()]
+    with LINK_GOLDEN_PATH.open("w") as fh:
+        fh.write(json.dumps({"format": GOLDEN_FORMAT, "n_rows": len(rows)}) + "\n")
+        for row in rows:
+            fh.write(json.dumps(row) + "\n")
+    return len(rows)
+
+
+def test_classify_with_explicit_link_matches_golden():
+    if os.environ.get("REGENERATE_GOLDEN"):
+        n = _regenerate_link_golden()
+        raise AssertionError(
+            f"Explicit-link golden regenerated with {n} rows at "
+            f"{LINK_GOLDEN_PATH}; rerun without REGENERATE_GOLDEN to compare."
+        )
+
+    with LINK_GOLDEN_PATH.open() as fh:
+        meta = json.loads(fh.readline())
+        golden_rows = [json.loads(line) for line in fh]
+    assert meta["format"] == GOLDEN_FORMAT
+
+    cells = list(iter_link_cells())
+    assert len(cells) == meta["n_rows"] == len(golden_rows), (
+        "Explicit-link grid size differs from golden — the grid definition "
+        "changed; regenerate deliberately if intended."
+    )
+
+    mismatches = []
+    for cell, expected in zip(cells, golden_rows):
+        actual = _link_cell_row(cell[1], cell)
+        if actual != expected:
+            mismatches.append(
+                f"{_cell_id(cell)}\n  expected {expected}\n  actual   {actual}"
+            )
+            if len(mismatches) >= 10:
+                break
+    assert not mismatches, (
+        "classify() deviates from the explicit-link golden decision surface "
+        f"({len(mismatches)}+ cells):\n" + "\n".join(mismatches)
+    )
 
 
 def test_classify_matches_golden():

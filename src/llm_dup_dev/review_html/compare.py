@@ -36,12 +36,18 @@ from llm_dup_dev.models.classification import (
     ClassificationResult,
     InconsistencyPenalty,
 )
+from llm_dup_dev.models.explicit_link import (
+    ExplicitLinkAssessment,
+    ExplicitLinkDirection,
+    ExplicitLinkVerdict,
+)
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import (
     AdverseEvent,
     AgeValue,
+    CaseIdentifierRef,
     DateValue,
     Drug,
     MeasurementValue,
@@ -58,10 +64,13 @@ from .models import (
     ClassificationSummaryVM,
     ClinicalDateCountsVM,
     ClinicalDateFindingVM,
+    CaseIdentifierListVM,
     ComparisonStatus,
     DecisionSummaryVM,
     DrugDetail,
     DrugRow,
+    ExplicitLinkMatchVM,
+    ExplicitLinkVM,
     FeatureContributionVM,
     FeaturesSummaryVM,
     FieldComparison,
@@ -876,6 +885,64 @@ def _build_source_case_vm(
     )
 
 
+_DIRECTION_LABEL: dict[ExplicitLinkDirection, str] = {
+    ExplicitLinkDirection.R1_TO_R2: "Report 1 → Report 2",
+    ExplicitLinkDirection.R2_TO_R1: "Report 2 → Report 1",
+}
+
+
+def _format_own_identifiers(refs: list[CaseIdentifierRef]) -> list[str]:
+    """Render ``kind: value`` strings for a report's own case numbers."""
+    return [f"{ref.kind.value}: {ref.value}" for ref in refs]
+
+
+def _build_explicit_link_vm(
+    features: PairFeatures | None,
+    report_1: Report,
+    report_2: Report,
+) -> ExplicitLinkVM | None:
+    """Project the pair's explicit inter-report link for the pair page.
+
+    Returns ``None`` when no assessment is attached or the verdict is
+    ``NOT_ASSESSED`` (neither report carried case-identifier data), so
+    the section is suppressed rather than asserting an absence the
+    pipeline never checked. ``NO_LINK`` *is* surfaced: the identifier
+    lists are exactly what a reviewer needs in order to judge why
+    nothing resolved.
+    """
+    if features is None or features.explicit_link is None:
+        return None
+    link: ExplicitLinkAssessment = features.explicit_link
+    if link.verdict == ExplicitLinkVerdict.NOT_ASSESSED:
+        return None
+
+    matches = [
+        ExplicitLinkMatchVM(
+            direction_label=_DIRECTION_LABEL[match.direction],
+            target_kind_label=match.target_kind.value,
+            pointer_value=match.pointer_value,
+            target_value=match.target_value,
+        )
+        for match in link.matches
+    ]
+    identifiers = [
+        CaseIdentifierListVM(
+            report_label=label,
+            own=_format_own_identifiers(report.case_identifiers),
+            # Pointers are bare values — the C.1.9 field carries no kind.
+            pointers=list(report.other_case_identifiers),
+        )
+        for label, report in (("Report 1", report_1), ("Report 2", report_2))
+    ]
+    return ExplicitLinkVM(
+        verdict=link.verdict.value,
+        linked=link.verdict == ExplicitLinkVerdict.EXPLICIT_LINK,
+        matches=matches,
+        identifiers=identifiers,
+        reasoning=link.reasoning or None,
+    )
+
+
 def _build_decision_summary(
     features: PairFeatures | None,
     classification: ClassificationResult | None,
@@ -1238,6 +1305,8 @@ def build_pair_view_model(
         frozen_bundle, country=_freq_country, year=_freq_year
     )
 
+    explicit_link = _build_explicit_link_vm(features, report_1, report_2)
+
     decision_summary = _build_decision_summary(features, classification)
 
     annotation_vm = _build_annotation_vm(
@@ -1283,6 +1352,7 @@ def build_pair_view_model(
         ),
         features_summary=features_summary,
         classification_summary=classification_summary,
+        explicit_link=explicit_link,
         freq_stats=freq_stats,
         decision_summary=decision_summary,
         annotation=annotation_vm,

@@ -28,6 +28,7 @@ from .compare import (
 from .models import (
     BatchIndexItem,
     ClinicalDateFindingVM,
+    ExplicitLinkVM,
     IndexInconsistencyItem,
     InconsistencyVM,
     PairViewModel,
@@ -75,6 +76,24 @@ def _index_source_case(
     if short is None:
         return None
     return sc.model_copy(update={"short_label": short})
+
+
+def _index_explicit_link(vm: PairViewModel) -> ExplicitLinkVM | None:
+    """Return the explicit-link VM for the index row, or ``None``.
+
+    Only a resolved link earns a column: ``NO_LINK`` and the absent case
+    are both "nothing to see" from the index's perspective, and the pair
+    page carries the identifier lists for anyone who wants to check.
+    """
+    link = vm.explicit_link
+    if link is None or not link.linked:
+        return None
+    directions = {match.direction_label for match in link.matches}
+    short = (
+        "R1 ↔ R2" if len(directions) > 1
+        else next(iter(directions), "linked").replace("Report ", "R")
+    )
+    return link.model_copy(update={"short_label": short})
 
 
 def build_batch_index_item(
@@ -137,6 +156,7 @@ def build_batch_index_item(
             else None
         ),
         source_case=_index_source_case(vm),
+        explicit_link=_index_explicit_link(vm),
     )
 
 

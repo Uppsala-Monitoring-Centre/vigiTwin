@@ -57,6 +57,21 @@ a:hover { text-decoration: underline; }
 .source-case-line { margin-top: 3px; }
 .source-case-line code { font-size: 11px; }
 
+/* Explicit inter-report link badge. Green rather than the source/case
+   purple: this is a declared link, not an inferred verdict. */
+.link-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #dff5e1;
+    color: #1b5e20;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.link-line { margin-top: 3px; }
+.link-line code { font-size: 11px; }
+
 /* Severity badges for inline inconsistency items */
 .inc-minor,
 .inc-moderate,
@@ -114,6 +129,9 @@ a:hover { text-decoration: underline; }
                 {% if has_context %}
                 <th>Context</th>
                 {% endif %}
+                {% if has_explicit_link %}
+                <th>Explicit link</th>
+                {% endif %}
                 {% if has_anchor %}
                 <th>Anchor</th>
                 {% endif %}
@@ -158,6 +176,22 @@ a:hover { text-decoration: underline; }
                         {% endif %}
                     </div>
                     {% endif %}
+                </td>
+                {% endif %}
+                {% if has_explicit_link %}
+                <td>
+                    {%- if item.explicit_link -%}
+                    <span class="link-badge" title="{{ item.explicit_link.reasoning }}">
+                        🔗 {{ item.explicit_link.short_label }}
+                    </span>
+                    {%- for match in item.explicit_link.matches %}
+                    <div class="link-line">
+                        <code>{{ match.target_kind_label }}={{ match.pointer_value }}</code>
+                    </div>
+                    {%- endfor -%}
+                    {%- else -%}
+                    --
+                    {%- endif -%}
                 </td>
                 {% endif %}
                 {% if has_anchor %}

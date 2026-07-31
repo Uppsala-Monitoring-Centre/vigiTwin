@@ -104,6 +104,17 @@ def _runner_feature_flags(runner: "PipelineRunner") -> dict[str, Any]:
         or has_frozen_source_case,
         "narrative_demographics_extraction_enabled": has_llm_client
         or has_frozen_narrative_demographics,
+        # Whether the explicit inter-report link signal was allowed to
+        # drive the decision. Read off the run's DecisionThresholds — the
+        # comparator itself always runs, so this is the only record of
+        # whether the resulting verdict was consulted. Auditable because
+        # recall figures on E2B-derived reference pairs are only
+        # interpretable alongside it.
+        "explicit_link_enabled": getattr(
+            getattr(runner, "_decision_thresholds", None),
+            "explicit_link_enabled",
+            None,
+        ),
     }
 
 

@@ -12,6 +12,7 @@ See: docs/data_contracts.md § Report Layer
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -76,6 +77,40 @@ class DateValue(BaseModel):
     value: str  # ISO 8601 format
     resolution: Literal["day", "month", "year"]
     sources: list[str] = Field(min_length=1)
+
+
+# ---------------------------------------------------------------------------
+# Case identifiers (E2B-style inter-report references)
+# ---------------------------------------------------------------------------
+
+
+class CaseIdentifierKind(str, Enum):
+    """Which of a report's own case-number fields a value was read from.
+
+    Reports carry their own case numbers under three headings, and the
+    same identifier may be filed under different headings by different
+    senders — any of the three can hold a value that is in fact a
+    worldwide-unique identifier. ``kind`` is therefore **provenance, not
+    a namespace**: it records where the value came from for audit and
+    display, never restricting what it may match. See
+    :mod:`llm_dup_dev.feature_generation.explicit_link_comparison`.
+    """
+
+    SAFETY_REPORT_ID = "safety_report_id"
+    COMPANY_NUMBER = "company_number"
+    AUTHORITY_NUMBER = "authority_number"
+
+
+class CaseIdentifierRef(BaseModel):
+    """One of a report's *own* case numbers, tagged with its source field.
+
+    Used by ``Report.case_identifiers`` only. The references a report
+    makes to *other* reports (``Report.other_case_identifiers``) are bare
+    strings — the ICH E2B(R3) C.1.9 field carries no such qualifier.
+    """
+
+    kind: CaseIdentifierKind
+    value: str
 
 
 # ---------------------------------------------------------------------------
@@ -173,6 +208,27 @@ class Report(BaseModel):
     # fixtures, in which case the narrative-source-case task falls back to
     # its pre-existing narrative-only behavior.
     literature_reference: str | None = None
+
+    # This report's own case numbers, as carried by the source system
+    # (safety report id / company number / authority number). Needed to
+    # resolve the ``other_case_identifiers`` pointers *on the other report* of
+    # a pair — ``report_id`` is the pipeline's own key and lives in a
+    # different namespace from these. Empty when the loader does not supply
+    # them (older frozen data, synthetic fixtures).
+    case_identifiers: list[CaseIdentifierRef] = Field(default_factory=list)
+
+    # References this report makes to *other* reports — the ICH E2B(R3)
+    # C.1.9 "Other case identifiers in previous transmissions" one-to-many
+    # field. When one report of a candidate pair names the other here, the
+    # sender has declared the two to be the same case; see
+    # ``feature_generation.explicit_link_comparison.compare_explicit_links``.
+    #
+    # Bare values, unlike ``case_identifiers``: the source field records
+    # only the identifier, with no qualifier saying whether it is a safety
+    # report id, a company number, or an authority number. A pointer
+    # therefore resolves against *any* identifier the other report holds,
+    # whichever of its fields that came from.
+    other_case_identifiers: list[str] = Field(default_factory=list)
 
     @field_validator("patient_sex_values", mode="before")
     @classmethod

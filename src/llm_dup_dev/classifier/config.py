@@ -188,6 +188,21 @@ class DecisionThresholds(BaseModel):
     w_tot_intermediate_zone: float = 3.0
     w_tot_limited_zone: float = 1.0
 
+    # Whether an explicit inter-report link (one report's structured case
+    # identifiers naming the other) rejects independence and selects the
+    # explicit-link evidence zone. Set False to adjudicate as if the
+    # signal were absent — the assessment is still computed and displayed,
+    # it simply drives nothing.
+    #
+    # This lives here rather than on PipelineConfig so that `classify`
+    # remains a pure function of (PairFeatures, DecisionThresholds):
+    # `eval.sweep` can replay archived PairFeatures with the signal on and
+    # off without re-running feature generation. That matters because
+    # some regulator reference sets were themselves partly assembled from
+    # E2B link fields, so recall on those pairs is circular while the
+    # signal is enabled and must be quantifiable separately.
+    explicit_link_enabled: bool = True
+
     @model_validator(mode="after")
     def _w_decisive_exceeds_zone_thresholds(self) -> "DecisionThresholds":
         max_zone = max(

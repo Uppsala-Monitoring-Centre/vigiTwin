@@ -21,6 +21,7 @@ from .enums import (
     InconsistencySeverity,
     ReportingContextLevel,
 )
+from .explicit_link import ExplicitLinkAssessment
 from .narrative_source_case import SourceCaseAssessment
 
 
@@ -343,6 +344,14 @@ class PairFeatures(BaseModel):
     # alongside the synthesized Inconsistency rows so the decision
     # logic can branch on the verdict directly.
     source_case_assessment: SourceCaseAssessment | None = None
+
+    # Explicit inter-report links (deterministic verdict over the two
+    # reports' structured case-identifier fields — no LLM). ``None`` on
+    # features generated before this signal existed; a populated
+    # assessment with verdict ``NOT_ASSESSED`` means the comparator ran
+    # but neither report carried identifier data. See
+    # ``feature_generation.explicit_link_comparison``.
+    explicit_link: ExplicitLinkAssessment | None = None
 
     # Optional diagnostic information
     evidence_summary: EvidenceSummary | None = None

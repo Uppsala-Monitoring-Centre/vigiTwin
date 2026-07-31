@@ -32,7 +32,15 @@ from llm_dup_dev.models.enums import (
     IndependenceAssessment,
     IndependenceReason,
 )
-from llm_dup_dev.models.report import AdverseEvent, AgeValue, Report, SourcedValue
+from llm_dup_dev.models.explicit_link import ExplicitLinkVerdict
+from llm_dup_dev.models.report import (
+    AdverseEvent,
+    AgeValue,
+    CaseIdentifierKind,
+    CaseIdentifierRef,
+    Report,
+    SourcedValue,
+)
 from llm_dup_dev.models.report_pair import ReportPair
 from llm_dup_dev.pipeline.runner import (
     BatchResult,
@@ -924,3 +932,77 @@ class TestLLMConfigurationErrorAborts:
             runner.run_batch([pair_ab])
 
         assert "All 5 LLM calls in this run failed" in caplog.text
+
+
+# ===================================================================
+# Explicit inter-report links
+# ===================================================================
+
+class TestExplicitLinkIntegration:
+    """The link comparator runs deterministically inside feature generation."""
+
+    @pytest.fixture
+    def linked_loader(self, report_a, report_b):
+        """report_b's C.1.9 field names report_a's own case number."""
+        shared_id = "US-EXAMPLECO-2020-000123"
+        a = report_a.model_copy(update={
+            "case_identifiers": [
+                CaseIdentifierRef(
+                    kind=CaseIdentifierKind.SAFETY_REPORT_ID, value=shared_id
+                )
+            ],
+        })
+        # The C.1.9 field is untyped — a bare value, which must still
+        # resolve against report_a's typed safety_report_id.
+        b = report_b.model_copy(update={"other_case_identifiers": [shared_id]})
+        return SyntheticReportLoader({a.report_id: a, b.report_id: b})
+
+    def test_unlinked_reports_yield_not_assessed(self, runner, pair_ab):
+        """Fixtures carry no identifier data — 'did not look', not 'no link'."""
+        result = runner.run_pair(pair_ab)
+        assert (
+            result.features.explicit_link.verdict
+            == ExplicitLinkVerdict.NOT_ASSESSED
+        )
+
+    def test_link_is_detected_without_an_llm_client(
+        self, linked_loader, stats_provider, pair_ab
+    ):
+        """The signal is structural — no LLM, no database."""
+        runner_ = PipelineRunner(
+            report_loader=linked_loader, stats_provider=stats_provider
+        )
+        link = runner_.run_pair(pair_ab).features.explicit_link
+        assert link.verdict == ExplicitLinkVerdict.EXPLICIT_LINK
+        assert len(link.matches) == 1
+        assert link.matches[0].target_kind == CaseIdentifierKind.SAFETY_REPORT_ID
+
+    def test_linked_pair_classified_as_duplicates(
+        self, linked_loader, stats_provider, pair_ab
+    ):
+        result = PipelineRunner(
+            report_loader=linked_loader, stats_provider=stats_provider
+        ).run_pair(pair_ab)
+        assert result.classification.final_label == "Duplicates"
+        assert (
+            result.classification.independence_reason
+            == IndependenceReason.EXPLICIT_LINK
+        )
+
+    def test_disabled_flag_ignores_the_link(
+        self, linked_loader, stats_provider, pair_ab
+    ):
+        """The assessment is still computed and carried, it just drives nothing."""
+        result = PipelineRunner(
+            report_loader=linked_loader,
+            stats_provider=stats_provider,
+            decision_thresholds=DecisionThresholds(explicit_link_enabled=False),
+        ).run_pair(pair_ab)
+        assert (
+            result.features.explicit_link.verdict
+            == ExplicitLinkVerdict.EXPLICIT_LINK
+        )
+        assert (
+            result.classification.independence_reason
+            != IndependenceReason.EXPLICIT_LINK
+        )

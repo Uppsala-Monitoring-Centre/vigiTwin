@@ -1489,3 +1489,203 @@ class TestLPatientRendering:
         html = render_pair(vm)
         assert "no multiplicity adjustment" in html
         assert "only consulted for shared-source" in html.lower()
+
+
+# ---------------------------------------------------------------------------
+# Explicit inter-report links
+# ---------------------------------------------------------------------------
+
+
+def _linked_reports(report_a, report_b, target_kind=None):
+    """Return copies of the fixtures where report_b names report_a.
+
+    ``target_kind`` selects which of report_a's own fields carries the
+    shared value; report_b's C.1.9 pointer is a bare string either way.
+    """
+    from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+
+    shared = "US-EXAMPLECO-2020-000123"
+    a = report_a.model_copy(update={
+        "case_identifiers": [
+            CaseIdentifierRef(
+                kind=target_kind or CaseIdentifierKind.SAFETY_REPORT_ID,
+                value=shared,
+            )
+        ]
+    })
+    b = report_b.model_copy(update={"other_case_identifiers": [shared]})
+    return a, b
+
+
+def _features_with_link(report_1, report_2, pair_id="R001__R002") -> PairFeatures:
+    """Attach a real comparator verdict for the two reports."""
+    from llm_dup_dev.feature_generation.explicit_link_comparison import (
+        compare_explicit_links,
+    )
+
+    feats = _make_features(pair_id)
+    feats.explicit_link = compare_explicit_links(report_1, report_2)
+    return feats
+
+
+def _render_link_page(report_1, report_2, **kwargs) -> str:
+    """Build the view model and render the pair page to a string."""
+    return render_pair(build_pair_view_model(report_1, report_2, **kwargs))
+
+
+class TestExplicitLinkRendering:
+    """Pair-page section and batch-index column for explicit case links."""
+
+    # -- Pair page --
+
+    def test_section_absent_without_identifier_data(self, report_a, report_b):
+        """NOT_ASSESSED must not render as an asserted absence of a link."""
+        feats = _features_with_link(report_a, report_b)
+        html = _render_link_page(report_a, report_b, pair_id="R001__R002", features=feats
+        )
+        assert "Explicit Case Links" not in html
+
+    def test_section_absent_when_features_omitted(self, report_a, report_b):
+        html = _render_link_page(report_a, report_b, pair_id="R001__R002")
+        assert "Explicit Case Links" not in html
+
+    def test_linked_pair_renders_match_table(self, report_a, report_b):
+        from llm_dup_dev.models.report import CaseIdentifierKind
+
+        a, b = _linked_reports(
+            report_a, report_b, target_kind=CaseIdentifierKind.AUTHORITY_NUMBER
+        )
+        html = _render_link_page(a, b, pair_id="R001__R002", features=_features_with_link(a, b)
+        )
+        assert "Explicit Case Links" in html
+        assert "🔗 Explicit link" in html
+        assert "Report 2 → Report 1" in html
+        # The match names the target's field — the reference itself is untyped.
+        assert "authority_number" in html
+        assert "US-EXAMPLECO-2020-000123" in html
+
+    def test_unlinked_pair_renders_identifier_lists(self, report_a, report_b):
+        """The negative case shows *why* nothing resolved."""
+        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+
+        a = report_a.model_copy(update={
+            "case_identifiers": [
+                CaseIdentifierRef(
+                    kind=CaseIdentifierKind.SAFETY_REPORT_ID,
+                    value="US-EXAMPLECO-2020-000999",
+                )
+            ]
+        })
+        b = report_b.model_copy(
+            update={"other_case_identifiers": ["GB-OTHER-77001122"]}
+        )
+        html = _render_link_page(a, b, pair_id="R001__R002", features=_features_with_link(a, b)
+        )
+        assert "Explicit Case Links" in html
+        assert "No explicit link" in html
+        # Own identifiers keep their field prefix; pointers are bare.
+        assert "safety_report_id: US-EXAMPLECO-2020-000999" in html
+        assert "GB-OTHER-77001122" in html
+
+    def test_identifier_values_are_escaped(self, report_a, report_b):
+        """Identifier text is data — it must never reach the page as markup."""
+        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+
+        hostile = "<script>alert('x')</script>"
+        a = report_a.model_copy(update={
+            "case_identifiers": [
+                CaseIdentifierRef(
+                    kind=CaseIdentifierKind.SAFETY_REPORT_ID, value=hostile
+                )
+            ]
+        })
+        html = _render_link_page(a, report_b, pair_id="R001__R002",
+            features=_features_with_link(a, report_b),
+        )
+        assert "<script>alert" not in html
+        assert "&lt;script&gt;" in html
+
+    # -- Batch index --
+
+    def test_index_column_present_when_linked(self, report_a, report_b):
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        a, b = _linked_reports(report_a, report_b)
+        vm = build_pair_view_model(
+            a, b, pair_id="R001__R002", features=_features_with_link(a, b)
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        assert item.explicit_link is not None
+        assert item.explicit_link.short_label == "R2 → R1"
+
+        html = render_index([item])
+        assert "Explicit link" in html
+        assert "link-badge" in html
+
+    def test_index_column_absent_when_no_pair_is_linked(self, report_a, report_b):
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002",
+            features=_features_with_link(report_a, report_b),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        assert item.explicit_link is None
+        assert "Explicit link" not in render_index([item])
+
+    def test_index_omits_unlinked_pairs_with_identifier_data(
+        self, report_a, report_b
+    ):
+        """NO_LINK belongs on the pair page, not as an index column."""
+        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        a = report_a.model_copy(update={
+            "case_identifiers": [
+                CaseIdentifierRef(
+                    kind=CaseIdentifierKind.SAFETY_REPORT_ID,
+                    value="US-EXAMPLECO-2020-000999",
+                )
+            ]
+        })
+        vm = build_pair_view_model(
+            a, report_b, pair_id="R001__R002",
+            features=_features_with_link(a, report_b),
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        assert vm.explicit_link is not None and not vm.explicit_link.linked
+        assert item.explicit_link is None
+
+    def test_bidirectional_link_gets_a_combined_short_label(
+        self, report_a, report_b
+    ):
+        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+        from llm_dup_dev.review_html.compare import build_batch_index_item
+
+        id_a, id_b = "US-EXAMPLECO-2020-000123", "GB-OTHER-77001122"
+        def ref(value):
+            return CaseIdentifierRef(
+                kind=CaseIdentifierKind.SAFETY_REPORT_ID, value=value
+            )
+
+        a = report_a.model_copy(update={
+            "case_identifiers": [ref(id_a)],
+            "other_case_identifiers": [id_b],
+        })
+        b = report_b.model_copy(update={
+            "case_identifiers": [ref(id_b)],
+            "other_case_identifiers": [id_a],
+        })
+        vm = build_pair_view_model(
+            a, b, pair_id="R001__R002", features=_features_with_link(a, b)
+        )
+        item = build_batch_index_item(vm, "R001__R002.html")
+        assert item.explicit_link.short_label == "R1 ↔ R2"
+
+    def test_summary_panel_mirrors_the_index_badge(self, report_a, report_b):
+        a, b = _linked_reports(report_a, report_b)
+        html = _render_link_page(a, b, pair_id="R001__R002",
+            features=_features_with_link(a, b),
+            classification=_make_classification(),
+        )
+        assert "<dt>Explicit link</dt>" in html
