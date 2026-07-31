@@ -98,6 +98,34 @@
       "title": "AgeValue",
       "type": "object"
     },
+    "CaseIdentifierKind": {
+      "description": "Which of a report's own case-number fields a value was read from.\n\nReports carry their own case numbers under three headings, and the\nsame identifier may be filed under different headings by different\nsenders \u2014 any of the three can hold a value that is in fact a\nworldwide-unique identifier. ``kind`` is therefore **provenance, not\na namespace**: it records where the value came from for audit and\ndisplay, never restricting what it may match. See\n:mod:`llm_dup_dev.feature_generation.explicit_link_comparison`.",
+      "enum": [
+        "safety_report_id",
+        "company_number",
+        "authority_number"
+      ],
+      "title": "CaseIdentifierKind",
+      "type": "string"
+    },
+    "CaseIdentifierRef": {
+      "description": "One of a report's *own* case numbers, tagged with its source field.\n\nUsed by ``Report.case_identifiers`` only. The references a report\nmakes to *other* reports (``Report.other_case_identifiers``) are bare\nstrings \u2014 the ICH E2B(R3) C.1.9 field carries no such qualifier.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/CaseIdentifierKind"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "CaseIdentifierRef",
+      "type": "object"
+    },
     "DateValue": {
       "description": "A dated value with resolution and provenance.\n\nUsed for report-level date attributes (report_date_values).\nResolution affects domain size in probability calculations.",
       "properties": {
@@ -393,6 +421,20 @@
       ],
       "default": null,
       "title": "Literature Reference"
+    },
+    "case_identifiers": {
+      "items": {
+        "$ref": "#/$defs/CaseIdentifierRef"
+      },
+      "title": "Case Identifiers",
+      "type": "array"
+    },
+    "other_case_identifiers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Other Case Identifiers",
+      "type": "array"
     }
   },
   "required": [

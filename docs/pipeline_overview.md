@@ -2,11 +2,12 @@
 
 This document gives a high-level overview of the **duplicate adjudication pipeline** for pharmacovigilance reports. The pipeline operates on **report pairs** that have already been flagged as suspected duplicates by an upstream candidate-generation method (e.g. vigiMatch). For each pair it produces a final classification of **Duplicates**, **Otherwise related**, **Unrelated**, or **Abstain**.
 
-The pipeline is primarily a transparent rule-based decision logic operating on structured features, with optional LLM-assisted narrative analysis. It combines three complementary kinds of evidence:
+The pipeline is primarily a transparent rule-based decision logic operating on structured features, with optional LLM-assisted narrative analysis. It combines four complementary kinds of evidence:
 
 1. **Rarity-based matching evidence**, which evaluates how unlikely it would be for two unrelated reports to share the observed combination of clinical features.
 2. **Inconsistency signals** from structured data and clinical dates, which capture information arguing against the duplicate hypothesis.
 3. **Narrative-derived signals**, assessed using a language model: the AE clinical-picture comparison (which also has a deterministic MedDRA-hierarchy fallback), plus per-report source/case and demographics extraction that feed the matching and inconsistency logic.
+4. **Explicit inter-report links**, derived deterministically from the reports' structured case-identifier fields (ICH E2B(R3) C.1.9): when one report names the other, the sending organisation has already declared them to be the same case.
 
 The matching evidence is anchored in a **comparison population** (the *anchor population*) defined by the shared clinical context of the two reports. The method estimates the probability that **at least one** pair of reports anywhere in that population would share the observed feature pattern by chance, across all unordered pairs it contains; small probabilities produce strong evidence in favour of the duplicate hypothesis.
 
@@ -19,8 +20,9 @@ The combined evidence is then fed into a transparent decision logic that classif
 
 > **Internal vs user-facing labels.** Internally the decision logic
 > answers two questions in sequence: an **independence assessment**
-> (`Non-independent / Independent`) — rejected either on direct
-> evidence of shared provenance (a shared source identifier) or on the
+> (`Non-independent / Independent`) — rejected on an explicit
+> inter-report link, on direct evidence of shared provenance (a shared
+> source identifier), or on the
 > rarity-based matching evidence — and, for non-independent pairs, a
 > **relationship assessment** (`Same_case / Different_case / Abstain`)
 > driven by the inconsistency signals interpreted against the matching
@@ -53,6 +55,7 @@ H["Assess Matching Evidence"]
 I["Assess Inconsistencies"]
 J["Assess AE Clinical Picture<br>(LLM or rule-based)"]
 S["Extract Narrative Source/Case (LLM)<br>+ Deterministic Pair Comparison"]
+L["Compare Case Identifiers<br>(explicit inter-report links)"]
 K["Decision Logic<br>(independence assessment +<br>relationship assessment)"]
 end
 
@@ -69,6 +72,7 @@ A --> D
 
 B --> E
 B --> I
+B --> L
 C --> B
 B --> J
 C --> J
@@ -81,6 +85,7 @@ F --> H
 J --> I
 S --> I
 S --> K
+L --> K
 
 
 H --> K

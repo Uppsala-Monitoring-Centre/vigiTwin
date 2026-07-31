@@ -25,6 +25,12 @@ from llm_dup_dev.models.enums import (
     IndependenceReason,
     ReportingContextLevel,
 )
+from llm_dup_dev.models.explicit_link import (
+    ExplicitLinkAssessment,
+    ExplicitLinkDirection,
+    ExplicitLinkMatch,
+    ExplicitLinkVerdict,
+)
 from llm_dup_dev.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
@@ -38,6 +44,7 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
+from llm_dup_dev.models.report import CaseIdentifierKind
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +60,7 @@ def _make_features(
     source_case_assessment: SourceCaseAssessment | None = None,
     feature_contributions: list[FeatureContribution] | None = None,
     L_patient: float | None = None,
+    explicit_link: ExplicitLinkAssessment | None = None,
 ) -> PairFeatures:
     """Build a minimal PairFeatures for decision logic testing.
 
@@ -87,7 +95,27 @@ def _make_features(
             moderate=moderate, strong=strong, decisive=decisive,
         ),
         source_case_assessment=source_case_assessment,
+        explicit_link=explicit_link,
     )
+
+
+def _link(
+    verdict: ExplicitLinkVerdict = ExplicitLinkVerdict.EXPLICIT_LINK,
+    value: str = "US-EXAMPLECO-2020-000123",
+) -> ExplicitLinkAssessment:
+    """Build an explicit-link assessment; ``EXPLICIT_LINK`` carries one match."""
+    matches = []
+    if verdict == ExplicitLinkVerdict.EXPLICIT_LINK:
+        matches = [
+            ExplicitLinkMatch(
+                direction=ExplicitLinkDirection.R1_TO_R2,
+                normalized_value=value.casefold(),
+                target_kind=CaseIdentifierKind.SAFETY_REPORT_ID,
+                pointer_value=value,
+                target_value=value,
+            )
+        ]
+    return ExplicitLinkAssessment(verdict=verdict, matches=matches)
 
 
 def _fc(feature: str, p_f: float) -> FeatureContribution:
@@ -1235,3 +1263,202 @@ class TestMultiPatientContextNoLink:
         # No identifier suffix should appear (the formatter returns ""
         # when no identifier is present).
         assert ", doi=" not in result.explanation
+
+
+# ===================================================================
+# Explicit inter-report link zone (priority 3)
+#
+# One report's structured case identifiers name the other. Rejects
+# independence outright and adjudicates at the compelling budget
+# (w_tot < w_tot_compelling_zone, default 4.0), failing to
+# Different_case rather than Abstain.
+# ===================================================================
+
+class TestExplicitLink:
+    """Explicit-link zone behaviour, gating, and priority."""
+
+    # ---------- Independence ----------
+
+    def test_rejects_independence_despite_negligible_l_match(self):
+        """A declared link stands on its own — no rarity evidence needed."""
+        f = _make_features(L_match=0.0, explicit_link=_link())
+        result = classify(f, THRESHOLDS)
+        _assert_same_case(result)
+        assert result.independence_reason == IndependenceReason.EXPLICIT_LINK
+
+    def test_reason_takes_precedence_over_shared_source(self):
+        """Both routes reject independence; the more direct one is recorded."""
+        f = _make_features(
+            L_match=0.5,
+            explicit_link=_link(),
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        assert result.independence_reason == IndependenceReason.EXPLICIT_LINK
+
+    def test_no_link_verdict_does_not_reject_independence(self):
+        f = _make_features(
+            L_match=0.5, explicit_link=_link(ExplicitLinkVerdict.NO_LINK)
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+        assert result.independence_reason == IndependenceReason.RARITY_INSUFFICIENT
+
+    def test_not_assessed_verdict_does_not_reject_independence(self):
+        """`not_assessed` is no information, never an assessed absence."""
+        f = _make_features(
+            L_match=0.5, explicit_link=_link(ExplicitLinkVerdict.NOT_ASSESSED)
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+
+    def test_absent_assessment_does_not_reject_independence(self):
+        """Features generated before the signal existed carry ``None``."""
+        f = _make_features(L_match=0.5, explicit_link=None)
+        result = classify(f, THRESHOLDS)
+        _assert_independent(result)
+
+    # ---------- Inconsistency budget (compelling tolerance) ----------
+
+    def test_one_strong_tolerated(self):
+        """w_tot = 3.0 < 4.0 → Same_case."""
+        f = _make_features(L_match=0.0, strong=1, explicit_link=_link())
+        _assert_same_case(classify(f, THRESHOLDS))
+
+    def test_strong_plus_moderate_at_bound_fails(self):
+        """w_tot = 4.0, not < 4.0 → Different_case (not Abstain)."""
+        f = _make_features(
+            L_match=0.0, strong=1, moderate=1, explicit_link=_link()
+        )
+        _assert_different_case(classify(f, THRESHOLDS))
+
+    def test_four_moderate_fails(self):
+        """w_tot = 4.0 → Different_case."""
+        f = _make_features(L_match=0.0, moderate=4, explicit_link=_link())
+        _assert_different_case(classify(f, THRESHOLDS))
+
+    def test_decisive_yields_different_case_not_abstain(self):
+        """w_decisive=100 clears the bar; Abstain stays Identity-only."""
+        f = _make_features(L_match=0.0, decisive=1, explicit_link=_link())
+        _assert_different_case(classify(f, THRESHOLDS))
+
+    def test_bound_follows_configured_threshold(self):
+        thresholds = DecisionThresholds(w_tot_compelling_zone=2.0)
+        f = _make_features(L_match=0.0, moderate=2, explicit_link=_link())
+        _assert_different_case(classify(f, thresholds))
+        f = _make_features(L_match=0.0, moderate=1, explicit_link=_link())
+        _assert_same_case(classify(f, thresholds))
+
+    # ---------- Zone priority ----------
+
+    def test_identity_zone_outranks_explicit_link(self):
+        """Identity abstains where the explicit-link zone would not."""
+        f = _make_features(
+            L_match=0.0,
+            strong=1,
+            moderate=1,
+            explicit_link=_link(),
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT
+            ),
+        )
+        _assert_abstain(classify(f, THRESHOLDS))
+
+    def test_distinct_zone_outranks_explicit_link(self):
+        """SAME_SOURCE_DIFFERENT_CASE stays pinned to Different_case."""
+        f = _make_features(
+            L_match=0.0,
+            explicit_link=_link(),
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE
+            ),
+        )
+        result = classify(f, THRESHOLDS)
+        _assert_different_case(result)
+        assert "pinned to Different_case" in result.explanation
+
+    def test_explicit_link_outranks_unresolved_zone(self):
+        """A single moderate would fail the Unresolved bar (w_tot >= 1.0)
+        but is inside the explicit-link budget."""
+        f = _make_features(
+            L_match=3.5,
+            moderate=1,
+            explicit_link=_link(),
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
+            ),
+        )
+        _assert_same_case(classify(f, THRESHOLDS))
+
+    def test_explicit_link_outranks_multi_patient_context(self):
+        f = _make_features(
+            L_match=3.5,
+            moderate=1,
+            explicit_link=_link(),
+            source_case_assessment=_assessment(
+                SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK,
+                identifier=None,
+            ),
+        )
+        _assert_same_case(classify(f, THRESHOLDS))
+
+    def test_explicit_link_lifts_the_limited_rarity_zone(self):
+        """Without the link a single moderate fails the limited zone
+        (w_tot=1.0, bound 1.0); the link raises the budget to 4.0."""
+        without = _make_features(L_match=1.5, moderate=1)
+        _assert_different_case(classify(without, THRESHOLDS))
+
+        with_link = _make_features(L_match=1.5, moderate=1, explicit_link=_link())
+        _assert_same_case(classify(with_link, THRESHOLDS))
+
+    # ---------- Kill switch ----------
+
+    def test_disabled_flag_reverts_to_prior_behaviour(self):
+        thresholds = DecisionThresholds(explicit_link_enabled=False)
+        f = _make_features(L_match=1.5, moderate=1, explicit_link=_link())
+        result = classify(f, thresholds)
+        _assert_different_case(result)
+        assert result.independence_reason == IndependenceReason.RARITY_LIMITED
+
+    def test_disabled_flag_leaves_pair_independent_without_rarity(self):
+        thresholds = DecisionThresholds(explicit_link_enabled=False)
+        f = _make_features(L_match=0.5, explicit_link=_link())
+        _assert_independent(classify(f, thresholds))
+
+    # ---------- Explanation surface ----------
+
+    def test_explanation_names_direction_kind_and_identifier(self):
+        f = _make_features(L_match=0.0, explicit_link=_link())
+        result = classify(f, THRESHOLDS)
+        assert "Explicit inter-report link" in result.explanation
+        assert "report_1_to_report_2" in result.explanation
+        assert "safety_report_id=US-EXAMPLECO-2020-000123" in result.explanation
+
+    def test_explanation_names_the_target_field(self):
+        """The reference is untyped, so the kind shown is the target's."""
+        link = _link()
+        link.matches[0].target_kind = CaseIdentifierKind.AUTHORITY_NUMBER
+        f = _make_features(L_match=0.0, explicit_link=link)
+        result = classify(f, THRESHOLDS)
+        assert "authority_number=US-EXAMPLECO-2020-000123" in result.explanation
+
+    def test_explanation_counts_additional_matches(self):
+        link = _link()
+        extra = link.matches[0].model_copy(
+            update={
+                "direction": ExplicitLinkDirection.R2_TO_R1,
+                "normalized_value": "gb-mhra-adr 98765432",
+                "pointer_value": "GB-MHRA-ADR 98765432",
+                "target_value": "GB-MHRA-ADR 98765432",
+            }
+        )
+        link.matches.append(extra)
+        f = _make_features(L_match=0.0, explicit_link=link)
+        assert "+1 more" in classify(f, THRESHOLDS).explanation
+
+    def test_penalty_records_the_bound_it_tested(self):
+        f = _make_features(L_match=0.0, moderate=1, explicit_link=_link())
+        result = classify(f, THRESHOLDS)
+        assert result.penalty.threshold == THRESHOLDS.w_tot_compelling_zone

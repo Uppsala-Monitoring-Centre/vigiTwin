@@ -94,6 +94,9 @@ def render_index(items: list[BatchIndexItem]) -> str:
             item.context_label is not None or item.source_case is not None
             for item in items
         ),
+        has_explicit_link=any(
+            item.explicit_link is not None for item in items
+        ),
         has_matching_features=any(
             item.matching_features is not None for item in items
         ),

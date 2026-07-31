@@ -14,6 +14,9 @@ from llm_dup_dev.feature_generation.anchor import select_anchor
 from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
     compute_clinical_date_inconsistencies,
 )
+from llm_dup_dev.feature_generation.explicit_link_comparison import (
+    compare_explicit_links,
+)
 from llm_dup_dev.feature_generation.inconsistencies import detect_inconsistencies
 from llm_dup_dev.feature_generation.matching import MatchResult, compute_matches
 from llm_dup_dev.feature_generation.probability import (
@@ -60,7 +63,8 @@ def generate_pair_features(
         3. Anchor population selection
         4. Probability estimation (p_joint, P_match, L_match)
         5. Inconsistency detection
-        6. Evidence summary construction
+        6. Explicit inter-report link comparison
+        7. Evidence summary construction
 
     Parameters
     ----------
@@ -221,6 +225,7 @@ def generate_pair_features(
             ae_clinical_picture.rule_based_details
         ),
         source_case_assessment=source_case_assessment,
+        explicit_link=compare_explicit_links(r1, r2),
         evidence_summary=evidence_summary,
     )
 

@@ -54,13 +54,14 @@
       "type": "string"
     },
     "IndependenceReason": {
-      "description": "Audit trail for which branch in the decision logic fired.\n\nAttached to :class:`ClassificationResult` so downstream review can\ntell *why* a pair landed on its independence assessment. The\n``RARITY_*`` values correspond to the four L_match zones of the\nrarity-based matching evidence; ``SHARED_SOURCE`` means independence\nwas rejected on direct evidence of shared provenance (a reliable\nshared source identifier derived from the narratives, or a\nshared-source verdict from the source-case comparison).\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Independence assessment",
+      "description": "Audit trail for which branch in the decision logic fired.\n\nAttached to :class:`ClassificationResult` so downstream review can\ntell *why* a pair landed on its independence assessment. The\n``RARITY_*`` values correspond to the four L_match zones of the\nrarity-based matching evidence; ``SHARED_SOURCE`` means independence\nwas rejected on direct evidence of shared provenance (a reliable\nshared source identifier derived from the narratives, or a\nshared-source verdict from the source-case comparison);\n``EXPLICIT_LINK`` means one report's structured case-identifier\nreferences named the other outright \u2014 the most direct evidence\navailable, so it is recorded in preference to ``SHARED_SOURCE`` when\nboth hold.\n\nSee: docs/duplicate_adjudication_spec.md \u00a7 Independence assessment",
       "enum": [
         "rarity_compelling",
         "rarity_intermediate",
         "rarity_limited",
         "rarity_insufficient",
-        "shared_source"
+        "shared_source",
+        "explicit_link"
       ],
       "title": "IndependenceReason",
       "type": "string"

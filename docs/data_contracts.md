@@ -341,6 +341,52 @@ unchanged.
 
 ------
 
+### Case identifiers (optional)
+
+```
+case_identifiers: [
+  {"kind": "safety_report_id", "value": "US-EXAMPLECO-2020-000123"},
+  {"kind": "company_number",   "value": "EXCO-2020-000123"}
+]
+
+other_case_identifiers: ["US-EXAMPLECO-2020-000456"]
+```
+
+Two lists, both **optional** (defaulting to `[]`) and deliberately
+**asymmetric in shape**.
+
+`case_identifiers` holds **this** report's own case numbers. Each is tagged
+with a `kind` — one of `safety_report_id`, `company_number`,
+`authority_number` — because the source system records them in three distinct
+named fields.
+
+`other_case_identifiers` holds the references this report makes to **other**
+reports — the ICH E2B(R3) C.1.9 *Other case identifiers in previous
+transmissions* one-to-many field. These are **bare strings**: that field
+carries the identifier only, with no qualifier saying which kind of case
+number it is.
+
+`kind` therefore exists only where the source system distinguishes fields, and
+it records **provenance, not a namespace**. Any of the three fields can carry a
+value that is in fact a worldwide-unique identifier, so a pointer is matched
+against every identifier the other report holds, whichever field it came from;
+the matched target's `kind` is retained for audit and display only.
+
+Both lists are needed together: a pointer in one report's
+`other_case_identifiers` can only be resolved against the *other* report's
+`case_identifiers`. `report_id` is the pipeline's own key and lives in a
+different namespace from these, so it cannot serve that role.
+
+Values are stored **verbatim**; all normalization is applied downstream by
+`feature_generation/explicit_link_comparison.py`. Omit empty and sentinel
+entries rather than storing them — the empty-list-means-missing contract
+applies here as elsewhere.
+
+The pair-level consumer is described under
+[`duplicate_adjudication_spec.md` § Explicit inter-report links](duplicate_adjudication_spec.md).
+
+------
+
 ## Representation Principles
 
 ### Set semantics
@@ -781,6 +827,44 @@ Unlike source/case, the deterministic downstream consumer here does not produce 
 The pair-level output, `SourceCaseAssessment`, is carried on `PairFeatures.source_case_assessment`. Only `SAME_SOURCE_DIFFERENT_CASE` is mapped into the unified `Inconsistency` master list by [`feature_generation/source_case_inconsistency.py`](../src/llm_dup_dev/feature_generation/source_case_inconsistency.py) — as **decisive** — so the merged severity counts pick it up the same way AE clinical-picture findings do. `SAME_SOURCE_UNCOMPARABLE_CASE` synthesizes no row, since it represents absence of comparable evidence rather than a discrepancy; the Unresolved-zone rule (below) drives the relationship outcome on its own.
 
 The decision logic consults the raw verdict on top of those counts: a verdict in `{SAME_SOURCE_SINGLE_PATIENT, SAME_SOURCE_SAME_CASE, SAME_SOURCE_DIFFERENT_CASE, SAME_SOURCE_UNCOMPARABLE_CASE}` proves a shared source exists and rejects independence regardless of `L_match` (direct evidence of shared provenance); the verdicts also select the source-context evidence zones used by the relationship assessment. The independence route is recorded on `ClassificationResult.independence_reason` (`shared_source` vs. one of the `rarity_*` zones) for auditability. See [`duplicate_adjudication_spec.md § Use of source-context information`](duplicate_adjudication_spec.md) for the verdict → zone mapping.
+
+------
+
+## Explicit inter-report links
+
+`PairFeatures.explicit_link` carries an `ExplicitLinkAssessment` (defined in
+[`src/llm_dup_dev/models/explicit_link.py`](../src/llm_dup_dev/models/explicit_link.py)),
+produced deterministically from the two reports' case-identifier fields by
+[`feature_generation/explicit_link_comparison.py`](../src/llm_dup_dev/feature_generation/explicit_link_comparison.py).
+No LLM and no database access are involved — unlike the narrative-derived
+signals above, both the pointers and the identifiers they resolve against come
+from structured fields on the raw `Report` contract.
+
+`verdict` is one of:
+
+| Verdict | Meaning |
+|---|---|
+| `explicit_link` | One report's `other_case_identifiers` names an identifier the other report carries in `case_identifiers`. Every resolved pointer is listed in `matches`. |
+| `no_link` | Case-identifier data was present, but nothing resolved. |
+| `not_assessed` | Neither report carried any case-identifier data. **No information** — never an assessed absence of a link. |
+
+Each `ExplicitLinkMatch` records the `direction` (which report references
+which), the `normalized_value`, the verbatim `pointer_value` / `target_value`,
+and the `target_kind` — which of the *target's* own fields the reference
+resolved against. That is the only field provenance available, since the
+referencing side is an untyped C.1.9 value.
+
+The field is `None` on `PairFeatures` generated before this signal existed;
+consumers must distinguish that from a populated `not_assessed`. An explicit
+link synthesizes **no** `Inconsistency` row — it is positive evidence, not a
+discrepancy — so it reaches the decision logic only through the raw verdict.
+
+The decision logic consults the verdict twice: `explicit_link` rejects
+independence (recorded as `independence_reason = explicit_link`, in preference
+to `shared_source` when both apply) and selects the explicit-link evidence
+zone, below Identity and Distinct and above Unresolved. Both consultations are
+gated by `DecisionThresholds.explicit_link_enabled`. See
+[`duplicate_adjudication_spec.md` § Explicit inter-report links](duplicate_adjudication_spec.md).
 
 ------
 

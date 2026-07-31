@@ -397,6 +397,48 @@ class SourceCaseAssessmentVM(BaseModel):
     short_label: str | None = None
 
 
+class ExplicitLinkMatchVM(BaseModel):
+    """One resolved inter-report reference, pre-formatted for display."""
+
+    direction_label: str  # "Report 1 → Report 2"
+    # Which of the *target's* own case-number fields the reference
+    # resolved against. The referencing side is an untyped C.1.9 value,
+    # so this is the only field provenance there is.
+    target_kind_label: str
+    pointer_value: str  # verbatim, as the referencing report recorded it
+    target_value: str  # verbatim, as the referenced report recorded it
+
+
+class CaseIdentifierListVM(BaseModel):
+    """One report's raw case identifiers, shown when no link resolved.
+
+    "These are the numbers and they do not line up" is what a reviewer
+    needs in order to judge an absent link, so the lists are surfaced
+    even in the negative case.
+    """
+
+    report_label: str  # "Report 1"
+    own: list[str] = Field(default_factory=list)  # "safety_report_id: US-…"
+    pointers: list[str] = Field(default_factory=list)
+
+
+class ExplicitLinkVM(BaseModel):
+    """Explicit inter-report link surface for the pair page and index row.
+
+    Mirrors
+    :class:`llm_dup_dev.models.explicit_link.ExplicitLinkAssessment`.
+    ``linked`` is the single flag templates branch on; ``short_label`` is
+    populated only for the index badge.
+    """
+
+    verdict: str
+    linked: bool
+    matches: list[ExplicitLinkMatchVM] = Field(default_factory=list)
+    identifiers: list[CaseIdentifierListVM] = Field(default_factory=list)
+    reasoning: str | None = None
+    short_label: str | None = None
+
+
 class DecisionSummaryVM(BaseModel):
     """Compact decision summary for prediction/evaluation pages.
 
@@ -453,6 +495,10 @@ class PairViewModel(BaseModel):
 
     features_summary: FeaturesSummaryVM | None = None
     classification_summary: ClassificationSummaryVM | None = None
+    # Explicit inter-report links. ``None`` when neither report carries
+    # case-identifier data, so the section is suppressed entirely rather
+    # than asserting an absence the pipeline never checked.
+    explicit_link: ExplicitLinkVM | None = None
     freq_stats: FreqStatsVM | None = None
     decision_summary: DecisionSummaryVM | None = None
     annotation: AnnotationVM | None = None
@@ -510,3 +556,6 @@ class BatchIndexItem(BaseModel):
     # identifier when present. ``None`` when the verdict is absent,
     # ``NOT_ASSESSED``, or hidden on the index (``NO_DECISIVE_SIGNAL``).
     source_case: SourceCaseAssessmentVM | None = None
+    # Explicit inter-report link surface for the index row. Set only when
+    # a link actually resolved — an absent link is not worth a column.
+    explicit_link: ExplicitLinkVM | None = None

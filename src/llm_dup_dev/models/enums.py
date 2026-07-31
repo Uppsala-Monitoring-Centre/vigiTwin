@@ -147,7 +147,11 @@ class IndependenceReason(str, Enum):
     rarity-based matching evidence; ``SHARED_SOURCE`` means independence
     was rejected on direct evidence of shared provenance (a reliable
     shared source identifier derived from the narratives, or a
-    shared-source verdict from the source-case comparison).
+    shared-source verdict from the source-case comparison);
+    ``EXPLICIT_LINK`` means one report's structured case-identifier
+    references named the other outright — the most direct evidence
+    available, so it is recorded in preference to ``SHARED_SOURCE`` when
+    both hold.
 
     See: docs/duplicate_adjudication_spec.md § Independence assessment
     """
@@ -157,6 +161,7 @@ class IndependenceReason(str, Enum):
     RARITY_LIMITED = "rarity_limited"
     RARITY_INSUFFICIENT = "rarity_insufficient"
     SHARED_SOURCE = "shared_source"
+    EXPLICIT_LINK = "explicit_link"
 
 
 class RelationshipAssessment(str, Enum):

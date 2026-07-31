@@ -280,6 +280,48 @@ tr.inc-suppressed .severity-decisive { background: #b1b4b8; color: #fff; }
 .source-case-line { margin-top: 3px; }
 .source-case-line code { font-size: 11px; }
 
+/* --- Explicit inter-report link (mirrors the index badge). Green
+   rather than the source/case purple: a declared link, not an inferred
+   verdict. --- */
+.link-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #dff5e1;
+    color: #1b5e20;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.link-badge.link-none {
+    background: #eceff1;
+    color: #455a64;
+}
+.link-line { margin-top: 3px; }
+.link-line code { font-size: 11px; }
+.link-ids {
+    margin-top: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+}
+.link-ids h4 {
+    margin: 0 0 4px;
+    font-size: 13px;
+    color: #24292e;
+}
+.link-ids ul {
+    margin: 0 0 6px;
+    padding-left: 18px;
+    font-size: 12px;
+}
+.link-ids .link-ids-label {
+    font-size: 11px;
+    color: #586069;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
 /* --- Inline inconsistency severity badges (mirrors the index).
    Distinct from the .severity-* palette used by the Discrepancies table
    below; both coexist. --- */
@@ -474,6 +516,19 @@ details.debug-section pre {
             </div>
             {% endif %}
         </dd>
+        {% if summary.explicit_link %}
+        <dt>Explicit link</dt>
+        <dd>
+            <span class="link-badge" title="{{ summary.explicit_link.reasoning }}">
+                🔗 {{ summary.explicit_link.short_label }}
+            </span>
+            {%- for match in summary.explicit_link.matches %}
+            <div class="link-line">
+                <code>{{ match.target_kind_label }}={{ match.pointer_value }}</code>
+            </div>
+            {%- endfor %}
+        </dd>
+        {% endif %}
         <dt>Anchor</dt>
         <dd>{{ summary.anchor_label | safe if summary.anchor_label else '--' }}</dd>
         <dt>Anchor N</dt>
@@ -710,6 +765,74 @@ details.debug-section pre {
             {% endif %}
             <div class="narrative-col">{{ vm.narratives.right_text or '--' }}</div>
         </div>
+    </div>
+</div>
+{% endif %}
+
+{# ── Explicit inter-report links (optional) ── #}
+{% if vm.explicit_link %}
+<div class="section">
+    <h2>Explicit Case Links</h2>
+    {% if vm.explicit_link.linked %}
+    <span class="link-badge">🔗 Explicit link</span>
+    {% else %}
+    <span class="link-badge link-none">No explicit link</span>
+    {% endif %}
+    {% if vm.explicit_link.reasoning %}
+    <p style="margin: 8px 0 0; font-size: 13px; color: #24292e;">
+        {{ vm.explicit_link.reasoning }}
+    </p>
+    {% endif %}
+    {% if vm.explicit_link.matches %}
+    <table style="margin-top: 10px;">
+        <thead>
+            <tr>
+                <th>Direction</th>
+                <th>Referenced value</th>
+                <th>Matched value on target</th>
+                <th>Target field</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for match in vm.explicit_link.matches %}
+            <tr>
+                <td>{{ match.direction_label }}</td>
+                <td><code>{{ match.pointer_value }}</code></td>
+                <td><code>{{ match.target_value }}</code></td>
+                <td>{{ match.target_kind_label }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    {# The raw identifier lists matter most in the negative case: they show
+       *why* nothing resolved. Kept visible when linked too, for audit. #}
+    <div class="link-ids">
+        {% for side in vm.explicit_link.identifiers %}
+        <div>
+            <h4>{{ side.report_label }}</h4>
+            <div class="link-ids-label">Own case identifiers</div>
+            {% if side.own %}
+            <ul>
+                {% for value in side.own %}
+                <li><code>{{ value }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <ul><li>--</li></ul>
+            {% endif %}
+            <div class="link-ids-label">Other case identifiers</div>
+            {% if side.pointers %}
+            <ul>
+                {% for value in side.pointers %}
+                <li><code>{{ value }}</code></li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <ul><li>--</li></ul>
+            {% endif %}
+        </div>
+        {% endfor %}
     </div>
 </div>
 {% endif %}

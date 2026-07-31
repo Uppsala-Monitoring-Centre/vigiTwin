@@ -281,6 +281,7 @@ from llm_dup_dev.data.protocols import ReportLoader
 from llm_dup_dev.models.report import (
     Report, Drug, AdverseEvent, SourcedValue, AgeValue,
     MeasurementValue, DateValue, PartialDate,
+    CaseIdentifierKind, CaseIdentifierRef,
 )
 from llm_dup_dev.models.report_pair import ReportPair
 
@@ -324,6 +325,27 @@ class SqlReportLoader:
           narrative-only behavior. This is an input field on the Report
           contract — the source/case extractor's output schema is
           unchanged.
+        - case_identifiers (list of CaseIdentifierRef) — this report's
+          own case numbers, one entry per populated field, with `kind`
+          set to the field the value was read from
+          (`safety_report_id`, `company_number`, `authority_number`).
+        - other_case_identifiers (list of str) — this report's
+          references to *other* reports, i.e. the ICH E2B(R3) C.1.9
+          "Other case identifiers in previous transmissions" one-to-many
+          field. One bare identifier per row: unlike `case_identifiers`
+          these carry **no** `kind`, because the source field records
+          only the identifier.
+
+          Supply **both** lists: a pointer on one report can only be
+          resolved against the other report's own identifiers, and
+          `report_id` is the pipeline's key rather than a case number,
+          so it cannot substitute. Store values **verbatim** — all
+          normalization (case, whitespace, NFKC) happens dev-side, and
+          a pointer is matched against every identifier the other report
+          holds regardless of which of its fields that value came from.
+          Omit empty and sentinel entries. When neither report of a pair
+          carries either list the comparator records `not_assessed` and
+          the signal drives nothing.
 
         Use empty lists for missing/unknown attributes.
         Do NOT store uncertainty values (e.g. "unknown") as valid values.
@@ -357,6 +379,8 @@ class SqlReportLoader:
 | `reported_overall_ae_onset_date` | Narrative extraction (e.g. `CASE EVENT DATE: YYYYMMDD` on US reports) | Optional `PartialDate`. When supplied it overrides the derived overall AE onset date in clinical-date inconsistency detection. Leave as `None` to fall back to dev-side derivation. |
 | `narrative` | Free-text narrative from the report | Used by narrative analysis (future); set to `None` if unavailable |
 | `literature_reference` | Optional structured citation / source descriptor for literature reports (journal citation, registry/study label, DOI / PMID / NCT) | Optional `str`. When supplied, passed alongside the narrative into the per-report source/case extractor as supplemental source-identifying metadata. Leave as `None` when unavailable. |
+| `case_identifiers` | The report's own case numbers (safety report id / company number / authority number) | List of `CaseIdentifierRef`. Verbatim values; `kind` records the source field. Needed so the *other* report's C.1.9 pointers can resolve against this one. Empty list when unavailable. |
+| `other_case_identifiers` | ICH E2B(R3) C.1.9 "Other case identifiers in previous transmissions" (one-to-many) | List of **plain strings**, one per row, verbatim — the field carries no kind qualifier. Drives the explicit-link signal — see `duplicate_adjudication_spec.md` § Explicit inter-report links. Empty list when unavailable. |
 
 See `schemas/report.schema.json` for the full JSON schema and `examples/report_example.json` for a concrete example.
 
@@ -870,8 +894,9 @@ runner = PipelineRunner(
 ### Decision logic summary
 
 The decision logic answers two questions in sequence: an **independence
-assessment** (Non-independent when a shared-source verdict is present or
-`L_match > lmatch_limited`; else Independent → `Unrelated`), then — for
+assessment** (Non-independent when an explicit inter-report link or a
+shared-source verdict is present, or `L_match > lmatch_limited`; else
+Independent → `Unrelated`), then — for
 non-independent pairs — a **relationship assessment** comparing the
 weighted inconsistency score against the tolerance of the applicable
 evidence zone:
@@ -884,12 +909,16 @@ evidence zone:
 | > 3.0 (compelling)   | `w_tot < 4` | Different_case (`Otherwise_related`) |
 | > 2.0 (intermediate) | `w_tot < 3` | Different_case (`Otherwise_related`) |
 | > 1.0 (limited)      | `w_tot < 1` | Different_case (`Otherwise_related`) |
-| ≤ 1.0                | never | Independent (`Unrelated`) — unless a shared-source verdict rejects independence |
+| ≤ 1.0                | never | Independent (`Unrelated`) — unless an explicit link or a shared-source verdict rejects independence |
 
 Source-context evidence zones (Identity / Distinct / Unresolved, derived
-from the shared-source verdict) take priority over these rarity zones —
-see the spec § Relationship classifier for the full priority-ordered
-table. Decisive inconsistencies (e.g. distinct patient IDs from the same
+from the shared-source verdict) and the explicit-link zone take priority
+over these rarity zones. A pair whose structured case identifiers name
+the other report is adjudicated at the compelling budget (`w_tot < 4`),
+below Identity and Distinct and above Unresolved; set
+`DecisionThresholds(explicit_link_enabled=False)` to adjudicate as if the
+signal were absent. See the spec § Relationship classifier for the full
+priority-ordered table. Decisive inconsistencies (e.g. distinct patient IDs from the same
 study) preclude `Same_case`. The independence assessment then decides
 the surface label: `Otherwise_related` when independence is rejected,
 `Unrelated` otherwise.

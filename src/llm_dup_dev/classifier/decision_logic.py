@@ -4,9 +4,11 @@ Adjudicates a candidate report pair by answering two sequential
 questions, mirroring the structure of the method specification:
 
 1. **Independence assessment** (:func:`assess_independence`) — did the
-   two reports arise independently? Independence is rejected either on
-   direct evidence of shared provenance (a shared-source verdict from
-   the source-case comparison) or when the rarity-based matching
+   two reports arise independently? Independence is rejected on an
+   explicit inter-report link (one report's structured case identifiers
+   name the other), on direct evidence of shared provenance (a
+   shared-source verdict from
+   the source-case comparison), or when the rarity-based matching
    evidence is strong enough (``L_match > lmatch_limited``) to reject
    the null hypothesis that the reports are independent draws from the
    comparison population. Output: ``NON_INDEPENDENT`` / ``INDEPENDENT``
@@ -29,26 +31,33 @@ Inconsistencies are combined into a single weighted score::
           + w_strong × strong + w_decisive × decisive
 
 which is interpreted against a priority-ordered set of evidence zones.
-Source-context zones (derived from the source-case verdict) take
-priority; pairs without a zone-selecting verdict fall through to the
-rarity zones defined by ``L_match``::
+Source-context zones (derived from the source-case verdict) and the
+explicit-link zone take priority; pairs selecting none of them fall
+through to the rarity zones defined by ``L_match``::
 
-    1. Identity    (SAME_SOURCE_SINGLE_PATIENT / SAME_SOURCE_SAME_CASE):
-                     w_tot < 4 ⇒ Same_case, else Abstain
-    2. Distinct    (SAME_SOURCE_DIFFERENT_CASE):
-                     Different_case, pinned regardless of w_tot
-    3. Unresolved  (SAME_SOURCE_UNCOMPARABLE_CASE,
-                    MULTI_PATIENT_CONTEXT_NO_LINK):
-                     w_tot ≥ 1 ⇒ Different_case;
-                     else L_patient > 2 ⇒ Same_case, else Different_case
-    4. Rarity compelling   (L_match > 3): w_tot < 4 ⇒ Same_case else Different_case
-    5. Rarity intermediate (L_match > 2): w_tot < 3 ⇒ Same_case else Different_case
-    6. Rarity limited      (L_match > 1): w_tot < 1 ⇒ Same_case else Different_case
+    1. Identity      (SAME_SOURCE_SINGLE_PATIENT / SAME_SOURCE_SAME_CASE):
+                       w_tot < 4 ⇒ Same_case, else Abstain
+    2. Distinct      (SAME_SOURCE_DIFFERENT_CASE):
+                       Different_case, pinned regardless of w_tot
+    3. Explicit link (one report's case identifiers name the other):
+                       w_tot < 4 ⇒ Same_case, else Different_case
+    4. Unresolved    (SAME_SOURCE_UNCOMPARABLE_CASE,
+                      MULTI_PATIENT_CONTEXT_NO_LINK):
+                       w_tot ≥ 1 ⇒ Different_case;
+                       else L_patient > 2 ⇒ Same_case, else Different_case
+    5. Rarity compelling   (L_match > 3): w_tot < 4 ⇒ Same_case else Different_case
+    6. Rarity intermediate (L_match > 2): w_tot < 3 ⇒ Same_case else Different_case
+    7. Rarity limited      (L_match > 1): w_tot < 1 ⇒ Same_case else Different_case
 
 (Defaults shown; all bounds come from :class:`DecisionThresholds`.)
 
 The Identity and Distinct zones reflect direct source-context evidence
-about case identity. The Unresolved zone covers multi-patient source
+about case identity. The explicit-link zone sits below them because a
+source-context verdict that has resolved *individual* identity within a
+shared source is more specific than a case-level reference, and above
+Unresolved, whose premise is that patient identity is underdetermined.
+It is gated by ``DecisionThresholds.explicit_link_enabled``. The
+Unresolved zone covers multi-patient source
 contexts (literature case series, shared-study cohorts, …) where drug
 and AE overlap is expected by construction and would inflate
 ``L_match``; the patient-specific log-evidence ``L_patient`` — which
@@ -75,9 +84,9 @@ differences, reporting variation, or partial information than by
 distinct patients. It is *not* generic uncertainty — it is a specific
 claim that the latent information required to decide (e.g. the full
 publication text, patient-level identifiers) is not present in the
-structured data. Only the Identity zone abstains; the Unresolved zone
-resolves to ``Different_case`` when patient-specific evidence is not
-compelling.
+structured data. Only the Identity zone abstains; the Unresolved and
+explicit-link zones resolve to ``Different_case`` when their bar is not
+met.
 
 See: docs/duplicate_adjudication_spec.md § Independence assessment and § Relationship assessment
 """
@@ -98,6 +107,10 @@ from llm_dup_dev.models.enums import (
     InconsistencySeverity,
     RelationshipAssessment,
 )
+from llm_dup_dev.models.explicit_link import (
+    ExplicitLinkAssessment,
+    ExplicitLinkVerdict,
+)
 from llm_dup_dev.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
@@ -117,6 +130,26 @@ _SHARED_SOURCE_VERDICTS = frozenset({
     SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
     SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
 })
+
+
+def _explicit_link(
+    features: PairFeatures,
+    thresholds: DecisionThresholds,
+) -> ExplicitLinkAssessment | None:
+    """Return the pair's explicit-link assessment when it is decision-bearing.
+
+    ``None`` whenever the signal must not drive the decision: the
+    comparator did not run (features predate it), it found no link or no
+    identifier data, or ``explicit_link_enabled`` is off. The assessment
+    remains on ``PairFeatures`` for display in every case — this gate
+    governs only whether the decision logic consults it.
+    """
+    if not thresholds.explicit_link_enabled:
+        return None
+    link = features.explicit_link
+    if link is None or link.verdict != ExplicitLinkVerdict.EXPLICIT_LINK:
+        return None
+    return link
 
 
 def classify(
@@ -186,8 +219,13 @@ def assess_independence(
 ) -> tuple[IndependenceAssessment, IndependenceReason]:
     """Decide whether the pair's independence can be rejected.
 
-    Two routes reject independence:
+    Three routes reject independence:
 
+    * **An explicit inter-report link** — one report's structured case
+      identifiers name the other. The sender has declared the two
+      reports to be the same case, which is the most direct evidence
+      available, so it is checked first and recorded in preference to
+      ``SHARED_SOURCE`` when both hold.
     * **Direct evidence of shared provenance** — a shared-source verdict
       from the source-case comparison. A reliable shared source
       identifier is itself evidence against independence, regardless of
@@ -201,6 +239,9 @@ def assess_independence(
     Otherwise the pair is ``INDEPENDENT`` (reason
     ``RARITY_INSUFFICIENT``): independence cannot be rejected.
     """
+    if _explicit_link(features, thresholds) is not None:
+        return IndependenceAssessment.NON_INDEPENDENT, IndependenceReason.EXPLICIT_LINK
+
     asm = features.source_case_assessment
     if asm is not None and asm.verdict in _SHARED_SOURCE_VERDICTS:
         return IndependenceAssessment.NON_INDEPENDENT, IndependenceReason.SHARED_SOURCE
@@ -243,9 +284,10 @@ def assess_relationship(
     """Decide same case vs different case for a non-independent pair.
 
     Selects the highest-priority applicable evidence zone (see the
-    module docstring's zone table): source-context zones first —
-    Identity, Distinct, Unresolved, derived from the source-case
-    verdict — then the rarity zones by ``L_match``.
+    module docstring's zone table): the source-context Identity and
+    Distinct zones first, then the explicit-link zone, then the
+    source-context Unresolved zone, then the rarity zones by
+    ``L_match``.
 
     Only meaningful for pairs whose independence has been rejected; for
     a ``MULTI_PATIENT_CONTEXT_NO_LINK`` verdict that guarantee implies
@@ -271,6 +313,10 @@ def assess_relationship(
                 f"relationship pinned to Different_case."
             ),
         )
+
+    link = _explicit_link(features, thresholds)
+    if link is not None:
+        return _explicit_link_zone(features, link, penalty, thresholds)
 
     if verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE:
         prefix = f"Shared source ({verdict.value}{_format_shared_identifier(asm)})"
@@ -330,6 +376,80 @@ def _identity_zone(
             f"may reflect extraction or reporting differences rather "
             f"than distinct individuals."
         ),
+    )
+
+
+def _explicit_link_zone(
+    features: PairFeatures,
+    link: ExplicitLinkAssessment,
+    penalty: InconsistencyPenalty,
+    thresholds: DecisionThresholds,
+) -> _RelationshipDecision:
+    """Explicit-link zone: one report's case identifiers name the other.
+
+    Adjudicated at the **compelling** inconsistency budget
+    (``w_tot_compelling_zone``, default 4.0), the same tolerance the
+    rarity compelling zone and the Identity zone use. An explicit
+    reference is a declaration by the sending organisation that the two
+    reports concern the same case, so it is at least as strong as
+    compelling rarity-based matching and deserves the same latitude for
+    recording noise: a single strong inconsistency is tolerated, while
+    reaching the bar requires one strong + one moderate, two strongs,
+    four moderates, or equivalent.
+
+    The failing branch is ``DIFFERENT_CASE``, matching the rarity
+    compelling zone rather than the Identity zone. ``ABSTAIN`` stays
+    reserved for the Identity zone's specific epistemic state — a
+    single-patient *identity* claim about the source that the structured
+    data cannot resolve. A declared link plus substantial contradicting
+    evidence is a different situation: the pair is related (independence
+    is rejected) but the same-case claim does not survive, which is
+    exactly ``Otherwise related``. Decisive inconsistencies land here via
+    their large weight (``w_decisive = 100``).
+
+    The zone sits below Identity and Distinct — a source-context verdict
+    that has resolved *individual* identity within a shared source is
+    more specific than a case-level reference — and above Unresolved,
+    whose whole premise is that patient identity is underdetermined.
+    """
+    w_tot = penalty.w_tot
+    bound = thresholds.w_tot_compelling_zone
+    prefix = f"Explicit inter-report link ({_format_link(link)})"
+
+    if w_tot < bound:
+        return _RelationshipDecision(
+            relationship=RelationshipAssessment.SAME_CASE,
+            penalty=penalty.compared_to(bound),
+            explanation=f"{prefix}; w_tot={w_tot:.1f} < {bound:.1f}.",
+        )
+
+    counts = features.inconsistency_counts
+    return _RelationshipDecision(
+        relationship=RelationshipAssessment.DIFFERENT_CASE,
+        penalty=penalty.compared_to(bound),
+        explanation=(
+            f"{prefix} but w_tot={w_tot:.1f} >= {bound:.1f} "
+            f"(strong={counts.strong}, moderate={counts.moderate}, "
+            f"decisive={counts.decisive})."
+        ),
+    )
+
+
+def _format_link(link: ExplicitLinkAssessment) -> str:
+    """Summarise the first resolved link for explanation strings.
+
+    The named kind is the target's own field, which the untyped
+    reference resolved against.
+    """
+    if not link.matches:
+        return link.verdict.value
+    match = link.matches[0]
+    suffix = (
+        f" +{len(link.matches) - 1} more" if len(link.matches) > 1 else ""
+    )
+    return (
+        f"{match.direction.value}, {match.target_kind.value}="
+        f"{match.pointer_value.strip()}{suffix}"
     )
 
 
