@@ -122,30 +122,37 @@ class TestAbstainDenominator:
 
 
 # ===================================================================
-# Hazard 2 — pair orientation is not canonical
+# Hazard 2 — annotations that do not line up with the stored features
 # ===================================================================
 
-class TestOrientationCoverage:
-    """pair_id is f"{r1}__{r2}" with no canonical ordering.
+class TestCoverage:
+    """evaluate() skips an annotation whose pair_id is absent, uncounted.
 
-    An annotation file listing a pair the other way round matches nothing, and
-    evaluate() skips unmatched annotations without counting them — so the sweep
-    would score zero pairs and still report a number.
+    A mismatched file therefore yields a confident-looking score over a handful
+    of pairs. Coverage exists to make that visible. Since pair ids are now
+    canonical (llm_dup_dev.models.pair_identity), a file listing a pair the
+    other way round is no longer one of the ways to get here — but a features
+    file written before canonicalisation still is.
     """
 
-    def test_reversed_annotation_is_reported_not_silently_dropped(self):
-        features = {"A__B": _features("A__B", L_match=4.0)}
-        coverage = check_coverage(features, [_ann("B__A", "duplicates")])
-        assert coverage.n_matched == 0
-        assert coverage.reversed_orientation == ["B__A"]
-        assert coverage.unmatched_annotations == []
-
-    def test_genuinely_absent_annotation_is_distinguished_from_reversed(self):
-        """'Not in this run' and 'listed backwards' are different problems."""
+    def test_absent_annotation_is_reported_not_silently_dropped(self):
         features = {"A__B": _features("A__B", L_match=4.0)}
         coverage = check_coverage(features, [_ann("X__Y", "duplicates")])
+        assert coverage.n_matched == 0
         assert coverage.unmatched_annotations == ["X__Y"]
-        assert coverage.reversed_orientation == []
+
+    def test_legacy_noncanonical_features_show_up_as_unmatched(self):
+        """A features file predating canonicalisation must be regenerated.
+
+        Its keys are in the old orientation, so canonical annotations find
+        nothing. That is reported, not repaired — silently re-keying would be
+        guessing at which stored record belongs to which pair.
+        """
+        features = {"B__A": _features("B__A", L_match=4.0)}
+        coverage = check_coverage(features, [_ann("A__B", "duplicates")])
+        assert coverage.matched == []
+        assert coverage.unmatched_annotations == ["A__B"]
+        assert coverage.unannotated_features == ["B__A"]
 
     def test_unannotated_features_are_reported_as_unscored(self):
         """Stored pairs with no gold label are unscored, not wrong."""
@@ -157,13 +164,12 @@ class TestOrientationCoverage:
         assert coverage.matched == ["A__B"]
         assert coverage.unannotated_features == ["C__D"]
 
-    def test_reversed_orientation_warns_loudly_in_the_report(self):
+    def test_unmatched_annotations_warn_loudly_in_the_report(self):
         features = {"A__B": _features("A__B", L_match=4.0)}
-        result = sweep(features, [_ann("B__A", "duplicates")], grid_over(),
+        result = sweep(features, [_ann("X__Y", "duplicates")], grid_over(),
                        abstain_mode=AbstainMode.DECIDED_ONLY)
         text = sweep_to_text(result)
         assert "WARNING" in text
-        assert "orientation" in text
         assert "NOT scored" in text
 
     def test_full_coverage_produces_no_warning(self):

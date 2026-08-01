@@ -1,6 +1,6 @@
 """Reusable input validation run before any estimate is computed.
 
-The structural contract (pair-ID orientation, uniqueness, label vocabularies,
+The structural contract (canonical pair identity, uniqueness, label vocabularies,
 role/label rules) is enforced by the models themselves in
 :mod:`llm_dup_dev.study_eval.schemas`. What is left is everything that needs a
 reference set *and* a prediction set together: prediction coverage, set-ID

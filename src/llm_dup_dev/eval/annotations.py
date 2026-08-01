@@ -6,9 +6,19 @@ The annotation file identifies a pair by its two report ids rather than by
     report_id1  report_id2  duplicates_assessment
     R001        R002        duplicates
 
-``pair_id`` is derived as ``{report_id1}__{report_id2}``, matching how the
+``pair_id`` is derived with
+:func:`llm_dup_dev.models.pair_identity.canonical_pair_id`, matching how the
 feature-generation pipeline constructs it
-(:mod:`llm_dup_dev.feature_generation.pipeline`).
+(:mod:`llm_dup_dev.feature_generation.pipeline`). Because that id is canonical,
+the order the two report ids appear in on a row does not matter: a file that
+lists a pair the other way round from the run produces the same id and joins
+correctly.
+
+The row's own ``report_id1`` and ``report_id2`` are deliberately left in **file
+order** as provenance for the annotator's row, while the derived ``pair_id`` is
+canonical. Nothing downstream reads those two columns — ``evaluate`` reads
+``pair_id`` and ``duplicates_assessment`` only — so this is a record of what was
+annotated, not a second identity.
 
 The loaded dicts are what :func:`llm_dup_dev.eval.comparison.evaluate` consumes:
 it reads ``pair_id`` and ``duplicates_assessment`` and ignores everything else,
@@ -20,7 +30,9 @@ Two things are checked here rather than left to fail later:
 * **One row per pair.** ``evaluate`` indexes annotations with
   ``{a["pair_id"]: a for a in ...}``, so a repeated pair would be silently
   de-duplicated with whichever row came last winning. That is a quiet way to
-  score against the wrong ground truth, so a duplicate raises instead.
+  score against the wrong ground truth, so a duplicate raises instead. Since
+  the id is canonical, this also catches the same two reports listed twice in
+  opposite orientations.
 * **The label vocabulary.** ``evaluate`` calls ``normalise_label`` per row
   mid-run, so a typo surfaces only after the work has started. Validating on
   load fails before a caller spends anything.
@@ -31,6 +43,8 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 from typing import Any
+
+from llm_dup_dev.models.pair_identity import canonical_pair_id
 
 from .labels import is_abstain, normalise_label
 
@@ -43,16 +57,19 @@ _DELIMITERS = "\t,;"
 
 
 def derive_pair_id(report_id1: str, report_id2: str) -> str:
-    """Return the pair_id for two report ids: ``{report_id1}__{report_id2}``.
+    """Return the canonical pair_id for two report ids.
 
-    Mirrors ``feature_generation.pipeline.build_pair_features``. Note the id is
-    **orientation-sensitive** — there is no canonical ordering of a pair
-    anywhere in the pipeline, so ``A__B`` and ``B__A`` are different ids for
-    the same two reports. Matching annotations to features must therefore
-    tolerate a flipped file; :func:`llm_dup_dev.eval.sweep.check_coverage`
-    reports that rather than silently scoring nothing.
+    A thin alias for
+    :func:`llm_dup_dev.models.pair_identity.canonical_pair_id`, kept because it
+    is the name the evaluation and study-eval packages already import. The id is
+    **orientation-independent**: the two report ids are ordered canonically
+    first, so ``derive_pair_id(a, b) == derive_pair_id(b, a)`` and an annotation
+    file that lists a pair the other way round from the run still joins.
+
+    Raises ``ValueError`` for a blank id, an id containing ``__``, or a report
+    paired with itself.
     """
-    return f"{report_id1}__{report_id2}"
+    return canonical_pair_id(report_id1, report_id2)
 
 
 def _sniff_delimiter(sample: str) -> str:
@@ -130,7 +147,9 @@ def load_annotations(path: str | Path) -> list[dict[str, Any]]:
             raise ValueError(
                 f"{path}:{line_no}: duplicate pair_id {pair_id!r} (first seen "
                 f"on line {seen[pair_id]}). Evaluation indexes annotations by "
-                f"pair_id and would silently keep only the last row."
+                f"pair_id and would silently keep only the last row. pair_id is "
+                f"canonical, so the two rows may list the same two reports in "
+                f"opposite orientations."
             )
         seen[pair_id] = line_no
 

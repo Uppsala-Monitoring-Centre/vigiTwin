@@ -63,7 +63,12 @@ def test_duplicate_pair_id_rejected():
 
 
 def test_flipped_orientation_of_same_pair_rejected():
-    with pytest.raises(ValidationError, match="unordered pair"):
+    """A flipped pair is now rejected at construction, not at set level.
+
+    Report ids must be canonically ordered, so ``("R2", "R1")`` never becomes a
+    valid ``ReferencePair`` in the first place.
+    """
+    with pytest.raises(ValidationError, match="not in canonical order"):
         ReferenceSet(
             set_id="p",
             role="precision",
@@ -72,6 +77,37 @@ def test_flipped_orientation_of_same_pair_rejected():
                 _pair("R2__R1", "R2", "R1", ref="duplicate"),
             ],
         )
+
+
+def test_same_two_reports_twice_rejected_as_duplicate_pair_id():
+    """Canonical ids mean both orientations collide on pair_id.
+
+    This is what replaced the separate unordered-pair check: two rows naming
+    the same two reports canonicalise to one id, so the duplicate-pair_id
+    branch catches them.
+    """
+    with pytest.raises(ValidationError, match="duplicate pair_id"):
+        ReferenceSet(
+            set_id="p",
+            role="precision",
+            pairs=[
+                _pair("R1__R2", "R1", "R2", ref="duplicate"),
+                _pair("R1__R2", "R1", "R2", ref="non_duplicate"),
+            ],
+        )
+
+
+def test_self_pair_rejected():
+    with pytest.raises(ValidationError, match="two distinct reports"):
+        _pair("R1__R1", "R1", "R1", ref="duplicate")
+
+
+def test_numeric_report_ids_must_be_ordered_numerically():
+    """Lexicographic ordering would have accepted "10" before "9"."""
+    with pytest.raises(ValidationError, match="not in canonical order"):
+        _pair("10__9", "10", "9", ref="duplicate")
+
+    assert _pair("9__10", "9", "10", ref="duplicate").pair_id == "9__10"
 
 
 def test_two_pairs_same_cluster_rejected():

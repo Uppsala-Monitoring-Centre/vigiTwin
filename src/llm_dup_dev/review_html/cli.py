@@ -47,7 +47,10 @@ from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
-from llm_dup_dev.models.report_pair import ReportPair
+from llm_dup_dev.models.report_pair import (
+    ALLOW_NONCANONICAL_CONTEXT_KEY,
+    ReportPair,
+)
 from llm_dup_dev.pipeline.export import read_classifications, read_pair_features
 
 from .compare import build_pair_view_model
@@ -121,6 +124,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Skip generating the batch index.html.",
     )
+    parser.add_argument(
+        "--allow-noncanonical-pairs",
+        action="store_true",
+        help=(
+            "Render a pairs.json written before pair ids were canonicalised, "
+            "whose report ids are not in canonical order. For viewing old runs "
+            "only — anything feeding an evaluation must be regenerated. Blank "
+            "report ids and self-pairs are still rejected."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -137,8 +150,13 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     # Load pairs
     raw_pairs = _load_json(args.pairs)
+    pair_context = (
+        {ALLOW_NONCANONICAL_CONTEXT_KEY: True}
+        if args.allow_noncanonical_pairs
+        else None
+    )
     pairs: list[ReportPair] = [
-        ReportPair.model_validate(p) for p in raw_pairs
+        ReportPair.model_validate(p, context=pair_context) for p in raw_pairs
     ]
 
     # Load optional features / classifications. The readers live in

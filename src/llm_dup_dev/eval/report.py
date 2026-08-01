@@ -163,13 +163,6 @@ def _coverage_lines(coverage: Coverage) -> list[str]:
         f"Coverage: {coverage.n_matched} of {coverage.n_annotations} "
         f"annotations matched {coverage.n_features} stored features",
     ]
-    if coverage.reversed_orientation:
-        lines.append(
-            f"  WARNING: {len(coverage.reversed_orientation)} annotation(s) "
-            f"matched only with the report ids swapped — the file and the run "
-            f"disagree about pair orientation. These are NOT scored. "
-            f"e.g. {coverage.reversed_orientation[0]}"
-        )
     if coverage.unmatched_annotations:
         lines.append(
             f"  WARNING: {len(coverage.unmatched_annotations)} annotation(s) "

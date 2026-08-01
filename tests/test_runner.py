@@ -153,21 +153,17 @@ class TestRunBatch:
 
     def test_batch_continue_on_error(self, loader, stats_provider, pair_ab):
         """If a pair references a missing report, batch skips it."""
-        bad_pair = ReportPair(
-            pair_id="bad", report_1_id="MISSING", report_2_id="R001"
-        )
+        bad_pair = ReportPair.from_report_ids("MISSING", "R001")
         runner = PipelineRunner(
             report_loader=loader, stats_provider=stats_provider,
         )
         result = runner.run_batch([bad_pair, pair_ab], continue_on_error=True)
         assert result.n_processed == 1
         assert result.n_errors == 1
-        assert result.errors[0][0] == "bad"
+        assert result.errors[0][0] == bad_pair.pair_id
 
     def test_batch_raise_on_error(self, loader, stats_provider):
-        bad_pair = ReportPair(
-            pair_id="bad", report_1_id="MISSING", report_2_id="R001"
-        )
+        bad_pair = ReportPair.from_report_ids("MISSING", "R001")
         runner = PipelineRunner(
             report_loader=loader, stats_provider=stats_provider,
         )

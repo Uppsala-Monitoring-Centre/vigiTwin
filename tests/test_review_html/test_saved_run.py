@@ -603,3 +603,133 @@ class TestRenderSavedRun:
             p for p in out_dir.glob("*.html") if p.name != "index.html"
         ]
         assert len(pair_pages) == 1
+
+
+# ---------------------------------------------------------------------------
+# Canonical pair identity — legacy artifacts
+# ---------------------------------------------------------------------------
+
+
+def _write_legacy_pairs(tmp_path):
+    """A pairs.json written before pair ids were canonicalised."""
+    path = tmp_path / "legacy_pairs.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "pair_id": "R002__R001",
+                    "report_1_id": "R002",
+                    "report_2_id": "R001",
+                }
+            ]
+        )
+    )
+    return path
+
+
+class TestCanonicalPairIdentity:
+    """A pre-canonicalisation run must fail loudly, or be opted into.
+
+    Rewriting a stale pair_id in place would break its join against the
+    annotations and predictions still keyed on the old id, so the loader
+    refuses by default and the escape hatch renders the run as written.
+    """
+
+    def test_legacy_pairs_artifact_is_rejected_by_default(
+        self, tmp_path, report_a, report_b
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_legacy_pairs(tmp_path)
+        pr_path = _write_pair_results(tmp_path, _make_pair_result("R002__R001"))
+        with pytest.raises(ValueError, match="not in canonical order"):
+            load_saved_run(
+                reports_path=reports,
+                pairs_path=pairs,
+                pair_results_path=pr_path,
+            )
+
+    def test_escape_hatch_renders_a_legacy_run(
+        self, tmp_path, report_a, report_b
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_legacy_pairs(tmp_path)
+        pr_path = _write_pair_results(tmp_path, _make_pair_result("R002__R001"))
+        items, summary = load_saved_run(
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+            allow_noncanonical_pairs=True,
+        )
+        assert summary.n_loaded == 1
+        assert items[0].result.pair_id == "R002__R001"
+
+    def test_legacy_keyed_results_artifact_is_rejected(
+        self, tmp_path, report_a, report_b
+    ):
+        """The pairs are canonical but the results file predates them.
+
+        PairResult carries no report ids, so a stale key would silently fail to
+        join and the pair would just be reported missing.
+        """
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result("R002__R001"))
+        with pytest.raises(ValueError, match="predates canonical pair identity"):
+            load_saved_run(
+                reports_path=reports,
+                pairs_path=pairs,
+                pair_results_path=pr_path,
+            )
+
+    def test_legacy_keyed_split_artifacts_are_rejected(
+        self, tmp_path, report_a, report_b
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        features, classifications = _write_split(
+            tmp_path, _make_pair_result("R002__R001")
+        )
+        with pytest.raises(ValueError, match="predates canonical pair identity"):
+            load_saved_run(
+                reports_path=reports,
+                pairs_path=pairs,
+                features_path=features,
+                classifications_path=classifications,
+            )
+
+    def test_escape_hatch_skips_the_key_check_too(
+        self, tmp_path, report_a, report_b
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_legacy_pairs(tmp_path)
+        pr_path = _write_pair_results(tmp_path, _make_pair_result("R002__R001"))
+        _, summary = load_saved_run(
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+            allow_noncanonical_pairs=True,
+        )
+        assert summary.n_loaded == 1
+
+    def test_free_form_artifact_keys_are_left_alone(
+        self, tmp_path, report_a, report_b
+    ):
+        """Only the canonical form carries the ordering promise.
+
+        A key that is not two report ids joined by the separator says nothing
+        about orientation, so the key check must not object to it. pair_id is
+        free-form on PairResult by design — only ReportPair is constrained.
+        """
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(
+            tmp_path,
+            _make_pair_result(PAIR_ID),
+            _make_pair_result("8047905-7215592"),
+        )
+        _, summary = load_saved_run(
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+        )
+        assert summary.n_loaded == 1

@@ -443,13 +443,55 @@ Each ReportPair object contains **only the identifiers of the two reports formin
 
 ------
 
+## Canonical pair identity
+
+A pair has **one** identity, independent of the order in which its two report
+ids are supplied. This is normative, not a convention:
+
+1. `report_1_id` and `report_2_id` are stored in **ascending canonical order**.
+2. `pair_id` is always derived from that order as
+   `{report_1_id}__{report_2_id}`, so `report_1_id < report_2_id`.
+3. The two report ids must **differ** — a report is not a candidate duplicate
+   of itself.
+4. Neither id may be blank or contain the `__` separator, so a `pair_id` always
+   splits back into exactly two report ids.
+
+Consequently `(A, B)` and `(B, A)` are the same pair with the same `pair_id`.
+
+**Ordering rule.** Numeric ids are compared **numerically**, so `9` precedes
+`10` rather than following it as plain string comparison would have it.
+Everything else is compared lexicographically, and numeric ids sort before
+non-numeric ones. For a mixed pair the rule is arbitrary-but-total — it merely
+picks a stable answer (`("9", "R10")` → `9__R10`) — so nothing should read
+meaning into which id came first.
+
+**The ordering rule is frozen once artifacts exist.** Changing it would
+silently re-key every stored pair and break every join against previously
+written features, annotations and predictions.
+
+**Why it matters.** The PairFeatures and ClassificationResult layers carry only
+a `pair_id` and no report ids, so `pair_id` is the *sole* join key between
+stored features, classifications, gold annotations, reference sets and frozen
+predictions. Before canonicalisation, an annotation file that happened to list
+a pair the other way round matched nothing and the evaluation scored zero pairs
+while still reporting a number.
+
+**Construct, or validate — never silently rewrite.** New pairs are built with
+`ReportPair.from_report_ids` / `ReportPair.from_reports`, or the helpers in
+`llm_dup_dev.models.pair_identity`. Reading an existing record is strict: a
+noncanonical or inconsistent record is **rejected**, and the artifact is
+regenerated rather than repaired in place. Rewriting a `pair_id` inside an
+artifact is precisely what would break its join against annotations or
+predictions still keyed on the old id.
+
+------
+
 ## Field descriptions
 
 **pair_id**
 
-Unique identifier for the report pair.
-
-Typically constructed deterministically:
+Unique identifier for the report pair, always derived from the two report ids
+in canonical order:
 
 ```
 {report_1_id}__{report_2_id}
@@ -457,13 +499,14 @@ Typically constructed deterministically:
 
 **report_1_id**
 
-Identifier of the first report in the pair.
+Identifier of the lower-ordered report in the pair.
 
 **report_2_id**
 
-Identifier of the second report in the pair.
+Identifier of the higher-ordered report in the pair.
 
-Both must correspond to `report_id` values in the **Report layer**.
+Both must correspond to `report_id` values in the **Report layer**, must differ
+from each other, and must be in canonical ascending order.
 
 ------
 

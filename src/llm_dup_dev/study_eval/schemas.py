@@ -29,8 +29,17 @@ reference set. The only sampling the dev side performs is SCLE case selection
 (see :mod:`llm_dup_dev.study_eval.sampling`).
 
 Pair identity follows the repo-wide convention
-(:func:`llm_dup_dev.eval.annotations.derive_pair_id`): ``pair_id`` is
-``{report_id1}__{report_id2}`` and is **orientation-sensitive**.
+(:mod:`llm_dup_dev.models.pair_identity`): the two report ids are stored in
+canonical ascending order — numerically for numeric ids — and ``pair_id`` is
+``{report_id1}__{report_id2}`` derived from that order. A pair therefore has one
+identity whichever way round the secure side supplies it, and reference sets and
+prediction sets join reliably.
+
+A reference set that is *not* canonical is rejected rather than reordered. The
+adapter should build its pairs with
+:func:`llm_dup_dev.models.pair_identity.canonical_pair_id`; silently rewriting a
+``pair_id`` here would break its join against the predictions and the human
+annotations still keyed on the old id.
 """
 
 from __future__ import annotations
@@ -40,8 +49,8 @@ from typing import Literal
 
 from pydantic import BaseModel, model_validator
 
-from llm_dup_dev.eval.annotations import derive_pair_id
 from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.pair_identity import validate_pair_identity
 from llm_dup_dev.study_eval.records import SamplingRecord
 
 # --- Vocabularies ----------------------------------------------------------
@@ -79,22 +88,6 @@ ADJUDICATOR_LABELS: tuple[str, ...] = (
 )
 
 
-def _check_pair_id(pair_id: str, report_id1: str, report_id2: str) -> None:
-    """Raise ``ValueError`` if ``pair_id`` is not ``{report_id1}__{report_id2}``."""
-    expected = derive_pair_id(report_id1, report_id2)
-    if pair_id != expected:
-        raise ValueError(
-            f"pair_id {pair_id!r} is inconsistent with its report ids "
-            f"(expected {expected!r} from report_id1={report_id1!r}, "
-            f"report_id2={report_id2!r}). pair_id is orientation-sensitive."
-        )
-
-
-def _unordered_key(report_id1: str, report_id2: str) -> frozenset[str]:
-    """Orientation-independent identity of a pair, for duplicate detection."""
-    return frozenset((report_id1, report_id2))
-
-
 # --- Reference sets --------------------------------------------------------
 
 
@@ -105,6 +98,11 @@ class ReferencePair(BaseModel):
     precision set and absent (or ``"duplicate"``) for a recall set. ``cluster_id``
     is optional provenance metadata — the secure side has already reduced each
     cluster to at most one pair, so the dev side only sanity-checks it.
+
+    Pair identity must be canonical: ``report_id1`` and ``report_id2`` in
+    ascending order (numerically for numeric ids) and ``pair_id`` derived from
+    that order. A noncanonical pair is rejected, not reordered — see the module
+    docstring.
     """
 
     pair_id: str
@@ -117,7 +115,7 @@ class ReferencePair(BaseModel):
 
     @model_validator(mode="after")
     def _check_identity(self) -> "ReferencePair":
-        _check_pair_id(self.pair_id, self.report_id1, self.report_id2)
+        validate_pair_identity(self.pair_id, self.report_id1, self.report_id2)
         return self
 
 
@@ -270,21 +268,21 @@ class PredictionSet(BaseModel):
 
 
 def _validate_pair_uniqueness(pairs: list[ReferencePair]) -> None:
-    """Reject a repeated ``pair_id`` or a repeated unordered report-id pair."""
+    """Reject a repeated ``pair_id``.
+
+    Because ``pair_id`` is canonical, this is also the check that catches the
+    same two reports appearing twice with their orientation flipped: both rows
+    canonicalise to the same id. There is no separate unordered-pair check.
+    """
     seen_ids: set[str] = set()
-    seen_unordered: dict[frozenset[str], str] = {}
     for pair in pairs:
         if pair.pair_id in seen_ids:
-            raise ValueError(f"duplicate pair_id {pair.pair_id!r}")
-        seen_ids.add(pair.pair_id)
-        key = _unordered_key(pair.report_id1, pair.report_id2)
-        if key in seen_unordered:
             raise ValueError(
-                f"the same two reports appear twice: {pair.pair_id!r} and "
-                f"{seen_unordered[key]!r} are the same unordered pair "
-                f"(orientation flipped)."
+                f"duplicate pair_id {pair.pair_id!r}: the same two reports "
+                f"appear twice. pair_id is canonical, so two rows naming the "
+                f"same reports in either orientation collide here."
             )
-        seen_unordered[key] = pair.pair_id
+        seen_ids.add(pair.pair_id)
 
 
 def _validate_one_pair_per_cluster(pairs: list[ReferencePair]) -> None:

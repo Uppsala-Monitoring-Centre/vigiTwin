@@ -45,22 +45,22 @@ class Coverage:
     without counting it, so a mismatched file yields a confident-looking score
     over a handful of pairs. This makes that visible.
 
-    ``reversed_orientation`` is the specific trap worth naming: ``pair_id`` is
-    ``{report_id1}__{report_id2}`` and nothing in the pipeline canonicalises the
-    order, so an annotation file listing a pair as (B, A) where the pipeline
-    built it as ``A__B`` matches nothing at all. A non-zero count here means the
-    file disagrees with the run about orientation — not that the pairs are absent.
+    Pair ids on both sides are canonical (see
+    :mod:`llm_dup_dev.models.pair_identity`), so a pair listed the other way
+    round in the annotation file is no longer a way to match nothing. A stored
+    features file written *before* canonicalisation still can be, though: its
+    keys may be in the old orientation, and those annotations then show up in
+    ``unmatched_annotations``. The fix in that case is to regenerate the
+    features file, not to edit the annotations.
     """
 
     n_annotations: int
     n_features: int
     matched: list[str] = field(default_factory=list)
-    #: Annotated pairs with no stored features, under either orientation.
+    #: Annotated pairs with no stored features.
     unmatched_annotations: list[str] = field(default_factory=list)
     #: Stored features with no annotation — unscored, not wrong.
     unannotated_features: list[str] = field(default_factory=list)
-    #: Annotated pairs that matched only once the two report ids were swapped.
-    reversed_orientation: list[str] = field(default_factory=list)
 
     @property
     def n_matched(self) -> int:
@@ -96,33 +96,20 @@ class SweepResult:
     skipped: list[tuple[dict[str, Any], str]] = field(default_factory=list)
 
 
-def _reverse_pair_id(pair_id: str) -> str | None:
-    """Return the pair_id with its two report ids swapped, if it splits cleanly."""
-    parts = pair_id.split("__")
-    if len(parts) != 2:
-        return None
-    return f"{parts[1]}__{parts[0]}"
-
-
 def check_coverage(
     features: dict[str, PairFeatures],
     annotations: Sequence[dict[str, Any]],
 ) -> Coverage:
     """Report how the annotations line up with the stored features.
 
-    Does not mutate either side, and does not silently repair a reversed file —
-    it reports, and the caller decides.
+    Does not mutate either side — it reports, and the caller decides.
     """
     annotated_ids = {a["pair_id"] for a in annotations}
-    matched, unmatched, reversed_ids = [], [], []
+    matched, unmatched = [], []
 
     for pair_id in sorted(annotated_ids):
         if pair_id in features:
             matched.append(pair_id)
-            continue
-        flipped = _reverse_pair_id(pair_id)
-        if flipped is not None and flipped in features:
-            reversed_ids.append(pair_id)
         else:
             unmatched.append(pair_id)
 
@@ -132,7 +119,6 @@ def check_coverage(
         matched=matched,
         unmatched_annotations=unmatched,
         unannotated_features=sorted(set(features) - annotated_ids),
-        reversed_orientation=reversed_ids,
     )
 
 

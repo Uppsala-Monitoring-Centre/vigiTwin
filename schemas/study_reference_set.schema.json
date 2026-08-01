@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ReferencePair": {
-      "description": "One report pair in a reference set.\n\n``reference_label`` is the human annotator's verdict; it is required for a\nprecision set and absent (or ``\"duplicate\"``) for a recall set. ``cluster_id``\nis optional provenance metadata \u2014 the secure side has already reduced each\ncluster to at most one pair, so the dev side only sanity-checks it.",
+      "description": "One report pair in a reference set.\n\n``reference_label`` is the human annotator's verdict; it is required for a\nprecision set and absent (or ``\"duplicate\"``) for a recall set. ``cluster_id``\nis optional provenance metadata \u2014 the secure side has already reduced each\ncluster to at most one pair, so the dev side only sanity-checks it.\n\nPair identity must be canonical: ``report_id1`` and ``report_id2`` in\nascending order (numerically for numeric ids) and ``pair_id`` derived from\nthat order. A noncanonical pair is rejected, not reordered \u2014 see the module\ndocstring.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",

@@ -34,6 +34,7 @@ from llm_dup_dev.models.enums import (
     InconsistencySeverity,
 )
 from llm_dup_dev.models.narrative_source_case import SourceCaseAssessment
+from llm_dup_dev.models.pair_identity import canonical_pair_id
 from llm_dup_dev.models.pair_features import (
     AEClinicalPictureResult,
     ClinicalDateFindingSummary,
@@ -76,8 +77,21 @@ def generate_pair_features(
     config : PipelineConfig, optional
         Pipeline configuration. Uses defaults if not provided.
     pair_id : str, optional
-        Explicit pair ID. If not provided, constructed as
-        ``{r1.report_id}__{r2.report_id}``.
+        Explicit pair ID. If not provided, derived with
+        :func:`llm_dup_dev.models.pair_identity.canonical_pair_id`, so the
+        two report ids are ordered canonically and ``r1``/``r2`` may be
+        supplied either way round. A report paired with itself is rejected.
+
+        Only the *id* is canonicalised — ``r1`` and ``r2`` keep the caller's
+        order. The resulting ``PairFeatures`` is orientation-dependent in its
+        content (``EvidenceSummary.report1_only``, inconsistency descriptions,
+        clinical-date findings), so swapping the reports here would change the
+        persisted output for half of all pairs and disagree with the review
+        HTML's column order. ``PairFeatures`` carries no report ids, so nothing
+        inside it claims which report is first; the *roles* are canonicalised
+        upstream when the :class:`~llm_dup_dev.models.report_pair.ReportPair`
+        is built, which is why ``PipelineRunner`` passes both a canonical pair
+        and its ``pair_id`` explicitly.
     ae_clinical_picture : AEClinicalPictureResult, optional
         Result of the LLM-based AE clinical-picture inconsistency
         assessment (computed externally by the orchestrator). When
@@ -103,7 +117,7 @@ def generate_pair_features(
         config = PipelineConfig()
 
     if pair_id is None:
-        pair_id = f"{r1.report_id}__{r2.report_id}"
+        pair_id = canonical_pair_id(r1.report_id, r2.report_id)
 
     if ae_clinical_picture is None:
         ae_clinical_picture = AEClinicalPictureResult(
