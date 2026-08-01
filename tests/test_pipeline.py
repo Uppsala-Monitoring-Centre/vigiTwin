@@ -288,3 +288,127 @@ class TestSourceCaseAssessmentIntegration:
         assert src_rows == []
         # Raw assessment still preserved for the decision logic to branch on.
         assert features.source_case_assessment == assessment
+
+
+# ===================================================================
+# Orientation invariance of the decision
+# ===================================================================
+
+#: Fields whose value legitimately depends on which report is "report 1".
+#: Everything else must survive a reversal untouched.
+_PRESENTATIONAL_FIELDS = ("description", "rationale")
+
+
+def _reversed_pair(r1, r2, stats, config):
+    """Features for (r1, r2) and for (r2, r1), in that order."""
+    return (
+        generate_pair_features(r1=r1, r2=r2, stats=stats, config=config),
+        generate_pair_features(r1=r2, r2=r1, stats=stats, config=config),
+    )
+
+
+class TestOrientationInvariance:
+    """Reversing r1/r2 must not change anything that scores, joins or decides.
+
+    ``generate_pair_features`` derives a canonical ``pair_id`` but deliberately
+    does *not* reorder its two reports, because feature content is
+    orientation-dependent by design: ``EvidenceSummary.report1_only`` and the
+    descriptions that quote both sides are about a specific report. So a
+    reversed call yields a payload that differs in presentation under the same
+    ``pair_id``.
+
+    That is only tolerable while the *decision* is orientation-invariant.
+    ``PairFeatures`` carries no report ids, so a consumer holding a stored
+    record cannot tell which orientation produced it. If a future
+    orientation-dependent rule made the decision differ, one ``pair_id`` would
+    mean two different answers — precisely what canonical pair identity exists
+    to prevent (see :mod:`llm_dup_dev.models.pair_identity`). Nothing else
+    guards that property, so these tests do.
+
+    Both a near-duplicate pair and a clearly unrelated one are covered, so the
+    duplicate and the unrelated decision paths are each exercised.
+    """
+
+    @pytest.fixture(params=["near_duplicate", "unrelated"])
+    def pair(self, request, report_a, report_b, report_c):
+        return report_a, report_b if request.param == "near_duplicate" else report_c
+
+    def test_pair_id_is_the_same_under_reversal(
+        self, pair, stats_similar, default_config
+    ):
+        fwd, rev = _reversed_pair(*pair, stats_similar, default_config)
+        assert fwd.pair_id == rev.pair_id
+
+    def test_classification_is_identical_under_reversal(
+        self, pair, stats_similar, default_config
+    ):
+        """The whole decision trace, not just the label.
+
+        If this ever fails, the same pair_id now identifies two different
+        answers and the orientation must be canonicalised upstream — do not
+        relax the assertion.
+        """
+        from llm_dup_dev.classifier.config import DecisionThresholds
+        from llm_dup_dev.classifier.decision_logic import classify
+
+        fwd, rev = _reversed_pair(*pair, stats_similar, default_config)
+        thresholds = DecisionThresholds()
+        assert classify(fwd, thresholds).model_dump(mode="json") == classify(
+            rev, thresholds
+        ).model_dump(mode="json")
+
+    def test_every_other_field_is_identical_under_reversal(
+        self, pair, stats_similar, default_config
+    ):
+        """The whole payload bar the two documented exceptions.
+
+        Asserted as "everything except" rather than field by field so a field
+        added later is covered by default: a new orientation-dependent one has
+        to be added to the exception list deliberately, which is the moment to
+        ask whether it should exist at all.
+        """
+        fwd, rev = _reversed_pair(*pair, stats_similar, default_config)
+        exceptions = {"inconsistencies", "evidence_summary"}
+
+        def comparable(features):
+            return {
+                k: v
+                for k, v in features.model_dump(mode="json").items()
+                if k not in exceptions
+            }
+
+        assert comparable(fwd) == comparable(rev)
+
+    def test_inconsistencies_differ_only_in_prose(
+        self, pair, stats_similar, default_config
+    ):
+        """Same findings, same severities, same order — only the wording flips.
+
+        A reversed call renders "X vs Y" as "Y vs X"; nothing structural about
+        the finding may change.
+        """
+        fwd, rev = _reversed_pair(*pair, stats_similar, default_config)
+
+        def structural(inconsistency):
+            return {
+                k: v
+                for k, v in inconsistency.model_dump(mode="json").items()
+                if k not in _PRESENTATIONAL_FIELDS
+            }
+
+        assert [structural(i) for i in fwd.inconsistencies] == [
+            structural(i) for i in rev.inconsistencies
+        ]
+
+    def test_evidence_summary_is_the_documented_exception(
+        self, pair, stats_similar, default_config
+    ):
+        """report1_only/report2_only swap — that is the point of the field.
+
+        Pinned so the presentational asymmetry stays a deliberate, known one
+        rather than something that quietly grows.
+        """
+        fwd, rev = _reversed_pair(*pair, stats_similar, default_config)
+        assert fwd.evidence_summary.report1_only == rev.evidence_summary.report2_only
+        assert fwd.evidence_summary.report2_only == rev.evidence_summary.report1_only
+        assert fwd.evidence_summary.shared == rev.evidence_summary.shared

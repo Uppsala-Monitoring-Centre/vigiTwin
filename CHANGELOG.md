@@ -15,6 +15,23 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+### Documentation and tests
+
+- Pinned and documented the exact scope of what a canonical `pair_id`
+  guarantees about `PairFeatures` content. `generate_pair_features` derives a
+  canonical id but leaves `r1` / `r2` in the caller's order, so a reversed
+  direct call returns a payload differing in presentation under the same
+  `pair_id` — `evidence_summary.report1_only` / `report2_only` swap, and
+  descriptions quoting both sides quote them in the other order. Everything
+  that scores, joins or decides is invariant, including the whole
+  `ClassificationResult`.
+
+  That invariance was emergent rather than enforced.
+  `tests/test_pipeline.py::TestOrientationInvariance` now asserts it across the
+  whole payload except those two exceptions, so a future orientation-dependent
+  rule fails loudly instead of making one `pair_id` mean two different answers.
+  No behaviour change; see `docs/data_contracts.md` § Canonical pair identity.
+
 ## [0.6.0] - 2026-07-31
 
 Canonical pair identity: a report pair now has **one** identity regardless of
