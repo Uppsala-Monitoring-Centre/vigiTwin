@@ -158,3 +158,13 @@ def report_c() -> Report:
 def report_empty() -> Report:
     """A minimal report with no demographic or clinical information."""
     return Report(report_id="R_EMPTY")
+
+
+@pytest.fixture
+def report_empty_2() -> Report:
+    """A second minimal report, so an "empty pair" is not a self-pair.
+
+    A report is not a candidate duplicate of itself, so pair identity rejects
+    the same id twice (see ``llm_dup_dev.models.pair_identity``).
+    """
+    return Report(report_id="R_EMPTY2")

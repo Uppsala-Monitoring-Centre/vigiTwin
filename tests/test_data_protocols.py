@@ -49,11 +49,7 @@ class TestSyntheticReportLoader:
             report_a.report_id: report_a,
             report_b.report_id: report_b,
         })
-        pair = ReportPair(
-            pair_id="test",
-            report_1_id=report_a.report_id,
-            report_2_id=report_b.report_id,
-        )
+        pair = ReportPair.from_reports(report_a, report_b)
         r1, r2 = loader.load_pair(pair)
         assert r1.report_id == report_a.report_id
         assert r2.report_id == report_b.report_id
@@ -65,13 +61,13 @@ class TestSyntheticReportLoader:
             report_c.report_id: report_c,
         })
         pairs = [
-            ReportPair(pair_id="p1", report_1_id="R001", report_2_id="R002"),
-            ReportPair(pair_id="p2", report_1_id="R001", report_2_id="R003"),
+            ReportPair.from_report_ids("R001", "R002"),
+            ReportPair.from_report_ids("R001", "R003"),
         ]
         results = list(loader.load_pairs(pairs))
         assert len(results) == 2
-        assert results[0][0].pair_id == "p1"
-        assert results[1][0].pair_id == "p2"
+        assert results[0][0].pair_id == "R001__R002"
+        assert results[1][0].pair_id == "R001__R003"
 
     def test_report_ids(self, report_a, report_b):
         loader = SyntheticReportLoader({

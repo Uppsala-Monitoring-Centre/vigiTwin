@@ -246,6 +246,21 @@ from llm_dup_dev.study_eval import (
     ReferencePair, ReferenceSet, PairPrediction, PredictionSet, workflow,
 )
 from llm_dup_dev.study_eval.scle.packets import PacketContent
+from llm_dup_dev.models.pair_identity import canonical_pair_id, canonical_report_ids
+
+def to_reference_pair(r1, r2, cluster, label) -> ReferencePair:
+    # Canonical identity: ids ascending, pair_id derived from that order. Never
+    # hand-build the id — the ordering rule is numeric for numeric ids, so
+    # f"{r1}__{r2}" would put "10" before "9". A noncanonical pair is rejected,
+    # not reordered.
+    lower, higher = canonical_report_ids(str(r1), str(r2))
+    return ReferencePair(
+        pair_id=canonical_pair_id(lower, higher),
+        report_id1=lower,
+        report_id2=higher,
+        cluster_id=cluster,               # optional metadata
+        reference_label=label,            # required for precision; omit for recall
+    )
 
 def to_reference_set(frozen_set) -> ReferenceSet:
     return ReferenceSet(
@@ -253,12 +268,7 @@ def to_reference_set(frozen_set) -> ReferenceSet:
         role=frozen_set.role,                     # "precision" | "recall"
         provenance=frozen_set.provenance,         # one homogeneous set per provenance
         pairs=[
-            ReferencePair(
-                pair_id=f"{r1}__{r2}",            # keep ONE orientation everywhere
-                report_id1=r1, report_id2=r2,
-                cluster_id=cluster,               # optional metadata
-                reference_label=label,            # required for precision; omit for recall
-            )
+            to_reference_pair(r1, r2, cluster, label)
             for (r1, r2, cluster, label) in frozen_set.rows
         ],
     )
@@ -345,7 +355,10 @@ the SCLE-sampled pairs into `packets/` either way.
 
 ### Pre-flight checklist
 - [ ] `ReferenceSet` / `PredictionSet` round-trip against the committed schemas.
-- [ ] `pair_id` orientation identical between reference sets and predictions.
+- [ ] `pair_id` built with `canonical_pair_id` everywhere. Reference sets and
+  predictions then agree by construction; a noncanonical `ReferencePair` is
+  rejected rather than reordered, so this fails loudly rather than scoring
+  nothing.
 - [ ] `screening_mode` set deliberately on every reference set — `not_evaluated`
   only where screening results genuinely do not exist, never to work around a
   missing file.

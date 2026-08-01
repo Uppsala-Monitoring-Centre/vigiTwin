@@ -613,12 +613,10 @@ runner = PipelineRunner(
     # ae_clinical_picture_mode="auto",  # "llm" | "rule_based" | "auto" (default)
 )
 
-# Process a single pair
-pair = ReportPair(
-    pair_id="12345__67890",
-    report_1_id="12345",
-    report_2_id="67890",
-)
+# Process a single pair. from_report_ids canonicalises: the two ids are stored
+# ascending (numerically for numeric ids) and pair_id is derived from that
+# order, so the pair has one identity whichever way round you pass them.
+pair = ReportPair.from_report_ids("12345", "67890")
 result = runner.run_pair(pair)
 
 print(result.final_label)          # "Duplicates", "Otherwise_related", "Unrelated", "Abstain"
@@ -647,7 +645,8 @@ For **offline/frozen-validation** mode, replace `SqlStatsProvider` with
 
 ```python
 pairs = [
-    ReportPair(pair_id=f"{a}__{b}", report_1_id=a, report_2_id=b)
+    # Report ids must be strings — pydantic will not coerce an int out of SQL.
+    ReportPair.from_report_ids(str(a), str(b))
     for a, b in candidate_pairs  # from vigiMatch or similar
 ]
 
@@ -805,10 +804,12 @@ absorbed, but the judgement is yours:
   wrong posts a *better* F1 on a smaller denominator. F1 is not comparable across
   rows whose `n` differs. Read `n` and `abstained` together; there is no `argmax`
   helper because it would reliably pick the setting that refuses the most pairs.
-- **Check coverage first.** `pair_id` is `{report_id1}__{report_id2}` and nothing
-  canonicalises the order, so an annotation file listing a pair the other way
-  round matches nothing and is silently unscored. The report warns when
-  annotations match only in reversed orientation, or not at all.
+- **Check coverage first.** `pair_id` is canonical — `{report_id1}__{report_id2}`
+  with the two ids sorted ascending — so an annotation file listing a pair the
+  other way round now derives the same id and joins correctly. A *features* file
+  written before canonicalisation does not: its keys are in the old orientation,
+  its pairs go unmatched, and the fix is to regenerate it. The report warns
+  whenever annotations have no stored features and are therefore unscored.
 - **Invalid grid points are skipped, not fatal.** `DecisionThresholds` requires
   `w_decisive` to exceed every zone threshold, so a rectangular grid has invalid
   corners. They appear under "Skipped" with the reason.
@@ -828,13 +829,18 @@ R001	R002	duplicates
 R003	R004	unrelated
 ```
 
-`pair_id` is derived as `{report_id1}__{report_id2}`. Any additional columns
-(annotator, notes, …) are preserved on the loaded dict and ignored by scoring, so
-they remain available for stratifying an analysis.
+`pair_id` is derived canonically, so the order the two ids appear in on a row
+does not matter — a file that lists a pair the other way round from the run
+still joins. The row's own `report_id1` / `report_id2` are left in file order as
+provenance for what was annotated; nothing downstream reads them. Any additional
+columns (annotator, notes, …) are preserved on the loaded dict and ignored by
+scoring, so they remain available for stratifying an analysis.
 
-Two conditions fail at load rather than mid-run: a repeated pair (evaluation
-indexes by `pair_id` and would silently keep whichever row came last) and a label
-outside `duplicates` / `otherwise_related` / `unrelated` / `abstain`.
+Three conditions fail at load rather than mid-run: a repeated pair (evaluation
+indexes by `pair_id` and would silently keep whichever row came last — and since
+the id is canonical, this also catches the same two reports listed twice in
+opposite orientations), a row pairing a report with itself, and a label outside
+`duplicates` / `otherwise_related` / `unrelated` / `abstain`.
 
 ---
 
@@ -1234,6 +1240,14 @@ python -m llm_dup_dev.review_html \
 
 Use `Report.model_dump()`, `PairFeatures.model_dump()`, and `ClassificationResult.model_dump()` to produce these from the pipeline outputs.
 
+Every pair in `pairs.json` must have a canonical identity, and the pair-keyed
+artifacts must be keyed by canonical ids. A run saved **before** canonicalisation
+is rejected on load; pass `--allow-noncanonical-pairs` (or
+`allow_noncanonical_pairs=True` to `load_saved_run` / `render_saved_run`) to view
+it as written. That hatch is for rendering only — anything feeding an evaluation
+must be regenerated, since `PairFeatures` and `ClassificationResult` carry no
+report ids and a stale key would fail to join rather than raise.
+
 ### What the HTML shows
 
 Each page contains:
@@ -1302,7 +1316,7 @@ stats = SyntheticStatsProvider(default_N_total=5000, default_N_drugs=30,
                                 default_N_AEs=50, default_N_drugs_AEs=10)
 runner = PipelineRunner(report_loader=loader, stats_provider=stats)
 
-pair = ReportPair(pair_id="TEST_1__TEST_2", report_1_id="TEST_1", report_2_id="TEST_2")
+pair = ReportPair.from_report_ids("TEST_1", "TEST_2")
 result = runner.run_pair(pair)
 
 print(f"L_match: {result.features.L_match:.2f}")

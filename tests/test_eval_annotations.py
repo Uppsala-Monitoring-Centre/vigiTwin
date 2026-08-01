@@ -17,17 +17,25 @@ def _write(tmp_path, text, name="annotations.csv"):
 
 class TestDerivePairId:
     def test_matches_the_pipeline_construction(self):
-        """Must equal feature_generation.pipeline's f"{r1}__{r2}"."""
+        """Must equal what feature_generation.pipeline derives."""
         assert derive_pair_id("R001", "R002") == "R001__R002"
 
-    def test_is_orientation_sensitive(self):
-        """No canonical ordering exists, so the two orientations differ.
+    def test_is_orientation_insensitive(self):
+        """A pair has one identity whichever way round the file lists it.
 
-        This is why check_coverage has to report reversed matches: an
-        annotation file that lists a pair the other way round produces an id
-        that matches nothing.
+        This is what lets an annotation file join against a run that built the
+        pair the other way round. Before canonicalisation the two orientations
+        produced different ids and such a file matched nothing at all.
         """
-        assert derive_pair_id("R001", "R002") != derive_pair_id("R002", "R001")
+        assert derive_pair_id("R001", "R002") == derive_pair_id("R002", "R001")
+
+    def test_numeric_ids_order_numerically(self):
+        """"10" sorts before "9" as a string; report ids must not."""
+        assert derive_pair_id("10", "9") == "9__10"
+
+    def test_self_pair_rejected(self):
+        with pytest.raises(ValueError, match="two distinct reports"):
+            derive_pair_id("R001", "R001")
 
 
 # ===================================================================
@@ -117,6 +125,62 @@ class TestLoadAnnotations:
             "R001\tR002\tunrelated\n",
         )
         with pytest.raises(ValueError, match="duplicate pair_id"):
+            load_annotations(path)
+
+    def test_duplicate_pair_in_opposite_orientations_raises(self, tmp_path):
+        """Canonical ids make the flipped row collide instead of hiding.
+
+        Before canonicalisation these were two different pair_ids, so the file
+        looked fine and the two contradictory labels both survived into the
+        evaluation as separate pairs.
+        """
+        path = _write(
+            tmp_path,
+            "report_id1\treport_id2\tduplicates_assessment\n"
+            "R001\tR002\tduplicates\n"
+            "R002\tR001\tunrelated\n",
+        )
+        with pytest.raises(ValueError, match="duplicate pair_id"):
+            load_annotations(path)
+
+    def test_reversed_rows_derive_the_same_pair_id(self, tmp_path):
+        """The loader can no longer emit a reversed id at all."""
+        forward = _write(
+            tmp_path,
+            "report_id1\treport_id2\tduplicates_assessment\nR001\tR002\tduplicates\n",
+            name="forward.csv",
+        )
+        reversed_ = _write(
+            tmp_path,
+            "report_id1\treport_id2\tduplicates_assessment\nR002\tR001\tduplicates\n",
+            name="reversed.csv",
+        )
+        assert (
+            load_annotations(forward)[0]["pair_id"]
+            == load_annotations(reversed_)[0]["pair_id"]
+            == "R001__R002"
+        )
+
+    def test_row_report_ids_keep_file_order(self, tmp_path):
+        """pair_id is canonical; the row's own columns stay as annotated.
+
+        They are provenance for the annotator's row, not a second identity —
+        nothing downstream reads them.
+        """
+        path = _write(
+            tmp_path,
+            "report_id1\treport_id2\tduplicates_assessment\nR002\tR001\tduplicates\n",
+        )
+        ann = load_annotations(path)[0]
+        assert (ann["report_id1"], ann["report_id2"]) == ("R002", "R001")
+        assert ann["pair_id"] == "R001__R002"
+
+    def test_self_pair_row_raises(self, tmp_path):
+        path = _write(
+            tmp_path,
+            "report_id1\treport_id2\tduplicates_assessment\nR001\tR001\tduplicates\n",
+        )
+        with pytest.raises(ValueError, match="two distinct reports"):
             load_annotations(path)
 
     def test_bad_label_raises_at_load_not_mid_run(self, tmp_path):

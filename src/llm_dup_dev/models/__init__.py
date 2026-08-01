@@ -37,6 +37,15 @@ from .narrative_source_case import (
     SourceIdentifierType,
     SourceType,
 )
+from .pair_identity import (
+    PAIR_ID_SEPARATOR,
+    canonical_pair_id,
+    canonical_report_ids,
+    report_id_sort_key,
+    split_pair_id,
+    validate_pair_identity,
+    validate_report_id,
+)
 from .report_pair import ReportPair
 from .pair_features import (
     AnchorPopulation,
@@ -80,6 +89,14 @@ __all__ = [
     "SourceType",
     # ReportPair layer
     "ReportPair",
+    # Canonical pair identity
+    "PAIR_ID_SEPARATOR",
+    "canonical_pair_id",
+    "canonical_report_ids",
+    "report_id_sort_key",
+    "split_pair_id",
+    "validate_pair_identity",
+    "validate_report_id",
     # PairFeatures layer
     "AnchorPopulation",
     "ClinicalDateFindingSummary",

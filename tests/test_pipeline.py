@@ -94,14 +94,20 @@ class TestGeneratePairFeatures:
         )
         assert features.pair_id == "CUSTOM_PAIR_001"
 
-    def test_empty_report_pair(self, report_empty, default_config):
-        """Two empty reports should produce features without errors."""
+    def test_empty_report_pair(
+        self, report_empty, report_empty_2, default_config
+    ):
+        """Two empty reports should produce features without errors.
+
+        Two *distinct* empty reports: a report paired with itself is rejected
+        when the pair id is derived.
+        """
         stats = FrequencyStats(
             N_total=100_000, N_drugs=0, N_AEs=0, N_drugs_AEs=0
         )
         features = generate_pair_features(
             r1=report_empty,
-            r2=report_empty,
+            r2=report_empty_2,
             stats=stats,
             config=default_config,
         )

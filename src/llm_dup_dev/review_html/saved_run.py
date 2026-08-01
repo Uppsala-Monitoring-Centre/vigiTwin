@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -50,8 +51,15 @@ from llm_dup_dev.data.offline import (
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.pair_features import PairFeatures
+from llm_dup_dev.models.pair_identity import (
+    canonical_report_ids,
+    split_pair_id,
+)
 from llm_dup_dev.models.report import Report
-from llm_dup_dev.models.report_pair import ReportPair
+from llm_dup_dev.models.report_pair import (
+    ALLOW_NONCANONICAL_CONTEXT_KEY,
+    ReportPair,
+)
 from llm_dup_dev.pipeline.export import (
     read_classifications,
     read_pair_features,
@@ -211,15 +219,60 @@ def _load_reports(path: str | Path) -> dict[str, Report]:
     )
 
 
-def _load_pairs(path: str | Path) -> list[ReportPair]:
-    """Load a list of ``ReportPair`` from a pairs artifact."""
+def _load_pairs(
+    path: str | Path, *, allow_noncanonical: bool = False
+) -> list[ReportPair]:
+    """Load a list of ``ReportPair`` from a pairs artifact.
+
+    ``allow_noncanonical`` relaxes the canonical-identity check so an artifact
+    written before pair ids were canonicalised can still be rendered. Blank
+    report ids and self-pairs remain rejected.
+    """
     raw = _load_json(path)
     if not isinstance(raw, list):
         raise ValueError(
             f"Invalid pairs artifact {path}: top-level JSON must be a list, "
             f"got {type(raw).__name__}."
         )
-    return [ReportPair.model_validate(row) for row in raw]
+    context = (
+        {ALLOW_NONCANONICAL_CONTEXT_KEY: True} if allow_noncanonical else None
+    )
+    return [ReportPair.model_validate(row, context=context) for row in raw]
+
+
+def _check_artifact_keys_canonical(
+    keys: Iterable[str], *, artifact: str, path: str | Path
+) -> None:
+    """Raise if a pair-keyed artifact still uses pre-canonical pair ids.
+
+    ``PairFeatures`` and ``ClassificationResult`` carry no report ids, so a
+    stale artifact keyed ``B__A`` cannot be detected from its contents — it
+    would simply fail to join and silently lose coverage. Its *keys* can be
+    checked, though: a key that splits into two report ids which are not in
+    canonical order was written before canonicalisation.
+
+    Keys that do not split into exactly two ids are left alone. ``pair_id`` on
+    these types is free-form by design (a caller may render a pair under any
+    label), and only the canonical form carries the ordering promise.
+    """
+    stale: list[tuple[str, str]] = []
+    for key in keys:
+        try:
+            first, second = split_pair_id(key)
+            lower, higher = canonical_report_ids(first, second)
+        except ValueError:
+            continue
+        if (first, second) != (lower, higher):
+            stale.append((key, f"{lower}__{higher}"))
+    if stale:
+        found, expected = stale[0]
+        raise ValueError(
+            f"Invalid {artifact} artifact {path}: {len(stale)} key(s) are not "
+            f"canonical pair ids, e.g. {found!r} (expected {expected!r}). This "
+            f"artifact predates canonical pair identity and will not join "
+            f"against canonical pairs. Regenerate it — re-keying it here would "
+            f"be guessing which stored record belongs to which pair."
+        )
 
 
 def _load_bundles(path: str | Path | None) -> dict[str, FrozenPairBundle]:
@@ -335,6 +388,7 @@ def load_saved_run(
     external_url_label: str = "External link",
     include_debug: bool = True,
     strict: bool = True,
+    allow_noncanonical_pairs: bool = False,
 ) -> tuple[list[ResultRenderInput], SavedRunSummary]:
     """Load a saved run into ``ResultRenderInput`` objects from explicit paths.
 
@@ -377,6 +431,14 @@ def load_saved_run(
         (each skipped pair is recorded in ``SavedRunSummary.skipped``). A failing
         ``external_url_builder`` is *not* governed by ``strict`` — it is always
         tolerated by rendering the pair without a link.
+    allow_noncanonical_pairs : bool
+        Escape hatch for rendering a run saved **before** pair ids were
+        canonicalised (see :mod:`llm_dup_dev.models.pair_identity`). It relaxes
+        the canonical-identity check on the pairs artifact and the matching
+        check on the pair-keyed artifacts' keys, so an old run can be viewed
+        without regenerating it. Rendering is read-only presentation; anything
+        that feeds an evaluation must be regenerated instead. Blank report ids
+        and self-pairs stay rejected either way.
 
     Returns
     -------
@@ -385,7 +447,9 @@ def load_saved_run(
     Raises
     ------
     ValueError
-        If ``pair_results_path`` is ``None`` and both split paths are not given.
+        If ``pair_results_path`` is ``None`` and both split paths are not given,
+        or if an artifact is keyed by pre-canonical pair ids and
+        ``allow_noncanonical_pairs`` is not set.
     FileNotFoundError
         If ``pair_results_path`` is given but the file does not exist.
     RuntimeError
@@ -418,9 +482,30 @@ def load_saved_run(
         )
 
     reports = _load_reports(reports_path)
-    pairs = _load_pairs(pairs_path)
+    pairs = _load_pairs(pairs_path, allow_noncanonical=allow_noncanonical_pairs)
     bundles = _load_bundles(bundles_path)
     annotations = _load_annotations(annotations_path)
+
+    if not allow_noncanonical_pairs:
+        # These artifacts are keyed by pair_id and carry no report ids, so a
+        # stale key would silently fail to join rather than raise.
+        if source == "pair_results":
+            _check_artifact_keys_canonical(
+                pair_results, artifact="pair_results", path=pair_results_path
+            )
+        else:
+            _check_artifact_keys_canonical(
+                features_by_pair, artifact="features", path=features_path
+            )
+            _check_artifact_keys_canonical(
+                classifications_by_pair,
+                artifact="classifications",
+                path=classifications_path,
+            )
+        if bundles:
+            _check_artifact_keys_canonical(
+                bundles, artifact="bundles", path=bundles_path
+            )
 
     items: list[ResultRenderInput] = []
     skipped: list[SavedRunSkip] = []
