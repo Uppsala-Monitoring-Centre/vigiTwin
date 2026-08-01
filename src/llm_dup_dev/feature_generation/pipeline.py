@@ -83,15 +83,30 @@ def generate_pair_features(
         supplied either way round. A report paired with itself is rejected.
 
         Only the *id* is canonicalised — ``r1`` and ``r2`` keep the caller's
-        order. The resulting ``PairFeatures`` is orientation-dependent in its
-        content (``EvidenceSummary.report1_only``, inconsistency descriptions,
-        clinical-date findings), so swapping the reports here would change the
-        persisted output for half of all pairs and disagree with the review
-        HTML's column order. ``PairFeatures`` carries no report ids, so nothing
-        inside it claims which report is first; the *roles* are canonicalised
-        upstream when the :class:`~llm_dup_dev.models.report_pair.ReportPair`
-        is built, which is why ``PipelineRunner`` passes both a canonical pair
-        and its ``pair_id`` explicitly.
+        order. Swapping them here would silently hand the caller facts about
+        the other report under the names ``report1_only`` / ``report2_only``,
+        so the reports are left as given and the *roles* are canonicalised
+        upstream instead, when the
+        :class:`~llm_dup_dev.models.report_pair.ReportPair` is built. That is
+        why ``PipelineRunner`` passes both a canonical pair and its ``pair_id``
+        explicitly, and why every persisted run is canonically oriented.
+
+        **Scope of the guarantee.** A reversed call therefore returns a payload
+        that differs from the forward one *under the same* ``pair_id``. The
+        difference is confined to presentation:
+
+        * ``evidence_summary.report1_only`` / ``report2_only`` swap;
+        * descriptions that quote both sides quote them in the other order.
+
+        Everything that scores, joins or decides is invariant — ``L_match``,
+        ``L_patient``, ``probability``, the matched sets, every inconsistency's
+        severity and kind, and the whole ``ClassificationResult``. That matters
+        because ``PairFeatures`` carries no report ids: a consumer holding a
+        stored record cannot tell which orientation produced it, so if the
+        decision ever became orientation-dependent, one ``pair_id`` would mean
+        two different answers. ``tests/test_pipeline.py::TestOrientationInvariance``
+        pins this; a new orientation-dependent field must be added to its
+        exception list deliberately.
     ae_clinical_picture : AEClinicalPictureResult, optional
         Result of the LLM-based AE clinical-picture inconsistency
         assessment (computed externally by the orchestrator). When

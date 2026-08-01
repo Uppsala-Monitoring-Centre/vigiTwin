@@ -484,6 +484,36 @@ regenerated rather than repaired in place. Rewriting a `pair_id` inside an
 artifact is precisely what would break its join against annotations or
 predictions still keyed on the old id.
 
+**What the invariant does and does not promise about PairFeatures.** A
+`pair_id` fixes *which two reports* a record is about. It does not by itself
+fix which of them is "report 1": `generate_pair_features` derives a canonical
+id but leaves `r1` and `r2` in the caller's order, because
+`EvidenceSummary.report1_only` and the descriptions that quote both sides are
+genuinely about a specific report, and silently swapping them would hand the
+caller the other report's facts under those names.
+
+So under one `pair_id`, feature content is determined **up to presentation**:
+
+| Invariant under reversal | Depends on orientation |
+|---|---|
+| `L_match`, `L_patient`, `probability`, `anchor`, `reporting_context` | `evidence_summary.report1_only` / `report2_only` |
+| `matching_drugs`, `matching_AEs`, `inconsistency_counts` | the wording of descriptions that quote both sides |
+| every inconsistency's severity, kind and suppression | |
+| the entire `ClassificationResult` | |
+
+The decision is therefore orientation-invariant, and that is what makes the
+presentational asymmetry acceptable — but it is a property to preserve, not a
+coincidence. Because PairFeatures carries no report ids, a consumer holding a
+stored record cannot tell which orientation produced it; an orientation-
+dependent decision rule would make one `pair_id` mean two different answers.
+`tests/test_pipeline.py::TestOrientationInvariance` enforces this, asserting
+equality across the whole payload except the two exceptions above, so a new
+orientation-dependent field has to be exempted deliberately.
+
+In practice every persisted run is canonically oriented anyway: `PipelineRunner`
+loads `r1` / `r2` from a canonical `ReportPair`, so a reversed payload arises
+only from calling `generate_pair_features` directly.
+
 ------
 
 ## Field descriptions

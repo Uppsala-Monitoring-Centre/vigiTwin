@@ -167,6 +167,13 @@ silently. Two things to decide when you re-copy them:
   now the lower-ordered id. Feature *content* is unchanged: `generate_pair_features`
   derives a canonical id but does not swap `r1`/`r2`, so a run driven by
   canonical `ReportPair` objects gets both consistently.
+
+  If you regenerate a features file with the two reports loaded in the other
+  order, the decision is identical but `evidence_summary` and some description
+  wording are not — so the file's sha256 changes while nothing meaningful has.
+  Load reports in the pair's canonical order (which `PipelineRunner` does for
+  you) if you rely on artifact hashes. See `docs/data_contracts.md`
+  § Canonical pair identity for the exact scope.
 - **Self-pairs are now invalid**, so a report-against-itself sanity control is no
   longer expressible. Use two distinct report ids.
 - **`eval.sweep.Coverage` lost its `reversed_orientation` field**, and
