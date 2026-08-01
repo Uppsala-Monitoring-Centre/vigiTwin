@@ -374,6 +374,34 @@ class FreqStatsVM(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Screening algorithm section
+# ---------------------------------------------------------------------------
+
+
+class ScreeningFeatureVM(BaseModel):
+    """One feature/value pair from the screening algorithm's output."""
+
+    # The algorithm's own identifier, never reworded — a reviewer
+    # comparing the page against the screening tool needs the same name.
+    key: str
+    # Pre-formatted for display; formatting happens in the builder so the
+    # template stays free of type dispatch.
+    value: str
+
+
+class ScreeningVM(BaseModel):
+    """View model for the screening algorithm section.
+
+    Mirrors one ``pair_id`` entry of
+    :class:`llm_dup_dev.data.offline.ScreeningDetails`. ``features``
+    preserves the artifact's key order.
+    """
+
+    algorithm: str | None = None  # e.g. "vigiMatch"; named in the heading
+    features: list[ScreeningFeatureVM] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Decision summary (compact panel for prediction/evaluation mode)
 # ---------------------------------------------------------------------------
 
@@ -500,6 +528,11 @@ class PairViewModel(BaseModel):
     # than asserting an absence the pipeline never checked.
     explicit_link: ExplicitLinkVM | None = None
     freq_stats: FreqStatsVM | None = None
+    # Basis for the screening algorithm's classification. ``None`` when no
+    # screening artifact was supplied or it has no entry for this pair —
+    # an absent artifact is the normal case, so the section is suppressed
+    # rather than asserting an absence.
+    screening: ScreeningVM | None = None
     decision_summary: DecisionSummaryVM | None = None
     annotation: AnnotationVM | None = None
     debug_json: str | None = None

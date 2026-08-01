@@ -1,0 +1,21 @@
+{
+  "algorithm": "vigiMatch",
+  "entries": {
+    "507638__507864": {
+      "vaccine_pair": false,
+      "Score_Gender": 0.289343890439667,
+      "Score_PatientOnsetAge": 1.18699860382059,
+      "Score_OnsetDate": 0,
+      "Score_Drecno": 5.34179554502374,
+      "Score_MeddraPt": 2.42923468688774,
+      "Score_Date": 0,
+      "Score_ExternallyIndicated": 0,
+      "RawScore": 9.24737272617173,
+      "Compensation": 2.82363710557363,
+      "TotalScore": 6.4237356205981,
+      "Threshold": 4.06802742670859,
+      "ScoreMinusThreshold": 2.35570819388951,
+      "IsSuspectedDuplicate": true
+    }
+  }
+}

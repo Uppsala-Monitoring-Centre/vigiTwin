@@ -315,10 +315,14 @@ analysis = workflow.run_analysis(
 sample = analysis.scle_samples[f"precision::{prec.set_id}"]
 
 # render packets into a packets/ folder beside the workbooks so the links resolve
+from llm_dup_dev.data.offline import load_screening_details
 from llm_dup_dev.study_eval.scle.packets import generate_packets
 primary_results = read_pair_results(PRIMARY_RUN / "pair_results.json")
+# optional: show the screening algorithm's own basis on each packet, so
+# reviewers can compare the adjudication against the screening method
+screening = load_screening_details(SECURE_IN / "vigimatch_scores.json")
 generate_packets(sample, SecurePacketProvider(primary_results),
-                 SECURE_OUT / "review" / "packets")
+                 SECURE_OUT / "review" / "packets", screening=screening)
 
 books = workflow.generate_reviewer_workbooks(sample, ["reviewer_1", "reviewer_2"],
                                              SECURE_OUT / "review")   # packet_dir="packets"
@@ -352,6 +356,12 @@ reference label on the page), or, if you already have a saved run on disk,
 ([review_html/saved_run.py](../src/llm_dup_dev/review_html/saved_run.py)), which
 reconstructs the run from its `pair_results.json` and renders every pair. Render
 the SCLE-sampled pairs into `packets/` either way.
+
+Both routes accept an optional screening-details artifact (`screening=` /
+`screening_path=`) that adds the basis for the screening algorithm's own
+classification to each covered packet — the comparison reviewers are asked to
+make between the adjudicator and the screening method. Format and semantics:
+[`data_contracts.md` § Screening Algorithm Details](data_contracts.md).
 
 ### Pre-flight checklist
 - [ ] `ReferenceSet` / `PredictionSet` round-trip against the committed schemas.

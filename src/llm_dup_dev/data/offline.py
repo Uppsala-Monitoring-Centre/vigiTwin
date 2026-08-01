@@ -5,7 +5,7 @@ preprocesses LLM- and database-dependent artifacts once and stores them
 as frozen bundles. This module provides typed models for those artifacts
 and the providers/loaders that serve them back into the pipeline.
 
-Three artifacts are supported:
+Four artifacts are supported:
 
 - ``FrozenPairBundle`` — per-pair frequency counts. Served by
   ``FrozenStatsProvider`` as a drop-in ``StatsProvider``.
@@ -21,6 +21,10 @@ Three artifacts are supported:
   merges the candidates into each Report before downstream feature
   generation so the existing generous min-difference / set-intersection
   inconsistency checks include them automatically.
+- ``ScreeningDetails`` — per-pair basis for the *screening* algorithm's
+  classification (the algorithm that surfaced the candidate pair, not
+  this pipeline). Consumed only by ``review_html`` for display, so
+  reviewers can compare the adjudicator against the screening method.
 
 Typical usage in the secure repo::
 
@@ -85,10 +89,11 @@ each ``compute_stats``, so no API change is needed on the runner side.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Sequence, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 _BundleT = TypeVar("_BundleT", bound=BaseModel)
 
@@ -497,3 +502,82 @@ def load_frozen_narrative_demographics(
     ``NarrativeDemographics`` schemas.
     """
     return _load_frozen_bundle(path, FrozenNarrativeDemographics)
+
+
+# ------------------------------------------------------------------
+# Screening algorithm details
+# ------------------------------------------------------------------
+
+
+ScreeningValue = str | int | float | bool | None
+ScreeningEntry = dict[str, ScreeningValue | list[ScreeningValue]]
+
+
+class ScreeningDetails(BaseModel):
+    """Per-pair basis for a *screening* algorithm's classification.
+
+    The screening algorithm is whatever surfaced the pair as a duplicate
+    candidate in the first place — not this pipeline. Reviewers comparing
+    the adjudicator's verdict against the screening method need to see
+    what the screening method actually computed, so ``review_html``
+    renders each entry verbatim in its own section on the pair page.
+
+    Screening algorithms vary, so the per-pair payload is deliberately
+    untyped at the feature level: any set of ``feature -> value`` pairs
+    is accepted, and key insertion order is the display order (the
+    algorithm decides what to show first, not this repo). Values must be
+    scalars or flat lists of scalars; a nested object is rejected,
+    because there is no sensible way to render one in a two-column
+    table.
+
+    Attributes
+    ----------
+    algorithm : str, optional
+        Name of the screening algorithm (e.g. ``"vigiMatch"``). Shown in
+        the section heading when present.
+    entries : dict[str, ScreeningEntry]
+        Mapping of ``pair_id`` → that pair's feature/value payload.
+        Partial coverage is fine: pairs absent from the mapping render
+        with no screening section at all.
+    """
+
+    algorithm: str | None = None
+    entries: dict[str, ScreeningEntry]
+
+
+def save_screening_details(details: ScreeningDetails, path: str | Path) -> None:
+    """Serialize screening details to a JSON file."""
+    _save_frozen_bundle(details, path)
+
+
+def load_screening_details(path: str | Path) -> ScreeningDetails:
+    """Load screening details from a JSON file.
+
+    Accepts the wrapper shape ``{"algorithm": ..., "entries": {pair_id:
+    {...}}}`` or the plain mapping ``{pair_id: {...}}``; the plain form is
+    normalised into the wrapper (leaving ``algorithm`` unset) before
+    validation, so the model does the per-entry parsing rather than a
+    bespoke loader. Same trick ``review_html.saved_run`` uses for the
+    plain narrative-demographics shape.
+
+    A top-level ``entries`` key is what distinguishes the two shapes; it
+    can never be a pair id, since canonical pair ids always contain the
+    ``__`` separator.
+
+    Raises
+    ------
+    ValueError
+        If the file is not valid JSON of either shape, or a feature value
+        is not a scalar or flat list of scalars.
+    """
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(raw, dict) and isinstance(raw.get("entries"), dict):
+        payload = raw
+    else:
+        payload = {"entries": raw}
+    try:
+        return ScreeningDetails.model_validate(payload)
+    except ValidationError as exc:
+        raise ValueError(
+            f"Invalid screening-details artifact {path}: {exc}"
+        ) from exc

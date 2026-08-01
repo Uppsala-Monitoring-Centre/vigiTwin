@@ -733,3 +733,143 @@ class TestCanonicalPairIdentity:
             pair_results_path=pr_path,
         )
         assert summary.n_loaded == 1
+
+
+# ---------------------------------------------------------------------------
+# Screening details
+# ---------------------------------------------------------------------------
+
+
+_SCREENING_ENTRY = {"TotalScore": 6.42, "IsSuspectedDuplicate": True}
+
+
+def _write_screening(tmp_path, entries, algorithm=None, name="screening.json"):
+    """Wrapper-shaped when ``algorithm`` is given, bare mapping otherwise."""
+    path = tmp_path / name
+    payload = (
+        {"algorithm": algorithm, "entries": entries}
+        if algorithm is not None
+        else entries
+    )
+    path.write_text(json.dumps(payload))
+    return path
+
+
+class TestScreeningDetails:
+    """The optional screening artifact, loaded like every other side input."""
+
+    @pytest.mark.parametrize("algorithm", ["vigiMatch", None])
+    def test_wrapper_and_bare_shapes_both_load(
+        self, tmp_path, report_a, report_b, algorithm
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
+        screening = _write_screening(
+            tmp_path, {PAIR_ID: _SCREENING_ENTRY}, algorithm
+        )
+
+        items, _ = load_saved_run(
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+            screening_path=screening,
+        )
+        assert items[0].screening == _SCREENING_ENTRY
+        assert items[0].screening_algorithm == algorithm
+
+    def test_uncovered_pair_still_loads(self, tmp_path, report_a, report_b):
+        """Partial coverage is normal; an unlisted pair just has no section."""
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
+        screening = _write_screening(tmp_path, {"R003__R004": _SCREENING_ENTRY})
+
+        items, summary = load_saved_run(
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+            screening_path=screening,
+        )
+        assert summary.n_loaded == 1
+        assert items[0].screening is None
+
+    def test_absent_path_means_no_screening(self, tmp_path, report_a, report_b):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
+
+        items, _ = load_saved_run(
+            reports_path=reports, pairs_path=pairs, pair_results_path=pr_path
+        )
+        assert items[0].screening is None
+        assert items[0].screening_algorithm is None
+
+    def test_legacy_keyed_screening_is_rejected(
+        self, tmp_path, report_a, report_b
+    ):
+        """Keyed by pair_id like the other artifacts, so checked like them."""
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
+        screening = _write_screening(tmp_path, {"R002__R001": _SCREENING_ENTRY})
+
+        with pytest.raises(ValueError, match="predates canonical pair identity"):
+            load_saved_run(
+                reports_path=reports,
+                pairs_path=pairs,
+                pair_results_path=pr_path,
+                screening_path=screening,
+            )
+
+    def test_escape_hatch_allows_legacy_screening_keys(
+        self, tmp_path, report_a, report_b
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_legacy_pairs(tmp_path)
+        pr_path = _write_pair_results(tmp_path, _make_pair_result("R002__R001"))
+        screening = _write_screening(tmp_path, {"R002__R001": _SCREENING_ENTRY})
+
+        items, _ = load_saved_run(
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+            screening_path=screening,
+            allow_noncanonical_pairs=True,
+        )
+        assert items[0].screening == _SCREENING_ENTRY
+
+    def test_nested_value_is_rejected(self, tmp_path, report_a, report_b):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
+        screening = _write_screening(tmp_path, {PAIR_ID: {"scores": {"a": 1}}})
+
+        with pytest.raises(ValueError, match="Invalid screening-details artifact"):
+            load_saved_run(
+                reports_path=reports,
+                pairs_path=pairs,
+                pair_results_path=pr_path,
+                screening_path=screening,
+            )
+
+    def test_screening_reaches_the_rendered_page(
+        self, tmp_path, report_a, report_b
+    ):
+        reports = _write_reports(tmp_path, report_a, report_b)
+        pairs = _write_pairs(tmp_path, _pair())
+        pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
+        screening = _write_screening(
+            tmp_path, {PAIR_ID: _SCREENING_ENTRY}, "vigiMatch"
+        )
+
+        summary = render_saved_run(
+            output_dir=tmp_path / "out",
+            reports_path=reports,
+            pairs_path=pairs,
+            pair_results_path=pr_path,
+            screening_path=screening,
+        )
+        html = (summary.output_dir / f"{PAIR_ID}.html").read_text(encoding="utf-8")
+        assert "Screening Algorithm: vigiMatch" in html
+        assert "IsSuspectedDuplicate" in html

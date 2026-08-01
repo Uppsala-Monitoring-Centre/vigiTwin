@@ -1,0 +1,70 @@
+{
+  "description": "Per-pair basis for a *screening* algorithm's classification.\n\nThe screening algorithm is whatever surfaced the pair as a duplicate\ncandidate in the first place \u2014 not this pipeline. Reviewers comparing\nthe adjudicator's verdict against the screening method need to see\nwhat the screening method actually computed, so ``review_html``\nrenders each entry verbatim in its own section on the pair page.\n\nScreening algorithms vary, so the per-pair payload is deliberately\nuntyped at the feature level: any set of ``feature -> value`` pairs\nis accepted, and key insertion order is the display order (the\nalgorithm decides what to show first, not this repo). Values must be\nscalars or flat lists of scalars; a nested object is rejected,\nbecause there is no sensible way to render one in a two-column\ntable.\n\nAttributes\n----------\nalgorithm : str, optional\n    Name of the screening algorithm (e.g. ``\"vigiMatch\"``). Shown in\n    the section heading when present.\nentries : dict[str, ScreeningEntry]\n    Mapping of ``pair_id`` \u2192 that pair's feature/value payload.\n    Partial coverage is fine: pairs absent from the mapping render\n    with no screening section at all.",
+  "properties": {
+    "algorithm": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Algorithm"
+    },
+    "entries": {
+      "additionalProperties": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type": "object"
+      },
+      "title": "Entries",
+      "type": "object"
+    }
+  },
+  "required": [
+    "entries"
+  ],
+  "title": "ScreeningDetails",
+  "type": "object"
+}
