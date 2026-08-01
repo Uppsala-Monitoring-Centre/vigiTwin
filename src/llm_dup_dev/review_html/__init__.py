@@ -56,6 +56,7 @@ from .models import (
     ComparisonStatus,
     DecisionSummaryVM,
     PairViewModel,
+    ScreeningVM,
 )
 from .render import DEFAULT_OUTPUT_DIR, write_batch_html, write_pair_html
 
@@ -78,6 +79,10 @@ class PairRenderInput:
     annotation: dict | None = None
     narrative_demographics_1: NarrativeDemographics | None = None
     narrative_demographics_2: NarrativeDemographics | None = None
+    # One pair's entry from a ``ScreeningDetails`` artifact, plus the
+    # algorithm name for the section heading.
+    screening: dict | None = None
+    screening_algorithm: str | None = None
 
 
 def render_pair_html(
@@ -94,6 +99,8 @@ def render_pair_html(
     annotation: dict | None = None,
     narrative_demographics_1: NarrativeDemographics | None = None,
     narrative_demographics_2: NarrativeDemographics | None = None,
+    screening: dict | None = None,
+    screening_algorithm: str | None = None,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render a single pair to a standalone HTML file.
@@ -122,6 +129,13 @@ def render_pair_html(
         A human annotation dict with at least a
         ``"duplicates_assessment"`` key.  Shows the human label
         alongside the pipeline classification.
+    screening : dict, optional
+        This pair's entry from a ``ScreeningDetails`` artifact — the
+        feature/value basis for the *screening* algorithm's
+        classification.  Rendered verbatim in its own section.
+    screening_algorithm : str, optional
+        Name of the screening algorithm (e.g. ``"vigiMatch"``) for that
+        section's heading.
     output_dir : Path
         Directory to write into (created if absent).
 
@@ -143,6 +157,8 @@ def render_pair_html(
         annotation=annotation,
         narrative_demographics_1=narrative_demographics_1,
         narrative_demographics_2=narrative_demographics_2,
+        screening=screening,
+        screening_algorithm=screening_algorithm,
     )
     return write_pair_html(vm, output_dir)
 
@@ -183,6 +199,8 @@ def render_batch_html(
             annotation=item.annotation,
             narrative_demographics_1=item.narrative_demographics_1,
             narrative_demographics_2=item.narrative_demographics_2,
+            screening=item.screening,
+            screening_algorithm=item.screening_algorithm,
         )
         for item in items
     ]
@@ -213,6 +231,8 @@ class ResultRenderInput:
     frozen_bundle: FrozenPairBundle | None = None
     include_debug: bool = False
     annotation: dict | None = None
+    screening: dict | None = None
+    screening_algorithm: str | None = None
 
 
 def render_result_html(
@@ -225,6 +245,8 @@ def render_result_html(
     frozen_bundle: FrozenPairBundle | None = None,
     include_debug: bool = False,
     annotation: dict | None = None,
+    screening: dict | None = None,
+    screening_algorithm: str | None = None,
     output_dir: Path = DEFAULT_OUTPUT_DIR,
 ) -> Path:
     """Render an evaluated pipeline result to a standalone HTML file.
@@ -249,6 +271,10 @@ def render_result_html(
     include_debug : bool
         When True, includes collapsible raw JSON sections for
         PairFeatures and ClassificationResult.
+    screening : dict, optional
+        This pair's entry from a ``ScreeningDetails`` artifact.
+    screening_algorithm : str, optional
+        Name of the screening algorithm, for the section heading.
     output_dir : Path
         Directory to write into (created if absent).
 
@@ -270,6 +296,8 @@ def render_result_html(
         annotation=annotation,
         narrative_demographics_1=result.narrative_demographics_1,
         narrative_demographics_2=result.narrative_demographics_2,
+        screening=screening,
+        screening_algorithm=screening_algorithm,
     )
     return write_pair_html(vm, output_dir)
 
@@ -310,6 +338,8 @@ def render_results_html(
             annotation=item.annotation,
             narrative_demographics_1=item.result.narrative_demographics_1,
             narrative_demographics_2=item.result.narrative_demographics_2,
+            screening=item.screening,
+            screening_algorithm=item.screening_algorithm,
         )
         for item in items
     ]
@@ -340,6 +370,7 @@ __all__ = [
     "ResultRenderInput",
     "SavedRunSkip",
     "SavedRunSummary",
+    "ScreeningVM",
     "SkipReason",
     "load_saved_run",
     "render_batch_html",

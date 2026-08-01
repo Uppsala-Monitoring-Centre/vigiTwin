@@ -25,6 +25,7 @@ from llm_dup_dev.review_html.compare import (
     _apply_demographic_severity,
     _build_ae_rows,
     _build_drug_rows,
+    _build_screening_vm,
     _compare_age_values,
     _compare_date_values,
     _compare_measurement_values,
@@ -33,6 +34,7 @@ from llm_dup_dev.review_html.compare import (
     _contrib_pos_class,
     _format_matching_features,
     _format_penalty_summary,
+    _format_screening_value,
     build_pair_view_model,
 )
 from llm_dup_dev.review_html.models import (
@@ -1311,3 +1313,85 @@ class TestPenaltyIsRecordedOnEveryBranch:
             result = classify(features)
             assert result.penalty is not None, result.explanation
             assert _format_penalty_summary(result.penalty) is not None
+
+
+# ===================================================================
+# Screening algorithm view model
+# ===================================================================
+
+
+class TestFormatScreeningValue:
+    """Display formatting for one screening feature value."""
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (None, "—"),
+            (True, "Yes"),
+            (False, "No"),
+            (0, "0"),
+            (42, "42"),
+            (-7, "-7"),
+            (0.289343890439667, "0.29"),
+            (6.4237356205981, "6.42"),
+            (0.0, "0.00"),
+            ("vigiMatch", "vigiMatch"),
+            ("", ""),
+            ([], "—"),
+            (["a", 1, None], "a, 1, —"),
+        ],
+    )
+    def test_formats_scalars_and_lists(self, value, expected):
+        assert _format_screening_value(value) == expected
+
+    def test_booleans_are_not_rendered_as_integers(self):
+        """bool is an int subclass; the bool branch must win."""
+        assert _format_screening_value(True) != "1"
+        assert _format_screening_value(False) != "0"
+
+    @pytest.mark.parametrize(
+        "value,expected",
+        [
+            (0.0034, "0.003"),
+            (0.00012, "0.0001"),
+            (1.2e-5, "0.00001"),
+            (-0.0034, "-0.003"),
+        ],
+    )
+    def test_precision_extends_to_reach_a_significant_digit(self, value, expected):
+        """A value that would round to 0.00 must not read as absent."""
+        assert _format_screening_value(value) == expected
+
+    def test_a_value_below_the_precision_cap_still_renders(self):
+        """Beyond the decimal cap the value is shown as-is, not dropped."""
+        assert _format_screening_value(1e-30) == f"{1e-30:.12f}"
+
+    def test_non_finite_values_pass_through(self):
+        assert _format_screening_value(float("nan")) == "nan"
+        assert _format_screening_value(float("inf")) == "inf"
+
+
+class TestBuildScreeningVM:
+    """Assembly of the screening section's view model."""
+
+    def test_none_and_empty_yield_no_section(self):
+        assert _build_screening_vm(None) is None
+        assert _build_screening_vm({}) is None
+
+    def test_key_order_is_preserved(self):
+        entry = {"TotalScore": 6.42, "Threshold": 4.07, "vaccine_pair": False}
+        vm = _build_screening_vm(entry)
+        assert [f.key for f in vm.features] == list(entry)
+
+    def test_keys_are_carried_verbatim(self):
+        """Algorithm-defined names are never reworded."""
+        vm = _build_screening_vm({"Score_PatientOnsetAge": 1.187})
+        assert vm.features[0].key == "Score_PatientOnsetAge"
+        assert vm.features[0].value == "1.19"
+
+    def test_algorithm_name_is_carried(self):
+        vm = _build_screening_vm({"TotalScore": 1.0}, "vigiMatch")
+        assert vm.algorithm == "vigiMatch"
+
+    def test_algorithm_is_optional(self):
+        assert _build_screening_vm({"TotalScore": 1.0}).algorithm is None

@@ -1237,6 +1237,7 @@ python -m llm_dup_dev.review_html \
 | `pairs.json` | `[ { "pair_id": "...", "report_1_id": "...", "report_2_id": "..." }, ... ]` |
 | `features.json` | `{ "<pair_id>": { ...PairFeatures fields... }, ... }` (optional) |
 | `classifications.json` | `{ "<pair_id>": { ...ClassificationResult fields... }, ... }` (optional) |
+| `screening.json` | `{ "algorithm": "...", "entries": { "<pair_id>": { "<feature>": <value>, ... }, ... } }`, or the bare `{ "<pair_id>": { ... }, ... }` (optional, `--screening`) |
 
 Use `Report.model_dump()`, `PairFeatures.model_dump()`, and `ClassificationResult.model_dump()` to produce these from the pipeline outputs.
 
@@ -1259,6 +1260,46 @@ Each page contains:
 - **Narratives** — side-by-side free text (if present)
 - **Evidence summary** — L_match, anchor, reporting context, inconsistencies (if `features` supplied)
 - **Classification** — independence assessment, relationship assessment, final label, explanation (if `classification` supplied)
+- **Screening algorithm** — the feature/value basis for the screening algorithm's own classification, shown verbatim (if `screening` supplied)
+
+### Screening algorithm details
+
+Reviewers comparing this pipeline's adjudication against the screening method that
+surfaced the pair need to see what that method computed. Supply a `ScreeningDetails`
+artifact (defined in [`src/llm_dup_dev/data/offline.py`](../src/llm_dup_dev/data/offline.py))
+and each covered pair gets a **Screening Algorithm** section directly beneath
+Classification:
+
+```json
+{
+  "algorithm": "vigiMatch",
+  "entries": {
+    "507638__507864": {
+      "vaccine_pair": false,
+      "Score_Gender": 0.289343890439667,
+      "TotalScore": 6.4237356205981,
+      "Threshold": 4.06802742670859,
+      "IsSuspectedDuplicate": true
+    }
+  }
+}
+```
+
+Screening algorithms vary, so the per-pair payload is untyped at the feature level:
+any set of `feature -> value` pairs is accepted, keys are rendered verbatim (they are
+the algorithm's own identifiers), and key order in the JSON is the display order.
+Values must be scalars or flat lists of scalars — nested objects are rejected on load.
+Floats are shown to two decimals, extended only as far as needed to reach a
+significant digit; booleans render as Yes/No; nulls and empty lists as an em dash.
+
+The bare `{ "<pair_id>": { ... } }` form is accepted too, in which case the heading
+reads just "Screening Algorithm". Coverage may be partial — pairs the artifact does
+not mention render with no screening section at all.
+
+Pass it as `--screening screening.json` on the CLI, `screening_path=` to
+`load_saved_run` / `render_saved_run`, `screening=` on `PairRenderInput` /
+`ResultRenderInput` and the `render_*_html` functions, or `screening=` to
+`study_eval.scle.packets.generate_packets` for SCLE reviewer packets.
 
 ---
 

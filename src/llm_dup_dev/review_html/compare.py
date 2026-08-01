@@ -80,6 +80,8 @@ from .models import (
     InconsistencyVM,
     NarrativeComparison,
     PairViewModel,
+    ScreeningFeatureVM,
+    ScreeningVM,
     SourceCaseAssessmentVM,
     SubfieldStatus,
 )
@@ -1136,6 +1138,99 @@ def _build_annotation_vm(
 
 
 # ===================================================================
+# Screening algorithm view-model builder
+# ===================================================================
+
+
+# Shown for a null value or an empty list — an em dash reads as "nothing
+# here" without implying a zero.
+_SCREENING_ABSENT = "—"
+
+# Upper bound on the decimals used to reach a significant digit. Past this
+# the number is noise for a reviewer eyeballing a score.
+_SCREENING_MAX_DECIMALS = 12
+
+
+def _format_screening_float(value: float) -> str:
+    """Render a screening score at two decimals, extending for tiny values.
+
+    Screening scores are read comparatively (is this contribution big or
+    small?), so two decimals is the right density for a table. A value
+    smaller than 0.005 would round to ``0.00`` and read as absent, so the
+    precision is extended until the first significant digit appears —
+    ``0.0034`` renders as ``0.003``, ``1.2e-05`` as ``0.00001``.
+    """
+    if math.isnan(value) or math.isinf(value):
+        return str(value)
+
+    text = f"{value:.2f}"
+    if value == 0.0 or float(text) != 0.0:
+        return text
+    for places in range(3, _SCREENING_MAX_DECIMALS + 1):
+        text = f"{value:.{places}f}"
+        if float(text) != 0.0:
+            return text
+    return text
+
+
+def _format_screening_value(value: object) -> str:
+    """Render one screening feature value for display.
+
+    Booleans are tested before integers: ``bool`` is an ``int`` subclass,
+    so the order matters. Lists are joined; anything else falls through to
+    ``str`` rather than failing a render — the artifact model already
+    rejects the shapes that have no sensible rendering.
+    """
+    if value is None:
+        return _SCREENING_ABSENT
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return _format_screening_float(value)
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return _SCREENING_ABSENT
+        return ", ".join(_format_screening_value(item) for item in value)
+    return str(value)
+
+
+def _build_screening_vm(
+    screening: dict | None,
+    algorithm: str | None = None,
+) -> ScreeningVM | None:
+    """Build a ScreeningVM from one pair's screening-details entry.
+
+    Parameters
+    ----------
+    screening : dict, optional
+        The ``feature -> value`` payload for this pair, i.e. one value of
+        :attr:`llm_dup_dev.data.offline.ScreeningDetails.entries`.
+    algorithm : str, optional
+        Name of the screening algorithm, for the section heading.
+
+    Returns
+    -------
+    ScreeningVM or None
+        ``None`` when no entry was supplied or it is empty, so the section
+        is suppressed rather than rendering an empty table.
+    """
+    if not screening:
+        return None
+
+    return ScreeningVM(
+        algorithm=algorithm,
+        features=[
+            ScreeningFeatureVM(key=key, value=_format_screening_value(value))
+            for key, value in screening.items()
+        ],
+    )
+
+
+# ===================================================================
 # Public API
 # ===================================================================
 
@@ -1153,6 +1248,8 @@ def build_pair_view_model(
     annotation: dict | None = None,
     narrative_demographics_1: NarrativeDemographics | None = None,
     narrative_demographics_2: NarrativeDemographics | None = None,
+    screening: dict | None = None,
+    screening_algorithm: str | None = None,
 ) -> PairViewModel:
     """Build a complete comparison view model from two Reports.
 
@@ -1194,6 +1291,16 @@ def build_pair_view_model(
         The extractions are also read directly for their ``evidence``
         snippets and ``notes``, which the merge drops — see
         ``_attach_narrative_evidence``.
+    screening : dict, optional
+        This pair's entry from a
+        :class:`~llm_dup_dev.data.offline.ScreeningDetails` artifact — the
+        ``feature -> value`` basis for the *screening* algorithm's
+        classification. When provided, a Screening Algorithm section is
+        added showing the values verbatim, so reviewers can compare the
+        adjudicator's verdict against the screening method's.
+    screening_algorithm : str, optional
+        Name of the screening algorithm (e.g. ``"vigiMatch"``), shown in
+        that section's heading.
 
     Returns
     -------
@@ -1316,6 +1423,8 @@ def build_pair_view_model(
         ),
     )
 
+    screening_vm = _build_screening_vm(screening, screening_algorithm)
+
     # Optional debug JSON for collapsible raw-data sections
     debug_json: str | None = None
     if include_debug and (features or classification):
@@ -1354,6 +1463,7 @@ def build_pair_view_model(
         classification_summary=classification_summary,
         explicit_link=explicit_link,
         freq_stats=freq_stats,
+        screening=screening_vm,
         decision_summary=decision_summary,
         annotation=annotation_vm,
         debug_json=debug_json,

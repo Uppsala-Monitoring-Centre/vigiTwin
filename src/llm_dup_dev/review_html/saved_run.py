@@ -47,6 +47,8 @@ from pydantic import BaseModel, ValidationError
 from llm_dup_dev.data.offline import (
     FrozenNarrativeDemographics,
     FrozenPairBundle,
+    ScreeningDetails,
+    load_screening_details,
 )
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
@@ -374,6 +376,17 @@ def _load_narrative_demographics(
     return bundle.extractions
 
 
+def _load_screening(path: str | Path | None) -> ScreeningDetails:
+    """Load screening details; an empty ``ScreeningDetails`` when no path.
+
+    Delegates to :func:`~llm_dup_dev.data.offline.load_screening_details`,
+    which accepts the wrapper and bare-mapping shapes alike.
+    """
+    if path is None:
+        return ScreeningDetails(entries={})
+    return load_screening_details(path)
+
+
 def load_saved_run(
     *,
     reports_path: str | Path,
@@ -384,6 +397,7 @@ def load_saved_run(
     annotations_path: str | Path | None = None,
     bundles_path: str | Path | None = None,
     narrative_demographics_path: str | Path | None = None,
+    screening_path: str | Path | None = None,
     external_url_builder: Callable[[str, str], str | None] | None = None,
     external_url_label: str = "External link",
     include_debug: bool = True,
@@ -416,6 +430,11 @@ def load_saved_run(
         (wrapper or plain shaped). The demographics bundle is only consulted for
         the ``split`` source; a ``pair_results`` run already carries its
         demographics.
+    screening_path : str or Path, optional
+        A :class:`~llm_dup_dev.data.offline.ScreeningDetails` artifact (wrapper
+        or bare pair-keyed shape) describing the basis for the *screening*
+        algorithm's classification. Pairs it does not cover render without a
+        screening section.
     external_url_builder : callable, optional
         ``(report_1_id, report_2_id) -> str | None``. Called per pair to build
         the external header link; ``None`` (or no builder) means no link, and a
@@ -485,6 +504,7 @@ def load_saved_run(
     pairs = _load_pairs(pairs_path, allow_noncanonical=allow_noncanonical_pairs)
     bundles = _load_bundles(bundles_path)
     annotations = _load_annotations(annotations_path)
+    screening = _load_screening(screening_path)
 
     if not allow_noncanonical_pairs:
         # These artifacts are keyed by pair_id and carry no report ids, so a
@@ -505,6 +525,10 @@ def load_saved_run(
         if bundles:
             _check_artifact_keys_canonical(
                 bundles, artifact="bundles", path=bundles_path
+            )
+        if screening.entries:
+            _check_artifact_keys_canonical(
+                screening.entries, artifact="screening", path=screening_path
             )
 
     items: list[ResultRenderInput] = []
@@ -579,6 +603,8 @@ def load_saved_run(
                 frozen_bundle=bundles.get(pid),
                 include_debug=include_debug,
                 annotation=annotations.get(pid),
+                screening=screening.entries.get(pid),
+                screening_algorithm=screening.algorithm,
             )
         )
 

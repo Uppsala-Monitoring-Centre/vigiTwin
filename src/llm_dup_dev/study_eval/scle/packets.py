@@ -20,7 +20,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
-from llm_dup_dev.data.offline import FrozenPairBundle
+from llm_dup_dev.data.offline import FrozenPairBundle, ScreeningDetails
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.pair_features import PairFeatures
 from llm_dup_dev.models.report import Report
@@ -83,6 +83,7 @@ def generate_packets(
     output_dir: str | Path,
     *,
     write_index: bool = True,
+    screening: ScreeningDetails | None = None,
 ) -> dict[str, str]:
     """Render one HTML packet per case in ``sample`` into ``output_dir``.
 
@@ -92,6 +93,15 @@ def generate_packets(
     ``review_html`` renderer preserves the study's reference vocabulary
     (``duplicate`` / ``non_duplicate``) verbatim when it is outside the
     pipeline's own label set.
+
+    ``screening`` adds the basis for the *screening* algorithm's
+    classification to each covered packet, so a reviewer comparing the
+    adjudicator against the screening method can see what that method
+    computed. It is a parameter here rather than a ``PacketContent`` field
+    because the provider seam exists to keep confidential report content out
+    of the generic schemas — screening details are already a generic
+    pair-keyed artifact the caller can load whole. Pairs the artifact does
+    not cover simply render without the section.
     """
     out_dir = Path(output_dir)
     items: list[PairRenderInput] = []
@@ -110,6 +120,10 @@ def generate_packets(
                 annotation={
                     "duplicates_assessment": case.auto_context.reference_label
                 },
+                screening=(
+                    screening.entries.get(case.pair_id) if screening else None
+                ),
+                screening_algorithm=screening.algorithm if screening else None,
             )
         )
         filenames[case.pair_id] = packet_filename(case.pair_id)

@@ -17,6 +17,7 @@ Optionally include features, classifications, and frozen frequency statistics::
         --features features.json \\
         --classifications classifications.json \\
         --bundles bundles.json \\
+        --screening screening.json \\
         --output-dir outputs/review_html/
 
 Expected JSON formats
@@ -29,6 +30,10 @@ Expected JSON formats
 - ``narrative_demographics.json`` (optional): a ``FrozenNarrativeDemographics``
   artifact, ``{ "extractions": { "<report_id>": { ...NarrativeDemographics
   fields... }, ... } }``
+- ``screening.json`` (optional): a ``ScreeningDetails`` artifact, either
+  ``{ "algorithm": "vigiMatch", "entries": { "<pair_id>": { "<feature>":
+  <value>, ... }, ... } }`` or the bare ``{ "<pair_id>": { "<feature>":
+  <value>, ... }, ... }``
 """
 
 from __future__ import annotations
@@ -42,6 +47,7 @@ from typing import Sequence
 from llm_dup_dev.data.offline import (
     FrozenPairBundle,
     load_frozen_narrative_demographics,
+    load_screening_details,
 )
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
@@ -111,6 +117,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "report_id). When provided, narrative-extracted demographic "
             "candidates appear in the demographics table alongside structured "
             "fields, with the supporting narrative snippets. Optional."
+        ),
+    )
+    parser.add_argument(
+        "--screening",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a screening-details JSON (keyed by pair_id, either bare "
+            "or wrapped with an 'algorithm' name). When provided, each pair "
+            "report includes a Screening Algorithm section showing the basis "
+            "for the screening algorithm's classification. Optional."
         ),
     )
     parser.add_argument(
@@ -187,6 +204,15 @@ def main(argv: Sequence[str] | None = None) -> None:
             args.narrative_demographics
         ).extractions
 
+    # Load optional screening details. Its loader accepts both the bare
+    # pair-keyed mapping and the wrapper that names the algorithm.
+    screening_entries: dict[str, dict] = {}
+    screening_algorithm: str | None = None
+    if args.screening:
+        screening_details = load_screening_details(args.screening)
+        screening_entries = screening_details.entries
+        screening_algorithm = screening_details.algorithm
+
     # Build view models
     view_models: list[PairViewModel] = []
     errors: list[str] = []
@@ -217,6 +243,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             narrative_demographics_2=narrative_demographics.get(
                 pair.report_2_id
             ),
+            screening=screening_entries.get(pair.pair_id),
+            screening_algorithm=screening_algorithm,
         )
         view_models.append(vm)
 

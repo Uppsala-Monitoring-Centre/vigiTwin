@@ -10,6 +10,8 @@ Covers:
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from llm_dup_dev.data.offline import (
@@ -18,10 +20,13 @@ from llm_dup_dev.data.offline import (
     FrozenScopeStats,
     FrozenSourceCaseExtractions,
     FrozenStatsProvider,
+    ScreeningDetails,
     load_frozen_narrative_demographics,
     load_frozen_source_case_extractions,
+    load_screening_details,
     save_frozen_narrative_demographics,
     save_frozen_source_case_extractions,
+    save_screening_details,
 )
 from llm_dup_dev.models.narrative_demographics import (
     NarrativeAgeValue,
@@ -682,3 +687,83 @@ class TestFrozenNarrativeDemographics:
         save_frozen_narrative_demographics(bundle, path)
         restored = load_frozen_narrative_demographics(path)
         assert restored.extractions == {}
+
+
+# ===================================================================
+# Screening details
+# ===================================================================
+
+
+class TestScreeningDetails:
+    """The pair-keyed screening artifact and its two accepted shapes."""
+
+    ENTRY = {
+        "vaccine_pair": False,
+        "Score_Gender": 0.289343890439667,
+        "Score_OnsetDate": 0,
+        "TotalScore": 6.4237356205981,
+        "IsSuspectedDuplicate": True,
+    }
+
+    def test_save_load_roundtrip_via_file(self, tmp_path):
+        details = ScreeningDetails(
+            algorithm="vigiMatch", entries={"R001__R002": self.ENTRY}
+        )
+        path = tmp_path / "screening.json"
+        save_screening_details(details, path)
+        assert load_screening_details(path) == details
+
+    def test_bare_mapping_is_normalised_into_the_wrapper(self, tmp_path):
+        """The plain shape from a screening export loads with no algorithm."""
+        path = tmp_path / "bare.json"
+        path.write_text(json.dumps({"R001__R002": self.ENTRY}))
+        details = load_screening_details(path)
+        assert details.algorithm is None
+        assert details.entries == {"R001__R002": self.ENTRY}
+
+    def test_value_types_survive_the_roundtrip(self, tmp_path):
+        """Booleans must not arrive as ints, nor ints as floats."""
+        path = tmp_path / "screening.json"
+        save_screening_details(
+            ScreeningDetails(entries={"R001__R002": self.ENTRY}), path
+        )
+        entry = load_screening_details(path).entries["R001__R002"]
+        assert entry["vaccine_pair"] is False
+        assert entry["IsSuspectedDuplicate"] is True
+        assert isinstance(entry["Score_OnsetDate"], int)
+        assert isinstance(entry["Score_Gender"], float)
+
+    def test_key_order_is_preserved(self, tmp_path):
+        """Display order is the artifact's order, so it must survive loading."""
+        path = tmp_path / "screening.json"
+        path.write_text(json.dumps({"R001__R002": self.ENTRY}))
+        entry = load_screening_details(path).entries["R001__R002"]
+        assert list(entry) == list(self.ENTRY)
+
+    def test_nulls_and_lists_are_accepted(self, tmp_path):
+        path = tmp_path / "screening.json"
+        path.write_text(
+            json.dumps({"R001__R002": {"missing": None, "tags": ["a", 1]}})
+        )
+        entry = load_screening_details(path).entries["R001__R002"]
+        assert entry == {"missing": None, "tags": ["a", 1]}
+
+    def test_nested_object_is_rejected_naming_the_file(self, tmp_path):
+        """There is no rendering for a nested object, so it fails at load."""
+        path = tmp_path / "screening.json"
+        path.write_text(json.dumps({"R001__R002": {"scores": {"a": 1}}}))
+        with pytest.raises(ValueError, match=r"Invalid screening-details artifact"):
+            load_screening_details(path)
+        with pytest.raises(ValueError, match=str(path)):
+            load_screening_details(path)
+
+    def test_non_object_entry_is_rejected(self, tmp_path):
+        path = tmp_path / "screening.json"
+        path.write_text(json.dumps({"R001__R002": "not an object"}))
+        with pytest.raises(ValueError, match="Invalid screening-details artifact"):
+            load_screening_details(path)
+
+    def test_empty_artifact_roundtrip(self, tmp_path):
+        path = tmp_path / "empty.json"
+        save_screening_details(ScreeningDetails(entries={}), path)
+        assert load_screening_details(path).entries == {}

@@ -386,6 +386,17 @@ details.debug-section pre {
 .contrib-neg-s  { background: #c0392b; color: #fff; }
 .contrib-neg-vs { background: #7b241c; color: #fff; }
 
+/* --- Screening algorithm --- */
+/* Keys are the screening algorithm's own identifiers, shown verbatim in
+   monospace so they read as the names they are; values are tabular so a
+   column of scores lines up. */
+.screening-key {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    width: 40%;
+}
+.screening-value { font-variant-numeric: tabular-nums; }
+
 /* --- Print --- */
 @media print {
     body { background: #fff; padding: 0; }
@@ -1151,6 +1162,31 @@ details.debug-section pre {
             </span>
         </dd>
     </dl>
+</div>
+{% endif %}
+
+{# ── Screening algorithm basis (optional) ── #}
+{% if vm.screening %}
+<div class="section">
+    <h2>Screening Algorithm{% if vm.screening.algorithm %}: {{ vm.screening.algorithm }}{% endif %}</h2>
+    <div class="table-scroll">
+    <table>
+        <thead>
+            <tr>
+                <th>Feature</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for feature in vm.screening.features %}
+            <tr>
+                <td class="screening-key">{{ feature.key }}</td>
+                <td class="screening-value">{{ feature.value }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
 </div>
 {% endif %}
 

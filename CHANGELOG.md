@@ -32,6 +32,54 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
   rule fails loudly instead of making one `pair_id` mean two different answers.
   No behaviour change; see `docs/data_contracts.md` § Canonical pair identity.
 
+## [0.6.1] - 2026-08-01
+
+Reviewers comparing an adjudication against the screening method that surfaced
+the pair can now see what that method computed. A new optional artifact,
+`ScreeningDetails`, carries the per-pair basis for the **screening**
+algorithm's classification, and `review_html` renders it as a Screening
+Algorithm section directly beneath Classification on each pair page. Nothing in
+feature generation or the decision logic reads it — it is presentation only.
+
+### Added
+
+- `llm_dup_dev.data.offline.ScreeningDetails`, with `save_screening_details` /
+  `load_screening_details`. The artifact is keyed by `pair_id`, optionally
+  wrapped with the algorithm's name:
+  `{"algorithm": "vigiMatch", "entries": {"<pair_id>": {"<feature>": <value>}}}`.
+  The bare `{pair_id: {feature: value}}` form is accepted too and normalised on
+  load, leaving `algorithm` unset.
+
+  Screening algorithms vary, so the per-pair payload is deliberately **untyped
+  at the feature level**: any set of `feature -> value` pairs validates, keys
+  render verbatim (they are the algorithm's own identifiers), and key insertion
+  order is the display order. Values must be scalars or flat lists of scalars;
+  a nested object is rejected at load, since there is no sensible rendering for
+  one in a two-column table. Coverage may be partial — pairs absent from
+  `entries` render with no section at all.
+  Schema: `schemas/screening_details.schema.json`.
+
+- Pass-through on every `review_html` entry point: `--screening` on the CLI,
+  `screening_path=` on `load_saved_run` / `render_saved_run` (whose canonical
+  pair-key check now covers it, so `allow_noncanonical_pairs` governs it like
+  every other pair-keyed artifact), `screening=` / `screening_algorithm=` on
+  `PairRenderInput`, `ResultRenderInput`, `build_pair_view_model` and the
+  `render_*_html` functions, and `screening=` on
+  `study_eval.scle.packets.generate_packets` for SCLE reviewer packets.
+
+  On the SCLE path this is a `generate_packets` parameter rather than a
+  `PacketContent` field: the `PacketContentProvider` seam exists to keep
+  confidential *report content* out of the generic schemas, and screening
+  details are already a generic pair-keyed artifact the caller can load whole.
+
+  Display formatting is fixed by the renderer so pages stay comparable across
+  algorithms: floats at two decimals, extended only far enough to reach a
+  significant digit (`0.0034` → `0.003`); booleans as Yes/No; nulls and empty
+  lists as an em dash.
+
+All additions are optional and backward compatible — existing callers,
+artifacts and rendered pages are unaffected.
+
 ## [0.6.0] - 2026-07-31
 
 Canonical pair identity: a report pair now has **one** identity regardless of

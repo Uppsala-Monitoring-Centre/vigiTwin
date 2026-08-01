@@ -1689,3 +1689,95 @@ class TestExplicitLinkRendering:
             classification=_make_classification(),
         )
         assert "<dt>Explicit link</dt>" in html
+
+
+# ---------------------------------------------------------------------------
+# Screening algorithm rendering
+# ---------------------------------------------------------------------------
+
+
+_VIGIMATCH_ENTRY = {
+    "vaccine_pair": False,
+    "Score_Gender": 0.289343890439667,
+    "Score_OnsetDate": 0,
+    "TotalScore": 6.4237356205981,
+    "Threshold": 4.06802742670859,
+    "IsSuspectedDuplicate": True,
+}
+
+
+def _render_screening_page(report_a, report_b, **kwargs) -> str:
+    vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002", **kwargs)
+    return render_pair(vm)
+
+
+class TestScreeningRendering:
+    """Tests for the screening-algorithm section on the pair page."""
+
+    def test_section_lists_every_feature(self, report_a, report_b):
+        html = _render_screening_page(
+            report_a, report_b, screening=_VIGIMATCH_ENTRY
+        )
+        assert "<h2>Screening Algorithm</h2>" in html
+        for key in _VIGIMATCH_ENTRY:
+            assert key in html
+
+    def test_heading_names_the_algorithm(self, report_a, report_b):
+        html = _render_screening_page(
+            report_a, report_b,
+            screening=_VIGIMATCH_ENTRY,
+            screening_algorithm="vigiMatch",
+        )
+        assert "<h2>Screening Algorithm: vigiMatch</h2>" in html
+
+    def test_values_are_formatted_for_display(self, report_a, report_b):
+        html = _render_screening_page(
+            report_a, report_b, screening=_VIGIMATCH_ENTRY
+        )
+        # Two decimals, booleans as Yes/No, ints untouched.
+        assert "0.29" in html
+        assert "6.42" in html
+        assert "Yes" in html
+        assert "No" in html
+        assert "0.289343890439667" not in html
+
+    def test_key_order_follows_the_artifact(self, report_a, report_b):
+        html = _render_screening_page(
+            report_a, report_b, screening=_VIGIMATCH_ENTRY
+        )
+        positions = [html.index(key) for key in _VIGIMATCH_ENTRY]
+        assert positions == sorted(positions)
+
+    def test_section_absent_without_screening(self, report_a, report_b):
+        html = _render_screening_page(report_a, report_b)
+        assert "Screening Algorithm" not in html
+
+    def test_section_absent_for_an_empty_entry(self, report_a, report_b):
+        """An empty payload suppresses the section rather than an empty table."""
+        vm = build_pair_view_model(
+            report_a, report_b, pair_id="R001__R002", screening={}
+        )
+        assert vm.screening is None
+        assert "Screening Algorithm" not in render_pair(vm)
+
+    def test_hostile_key_and_value_are_escaped(self, report_a, report_b):
+        html = _render_screening_page(
+            report_a, report_b,
+            screening={"<script>alert(1)</script>": "<b>bold</b>"},
+            screening_algorithm="<em>algo</em>",
+        )
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;" in html
+        assert "<b>bold</b>" not in html
+        assert "<em>algo</em>" not in html
+
+    def test_screening_survives_the_full_render_path(
+        self, report_a, report_b, tmp_path
+    ):
+        path = render_pair_html(
+            report_a, report_b, pair_id="R001__R002",
+            screening=_VIGIMATCH_ENTRY,
+            screening_algorithm="vigiMatch",
+            output_dir=tmp_path,
+        )
+        assert "vigiMatch" in path.read_text(encoding="utf-8")

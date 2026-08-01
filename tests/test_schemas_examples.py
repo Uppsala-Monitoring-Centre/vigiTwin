@@ -13,6 +13,7 @@ import pytest
 from llm_dup_dev.data.offline import (
     FrozenNarrativeDemographics,
     FrozenSourceCaseExtractions,
+    ScreeningDetails,
 )
 from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import ReportPair
@@ -38,6 +39,7 @@ MODEL_MAP = {
     "narrative_demographics": NarrativeDemographics,
     "frozen_source_case_extractions": FrozenSourceCaseExtractions,
     "frozen_narrative_demographics": FrozenNarrativeDemographics,
+    "screening_details": ScreeningDetails,
 }
 
 

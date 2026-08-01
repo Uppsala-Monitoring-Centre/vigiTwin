@@ -941,6 +941,33 @@ gated by `DecisionThresholds.explicit_link_enabled`. See
 
 ------
 
+## Screening Algorithm Details (presentation only)
+
+`ScreeningDetails`, defined in [`src/llm_dup_dev/data/offline.py`](../src/llm_dup_dev/data/offline.py), records the basis for the **screening** algorithm's classification — the algorithm that surfaced the candidate pair (e.g. vigiMatch), not this pipeline. It exists so that reviewers comparing an adjudication against the screening method can see what that method actually computed; nothing in feature generation or the decision logic reads it. It is consumed only by `review_html`, which renders each covered pair's entry verbatim in a Screening Algorithm section on the pair page.
+
+The artifact is a mapping keyed by `pair_id`, optionally wrapped with the algorithm's name:
+
+```
+{
+  "algorithm": "vigiMatch",
+  "entries": {
+    "507638__507864": {
+      "vaccine_pair": false,
+      "Score_Gender": 0.289343890439667,
+      "TotalScore": 6.4237356205981,
+      "Threshold": 4.06802742670859,
+      "IsSuspectedDuplicate": true
+    }
+  }
+}
+```
+
+The bare `{pair_id: {feature: value}}` form is accepted too and normalised on load (`algorithm` unset). Because screening algorithms vary, the per-pair payload is deliberately **untyped at the feature level**: any set of `feature -> value` pairs validates, and key insertion order is preserved as the display order. Values must be scalars (`str` / `int` / `float` / `bool` / `null`) or flat lists of scalars; nested objects are rejected, since there is no sensible rendering for one in a two-column table. Coverage may be partial — pairs absent from `entries` render without the section.
+
+Keys are `pair_id`s and follow the canonical identity rules above (see *Canonical pair identity*); `review_html.load_saved_run` checks them like every other pair-keyed artifact, so a pre-canonical artifact is rejected unless `allow_noncanonical_pairs=True`. Schema: [`schemas/screening_details.schema.json`](../schemas/screening_details.schema.json); example: [`examples/screening_details_example.json`](../examples/screening_details_example.json). See also [`integration_guide.md § Screening algorithm details`](integration_guide.md).
+
+------
+
 ## Summary
 
 The **minimal inputs required by the decision logic** are:
