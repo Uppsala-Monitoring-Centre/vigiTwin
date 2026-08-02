@@ -24,6 +24,7 @@ from llm_dup_dev.study_eval.aggregate import (
 from llm_dup_dev.study_eval.scle.agreement import AgreementReport
 from llm_dup_dev.study_eval.scle.consensus import SCLEConsensusResult
 from llm_dup_dev.study_eval.scle.discrepancy import DiscrepancyReport
+from llm_dup_dev.study_eval.scle.form import error_stage_name
 from llm_dup_dev.study_eval.stats import EstimateWithCI
 
 _ADJ_LABELS = ("Duplicates", "Otherwise_related", "Unrelated", "Abstain")
@@ -45,16 +46,25 @@ _RECALL_ESTIMANDS = (
     "recall_adjudicator_ceiling",
 )
 
-_CONSENSUS_DIMENSIONS = (
-    "case_difficulty",
-    "reference_label_issue",
-    "never_event",
-    "unexpected_method_behaviour",
-    "material_input_data_limitation",
-    "input_data_limitation_category",
-    "primary_error_source",
-    "implicated_feature_domains",
-)
+def _consensus_dimensions(result: SCLEConsensusResult) -> list[str]:
+    """The dimensions to tabulate, as recorded by the discrepancy report.
+
+    The set depends on the study's error-stage list, so it is read off the
+    artifact rather than hard-coded here.
+    """
+    return list(result.discrepancy_report.structured_dimensions)
+
+
+def _consensus_value(assessment, dimension: str):
+    """One consensus assessment's value on a dimension, as a scalar or list.
+
+    The per-stage dimensions are stored collapsed into ``error_stages``, so they
+    are expanded back to yes/no here.
+    """
+    stage = error_stage_name(dimension)
+    if stage is not None:
+        return "yes" if stage in assessment.error_stages else "no"
+    return getattr(assessment, dimension)
 
 
 class StudyResults(BaseModel):
@@ -260,16 +270,17 @@ def write_evaluable_counts_csv(
 
 
 def write_scle_consensus_csv(result: SCLEConsensusResult, path: str | Path) -> Path:
+    dimensions = _consensus_dimensions(result)
     header = ["pair_id"]
-    for dim in _CONSENSUS_DIMENSIONS:
+    for dim in dimensions:
         header.append(dim)
         header.append(f"{dim}_source")
     header.extend(["free_text_materially_different", "arbiter_rationale"])
     rows = []
     for a in result.consensus:
         row = [a.pair_id]
-        for dim in _CONSENSUS_DIMENSIONS:
-            value = getattr(a, dim)
+        for dim in dimensions:
+            value = _consensus_value(a, dim)
             if isinstance(value, list):
                 value = ";".join(value)
             row.append("" if value is None else value)
@@ -282,10 +293,11 @@ def write_scle_consensus_csv(result: SCLEConsensusResult, path: str | Path) -> P
 def write_scle_dimension_frequencies_csv(
     result: SCLEConsensusResult, path: str | Path
 ) -> Path:
+    dimensions = _consensus_dimensions(result)
     counts: dict[tuple[str, str], int] = {}
     for a in result.consensus:
-        for dim in _CONSENSUS_DIMENSIONS:
-            value = getattr(a, dim)
+        for dim in dimensions:
+            value = _consensus_value(a, dim)
             if isinstance(value, list):
                 for v in value:
                     counts[(dim, v)] = counts.get((dim, v), 0) + 1

@@ -7,9 +7,14 @@ import pytest
 
 from llm_dup_dev.study_eval import workflow
 from llm_dup_dev.study_eval.aggregate import AnalysisVariant
-from llm_dup_dev.study_eval.scle.feature_domains import (
+from llm_dup_dev.study_eval.scle.vocabularies import (
+    ERROR_STAGES_SHEET,
     FEATURE_DOMAINS_SHEET,
-    workbook_feature_domains,
+)
+from llm_dup_dev.study_eval.scle.workbook import (
+    DOMAIN_HEADER_PREFIX,
+    STAGE_HEADER_PREFIX,
+    workbook_vocabularies,
 )
 
 from tests.test_study_eval.conftest import (
@@ -262,10 +267,11 @@ def test_arbitration_workbook_links_to_packets(tmp_path):
         assert target == f"packets/{pid}.html"
 
 
-# --- feature-domain integration -------------------------------------------
 
-# A frozen list that is a strict subset of the package FEATURE_DOMAINS, so a
-# reviewer can enter a package-valid domain that is not in the frozen list.
+# --- study vocabulary integration ------------------------------------------
+
+# The study's frozen lists, deliberately unsorted so column order is testable.
+_FROZEN_STAGES = ("relationship_assessment", "evidence_extraction")
 _FROZEN_DOMAINS = ("demographics", "drugs")
 
 
@@ -283,56 +289,58 @@ def _pair_ids(path):
     return out
 
 
-def _set_domain_cell(path, pair_id, value):
-    """Set the implicated-feature-domains cell for one pair's row."""
-    wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
-    hdr = [c.value for c in ws[1]]
-    dom_col = hdr.index("Implicated feature domains (comma-separated)") + 1
-    pid_col = hdr.index("Pair ID") + 1
-    for r in range(2, ws.max_row + 1):
-        if ws.cell(row=r, column=pid_col).value == pair_id:
-            ws.cell(row=r, column=dom_col).value = value
-            break
-    wb.save(path)
-
-
-def test_generate_reviewer_workbooks_none_matches_default(tmp_path):
+def _precision_sample(tmp_path):
     reference_sets, predictions = _combined_inputs()
     analysis = workflow.run_analysis(
         reference_sets, predictions, seed="s", scle_precision_per_cell=2,
     )
-    sample = analysis.scle_samples["precision::prec"]
+    return analysis.scle_samples["precision::prec"]
+
+
+def test_omitting_the_vocabularies_drops_the_questions(tmp_path):
+    sample = _precision_sample(tmp_path)
 
     baseline = workflow.generate_reviewer_workbooks(
         sample, ["alice"], tmp_path / "base"
     )
     supplied = workflow.generate_reviewer_workbooks(
-        sample, ["alice"], tmp_path / "feat", feature_domains=_FROZEN_DOMAINS
+        sample,
+        ["alice"],
+        tmp_path / "full",
+        error_stages=_FROZEN_STAGES,
+        feature_domains=_FROZEN_DOMAINS,
     )
 
-    # feature_domains=None leaves the workbook exactly as before: no extra sheet,
-    # same pair ordering, same packet links.
+    # Without the lists there are no vocabulary sheets and no generated columns,
+    # but the sampled pairs and packet links are identical.
     base_wb = openpyxl.load_workbook(baseline[0])
     assert FEATURE_DOMAINS_SHEET not in base_wb.sheetnames
+    assert ERROR_STAGES_SHEET not in base_wb.sheetnames
+    base_hdr = [c.value for c in base_wb["cases"][1]]
+    assert not [h for h in base_hdr if h.startswith(STAGE_HEADER_PREFIX)]
+    assert not [h for h in base_hdr if h.startswith(DOMAIN_HEADER_PREFIX)]
     assert _pair_ids(baseline[0]) == _pair_ids(supplied[0])
     assert _packet_hyperlinks(baseline[0]) == _packet_hyperlinks(supplied[0])
 
 
-def test_generate_reviewer_workbooks_embeds_list_in_both(tmp_path):
-    reference_sets, predictions = _combined_inputs()
-    analysis = workflow.run_analysis(
-        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
-    )
-    sample = analysis.scle_samples["precision::prec"]
+def test_generate_reviewer_workbooks_embeds_lists_in_both(tmp_path):
+    sample = _precision_sample(tmp_path)
 
     workbooks = workflow.generate_reviewer_workbooks(
-        sample, ["alice", "bob"], tmp_path / "wb", feature_domains=_FROZEN_DOMAINS
+        sample,
+        ["alice", "bob"],
+        tmp_path / "wb",
+        error_stages=_FROZEN_STAGES,
+        feature_domains=_FROZEN_DOMAINS,
     )
     assert len(workbooks) == 2
     for wbpath in workbooks:
-        assert workbook_feature_domains(wbpath) == _FROZEN_DOMAINS
-        # Packet links and sampled pairs are unchanged by augmentation.
+        assert workbook_vocabularies(wbpath) == (_FROZEN_STAGES, _FROZEN_DOMAINS)
+        hdr = [c.value for c in openpyxl.load_workbook(wbpath)["cases"][1]]
+        assert [h for h in hdr if h.startswith(STAGE_HEADER_PREFIX)] == [
+            f"{STAGE_HEADER_PREFIX}{s}" for s in _FROZEN_STAGES
+        ]
+        # Packet links and sampled pairs are unaffected by the generated columns.
         assert all(
             target == f"packets/{pid}.html"
             for pid, target in _packet_hyperlinks(wbpath).items()
@@ -340,39 +348,95 @@ def test_generate_reviewer_workbooks_embeds_list_in_both(tmp_path):
     assert _pair_ids(workbooks[0]) == [c.pair_id for c in sample.cases]
 
 
-def test_invalid_reviewer_domain_rejected_before_arbitration_and_finalize(tmp_path):
-    reference_sets, predictions = _combined_inputs()
-    analysis = workflow.run_analysis(
-        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
-        output_dir=tmp_path / "analysis",
-    )
-    sample = analysis.scle_samples["precision::prec"]
-    fn_pair = next(c.pair_id for c in sample.cases if c.stratum == "FN")
+def test_bad_vocabulary_fails_before_any_workbook_is_written(tmp_path):
+    sample = _precision_sample(tmp_path)
+    out = tmp_path / "wb"
+    with pytest.raises(ValueError, match="error_stages"):
+        workflow.generate_reviewer_workbooks(
+            sample, ["alice", "bob"], out, error_stages=["a", " a "]
+        )
+    assert not list(out.glob("*.xlsx"))
 
+
+def test_mismatched_vocabulary_rejected_by_arbitration_and_finalize(tmp_path):
+    sample = _precision_sample(tmp_path)
     workbooks = workflow.generate_reviewer_workbooks(
-        sample, ["alice", "bob"], tmp_path / "wb", feature_domains=_FROZEN_DOMAINS
+        sample,
+        ["alice", "bob"],
+        tmp_path / "wb",
+        error_stages=_FROZEN_STAGES,
+        feature_domains=_FROZEN_DOMAINS,
     )
-    fill_reviewer_workbook(workbooks[0], "alice", never_event="no")
-    fill_reviewer_workbook(workbooks[1], "bob", never_event="yes")
-    # 'adverse_events' is a valid package domain but not in the frozen list, so
-    # the model read-back passes but the workflow gate must reject it.
-    _set_domain_cell(workbooks[0], fn_pair, "adverse_events")
+    fill_reviewer_workbook(
+        workbooks[0], "alice", never_event="no",
+        ticked_stages=("evidence_extraction",), ticked_domains=("drugs",),
+    )
+    fill_reviewer_workbook(
+        workbooks[1], "bob", never_event="yes",
+        ticked_stages=("evidence_extraction",), ticked_domains=("drugs",),
+    )
 
-    # Read-back itself succeeds (the model accepts package-valid domains).
-    from llm_dup_dev.study_eval.scle.workbook import read_reviewer_submission
-
-    read_reviewer_submission(workbooks[0], sample)
-
-    with pytest.raises(ValueError, match="adverse_events"):
+    # The workbooks were generated under _FROZEN_STAGES; a caller claiming a
+    # different frozen list is processing the wrong workbooks.
+    with pytest.raises(ValueError, match="error_stages"):
         workflow.build_arbitration(
-            sample, workbooks, tmp_path / "arb", feature_domains=_FROZEN_DOMAINS
+            sample, workbooks, tmp_path / "arb", error_stages=("something_else",)
         )
 
-    # Build an arbitration workbook without the gate so finalize can be exercised.
-    build = workflow.build_arbitration(sample, workbooks, tmp_path / "arb")
+    build = workflow.build_arbitration(
+        sample, workbooks, tmp_path / "arb",
+        error_stages=_FROZEN_STAGES, feature_domains=_FROZEN_DOMAINS,
+    )
     fill_arbitration_workbook(build.arbitration_workbook, build.discrepancy)
-    with pytest.raises(ValueError, match="adverse_events"):
+    with pytest.raises(ValueError, match="feature_domains"):
         workflow.finalize(
             sample, workbooks, build.arbitration_workbook, tmp_path / "final",
-            feature_domains=_FROZEN_DOMAINS,
+            feature_domains=("not_the_frozen_list",),
+        )
+
+
+def test_per_stage_dimensions_reach_agreement_and_consensus(tmp_path):
+    sample = _precision_sample(tmp_path)
+    workbooks = workflow.generate_reviewer_workbooks(
+        sample,
+        ["alice", "bob"],
+        tmp_path / "wb",
+        error_stages=_FROZEN_STAGES,
+        feature_domains=_FROZEN_DOMAINS,
+    )
+    # The reviewers tick different stages, so a per-stage dimension disagrees.
+    fill_reviewer_workbook(
+        workbooks[0], "alice", ticked_stages=("evidence_extraction",),
+        ticked_domains=("drugs",),
+    )
+    fill_reviewer_workbook(
+        workbooks[1], "bob", ticked_stages=("relationship_assessment",),
+        ticked_domains=("drugs",),
+    )
+
+    build = workflow.build_arbitration(sample, workbooks, tmp_path / "arb")
+    fields = {d.field for d in build.agreement.dimensions}
+    assert "error_stage::evidence_extraction" in fields
+    assert "error_stage::relationship_assessment" in fields
+    assert "implicated_feature_domains" in fields
+    disagreed = {
+        d.field
+        for p in build.discrepancy.pair_discrepancies
+        for d in p.dimension_disagreements
+    }
+    assert "error_stage::evidence_extraction" in disagreed
+
+    fill_arbitration_workbook(build.arbitration_workbook, build.discrepancy)
+    result = workflow.finalize(
+        sample, workbooks, build.arbitration_workbook, tmp_path / "final"
+    )
+    # Consensus resolves each stage to reviewer A's answer and collapses the
+    # per-stage dimensions back into one list, with per-stage provenance kept.
+    misclassified = [c for c in result.consensus.consensus if c.error_stages]
+    assert misclassified
+    for assessment in misclassified:
+        assert assessment.error_stages == ["evidence_extraction"]
+        assert (
+            assessment.dimension_sources["error_stage::evidence_extraction"]
+            == "arbitration"
         )

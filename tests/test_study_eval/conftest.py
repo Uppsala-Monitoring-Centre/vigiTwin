@@ -104,13 +104,35 @@ def build_scle_precision_sample(
     return reference_set, predictions, sample
 
 
+#: Vocabularies the test suite generates workbooks with, standing in for a
+#: study's frozen YAML lists. Deliberately short so column counts stay readable.
+ERROR_STAGES = ("evidence_extraction", "independence_assessment")
+FEATURE_DOMAINS = ("narrative", "drugs")
+
+
 def fill_reviewer_workbook(
-    path, reviewer: str, *, never_event: str = "no", ref_issue_first: str | None = None
+    path,
+    reviewer: str,
+    *,
+    never_event: str = "no",
+    ref_issue_first: str | None = None,
+    ticked_stages: tuple[str, ...] = ("evidence_extraction",),
+    ticked_domains: tuple[str, ...] = ("narrative",),
 ) -> None:
-    """Fill an on-disk reviewer workbook with valid answers (for tests)."""
+    """Fill an on-disk reviewer workbook with valid answers (for tests).
+
+    The stage and domain columns are tick-only, so only the entries named in
+    ``ticked_stages`` / ``ticked_domains`` get a 'yes'; the rest stay blank. An
+    entry the workbook has no column for is skipped, which lets one helper fill
+    workbooks generated with or without the vocabularies.
+    """
     import openpyxl
 
-    from llm_dup_dev.study_eval.scle.workbook import NOT_APPLICABLE
+    from llm_dup_dev.study_eval.scle.workbook import (
+        DOMAIN_HEADER_PREFIX,
+        NOT_APPLICABLE,
+        STAGE_HEADER_PREFIX,
+    )
 
     wb = openpyxl.load_workbook(path)
     ws = wb["cases"]
@@ -125,10 +147,18 @@ def fill_reviewer_workbook(
         if ws.cell(row=r, column=col("Never event")).value != NOT_APPLICABLE:
             ws.cell(row=r, column=col("Never event")).value = never_event
             ws.cell(row=r, column=col("Unexpected method behaviour")).value = "no"
-            ws.cell(row=r, column=col("Material input-data limitation")).value = "no"
-            ws.cell(row=r, column=col("Primary source of error")).value = (
-                "relationship_assessment"
+            ws.cell(row=r, column=col("Incorrect or imprecise input data")).value = "no"
+            ws.cell(row=r, column=col("Source of error")).value = (
+                "relationship assessment over-weighted the shared drug"
             )
+            for prefix, entries in (
+                (STAGE_HEADER_PREFIX, ticked_stages),
+                (DOMAIN_HEADER_PREFIX, ticked_domains),
+            ):
+                for entry in entries:
+                    header = f"{prefix}{entry}"
+                    if header in hdr:
+                        ws.cell(row=r, column=col(header)).value = "yes"
         md_cell = ws.cell(row=r, column=col("Method-difference explanation"))
         if md_cell.value != NOT_APPLICABLE:
             md_cell.value = "difference explanation"
@@ -139,7 +169,7 @@ def fill_arbitration_workbook(path, discrepancy) -> None:
     """Fill an arbitration workbook, resolving each disagreement to reviewer A."""
     import openpyxl
 
-    from llm_dup_dev.study_eval.scle.arbitration import _DIM_HEADER
+    from llm_dup_dev.study_eval.scle.arbitration import _dim_header
 
     wb = openpyxl.load_workbook(path)
     ws = wb["cases"]
@@ -155,6 +185,7 @@ def fill_arbitration_workbook(path, discrepancy) -> None:
         ws.cell(row=r, column=col("Consensus free-text")).value = "agreed text"
         ws.cell(row=r, column=col("Arbiter rationale")).value = "rationale"
         for field in disc.get(pid, ()):
-            a_val = ws.cell(row=r, column=col(f"{_DIM_HEADER[field]} (A)")).value
-            ws.cell(row=r, column=col(f"{_DIM_HEADER[field]} consensus")).value = a_val
+            header = _dim_header(field)
+            a_val = ws.cell(row=r, column=col(f"{header} (A)")).value
+            ws.cell(row=r, column=col(f"{header} consensus")).value = a_val
     wb.save(path)

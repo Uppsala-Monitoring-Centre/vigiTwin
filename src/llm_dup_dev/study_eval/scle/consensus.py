@@ -20,11 +20,11 @@ from pydantic import BaseModel
 from llm_dup_dev.study_eval.checksums import sha256_canonical_json
 from llm_dup_dev.study_eval.scle.arbitration import ArbitrationSubmission
 from llm_dup_dev.study_eval.scle.discrepancy import (
-    STRUCTURED_DIMENSIONS,
     DiscrepancyReport,
     _dimension_value,
+    report_dimensions,
 )
-from llm_dup_dev.study_eval.scle.form import ReviewerSubmission
+from llm_dup_dev.study_eval.scle.form import ReviewerSubmission, error_stage_name
 
 _SOURCE_AGREEMENT = "reviewer_agreement"
 _SOURCE_ARBITRATION = "arbitration"
@@ -35,7 +35,9 @@ class ConsensusAssessment(BaseModel):
 
     Structured dimension values are stored as their string form (enum value, or
     ``None`` when the dimension does not apply). ``dimension_sources`` maps each
-    structured dimension to ``reviewer_agreement`` or ``arbitration``.
+    structured dimension to ``reviewer_agreement`` or ``arbitration``; since the
+    error stages are one dimension each, their provenance is recorded per stage
+    even though the resolved answers collapse into the ``error_stages`` list.
 
     Free text is never merged automatically: both reviewers' assessments are
     retained in ``reviewer_free_texts``. ``consensus_free_text`` holds the
@@ -50,9 +52,8 @@ class ConsensusAssessment(BaseModel):
     reference_label_issue: str | None = None
     never_event: str | None = None
     unexpected_method_behaviour: str | None = None
-    material_input_data_limitation: str | None = None
-    input_data_limitation_category: str | None = None
-    primary_error_source: str | None = None
+    incorrect_or_imprecise_input_data: str | None = None
+    error_stages: list[str] = []
     implicated_feature_domains: list[str] = []
 
     dimension_sources: dict[str, str] = {}
@@ -105,6 +106,7 @@ def merge_consensus(
     ):
         raise ValueError("component mismatch among the two reviews and arbitration.")
 
+    dimensions = report_dimensions(sub_a, sub_b)
     a_by_pair = {a.pair_id: a for a in sub_a.assessments}
     b_by_pair = {b.pair_id: b for b in sub_b.assessments}
     arb_by_pair = {d.pair_id: d for d in arbitration.decisions}
@@ -123,8 +125,9 @@ def merge_consensus(
 
         resolved: dict[str, str | None] = {}
         domains: list[str] = []
+        stages: list[str] = []
         sources: dict[str, str] = {}
-        for field in STRUCTURED_DIMENSIONS:
+        for field in dimensions:
             va = _dimension_value(a, field)  # None or string
             vb = _dimension_value(b, field)
             if va == vb:
@@ -139,7 +142,11 @@ def merge_consensus(
                     )
                 value = decision.consensus_dimensions[field]
                 sources[field] = _SOURCE_ARBITRATION
-            if field == "implicated_feature_domains":
+            stage = error_stage_name(field)
+            if stage is not None:
+                if value == "yes":
+                    stages.append(stage)
+            elif field == "implicated_feature_domains":
                 domains = _parse_domains(value or "")
             else:
                 resolved[field] = value
@@ -150,9 +157,10 @@ def merge_consensus(
             reference_label_issue=resolved["reference_label_issue"],
             never_event=resolved["never_event"],
             unexpected_method_behaviour=resolved["unexpected_method_behaviour"],
-            material_input_data_limitation=resolved["material_input_data_limitation"],
-            input_data_limitation_category=resolved["input_data_limitation_category"],
-            primary_error_source=resolved["primary_error_source"],
+            incorrect_or_imprecise_input_data=resolved[
+                "incorrect_or_imprecise_input_data"
+            ],
+            error_stages=stages,
             implicated_feature_domains=domains,
             dimension_sources=sources,
             reviewer_free_texts={

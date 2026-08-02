@@ -33,13 +33,23 @@ from llm_dup_dev.study_eval.scle.discrepancy import (
 )
 from llm_dup_dev.study_eval.scle.form import (
     CaseDifficulty,
-    PrimaryErrorSource,
     ReferenceLabelIssue,
     ReviewerSubmission,
     SCLEAutoContext,
     SCLECaseAssessment,
-    YesNoUnclear,
+    YesNo,
+    error_stage_dimension,
+    structured_dimensions,
 )
+
+#: Vocabularies the example payloads are written under. These stand in for a
+#: study's frozen YAML lists; the package itself has no defaults.
+EXAMPLE_ERROR_STAGES = (
+    "evidence_extraction",
+    "independence_assessment",
+    "relationship_assessment",
+)
+EXAMPLE_FEATURE_DOMAINS = ("narrative", "drugs")
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "schemas"
@@ -159,10 +169,13 @@ def _assessment(pair_id, mis):
         free_text_assessment="Decisive shared source identifier.",
         case_difficulty=CaseDifficulty.NON_TRIVIAL,
         reference_label_issue=ReferenceLabelIssue.NO_APPARENT_ISSUE,
-        never_event=YesNoUnclear.NO if mis else None,
-        unexpected_method_behaviour=YesNoUnclear.NO if mis else None,
-        material_input_data_limitation=YesNoUnclear.NO if mis else None,
-        primary_error_source=PrimaryErrorSource.RELATIONSHIP_ASSESSMENT if mis else None,
+        never_event=YesNo.NO if mis else None,
+        unexpected_method_behaviour=YesNo.NO if mis else None,
+        incorrect_or_imprecise_input_data=YesNo.NO if mis else None,
+        error_source_description=(
+            "Relationship assessment over-weighted the shared drug." if mis else None
+        ),
+        error_stages=["relationship_assessment"] if mis else [],
         implicated_feature_domains=["narrative"] if mis else [],
         method_difference_explanation="Adjudicator down-weighted rarity." if mis else None,
     )
@@ -174,6 +187,8 @@ def _reviewer_submission(reviewer):
         reviewer_id=reviewer,
         evaluation_component="precision",
         sample_checksum="0" * 64,
+        error_stages=list(EXAMPLE_ERROR_STAGES),
+        feature_domains=list(EXAMPLE_FEATURE_DOMAINS),
         assessments=[_assessment("R001__R002", False), _assessment("R003__R004", True)],
     )
 
@@ -209,6 +224,7 @@ def _consensus_result():
         evaluation_component="precision",
         reviewer_a="alice",
         reviewer_b="bob",
+        structured_dimensions=list(structured_dimensions(EXAMPLE_ERROR_STAGES)),
         pair_discrepancies=[
             PairDiscrepancy(pair_id="R001__R002", dimension_disagreements=[]),
             PairDiscrepancy(
@@ -224,6 +240,7 @@ def _consensus_result():
         arbiter_id="carol",
         evaluation_component="precision",
         sample_checksum="0" * 64,
+        structured_dimensions=list(structured_dimensions(EXAMPLE_ERROR_STAGES)),
         decisions=[
             ArbitrationDecision(
                 pair_id="R003__R004",
@@ -248,10 +265,13 @@ def _consensus_result():
             reference_label_issue="no_apparent_issue",
             never_event="no",
             unexpected_method_behaviour="no",
-            material_input_data_limitation="no",
-            primary_error_source="relationship_assessment",
+            incorrect_or_imprecise_input_data="no",
+            error_stages=["relationship_assessment"],
             implicated_feature_domains=["narrative"],
-            dimension_sources={"never_event": "arbitration"},
+            dimension_sources={
+                "never_event": "arbitration",
+                error_stage_dimension("relationship_assessment"): "reviewer_agreement",
+            },
             reviewer_free_texts={"alice": "Root cause X.", "bob": "Root cause Y."},
             consensus_free_text="Agreed after discussion.",
             arbiter_rationale="No never-event.",

@@ -9,18 +9,30 @@ Applicability (from the protocol):
 
 * **Always** — free-text assessment, case difficulty, reference-label issue.
 * **Only for misclassified pairs** — never event, unexpected method behaviour,
-  material input-data limitation (+ its sub-category when present), primary
-  source of error, implicated feature domains.
+  incorrect or imprecise input data, the free-text source of error, the
+  contributing method stages, and the implicated feature domains.
 * **Only where the two methods disagree** — the free-text explanation of the
   difference between methods.
 
 "Misclassified" and "methods disagree" are properties of the frozen results,
 so the package computes them into :class:`SCLEAutoContext` at sampling time;
 reviewers never set them.
+
+Two of the misclassification dimensions are *list-valued* and study-configured:
+``error_stages`` (which method components contributed) and
+``implicated_feature_domains``. The study supplies the two vocabularies; this
+package hard-codes neither. Both are answered tick-only in the workbook — an
+unticked entry means "no", so an empty list is a valid answer and neither field
+joins the required-together block in :data:`MISCLASSIFICATION_DIMENSIONS`.
+
+The contributing stages are compared one dimension per stage (see
+:func:`structured_dimensions`), while the feature domains are compared as a
+single set-valued dimension.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 from typing import Literal
 
@@ -30,9 +42,22 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class CaseDifficulty(str, Enum):
-    """Whether correct binary classification would be trivial for the method."""
+    """How hard correct binary classification would be for the method.
+
+    * ``trivial`` — expected to be very rare. Duplicate identification is
+      inherently ambiguous, so reserve this for pairs where nothing is left to
+      judge: the reports match exactly, carry sufficient information, and are
+      explicitly linked to one another.
+    * ``clear`` — the correct label is clear to a human reviewer, but arriving at
+      it is not trivial for a computational method. Two reports whose narratives
+      plainly describe the same case belong here, because the method would still
+      have to extract that information reliably.
+    * ``non_trivial`` — genuinely difficult to classify.
+    * ``unclear`` — so difficult that the reviewer would have abstained.
+    """
 
     TRIVIAL = "trivial"
+    CLEAR = "clear"
     NON_TRIVIAL = "non_trivial"
     UNCLEAR = "unclear"
 
@@ -45,52 +70,55 @@ class ReferenceLabelIssue(str, Enum):
     GENUINELY_AMBIGUOUS = "genuinely_ambiguous"
 
 
-class YesNoUnclear(str, Enum):
-    """Three-valued answer used by several misclassification dimensions."""
+class YesNo(str, Enum):
+    """Binary answer used by every yes/no misclassification dimension."""
 
     YES = "yes"
     NO = "no"
-    UNCLEAR = "unclear"
 
-
-class InputDataLimitationCategory(str, Enum):
-    """Category of a material input-data limitation, when one is present."""
-
-    DATA_QUALITY_OR_ENCODING = "data_quality_or_encoding"
-    MISSING_INFORMATION = "missing_information"
-    UNAVAILABLE_TO_METHOD = "unavailable_to_method"
-    OTHER = "other"
-
-
-class PrimaryErrorSource(str, Enum):
-    """Method component principally responsible for a misclassification."""
-
-    EVIDENCE_EXTRACTION = "evidence_extraction"
-    INDEPENDENCE_ASSESSMENT = "independence_assessment"
-    RELATIONSHIP_ASSESSMENT = "relationship_assessment"
-    FINAL_DECISION_MAPPING = "final_decision_mapping"
-    COMPONENT_INTERACTION = "component_interaction"
-    INPUT_OR_REFERENCE_ISSUE = "input_or_reference_issue"
-    UNCLEAR = "unclear"
-
-
-#: The short prespecified list of feature domains a reviewer may implicate.
-#: MUST be frozen before workbooks are generated — mirrors the method's feature
-#: families (see docs/duplicate_adjudication_spec.md). Kept as a tuple so the
-#: workbook can offer it as a fixed multi-select vocabulary.
-FEATURE_DOMAINS: tuple[str, ...] = (
-    "demographics",
-    "drugs",
-    "adverse_events",
-    "dates",
-    "narrative",
-    "source_case_identifiers",
-    "ae_clinical_picture",
-    "reporting_context",
-)
 
 #: The two evaluation components an SCLE case can belong to.
 EvaluationComponent = Literal["precision", "recall"]
+
+#: Prefix distinguishing a per-stage dimension key from a fixed field name.
+ERROR_STAGE_PREFIX = "error_stage::"
+
+
+def error_stage_dimension(stage: str) -> str:
+    """Return the structured-dimension key for a contributing method stage."""
+    return f"{ERROR_STAGE_PREFIX}{stage}"
+
+
+def error_stage_name(dimension: str) -> str | None:
+    """Return the stage a dimension key refers to, or ``None`` if it is not one."""
+    if dimension.startswith(ERROR_STAGE_PREFIX):
+        return dimension[len(ERROR_STAGE_PREFIX) :]
+    return None
+
+
+#: Structured dimensions that exist regardless of the study's configuration.
+FIXED_STRUCTURED_DIMENSIONS: tuple[str, ...] = (
+    "case_difficulty",
+    "reference_label_issue",
+    "never_event",
+    "unexpected_method_behaviour",
+    "incorrect_or_imprecise_input_data",
+)
+
+
+def structured_dimensions(error_stages: Sequence[str]) -> tuple[str, ...]:
+    """Return the dimensions compared between reviewers, in workbook order.
+
+    One dimension per configured stage, so each stage gets its own agreement
+    statistic and its own arbiter consensus column. The feature domains stay a
+    single set-valued dimension however many are configured. Free-text fields
+    are never included — those are an arbiter judgement.
+    """
+    return (
+        *FIXED_STRUCTURED_DIMENSIONS,
+        *(error_stage_dimension(s) for s in error_stages),
+        "implicated_feature_domains",
+    )
 
 
 # --- Auto-populated context ------------------------------------------------
@@ -139,12 +167,20 @@ ALWAYS_DIMENSIONS: tuple[str, ...] = (
     "reference_label_issue",
 )
 
-#: Dimensions applicable only when the adjudicator misclassified the pair.
+#: Dimensions a misclassified pair must answer. The two list-valued fields are
+#: deliberately absent: they are answered tick-only, so an empty list is valid.
 MISCLASSIFICATION_DIMENSIONS: tuple[str, ...] = (
     "never_event",
     "unexpected_method_behaviour",
-    "material_input_data_limitation",
-    "primary_error_source",
+    "incorrect_or_imprecise_input_data",
+    "error_source_description",
+)
+
+#: List-valued fields that a misclassified pair *may* answer and a correctly
+#: classified pair must leave empty.
+MISCLASSIFICATION_LIST_DIMENSIONS: tuple[str, ...] = (
+    "error_stages",
+    "implicated_feature_domains",
 )
 
 #: Dimension applicable only where the two methods disagree.
@@ -156,6 +192,7 @@ def applicable_dimensions(context: SCLEAutoContext) -> set[str]:
     dims = set(ALWAYS_DIMENSIONS)
     if context.is_misclassified:
         dims.update(MISCLASSIFICATION_DIMENSIONS)
+        dims.update(MISCLASSIFICATION_LIST_DIMENSIONS)
     if context.methods_disagree:
         dims.update(DISAGREEMENT_DIMENSIONS)
     return dims
@@ -167,13 +204,14 @@ def applicable_dimensions(context: SCLEAutoContext) -> set[str]:
 class SCLECaseAssessment(BaseModel):
     """One reviewer's assessment of one SCLE case.
 
-    Conditional dimensions are ``None`` when they do not apply. The model
-    enforces *internal* consistency (the misclassification block is all-present
-    or all-absent; a limitation category is present exactly when a material
-    limitation is reported). The full check that presence matches the paired
-    :class:`SCLEAutoContext` is done by
+    Conditional dimensions are ``None`` (or an empty list) when they do not
+    apply. The model enforces *internal* consistency — the required
+    misclassification dimensions are all-present or all-absent. The full check
+    that presence matches the paired :class:`SCLEAutoContext` is done by
     :func:`check_assessment_against_context`, because the model does not carry
-    the context.
+    the context; validation of the two list-valued fields against the study's
+    frozen vocabularies happens at workbook read-back, which is where those
+    lists are available.
     """
 
     pair_id: str
@@ -183,51 +221,48 @@ class SCLECaseAssessment(BaseModel):
     case_difficulty: CaseDifficulty
     reference_label_issue: ReferenceLabelIssue
 
-    never_event: YesNoUnclear | None = None
-    unexpected_method_behaviour: YesNoUnclear | None = None
-    material_input_data_limitation: YesNoUnclear | None = None
-    input_data_limitation_category: InputDataLimitationCategory | None = None
-    primary_error_source: PrimaryErrorSource | None = None
+    never_event: YesNo | None = None
+    unexpected_method_behaviour: YesNo | None = None
+    incorrect_or_imprecise_input_data: YesNo | None = None
+    error_source_description: str | None = None
+    error_stages: list[str] = Field(default_factory=list)
     implicated_feature_domains: list[str] = Field(default_factory=list)
 
     method_difference_explanation: str | None = None
 
+    @property
+    def misclassification_answered(self) -> bool:
+        """Whether the misclassification block was applicable to this case.
+
+        The block is filled all-or-nothing (enforced below), so any one of its
+        required members answers the question. Comparison code uses this to tell
+        "the reviewer ticked nothing" apart from "the question was never asked",
+        which matters for the two tick-only list dimensions.
+        """
+        return self.never_event is not None
+
     @model_validator(mode="after")
     def _check_internal_consistency(self) -> "SCLECaseAssessment":
         block = {
-            "never_event": self.never_event,
-            "unexpected_method_behaviour": self.unexpected_method_behaviour,
-            "material_input_data_limitation": self.material_input_data_limitation,
-            "primary_error_source": self.primary_error_source,
+            name: getattr(self, name) for name in MISCLASSIFICATION_DIMENSIONS
         }
-        set_fields = [name for name, val in block.items() if val is not None]
+        set_fields = [
+            name for name, val in block.items() if val not in (None, "")
+        ]
         if set_fields and len(set_fields) != len(block):
-            missing = [name for name, val in block.items() if val is None]
+            missing = [name for name, val in block.items() if val in (None, "")]
             raise ValueError(
                 f"pair {self.pair_id!r}: misclassification dimensions must be "
                 f"filled as a group; set {set_fields} but missing {missing}."
             )
 
-        limitation_present = (
-            self.material_input_data_limitation == YesNoUnclear.YES
-        )
-        if limitation_present and self.input_data_limitation_category is None:
-            raise ValueError(
-                f"pair {self.pair_id!r}: material_input_data_limitation is "
-                f"'yes' but input_data_limitation_category is missing."
-            )
-        if not limitation_present and self.input_data_limitation_category is not None:
-            raise ValueError(
-                f"pair {self.pair_id!r}: input_data_limitation_category is set "
-                f"but material_input_data_limitation is not 'yes'."
-            )
-
-        unknown = [d for d in self.implicated_feature_domains if d not in FEATURE_DOMAINS]
-        if unknown:
-            raise ValueError(
-                f"pair {self.pair_id!r}: unknown feature domain(s) {unknown}. "
-                f"Allowed: {FEATURE_DOMAINS}."
-            )
+        for name in MISCLASSIFICATION_LIST_DIMENSIONS:
+            values = getattr(self, name)
+            duplicates = sorted({v for v in values if values.count(v) > 1})
+            if duplicates:
+                raise ValueError(
+                    f"pair {self.pair_id!r}: {name} repeats {duplicates}."
+                )
         return self
 
 
@@ -238,7 +273,9 @@ def check_assessment_against_context(
 
     An empty list means the assessment fills exactly the applicable dimensions
     (and no inapplicable ones). This is the source-of-truth check run when a
-    reviewer submission is read back.
+    reviewer submission is read back. The two list-valued dimensions are checked
+    one-sidedly: they may be empty on a misclassified case (nothing was
+    implicated) but must be empty on a correctly classified one.
     """
     problems: list[str] = []
     if assessment.pair_id != context.pair_id:
@@ -263,11 +300,13 @@ def check_assessment_against_context(
                 f"{context.pair_id}: dimension {field!r} is not applicable but "
                 f"was filled with {value!r}."
             )
-    if not context.is_misclassified and assessment.implicated_feature_domains:
-        problems.append(
-            f"{context.pair_id}: implicated_feature_domains set on a correctly "
-            f"classified case."
-        )
+    if not context.is_misclassified:
+        for field in MISCLASSIFICATION_LIST_DIMENSIONS:
+            if getattr(assessment, field):
+                problems.append(
+                    f"{context.pair_id}: {field} set on a correctly classified "
+                    f"case."
+                )
     return problems
 
 
@@ -280,26 +319,37 @@ class ReviewerSubmission(BaseModel):
     ``sample_checksum`` is the sha256 of the ``SCLESample`` JSON the workbook
     was generated from, tying the submission to the exact sampled case list so a
     stale or mismatched workbook is caught on read-back.
+
+    ``error_stages`` and ``feature_domains`` are the study's frozen vocabularies
+    as embedded in the workbook the submission was read from. They travel with
+    the submission so that agreement, discrepancy detection, arbitration, and
+    consensus can derive the dimension set from the data rather than having the
+    configuration threaded into each of them.
     """
 
     workbook_id: str
     reviewer_id: str
     evaluation_component: EvaluationComponent
     sample_checksum: str
+    error_stages: list[str] = Field(default_factory=list)
+    feature_domains: list[str] = Field(default_factory=list)
     assessments: list[SCLECaseAssessment]
 
 
 __all__ = [
     "CaseDifficulty",
     "ReferenceLabelIssue",
-    "YesNoUnclear",
-    "InputDataLimitationCategory",
-    "PrimaryErrorSource",
-    "FEATURE_DOMAINS",
+    "YesNo",
     "EvaluationComponent",
+    "ERROR_STAGE_PREFIX",
+    "error_stage_dimension",
+    "error_stage_name",
+    "FIXED_STRUCTURED_DIMENSIONS",
+    "structured_dimensions",
     "SCLEAutoContext",
     "ALWAYS_DIMENSIONS",
     "MISCLASSIFICATION_DIMENSIONS",
+    "MISCLASSIFICATION_LIST_DIMENSIONS",
     "DISAGREEMENT_DIMENSIONS",
     "applicable_dimensions",
     "SCLECaseAssessment",

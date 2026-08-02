@@ -3,6 +3,15 @@
   "reviewer_id": "alice",
   "evaluation_component": "precision",
   "sample_checksum": "0000000000000000000000000000000000000000000000000000000000000000",
+  "error_stages": [
+    "evidence_extraction",
+    "independence_assessment",
+    "relationship_assessment"
+  ],
+  "feature_domains": [
+    "narrative",
+    "drugs"
+  ],
   "assessments": [
     {
       "pair_id": "R001__R002",
@@ -12,9 +21,9 @@
       "reference_label_issue": "no_apparent_issue",
       "never_event": null,
       "unexpected_method_behaviour": null,
-      "material_input_data_limitation": null,
-      "input_data_limitation_category": null,
-      "primary_error_source": null,
+      "incorrect_or_imprecise_input_data": null,
+      "error_source_description": null,
+      "error_stages": [],
       "implicated_feature_domains": [],
       "method_difference_explanation": null
     },
@@ -26,9 +35,11 @@
       "reference_label_issue": "no_apparent_issue",
       "never_event": "no",
       "unexpected_method_behaviour": "no",
-      "material_input_data_limitation": "no",
-      "input_data_limitation_category": null,
-      "primary_error_source": "relationship_assessment",
+      "incorrect_or_imprecise_input_data": "no",
+      "error_source_description": "Relationship assessment over-weighted the shared drug.",
+      "error_stages": [
+        "relationship_assessment"
+      ],
       "implicated_feature_domains": [
         "narrative"
       ],
