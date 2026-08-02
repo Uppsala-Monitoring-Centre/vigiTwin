@@ -178,12 +178,25 @@ under a different rule.
   greyed auto-context columns on the left (filled by the package — reference
   label, adjudicator output, confusion cell / joint stratum, decision trace),
   dropdown-validated response columns on the right. Non-applicable dimensions are
-  pre-filled `not_applicable`. Excel protection is advisory, so **read-back is
-  the source of truth**: `read_reviewer_submission` re-validates vocabularies,
-  applicability, coverage, and an embedded sample checksum.
+  pre-filled `not_applicable`. Every question carries its interpretation as a
+  comment on its header cell plus a row on the `guidance` sheet. Excel protection
+  is advisory, so **read-back is the source of truth**:
+  `read_reviewer_submission` re-validates vocabularies, applicability, coverage,
+  and an embedded sample checksum.
+- **Study vocabularies** ([scle/vocabularies.py](../src/llm_dup_dev/study_eval/scle/vocabularies.py)):
+  two ordered lists the study freezes and the caller supplies —
+  `error_stages` (method components a reviewer may flag as contributing to a
+  misclassification) and `feature_domains`. **Each entry becomes one tick-only
+  yes/no column**, so the two lists determine part of the workbook's column set.
+  The package has no defaults: a list left unset simply drops that question from
+  the examination. Each list is embedded in a worksheet of its own, so a workbook
+  describes its own columns and every later step recovers them from the data
+  rather than being handed the configuration again.
 - **Agreement** ([scle/agreement.py](../src/llm_dup_dev/study_eval/scle/agreement.py)):
   per structured dimension, percent agreement and Cohen's kappa, plus an overall
-  percent agreement.
+  percent agreement. Each configured error stage is **its own dimension**
+  (`error_stage::<stage>`) with its own kappa; the feature domains stay a single
+  set-valued dimension.
 - **Arbitration** focuses on the structurally-disagreeing pairs only; agreement
   pairs are auto-resolved from the reviews at finalize time.
 - **Consensus** ([scle/consensus.py](../src/llm_dup_dev/study_eval/scle/consensus.py))
@@ -376,8 +389,10 @@ make between the adjudicator and the screening method. Format and semantics:
   `screening_mode: observed`, every pair carries a `screening_retrieved` verdict
   and every precision pair is `screening_retrieved`. `study_eval.preflight`
   checks all of this and reports every problem at once.
-- [ ] `FEATURE_DOMAINS` ([scle/form.py](../src/llm_dup_dev/study_eval/scle/form.py)),
-  the CI method (Wilson), and the sampling `seed` are frozen and recorded.
+- [ ] The study's `error_stages` and `feature_domains` lists, the CI method
+  (Wilson), and the sampling `seed` are frozen and recorded. The two lists are
+  passed to `generate_reviewer_workbooks`; **omitting one drops that question
+  from the examination**, so an accidental omission is a silent scope change.
 - [ ] Read submissions/arbitration back through `read_reviewer_submission` /
   `read_arbitration` (Excel protection is advisory; these are the source of truth).
 - [ ] Secondary configurations run as Step-1-only (`sample_scle=False`).

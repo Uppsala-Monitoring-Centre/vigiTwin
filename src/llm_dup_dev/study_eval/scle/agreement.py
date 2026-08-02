@@ -6,6 +6,10 @@ submission read-back). For each dimension: the number of comparable pairs, raw
 percent agreement, and **Cohen's kappa** (``None`` when kappa is undefined — no
 comparable pairs, or both reviewers used a single identical category). Free-text
 assessments are not compared here (that is an arbiter judgement).
+
+The dimension set comes from the submissions themselves, so each error stage the
+study configured gets its own agreement statistic (see
+:func:`~llm_dup_dev.study_eval.scle.discrepancy.report_dimensions`).
 """
 
 from __future__ import annotations
@@ -15,8 +19,8 @@ from collections import Counter
 from pydantic import BaseModel
 
 from llm_dup_dev.study_eval.scle.discrepancy import (
-    STRUCTURED_DIMENSIONS,
     _dimension_value,
+    report_dimensions,
 )
 from llm_dup_dev.study_eval.scle.form import ReviewerSubmission
 
@@ -69,14 +73,15 @@ def compute_agreement(
 ) -> AgreementReport:
     """Compute inter-reviewer agreement between two submissions.
 
-    Both submissions must be for the same component and cover the same pairs
-    (raises ``ValueError`` otherwise).
+    Both submissions must be for the same component, cover the same pairs, and
+    carry the same vocabularies (raises ``ValueError`` otherwise).
     """
     if sub_a.evaluation_component != sub_b.evaluation_component:
         raise ValueError(
             f"components differ: {sub_a.evaluation_component!r} vs "
             f"{sub_b.evaluation_component!r}."
         )
+    fields = report_dimensions(sub_a, sub_b)
     by_pair_a = {a.pair_id: a for a in sub_a.assessments}
     by_pair_b = {b.pair_id: b for b in sub_b.assessments}
     if set(by_pair_a) != set(by_pair_b):
@@ -86,7 +91,7 @@ def compute_agreement(
     dimensions: list[DimensionAgreement] = []
     total_compared = total_agree = 0
 
-    for field in STRUCTURED_DIMENSIONS:
+    for field in fields:
         paired: list[tuple[str, str]] = []
         for pid in pair_ids:
             va = _dimension_value(by_pair_a[pid], field)

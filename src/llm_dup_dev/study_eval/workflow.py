@@ -51,11 +51,7 @@ from llm_dup_dev.study_eval.scle.discrepancy import (
     DiscrepancyReport,
     detect_discrepancies,
 )
-from llm_dup_dev.study_eval.scle.feature_domains import (
-    augment_reviewer_workbook,
-    normalise_feature_domains,
-    validate_submission_feature_domains,
-)
+from llm_dup_dev.study_eval.scle.vocabularies import normalise_vocabulary
 from llm_dup_dev.study_eval.scle.workbook import (
     read_reviewer_submission,
     write_reviewer_workbook,
@@ -248,6 +244,7 @@ def generate_reviewer_workbooks(
     output_dir: str | Path,
     *,
     packet_dir: str | None = "packets",
+    error_stages: Sequence[str] | None = None,
     feature_domains: Sequence[str] | None = None,
 ) -> list[Path]:
     """Step 2 — write one reviewer workbook per reviewer for ``sample``.
@@ -255,17 +252,24 @@ def generate_reviewer_workbooks(
     Each row's Packet cell links to ``{packet_dir}/<pair_id>.html`` (relative to
     the workbook). Pass ``packet_dir=None`` to omit the links.
 
-    ``feature_domains`` is the study's frozen, ordered list of implicable feature
-    domains (supplied by the caller, not taken from the package default). When
-    given, each workbook is made self-contained: instruction 6 is updated and the
-    list is embedded (see :func:`~llm_dup_dev.study_eval.scle.feature_domains.\
-augment_reviewer_workbook`). The list is validated up front, so a bad
-    configuration fails before any file is written.
+    ``error_stages`` (the method components a reviewer may flag as contributing
+    to a misclassification) and ``feature_domains`` (the feature families a
+    reviewer may implicate) are the study's frozen, ordered vocabularies,
+    supplied by the caller — the package has no defaults. Each entry becomes one
+    tick-only yes/no column and each list is embedded in the workbook, making it
+    self-describing. **Omitting a list drops that question from the examination
+    entirely.** Both are validated up front, so a bad configuration fails before
+    any file is written.
     """
     from llm_dup_dev.study_eval.scle.packets import packet_targets
 
+    stages = (
+        normalise_vocabulary(error_stages, label="error_stages")
+        if error_stages is not None
+        else None
+    )
     domains = (
-        normalise_feature_domains(feature_domains)
+        normalise_vocabulary(feature_domains, label="feature_domains")
         if feature_domains is not None
         else None
     )
@@ -275,10 +279,13 @@ augment_reviewer_workbook`). The list is validated up front, so a bad
     for reviewer in reviewers:
         path = out / f"reviewer_{reviewer}.xlsx"
         p, _ = write_reviewer_workbook(
-            sample, reviewer, path, packet_targets=targets
+            sample,
+            reviewer,
+            path,
+            packet_targets=targets,
+            error_stages=stages,
+            feature_domains=domains,
         )
-        if domains is not None:
-            augment_reviewer_workbook(p, domains)
         written.append(p)
     manifest = build_manifest("workbooks", _new_run_id(), outputs=written)
     write_manifest(out, manifest)
@@ -286,6 +293,34 @@ augment_reviewer_workbook`). The list is validated up front, so a bad
 
 
 # --- Step 3: arbitration ---------------------------------------------------
+
+
+def _check_submission_vocabularies(
+    submission,
+    error_stages: Sequence[str] | None,
+    feature_domains: Sequence[str] | None,
+) -> None:
+    """Assert a submission was answered under the expected frozen vocabularies.
+
+    Each workbook embeds the lists it was generated from and the read-back
+    recovers them, so this is a guard against a workbook generated from a
+    different configuration being fed into arbitration or consensus — not the
+    primary validation, which happens at read-back.
+    """
+    expected = {
+        "error_stages": error_stages,
+        "feature_domains": feature_domains,
+    }
+    for name, configured in expected.items():
+        if configured is None:
+            continue
+        wanted = list(normalise_vocabulary(configured, label=name))
+        found = list(getattr(submission, name))
+        if found != wanted:
+            raise ValueError(
+                f"reviewer {submission.reviewer_id!r}: workbook was generated "
+                f"with {name} {found} but {wanted} was configured."
+            )
 
 
 class ArbitrationBuild(BaseModel):
@@ -305,6 +340,7 @@ def build_arbitration(
     *,
     arbiter_id: str = "",
     packet_dir: str | None = "packets",
+    error_stages: Sequence[str] | None = None,
     feature_domains: Sequence[str] | None = None,
 ) -> ArbitrationBuild:
     """Step 3 — agreement statistics + a disagreement-focused arbitration book.
@@ -313,9 +349,10 @@ def build_arbitration(
     independent reviewers). Each arbitration row's Packet cell links to
     ``{packet_dir}/<pair_id>.html``; pass ``packet_dir=None`` to omit the links.
 
-    Pass the same frozen ``feature_domains`` list used to generate the workbooks
-    to validate reviewer-entered domains before agreement/discrepancy: each
-    reviewer's domains must be from the list, with none repeated within a case.
+    The workbooks carry the vocabularies they were answered under, so the
+    structured dimensions are derived from them. Passing the same frozen
+    ``error_stages`` / ``feature_domains`` used to generate them is optional and
+    acts as a cross-check that the right workbooks are being processed.
     """
     from llm_dup_dev.study_eval.scle.packets import packet_targets
 
@@ -327,9 +364,8 @@ def build_arbitration(
     sub_a = read_reviewer_submission(reviewer_workbooks[0], sample)
     sub_b = read_reviewer_submission(reviewer_workbooks[1], sample)
 
-    if feature_domains is not None:
-        validate_submission_feature_domains(sub_a, feature_domains)
-        validate_submission_feature_domains(sub_b, feature_domains)
+    _check_submission_vocabularies(sub_a, error_stages, feature_domains)
+    _check_submission_vocabularies(sub_b, error_stages, feature_domains)
 
     agreement = compute_agreement(sub_a, sub_b)
     discrepancy = detect_discrepancies(sub_a, sub_b)
@@ -378,12 +414,13 @@ def finalize(
     arbitration_workbook: Path | str,
     output_dir: str | Path,
     *,
+    error_stages: Sequence[str] | None = None,
     feature_domains: Sequence[str] | None = None,
 ) -> FinalizeResult:
     """Step 4 — merge reviews + arbitration into consensus and final tables.
 
-    Pass the same frozen ``feature_domains`` list used to generate the workbooks
-    to validate reviewer-entered domains before consensus processing.
+    As in :func:`build_arbitration`, passing the study's frozen vocabularies is
+    an optional cross-check; the workbooks carry their own.
     """
     from llm_dup_dev.study_eval.scle.arbitration import read_arbitration
 
@@ -394,9 +431,8 @@ def finalize(
     out = Path(output_dir)
     sub_a = read_reviewer_submission(reviewer_workbooks[0], sample)
     sub_b = read_reviewer_submission(reviewer_workbooks[1], sample)
-    if feature_domains is not None:
-        validate_submission_feature_domains(sub_a, feature_domains)
-        validate_submission_feature_domains(sub_b, feature_domains)
+    _check_submission_vocabularies(sub_a, error_stages, feature_domains)
+    _check_submission_vocabularies(sub_b, error_stages, feature_domains)
     discrepancy = detect_discrepancies(sub_a, sub_b)
     arbitration = read_arbitration(arbitration_workbook, sample)
     consensus = merge_consensus(sub_a, sub_b, arbitration, discrepancy)

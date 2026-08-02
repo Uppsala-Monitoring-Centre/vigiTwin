@@ -38,7 +38,7 @@
       "type": "object"
     },
     "ArbitrationSubmission": {
-      "description": "The arbiter's complete set of decisions for one component.",
+      "description": "The arbiter's complete set of decisions for one component.\n\n``structured_dimensions`` is the dimension set the workbook was written for,\nrecovered from the workbook itself on read-back.",
       "properties": {
         "arbitration_id": {
           "title": "Arbitration Id",
@@ -55,6 +55,14 @@
         "sample_checksum": {
           "title": "Sample Checksum",
           "type": "string"
+        },
+        "structured_dimensions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Structured Dimensions",
+          "type": "array"
         },
         "decisions": {
           "items": {
@@ -75,9 +83,10 @@
       "type": "object"
     },
     "CaseDifficulty": {
-      "description": "Whether correct binary classification would be trivial for the method.",
+      "description": "How hard correct binary classification would be for the method.\n\n* ``trivial`` \u2014 expected to be very rare. Duplicate identification is\n  inherently ambiguous, so reserve this for pairs where nothing is left to\n  judge: the reports match exactly, carry sufficient information, and are\n  explicitly linked to one another.\n* ``clear`` \u2014 the correct label is clear to a human reviewer, but arriving at\n  it is not trivial for a computational method. Two reports whose narratives\n  plainly describe the same case belong here, because the method would still\n  have to extract that information reliably.\n* ``non_trivial`` \u2014 genuinely difficult to classify.\n* ``unclear`` \u2014 so difficult that the reviewer would have abstained.",
       "enum": [
         "trivial",
+        "clear",
         "non_trivial",
         "unclear"
       ],
@@ -85,7 +94,7 @@
       "type": "string"
     },
     "ConsensusAssessment": {
-      "description": "The resolved assessment for one pair, with per-dimension provenance.\n\nStructured dimension values are stored as their string form (enum value, or\n``None`` when the dimension does not apply). ``dimension_sources`` maps each\nstructured dimension to ``reviewer_agreement`` or ``arbitration``.\n\nFree text is never merged automatically: both reviewers' assessments are\nretained in ``reviewer_free_texts``. ``consensus_free_text`` holds the\narbiter's text for a pair that went to arbitration (a structural\ndisagreement); it is empty for an agreement pair, where the two reviewer\ntexts stand on their own.",
+      "description": "The resolved assessment for one pair, with per-dimension provenance.\n\nStructured dimension values are stored as their string form (enum value, or\n``None`` when the dimension does not apply). ``dimension_sources`` maps each\nstructured dimension to ``reviewer_agreement`` or ``arbitration``; since the\nerror stages are one dimension each, their provenance is recorded per stage\neven though the resolved answers collapse into the ``error_stages`` list.\n\nFree text is never merged automatically: both reviewers' assessments are\nretained in ``reviewer_free_texts``. ``consensus_free_text`` holds the\narbiter's text for a pair that went to arbitration (a structural\ndisagreement); it is empty for an agreement pair, where the two reviewer\ntexts stand on their own.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -139,7 +148,7 @@
           "default": null,
           "title": "Unexpected Method Behaviour"
         },
-        "material_input_data_limitation": {
+        "incorrect_or_imprecise_input_data": {
           "anyOf": [
             {
               "type": "string"
@@ -149,31 +158,15 @@
             }
           ],
           "default": null,
-          "title": "Material Input Data Limitation"
+          "title": "Incorrect Or Imprecise Input Data"
         },
-        "input_data_limitation_category": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Input Data Limitation Category"
-        },
-        "primary_error_source": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Primary Error Source"
+        "error_stages": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Error Stages",
+          "type": "array"
         },
         "implicated_feature_domains": {
           "default": [],
@@ -265,7 +258,7 @@
       "type": "object"
     },
     "DiscrepancyReport": {
-      "description": "The structured-disagreement picture between two submissions.",
+      "description": "The structured-disagreement picture between two submissions.\n\n``structured_dimensions`` records the dimensions actually compared, in\nworkbook order, so downstream steps reproduce exactly this set.",
       "properties": {
         "evaluation_component": {
           "title": "Evaluation Component",
@@ -278,6 +271,14 @@
         "reviewer_b": {
           "title": "Reviewer B",
           "type": "string"
+        },
+        "structured_dimensions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Structured Dimensions",
+          "type": "array"
         },
         "pair_discrepancies": {
           "items": {
@@ -295,17 +296,6 @@
       ],
       "title": "DiscrepancyReport",
       "type": "object"
-    },
-    "InputDataLimitationCategory": {
-      "description": "Category of a material input-data limitation, when one is present.",
-      "enum": [
-        "data_quality_or_encoding",
-        "missing_information",
-        "unavailable_to_method",
-        "other"
-      ],
-      "title": "InputDataLimitationCategory",
-      "type": "string"
     },
     "PairDiscrepancy": {
       "description": "All structured disagreements on one pair (empty list means full agreement).",
@@ -329,20 +319,6 @@
       "title": "PairDiscrepancy",
       "type": "object"
     },
-    "PrimaryErrorSource": {
-      "description": "Method component principally responsible for a misclassification.",
-      "enum": [
-        "evidence_extraction",
-        "independence_assessment",
-        "relationship_assessment",
-        "final_decision_mapping",
-        "component_interaction",
-        "input_or_reference_issue",
-        "unclear"
-      ],
-      "title": "PrimaryErrorSource",
-      "type": "string"
-    },
     "ReferenceLabelIssue": {
       "description": "Whether the reference label looks sound, suspect, or genuinely ambiguous.",
       "enum": [
@@ -354,7 +330,7 @@
       "type": "string"
     },
     "ReviewerSubmission": {
-      "description": "A single reviewer's complete set of assessments for one component.\n\n``sample_checksum`` is the sha256 of the ``SCLESample`` JSON the workbook\nwas generated from, tying the submission to the exact sampled case list so a\nstale or mismatched workbook is caught on read-back.",
+      "description": "A single reviewer's complete set of assessments for one component.\n\n``sample_checksum`` is the sha256 of the ``SCLESample`` JSON the workbook\nwas generated from, tying the submission to the exact sampled case list so a\nstale or mismatched workbook is caught on read-back.\n\n``error_stages`` and ``feature_domains`` are the study's frozen vocabularies\nas embedded in the workbook the submission was read from. They travel with\nthe submission so that agreement, discrepancy detection, arbitration, and\nconsensus can derive the dimension set from the data rather than having the\nconfiguration threaded into each of them.",
       "properties": {
         "workbook_id": {
           "title": "Workbook Id",
@@ -376,6 +352,20 @@
           "title": "Sample Checksum",
           "type": "string"
         },
+        "error_stages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Error Stages",
+          "type": "array"
+        },
+        "feature_domains": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Feature Domains",
+          "type": "array"
+        },
         "assessments": {
           "items": {
             "$ref": "#/$defs/SCLECaseAssessment"
@@ -395,7 +385,7 @@
       "type": "object"
     },
     "SCLECaseAssessment": {
-      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` when they do not apply. The model\nenforces *internal* consistency (the misclassification block is all-present\nor all-absent; a limitation category is present exactly when a material\nlimitation is reported). The full check that presence matches the paired\n:class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context.",
+      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` (or an empty list) when they do not\napply. The model enforces *internal* consistency \u2014 the required\nmisclassification dimensions are all-present or all-absent. The full check\nthat presence matches the paired :class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context; validation of the two list-valued fields against the study's\nfrozen vocabularies happens at workbook read-back, which is where those\nlists are available.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -418,7 +408,7 @@
         "never_event": {
           "anyOf": [
             {
-              "$ref": "#/$defs/YesNoUnclear"
+              "$ref": "#/$defs/YesNo"
             },
             {
               "type": "null"
@@ -429,7 +419,7 @@
         "unexpected_method_behaviour": {
           "anyOf": [
             {
-              "$ref": "#/$defs/YesNoUnclear"
+              "$ref": "#/$defs/YesNo"
             },
             {
               "type": "null"
@@ -437,10 +427,10 @@
           ],
           "default": null
         },
-        "material_input_data_limitation": {
+        "incorrect_or_imprecise_input_data": {
           "anyOf": [
             {
-              "$ref": "#/$defs/YesNoUnclear"
+              "$ref": "#/$defs/YesNo"
             },
             {
               "type": "null"
@@ -448,27 +438,24 @@
           ],
           "default": null
         },
-        "input_data_limitation_category": {
+        "error_source_description": {
           "anyOf": [
             {
-              "$ref": "#/$defs/InputDataLimitationCategory"
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Error Source Description"
         },
-        "primary_error_source": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PrimaryErrorSource"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "error_stages": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Error Stages",
+          "type": "array"
         },
         "implicated_feature_domains": {
           "items": {
@@ -500,14 +487,13 @@
       "title": "SCLECaseAssessment",
       "type": "object"
     },
-    "YesNoUnclear": {
-      "description": "Three-valued answer used by several misclassification dimensions.",
+    "YesNo": {
+      "description": "Binary answer used by every yes/no misclassification dimension.",
       "enum": [
         "yes",
-        "no",
-        "unclear"
+        "no"
       ],
-      "title": "YesNoUnclear",
+      "title": "YesNo",
       "type": "string"
     }
   },

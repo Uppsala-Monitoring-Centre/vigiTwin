@@ -7,14 +7,15 @@ from pydantic import ValidationError
 
 from llm_dup_dev.study_eval.scle.form import (
     CaseDifficulty,
-    InputDataLimitationCategory,
-    PrimaryErrorSource,
     ReferenceLabelIssue,
     SCLEAutoContext,
     SCLECaseAssessment,
-    YesNoUnclear,
+    YesNo,
     applicable_dimensions,
     check_assessment_against_context,
+    error_stage_dimension,
+    error_stage_name,
+    structured_dimensions,
 )
 
 
@@ -39,6 +40,8 @@ def test_applicable_dimensions_by_flags():
     mis = _ctx(misclassified=True, disagree=True)
     dims = applicable_dimensions(mis)
     assert "never_event" in dims
+    assert "error_source_description" in dims
+    assert "error_stages" in dims
     assert "method_difference_explanation" in dims
 
 
@@ -52,10 +55,50 @@ def _correct_assessment(pair_id="A__B"):
     )
 
 
+def _misclassified_assessment(pair_id="A__B", **overrides):
+    payload = {
+        "pair_id": pair_id,
+        "reviewer_id": "r",
+        "free_text_assessment": "x",
+        "case_difficulty": CaseDifficulty.NON_TRIVIAL,
+        "reference_label_issue": ReferenceLabelIssue.NO_APPARENT_ISSUE,
+        "never_event": YesNo.NO,
+        "unexpected_method_behaviour": YesNo.NO,
+        "incorrect_or_imprecise_input_data": YesNo.NO,
+        "error_source_description": "interaction of extraction and relationship",
+    }
+    payload.update(overrides)
+    return SCLECaseAssessment(**payload)
+
+
 def test_correct_case_passes_context_check():
     a = _correct_assessment()
     ctx = _ctx(misclassified=False, disagree=False)
     assert check_assessment_against_context(a, ctx) == []
+
+
+def test_clear_is_a_valid_case_difficulty():
+    a = _correct_assessment()
+    assert a.case_difficulty is CaseDifficulty.TRIVIAL
+    clear = SCLECaseAssessment.model_validate(
+        {**a.model_dump(), "case_difficulty": "clear"}
+    )
+    assert clear.case_difficulty is CaseDifficulty.CLEAR
+
+
+def test_case_difficulty_offers_four_ordered_categories():
+    # Member order is the workbook's dropdown order, so it is part of the form.
+    assert [m.value for m in CaseDifficulty] == [
+        "trivial",
+        "clear",
+        "non_trivial",
+        "unclear",
+    ]
+
+
+def test_yes_no_dimensions_reject_unclear():
+    with pytest.raises(ValidationError):
+        _misclassified_assessment(never_event="unclear")
 
 
 def test_missing_misclassification_dimension_flagged():
@@ -66,20 +109,28 @@ def test_missing_misclassification_dimension_flagged():
 
 
 def test_inapplicable_dimension_filled_flagged():
-    a = SCLECaseAssessment(
-        pair_id="A__B",
-        reviewer_id="r",
-        free_text_assessment="x",
-        case_difficulty=CaseDifficulty.TRIVIAL,
-        reference_label_issue=ReferenceLabelIssue.NO_APPARENT_ISSUE,
-        never_event=YesNoUnclear.NO,
-        unexpected_method_behaviour=YesNoUnclear.NO,
-        material_input_data_limitation=YesNoUnclear.NO,
-        primary_error_source=PrimaryErrorSource.UNCLEAR,
-    )
+    a = _misclassified_assessment()
     ctx = _ctx(misclassified=False, disagree=False)
     problems = check_assessment_against_context(a, ctx)
     assert any("not applicable" in p for p in problems)
+
+
+def test_tick_only_lists_may_be_empty_on_a_misclassified_case():
+    a = _misclassified_assessment()
+    ctx = _ctx(misclassified=True, disagree=False)
+    assert a.error_stages == []
+    assert a.implicated_feature_domains == []
+    assert check_assessment_against_context(a, ctx) == []
+
+
+def test_tick_only_lists_must_be_empty_on_a_correct_case():
+    a = _correct_assessment()
+    filled = SCLECaseAssessment.model_validate(
+        {**a.model_dump(), "error_stages": ["evidence_extraction"]}
+    )
+    ctx = _ctx(misclassified=False, disagree=False)
+    problems = check_assessment_against_context(filled, ctx)
+    assert any("error_stages" in p for p in problems)
 
 
 def test_misclassification_block_must_be_all_or_nothing():
@@ -90,33 +141,44 @@ def test_misclassification_block_must_be_all_or_nothing():
             free_text_assessment="x",
             case_difficulty=CaseDifficulty.TRIVIAL,
             reference_label_issue=ReferenceLabelIssue.NO_APPARENT_ISSUE,
-            never_event=YesNoUnclear.NO,  # only one of the four set
+            never_event=YesNo.NO,  # only one of the four set
         )
 
 
-def test_limitation_category_requires_material_yes():
+def test_free_text_source_of_error_is_part_of_the_block():
     with pytest.raises(ValidationError):
-        SCLECaseAssessment(
-            pair_id="A__B",
-            reviewer_id="r",
-            free_text_assessment="x",
-            case_difficulty=CaseDifficulty.TRIVIAL,
-            reference_label_issue=ReferenceLabelIssue.NO_APPARENT_ISSUE,
-            never_event=YesNoUnclear.NO,
-            unexpected_method_behaviour=YesNoUnclear.NO,
-            material_input_data_limitation=YesNoUnclear.NO,  # not "yes"
-            input_data_limitation_category=InputDataLimitationCategory.OTHER,
-            primary_error_source=PrimaryErrorSource.UNCLEAR,
-        )
+        _misclassified_assessment(error_source_description=None)
 
 
-def test_unknown_feature_domain_rejected():
+def test_repeated_tick_only_entry_rejected():
     with pytest.raises(ValidationError):
-        SCLECaseAssessment(
-            pair_id="A__B",
-            reviewer_id="r",
-            free_text_assessment="x",
-            case_difficulty=CaseDifficulty.TRIVIAL,
-            reference_label_issue=ReferenceLabelIssue.NO_APPARENT_ISSUE,
-            implicated_feature_domains=["not_a_domain"],
+        _misclassified_assessment(
+            implicated_feature_domains=["narrative", "narrative"]
         )
+
+
+def test_misclassification_answered_distinguishes_unasked_from_unticked():
+    assert _misclassified_assessment().misclassification_answered
+    assert not _correct_assessment().misclassification_answered
+
+
+def test_structured_dimensions_expand_the_configured_stages():
+    dims = structured_dimensions(["evidence_extraction", "independence_assessment"])
+    assert dims == (
+        "case_difficulty",
+        "reference_label_issue",
+        "never_event",
+        "unexpected_method_behaviour",
+        "incorrect_or_imprecise_input_data",
+        "error_stage::evidence_extraction",
+        "error_stage::independence_assessment",
+        "implicated_feature_domains",
+    )
+    # With no configured stages the per-stage dimensions simply do not exist.
+    assert not any("error_stage" in d for d in structured_dimensions([]))
+
+
+def test_error_stage_dimension_roundtrip():
+    dim = error_stage_dimension("relationship_assessment")
+    assert error_stage_name(dim) == "relationship_assessment"
+    assert error_stage_name("case_difficulty") is None

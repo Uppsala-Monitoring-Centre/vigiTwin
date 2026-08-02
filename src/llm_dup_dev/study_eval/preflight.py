@@ -26,8 +26,8 @@ screening data physically exist somewhere, so a pair is free to belong to an
 never silent: a warning names the set and how many values went unused.
 
 Problems are accumulated and raised as a single ``ValueError`` (the style of
-:func:`llm_dup_dev.study_eval.scle.feature_domains.validate_submission_feature_domains`)
-so one preflight run reports every blocking issue rather than the first.
+:func:`llm_dup_dev.study_eval.scle.workbook.read_reviewer_submission`) so one
+preflight run reports every blocking issue rather than the first.
 """
 
 from __future__ import annotations

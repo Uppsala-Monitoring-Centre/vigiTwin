@@ -10,11 +10,17 @@ plus a rationale.
 
 As with the reviewer workbook, the read-back is the source of truth and is
 validated against the originating sample.
+
+Which structured dimensions exist depends on the study's error-stage list, so the
+dimension set is taken from the :class:`DiscrepancyReport` when the workbook is
+written and embedded in a sheet of its own, letting the read-back recover it
+without being handed the configuration again.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -23,46 +29,69 @@ from pydantic import BaseModel
 
 from llm_dup_dev.study_eval.checksums import sha256_canonical_json
 from llm_dup_dev.study_eval.sampling import SCLESample
-from llm_dup_dev.study_eval.scle.discrepancy import (
-    STRUCTURED_DIMENSIONS,
-    DiscrepancyReport,
-)
+from llm_dup_dev.study_eval.scle.discrepancy import DiscrepancyReport
 from llm_dup_dev.study_eval.scle.form import (
     CaseDifficulty,
-    InputDataLimitationCategory,
-    PrimaryErrorSource,
     ReferenceLabelIssue,
     ReviewerSubmission,
-    YesNoUnclear,
+    YesNo,
+    error_stage_name,
+)
+from llm_dup_dev.study_eval.scle.vocabularies import (
+    read_vocabulary_sheet,
+    write_vocabulary_sheet,
 )
 from llm_dup_dev.study_eval.scle.workbook import (
     CASES_SHEET,
     METADATA_SHEET,
+    STAGE_HEADER_PREFIX,
     _cell_str,
     _set_packet_hyperlink,
 )
 
-# Enum option lists per structured dimension (feature domains are free text).
-_FIELD_ENUM: dict[str, type[Enum]] = {
+#: Sheet recording the structured dimensions this arbitration covers.
+DIMENSIONS_SHEET = "Dimensions"
+
+# Enum option lists per fixed structured dimension (feature domains are free
+# text; every per-stage dimension is yes/no).
+_FIXED_FIELD_ENUM: dict[str, type[Enum]] = {
     "case_difficulty": CaseDifficulty,
     "reference_label_issue": ReferenceLabelIssue,
-    "never_event": YesNoUnclear,
-    "unexpected_method_behaviour": YesNoUnclear,
-    "material_input_data_limitation": YesNoUnclear,
-    "input_data_limitation_category": InputDataLimitationCategory,
-    "primary_error_source": PrimaryErrorSource,
+    "never_event": YesNo,
+    "unexpected_method_behaviour": YesNo,
+    "incorrect_or_imprecise_input_data": YesNo,
 }
 
-_DIM_HEADER = {
+_FIXED_DIM_HEADER = {
     "case_difficulty": "Case difficulty",
     "reference_label_issue": "Reference-label issue",
     "never_event": "Never event",
     "unexpected_method_behaviour": "Unexpected method behaviour",
-    "material_input_data_limitation": "Material input-data limitation",
-    "input_data_limitation_category": "Input-data limitation category",
-    "primary_error_source": "Primary source of error",
+    "incorrect_or_imprecise_input_data": "Incorrect or imprecise input data",
     "implicated_feature_domains": "Implicated feature domains",
 }
+
+
+def _field_enum(dimension: str) -> type[Enum] | None:
+    """The dropdown vocabulary for a dimension, or ``None`` where it is free text."""
+    if error_stage_name(dimension) is not None:
+        return YesNo
+    return _FIXED_FIELD_ENUM.get(dimension)
+
+
+def _dim_header(dimension: str) -> str:
+    """The reviewer-facing name of a dimension, mirroring the reviewer workbook."""
+    stage = error_stage_name(dimension)
+    if stage is not None:
+        return f"{STAGE_HEADER_PREFIX}{stage}"
+    try:
+        return _FIXED_DIM_HEADER[dimension]
+    except KeyError:  # pragma: no cover - guards a mis-wired dimension list
+        raise ValueError(
+            f"no arbitration header defined for structured dimension "
+            f"{dimension!r}."
+        ) from None
+
 
 _MATERIALLY_DIFFERENT_HEADER = "Free-text materially different"
 _CONSENSUS_FREE_TEXT_HEADER = "Consensus free-text"
@@ -86,19 +115,30 @@ class ArbitrationDecision(BaseModel):
 
 
 class ArbitrationSubmission(BaseModel):
-    """The arbiter's complete set of decisions for one component."""
+    """The arbiter's complete set of decisions for one component.
+
+    ``structured_dimensions`` is the dimension set the workbook was written for,
+    recovered from the workbook itself on read-back.
+    """
 
     arbitration_id: str
     arbiter_id: str
     evaluation_component: str
     sample_checksum: str
+    structured_dimensions: list[str] = []
     decisions: list[ArbitrationDecision]
 
 
 def _dim_value(assessment, field: str) -> str:
-    value = getattr(assessment, field)
+    """Render one reviewer's answer on a dimension for the side-by-side columns."""
+    stage = error_stage_name(field)
+    if stage is not None:
+        if not assessment.misclassification_answered:
+            return ""
+        return YesNo.YES.value if stage in assessment.error_stages else YesNo.NO.value
     if field == "implicated_feature_domains":
-        return ", ".join(sorted(value)) if value else ""
+        return ", ".join(sorted(assessment.implicated_feature_domains))
+    value = getattr(assessment, field)
     if value is None:
         return ""
     return getattr(value, "value", str(value))
@@ -119,7 +159,9 @@ def write_arbitration_workbook(
 
     Only the structurally-disagreeing pairs appear. Each row's Packet cell links
     to the pair's HTML review file when a target is supplied in
-    ``packet_targets``. Returns the written path and the arbitration id.
+    ``packet_targets``. The dimension set comes from ``report`` and is embedded
+    in the :data:`DIMENSIONS_SHEET` sheet. Returns the written path and the
+    arbitration id.
     """
     import openpyxl  # type: ignore[import-untyped]
     from openpyxl.styles import Font, PatternFill  # type: ignore[import-untyped]
@@ -127,6 +169,7 @@ def write_arbitration_workbook(
 
     arbitration_id = arbitration_id or uuid.uuid4().hex[:12]
     sample_checksum = sha256_canonical_json(sample)
+    dimensions: Sequence[str] = report.structured_dimensions
 
     ctx_by_pair = {c.pair_id: c.auto_context for c in sample.cases}
     a_by_pair = {a.pair_id: a for a in sub_a.assessments}
@@ -152,6 +195,8 @@ def write_arbitration_workbook(
     for i, (k, v) in enumerate(meta_rows.items(), start=2):
         meta[f"A{i}"], meta[f"B{i}"] = k, v
 
+    write_vocabulary_sheet(wb, DIMENSIONS_SHEET, dimensions, Font)
+
     ws = wb.create_sheet(CASES_SHEET)
 
     # Build the header layout.
@@ -164,8 +209,8 @@ def write_arbitration_workbook(
         "Packet",
     ]
     consensus_col_of: dict[str, int] = {}
-    for field in STRUCTURED_DIMENSIONS:
-        h = _DIM_HEADER[field]
+    for field in dimensions:
+        h = _dim_header(field)
         headers.append(f"{h} (A)")
         headers.append(f"{h} (B)")
         headers.append(f"{h} consensus")
@@ -201,7 +246,7 @@ def write_arbitration_workbook(
     # Consensus dropdowns per enum dimension + the materially-different flag.
     dv_by_col: dict[int, "DataValidation"] = {}
     for field, col_idx in consensus_col_of.items():
-        enum_cls = _FIELD_ENUM.get(field)
+        enum_cls = _field_enum(field)
         if enum_cls is None:
             continue
         opts = ",".join(str(m.value) for m in enum_cls)
@@ -230,8 +275,8 @@ def write_arbitration_workbook(
             "Free-text (A)": a.free_text_assessment if a else "",
             "Free-text (B)": b.free_text_assessment if b else "",
         }
-        for field in STRUCTURED_DIMENSIONS:
-            h = _DIM_HEADER[field]
+        for field in dimensions:
+            h = _dim_header(field)
             row[f"{h} (A)"] = _dim_value(a, field) if a else ""
             row[f"{h} (B)"] = _dim_value(b, field) if b else ""
         for c_idx, h in enumerate(headers, start=1):
@@ -279,6 +324,12 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
     if meta_map.get("evaluation_component") != sample.evaluation_component:
         raise ValueError(f"{path}: component mismatch with sample.")
 
+    dimensions = (
+        read_vocabulary_sheet(wb[DIMENSIONS_SHEET])
+        if DIMENSIONS_SHEET in wb.sheetnames
+        else ()
+    )
+
     ws = wb[CASES_SHEET]
     rows = list(ws.iter_rows(values_only=True))
     header = [_cell_str(h) for h in rows[0]]
@@ -299,8 +350,8 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
             continue
 
         consensus: dict[str, str] = {}
-        for field in STRUCTURED_DIMENSIONS:
-            col = f"{_DIM_HEADER[field]} consensus"
+        for field in dimensions:
+            col = f"{_dim_header(field)} consensus"
             if col in idx:
                 val = _cell_str(row[idx[col]])
                 if val:
@@ -342,11 +393,13 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
         arbiter_id=meta_map.get("arbiter_id", ""),
         evaluation_component=sample.evaluation_component,
         sample_checksum=expected,
+        structured_dimensions=list(dimensions),
         decisions=decisions,
     )
 
 
 __all__ = [
+    "DIMENSIONS_SHEET",
     "ArbitrationDecision",
     "ArbitrationSubmission",
     "write_arbitration_workbook",

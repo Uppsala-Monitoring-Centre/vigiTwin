@@ -49,7 +49,11 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
 def _cmd_workbooks(args: argparse.Namespace) -> int:
     sample = _load_sample(args.sample)
     written = workflow.generate_reviewer_workbooks(
-        sample, args.reviewer, args.output_dir
+        sample,
+        args.reviewer,
+        args.output_dir,
+        error_stages=args.error_stage,
+        feature_domains=args.feature_domain,
     )
     for p in written:
         print(f"Wrote {p}")
@@ -105,6 +109,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--sample", required=True)
     p.add_argument("--reviewer", action="append", required=True)
     p.add_argument("--output-dir", required=True)
+    p.add_argument(
+        "--error-stage",
+        action="append",
+        help="method component a reviewer may flag as contributing to a "
+        "misclassification; give once per stage, in the study's frozen order. "
+        "Omit to leave the question out of the examination.",
+    )
+    p.add_argument(
+        "--feature-domain",
+        action="append",
+        help="feature domain a reviewer may implicate; give once per domain, in "
+        "the study's frozen order. Omit to leave the question out of the "
+        "examination.",
+    )
     p.set_defaults(func=_cmd_workbooks)
 
     p = sub.add_parser("arbitrate", help="step 3: agreement + arbitration workbook")

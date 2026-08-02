@@ -15,6 +15,51 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+### Breaking — SCLE form simplified and partly study-configured
+
+The study team refined the Structured Case-Level Examination questions. Full
+detail, including what the secure side must do, is in
+`docs/migration_notes_scle_form_simplification.md`; the aggregate performance
+analysis (Step 1) is untouched.
+
+- **Case difficulty gained a `clear` category** between `trivial` and
+  `non_trivial`. Duplicate identification is inherently ambiguous, so `trivial`
+  is now reserved for pairs where nothing is left to judge; `clear` covers pairs
+  whose correct label is obvious to a human but would still require reliable
+  extraction by a computational method.
+- **`never_event` and `unexpected_method_behaviour` are strictly `yes`/`no`.**
+  `YesNoUnclear` is replaced by `YesNo`; existing `unclear` answers are no
+  longer expressible.
+- **`material_input_data_limitation` and `input_data_limitation_category` are
+  replaced by one binary `incorrect_or_imprecise_input_data`** — the only
+  input-data problem the team expects to identify reliably. The
+  `InputDataLimitationCategory` enum is removed.
+- **`primary_error_source` is replaced by a free-text `error_source_description`
+  plus one tick-only flag per method stage.** Misclassifications usually involve
+  an interaction between components, which a single-choice enum could not
+  express. The `PrimaryErrorSource` enum is removed.
+- **The stage list and the feature-domain list are now study configuration that
+  generates columns.** `generate_reviewer_workbooks` takes `error_stages`
+  alongside `feature_domains`; each entry becomes one tick-only yes/no column,
+  and each list is embedded in the workbook so every later step recovers it from
+  the artifact. The package-level `FEATURE_DOMAINS` default is removed —
+  **omitting a list now drops that question from the examination**.
+- **The structured-dimension set is no longer fixed.** Each configured stage is
+  its own dimension (`error_stage::<stage>`) with its own kappa and arbiter
+  consensus column; feature domains stay one set-valued dimension.
+  `DiscrepancyReport` and `ArbitrationSubmission` gained `structured_dimensions`;
+  `ReviewerSubmission` gained `error_stages` and `feature_domains`.
+- **Tick-only answering changes an agreement denominator.** A blank cell means
+  "no", so two reviewers who both ticked nothing on a tick-only dimension now
+  count as agreeing rather than being skipped as inapplicable.
+- **Every question carries its interpretation inside the workbook** — a comment
+  on its header cell plus a `guidance` sheet.
+- Module `scle/feature_domains.py` became `scle/vocabularies.py`;
+  `augment_reviewer_workbook` and `validate_submission_feature_domains` are
+  removed (an out-of-vocabulary domain is no longer expressible). The
+  `study_eval` CLI's `workbooks` subcommand gained repeatable `--error-stage`
+  and `--feature-domain` flags.
+
 ### Documentation and tests
 
 - Pinned and documented the exact scope of what a canonical `pair_id`
