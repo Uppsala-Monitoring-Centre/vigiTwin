@@ -1,8 +1,8 @@
 """The arbitration workbook and its validated read-back.
 
 The arbiter (the co-author who produced the original reference annotation) works
-one workbook covering **all** SCLE cases, with the structurally discrepant ones
-flagged and sorted to the top. Each row shows both reviewers' values for every
+one workbook covering the structurally discrepant SCLE pairs, on a ``pairs``
+sheet laid out like the reviewers'. Each row shows both reviewers' values for every
 structured dimension side by side and both free-text assessments; the arbiter
 fills a consensus value for the dimensions that disagreed, judges whether the
 free-text interpretations differ materially, and writes a consensus free-text
@@ -42,11 +42,17 @@ from llm_dup_dev.study_eval.scle.vocabularies import (
     write_vocabulary_sheet,
 )
 from llm_dup_dev.study_eval.scle.workbook import (
-    CASES_SHEET,
     METADATA_SHEET,
+    PAIRS_SHEET,
     STAGE_HEADER_PREFIX,
+    _DEFAULT_WIDTH,
+    _PAIR_ID_HEADER,
+    _PAIR_ID_WIDTH,
+    _PROSE_WIDTH,
+    _alignments,
     _cell_str,
     _set_packet_hyperlink,
+    _style_sheet,
 )
 
 #: Sheet recording the structured dimensions this arbitration covers.
@@ -63,7 +69,7 @@ _FIXED_FIELD_ENUM: dict[str, type[Enum]] = {
 }
 
 _FIXED_DIM_HEADER = {
-    "case_difficulty": "Case difficulty",
+    "case_difficulty": "Difficulty",
     "reference_label_issue": "Reference-label issue",
     "never_event": "Never event",
     "unexpected_method_behaviour": "Unexpected method behaviour",
@@ -96,6 +102,25 @@ def _dim_header(dimension: str) -> str:
 _MATERIALLY_DIFFERENT_HEADER = "Free-text materially different"
 _CONSENSUS_FREE_TEXT_HEADER = "Consensus free-text"
 _ARBITER_RATIONALE_HEADER = "Arbiter rationale"
+
+#: Columns holding sentences rather than labels, mirroring the reviewer
+#: workbook's prose columns: left-aligned, with room to wrap.
+_PROSE_HEADERS: frozenset[str] = frozenset(
+    {
+        "Free-text (A)",
+        "Free-text (B)",
+        _CONSENSUS_FREE_TEXT_HEADER,
+        _ARBITER_RATIONALE_HEADER,
+    }
+)
+
+
+def _arbitration_width(header: str) -> int:
+    if header in _PROSE_HEADERS:
+        return _PROSE_WIDTH
+    if header == _PAIR_ID_HEADER:
+        return _PAIR_ID_WIDTH
+    return _DEFAULT_WIDTH
 
 
 class ArbitrationDecision(BaseModel):
@@ -157,11 +182,11 @@ def write_arbitration_workbook(
 ) -> tuple[Path, str]:
     """Write the arbitration workbook for one component.
 
-    Only the structurally-disagreeing pairs appear. Each row's Packet cell links
-    to the pair's HTML review file when a target is supplied in
-    ``packet_targets``. The dimension set comes from ``report`` and is embedded
-    in the :data:`DIMENSIONS_SHEET` sheet. Returns the written path and the
-    arbitration id.
+    Only the structurally-disagreeing pairs appear. Each row's pair id links to
+    the pair's HTML review file when a target is supplied in ``packet_targets``.
+    The dimension set comes from ``report`` and is embedded in the
+    :data:`DIMENSIONS_SHEET` sheet. Returns the written path and the arbitration
+    id.
     """
     import openpyxl  # type: ignore[import-untyped]
     from openpyxl.styles import Font, PatternFill  # type: ignore[import-untyped]
@@ -197,17 +222,22 @@ def write_arbitration_workbook(
 
     write_vocabulary_sheet(wb, DIMENSIONS_SHEET, dimensions, Font)
 
-    ws = wb.create_sheet(CASES_SHEET)
+    ws = wb.create_sheet(PAIRS_SHEET)
 
-    # Build the header layout.
-    headers: list[str] = [
-        "Pair ID",
-        "Reference label",
-        "Adjudicator output",
-        "Confusion cell",
-        "Joint stratum",
-        "Packet",
-    ]
+    # Focus the workbook on the structurally-disagreeing pairs only; agreement
+    # pairs are auto-resolved from the reviews at finalize time.
+    ordered = sorted(disagree_pairs)
+
+    # Build the header layout. The pair id cell carries the packet link, so
+    # there is no packet column; a stratum column none of the arbitrated pairs
+    # populates is left out, as in the reviewer workbook.
+    headers: list[str] = [_PAIR_ID_HEADER, "Reference label", "Adjudicator output"]
+    for field, header in (
+        ("confusion_cell", "Confusion cell"),
+        ("joint_stratum", "Joint stratum"),
+    ):
+        if any(getattr(ctx_by_pair[pair_id], field) for pair_id in ordered):
+            headers.append(header)
     consensus_col_of: dict[str, int] = {}
     for field in dimensions:
         h = _dim_header(field)
@@ -228,18 +258,19 @@ def write_arbitration_workbook(
 
     grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
     context_headers = {
-        "Pair ID",
+        _PAIR_ID_HEADER,
         "Reference label",
         "Adjudicator output",
         "Confusion cell",
         "Joint stratum",
-        "Packet",
         "Free-text (A)",
         "Free-text (B)",
     }
+    header_align, centre, left = _alignments()
     for c_idx, h in enumerate(headers, start=1):
         cell = ws.cell(row=1, column=c_idx, value=h)
         cell.font = Font(bold=True)
+        cell.alignment = header_align
         if h in context_headers or h.endswith("(A)") or h.endswith("(B)"):
             cell.fill = grey
 
@@ -256,22 +287,17 @@ def write_arbitration_workbook(
     dv_material = DataValidation(type="list", formula1='"yes,no"', allow_blank=True)
     ws.add_data_validation(dv_material)
 
-    # Focus the workbook on the structurally-disagreeing pairs only; agreement
-    # pairs are auto-resolved from the reviews at finalize time.
-    ordered = sorted(disagree_pairs)
-
     for r_idx, pair_id in enumerate(ordered, start=2):
         ctx = ctx_by_pair[pair_id]
         a = a_by_pair.get(pair_id)
         b = b_by_pair.get(pair_id)
         target = (packet_targets or {}).get(pair_id)
         row = {
-            "Pair ID": pair_id,
+            _PAIR_ID_HEADER: pair_id,
             "Reference label": ctx.reference_label,
             "Adjudicator output": ctx.adjudicator_final_label,
             "Confusion cell": ctx.confusion_cell or "",
             "Joint stratum": ctx.joint_stratum or "",
-            "Packet": "",
             "Free-text (A)": a.free_text_assessment if a else "",
             "Free-text (B)": b.free_text_assessment if b else "",
         }
@@ -280,19 +306,22 @@ def write_arbitration_workbook(
             row[f"{h} (A)"] = _dim_value(a, field) if a else ""
             row[f"{h} (B)"] = _dim_value(b, field) if b else ""
         for c_idx, h in enumerate(headers, start=1):
+            cell = ws.cell(row=r_idx, column=c_idx)
+            cell.alignment = left if h in _PROSE_HEADERS else centre
             if h not in row:
                 continue
-            cell = ws.cell(row=r_idx, column=c_idx)
             if h in context_headers or h.endswith("(A)") or h.endswith("(B)"):
                 cell.fill = grey
-            if h == "Packet" and target:
-                _set_packet_hyperlink(cell, target)
+            if h == _PAIR_ID_HEADER and target:
+                _set_packet_hyperlink(cell, target, text=pair_id)
             else:
                 cell.value = row[h]
         # Attach dropdowns to consensus + materially-different cells.
         for col_idx, dv in dv_by_col.items():
             dv.add(ws.cell(row=r_idx, column=col_idx))
         dv_material.add(ws.cell(row=r_idx, column=materially_col))
+
+    _style_sheet(ws, [_arbitration_width(h) for h in headers])
 
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -305,10 +334,10 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
     import openpyxl  # type: ignore[import-untyped]
 
     wb = openpyxl.load_workbook(path, data_only=True)
-    if METADATA_SHEET not in wb.sheetnames or CASES_SHEET not in wb.sheetnames:
+    if METADATA_SHEET not in wb.sheetnames or PAIRS_SHEET not in wb.sheetnames:
         raise ValueError(
             f"{path}: workbook must contain '{METADATA_SHEET}' and "
-            f"'{CASES_SHEET}' sheets."
+            f"'{PAIRS_SHEET}' sheets."
         )
     meta = wb[METADATA_SHEET]
     meta_map: dict[str, str] = {}
@@ -330,7 +359,7 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
         else ()
     )
 
-    ws = wb[CASES_SHEET]
+    ws = wb[PAIRS_SHEET]
     rows = list(ws.iter_rows(values_only=True))
     header = [_cell_str(h) for h in rows[0]]
     idx = {h: i for i, h in enumerate(header)}
@@ -342,7 +371,9 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
     for row in rows[1:]:
         if row is None or all(v is None for v in row):
             continue
-        pair_id = _cell_str(row[idx["Pair ID"]]) if "Pair ID" in idx else ""
+        pair_id = (
+            _cell_str(row[idx[_PAIR_ID_HEADER]]) if _PAIR_ID_HEADER in idx else ""
+        )
         if not pair_id:
             continue
         if pair_id not in sample_pairs:

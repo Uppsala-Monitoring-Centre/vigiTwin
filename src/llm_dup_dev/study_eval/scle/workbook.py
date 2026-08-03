@@ -1,12 +1,16 @@
 """Reviewer workbooks: XLSX generation and validated read-back.
 
-Each reviewer receives an identical workbook: a ``cases`` sheet with one row per
+Each reviewer receives an identical workbook: a ``pairs`` sheet with one row per
 sampled pair, an auto-context block on the left (filled by the package, shown
 greyed) and a response block on the right (dropdown-validated where the
-dimension is an enum). Dimensions that do not apply to a case — the
+dimension is an enum). Dimensions that do not apply to a pair — the
 misclassification block on a correctly classified pair, the method-difference
-note where the methods agree — are pre-filled with the ``not_applicable``
-sentinel and greyed.
+note where the methods agree — are pre-filled with the ``N/A`` sentinel and
+greyed.
+
+The auto-context block is sized to the sample: a column whose value is fixed for
+the whole workbook moves to the ``metadata`` sheet, and one that no sampled pair
+populates is dropped, so the reviewer sees only columns that carry information.
 
 The response block is **partly generated from the study's configuration**: one
 tick-only yes/no column per configured error stage and per configured feature
@@ -66,17 +70,20 @@ def _require_openpyxl():
     return __import__("openpyxl")
 
 
-#: Sentinel written into response cells that do not apply to a case.
-NOT_APPLICABLE = "not_applicable"
+#: Sentinel written into response cells that do not apply to a pair. Plain text,
+#: not Excel's ``#N/A`` error value.
+NOT_APPLICABLE = "N/A"
 
-CASES_SHEET = "cases"
+PAIRS_SHEET = "pairs"
 METADATA_SHEET = "metadata"
 INSTRUCTIONS_SHEET = "instructions"
 GUIDANCE_SHEET = "guidance"
 
-#: Header prefixes for the two generated column groups.
-STAGE_HEADER_PREFIX = "Stage contributing: "
-DOMAIN_HEADER_PREFIX = "Implicated: "
+#: Header prefixes for the two generated column groups. Kept short so a column
+#: stays narrow enough to read a whole row of them at a glance; the
+#: ``instructions`` and ``guidance`` sheets spell out what S and F stand for.
+STAGE_HEADER_PREFIX = "S: "
+DOMAIN_HEADER_PREFIX = "F: "
 
 
 @dataclass(frozen=True)
@@ -91,6 +98,9 @@ class _Col:
     #: For a generated column, the list it came from and the entry it stands for.
     group: str | None = None  # None | "error_stage" | "feature_domain"
     entry: str | None = None
+    #: When this context column earns its space. ``None`` means always; see
+    #: :func:`_visible_context_cols` for the two policies.
+    omit_when: str | None = None  # None | "constant" | "never_populated"
 
 
 def _enum_options(enum_cls) -> tuple[str, ...]:
@@ -100,26 +110,36 @@ def _enum_options(enum_cls) -> tuple[str, ...]:
 _YES_NO = _enum_options(YesNo)
 
 
-# Auto-context columns (left block, greyed, filled by the package).
+#: The one context column every workbook carries, whatever the sample — and the
+#: only one the read-back requires.
+_PAIR_ID_HEADER = "Pair ID"
+
+# Auto-context columns (left block, greyed, filled by the package). The Pair ID
+# cell doubles as the link to the pair's HTML review packet, so no separate
+# packet column is needed.
 _CONTEXT_COLS: tuple[_Col, ...] = (
-    _Col("pair_id", "Pair ID", "context"),
-    _Col("evaluation_component", "Component", "context"),
-    _Col("reference_set_id", "Reference set", "context"),
+    _Col("pair_id", _PAIR_ID_HEADER, "context"),
+    _Col("evaluation_component", "Component", "context", omit_when="constant"),
+    _Col("reference_set_id", "Reference set", "context", omit_when="constant"),
     _Col("reference_label", "Reference label", "context"),
     _Col("adjudicator_final_label", "Adjudicator output", "context"),
-    _Col("screening_retrieved", "Screening retrieved", "context"),
-    _Col("confusion_cell", "Confusion cell", "context"),
-    _Col("joint_stratum", "Joint stratum", "context"),
-    _Col("methods_disagree", "Methods disagree", "context"),
+    # Constant rather than never-populated: a precision set is screening-positive
+    # throughout, so the column is all "yes" there and absent altogether where
+    # screening was not evaluated. Either way it belongs on the metadata sheet.
+    _Col("screening_retrieved", "Screening retrieved", "context", omit_when="constant"),
+    _Col("confusion_cell", "Confusion cell", "context", omit_when="never_populated"),
+    _Col("joint_stratum", "Joint stratum", "context", omit_when="never_populated"),
+    _Col(
+        "methods_disagree", "Methods disagree", "context", omit_when="never_populated"
+    ),
     _Col("is_misclassified", "Misclassified", "context"),
     _Col("decision_trace_summary", "Decision trace", "context"),
-    _Col("packet_filename", "Packet", "context"),
 )
 
 # Reviewer response columns that exist regardless of the study's configuration.
 _FIXED_RESPONSE_COLS: tuple[_Col, ...] = (
     _Col("free_text_assessment", "Free-text assessment", "text"),
-    _Col("case_difficulty", "Case difficulty", "enum", _enum_options(CaseDifficulty)),
+    _Col("case_difficulty", "Difficulty", "enum", _enum_options(CaseDifficulty)),
     _Col(
         "reference_label_issue",
         "Reference-label issue",
@@ -222,17 +242,117 @@ def _context_value(field: str, ctx: SCLEAutoContext) -> str:
     return str(value)
 
 
-def _set_packet_hyperlink(cell, target: str) -> None:
+def _visible_context_cols(
+    contexts: Sequence[SCLEAutoContext],
+) -> tuple[tuple[_Col, ...], dict[str, str]]:
+    """Size the auto-context block to the sample.
+
+    Two policies decide whether a column earns its width. A ``constant`` column
+    holds one value for the whole workbook — the component the sample was drawn
+    for, the reference set where the sample covers only one, the screening
+    verdict on a precision set where every pair is screening-positive — so it
+    says nothing row by row and is stated once on the metadata sheet instead. A
+    ``never_populated`` column is one no sampled pair fills: whichever of the
+    confusion cell / joint stratum this component does not use, and the
+    methods-disagree flag where there was no screening verdict to disagree with.
+
+    Returns the surviving columns and the metadata rows displaced from dropped
+    constant ones. The policy is an explicit per-column opt-in rather than "drop
+    anything that looks uniform": a sample where every pair happens to be
+    misclassified must not lose its ``Misclassified`` column to a coincidence.
+    """
+    kept: list[_Col] = []
+    displaced: dict[str, str] = {}
+    for col in _CONTEXT_COLS:
+        values = [getattr(ctx, col.field) for ctx in contexts]
+        if col.omit_when == "constant" and len(set(values)) <= 1:
+            # Rendered as the column would have been, so 'yes' and the
+            # not-applicable sentinel read the same on either sheet.
+            rendered = _context_value(col.field, contexts[0]) if contexts else ""
+            if rendered:
+                displaced[col.field] = rendered
+            continue
+        if col.omit_when == "never_populated" and all(v is None for v in values):
+            continue
+        kept.append(col)
+    return tuple(kept), displaced
+
+
+def _set_packet_hyperlink(cell, target: str, *, text: str | None = None) -> None:
     """Render ``cell`` as a clickable hyperlink to a local packet HTML file.
 
-    The displayed text is the target's basename; the link target is the given
-    relative path (resolved by Excel relative to the workbook's location).
+    The link target is the given relative path (resolved by Excel relative to the
+    workbook's location). The displayed text defaults to the target's basename;
+    pass ``text`` to keep the cell reading as itself — the pair id cell carries
+    the link, so the id stays visible.
     """
     from openpyxl.styles import Font  # type: ignore[import-untyped]
 
-    cell.value = target.rsplit("/", 1)[-1]
+    cell.value = text if text is not None else target.rsplit("/", 1)[-1]
     cell.hyperlink = target
     cell.font = Font(color="0563C1", underline="single")
+
+
+# --- Sheet formatting -------------------------------------------------------
+
+#: Columns holding sentences rather than labels. They read badly centred, so
+#: they are left-aligned and given room to wrap.
+_PROSE_CONTEXT_FIELDS: frozenset[str] = frozenset({"decision_trace_summary"})
+
+#: Widths, in Excel character units, by column role.
+_PROSE_WIDTH = 45
+_PAIR_ID_WIDTH = 22
+_GENERATED_WIDTH = 16
+_DEFAULT_WIDTH = 14
+#: Room for the longest header to wrap. Headers sit at the bottom of it, so one-
+#: and three-line headers still line up just above the first row of data.
+_HEADER_ROW_HEIGHT = 60
+
+
+def _is_prose(col: _Col) -> bool:
+    if col.kind == "context":
+        return col.field in _PROSE_CONTEXT_FIELDS
+    return col.kind == "text"
+
+
+def _column_width(col: _Col) -> int:
+    if _is_prose(col):
+        return _PROSE_WIDTH
+    if col.field == "pair_id":
+        return _PAIR_ID_WIDTH
+    if col.group is not None:
+        return _GENERATED_WIDTH
+    return _DEFAULT_WIDTH
+
+
+def _alignments():
+    """The three alignments used across both workbooks' pair sheets.
+
+    Data sits at the top of its cell so a row of short answers lines up with the
+    first line of the prose beside it; headers sit at the bottom of the taller
+    header row so they meet the data whatever they wrap to.
+    """
+    from openpyxl.styles import Alignment  # type: ignore[import-untyped]
+
+    header = Alignment(horizontal="center", vertical="bottom", wrap_text=True)
+    centre = Alignment(horizontal="center", vertical="top", wrap_text=True)
+    left = Alignment(horizontal="left", vertical="top", wrap_text=True)
+    return header, centre, left
+
+
+def _style_sheet(ws, widths: Sequence[int]) -> None:
+    """Apply column widths, the header row height, and frozen panes.
+
+    ``widths`` is one width per column, in order. Panes freeze below the header
+    and right of the first column, so the header row and the pair id stay in
+    view while a reviewer scrolls across a wide response block.
+    """
+    from openpyxl.utils import get_column_letter  # type: ignore[import-untyped]
+
+    for c_idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(c_idx)].width = width
+    ws.row_dimensions[1].height = _HEADER_ROW_HEIGHT
+    ws.freeze_panes = "B2"
 
 
 # --- Per-question guidance --------------------------------------------------
@@ -242,32 +362,33 @@ def _set_packet_hyperlink(cell, target: str) -> None:
 #: column definitions it explains.
 _GUIDANCE: dict[str, str] = {
     # Auto-context.
-    "pair_id": "The report pair under examination. Filled automatically.",
-    "evaluation_component": "Whether this case was sampled for the precision or "
+    "pair_id": "The report pair under examination. Filled automatically — click "
+    "the id to open the pair's HTML review packet.",
+    "evaluation_component": "Whether this pair was sampled for the precision or "
     "the recall evaluation. Filled automatically.",
     "reference_set_id": "The reference set the pair was drawn from. Filled "
-    "automatically.",
+    "automatically. Shown only where the workbook covers more than one set; "
+    "otherwise the set is named on the 'metadata' sheet.",
     "reference_label": "The reference (ground-truth) classification. Filled "
     "automatically — do not re-adjudicate it here; use 'Reference-label issue' "
     "to flag a label you doubt.",
     "adjudicator_final_label": "What the adjudication method output for this "
     "pair. Filled automatically.",
     "screening_retrieved": "Whether the screening method (vigiMatch2025) "
-    "retrieved this pair. 'not_applicable' means screening was not evaluated "
-    "for this reference set.",
+    "retrieved this pair. 'N/A' means screening was not evaluated for this "
+    "pair's reference set.",
     "confusion_cell": "The pair's cell in the adjudicator-versus-reference "
-    "confusion matrix (TP/FP/FN/TN). Precision cases only.",
+    "confusion matrix (TP/FP/FN/TN). Precision pairs only.",
     "joint_stratum": "The pair's joint screening-adjudicator stratum. Recall "
-    "cases only.",
+    "pairs only.",
     "methods_disagree": "Whether screening and the adjudicator reached "
     "different conclusions. Drives whether the method-difference note applies.",
     "is_misclassified": "Whether the adjudicator's output differs from the "
     "reference label. Drives which conditional questions apply.",
     "decision_trace_summary": "A short summary of the method's recorded "
     "decision path for this pair.",
-    "packet_filename": "Click to open the pair's HTML review packet.",
     # Responses.
-    "free_text_assessment": "Required for every case. For a correctly "
+    "free_text_assessment": "Required for every pair. For a correctly "
     "classified pair, briefly describe the decisive evidence supporting the "
     "classification. For a misclassified pair, describe the apparent root "
     "cause.",
@@ -295,7 +416,7 @@ _GUIDANCE: dict[str, str] = {
     "error_source_description": "Misclassified pairs only, and required there. "
     "Describe in free text what went wrong. Errors often involve an interaction "
     "between components, so describe the interaction rather than forcing a "
-    "single cause; use the stage columns to flag every stage involved.",
+    "single cause; use the 'S:' stage columns to flag every stage involved.",
     "method_difference_explanation": "Only where screening and the adjudicator "
     "disagree. Describe the evidence or decision mechanism that most plausibly "
     "explains the difference between the two methods.",
@@ -303,19 +424,20 @@ _GUIDANCE: dict[str, str] = {
 
 #: Guidance shared by every column generated from a vocabulary list.
 _GROUP_GUIDANCE: dict[str, str] = {
-    "error_stage": "Misclassified pairs only. Tick 'yes' if this stage of the "
-    "method contributed to the misclassification. Tick every stage that "
-    "contributed — they are not mutually exclusive. Leave the cell blank if the "
-    "stage did not contribute.",
-    "feature_domain": "Misclassified pairs only. Tick 'yes' if this feature "
-    "domain was implicated in the misclassification. Tick as many as apply, or "
-    "leave blank where the domain was not implicated.",
+    "error_stage": "'S:' = error stage. Misclassified pairs only. Tick 'yes' if "
+    "this stage of the method contributed to the misclassification. Tick every "
+    "stage that contributed — they are not mutually exclusive. Leave the cell "
+    "blank if the stage did not contribute.",
+    "feature_domain": "'F:' = implicated feature domain. Misclassified pairs "
+    "only. Tick 'yes' if this feature domain was implicated in the "
+    "misclassification. Tick as many as apply, or leave blank where the domain "
+    "was not implicated.",
 }
 
 _APPLIES_LABEL = {
-    None: "Every case",
-    "misclassified": "Misclassified cases only",
-    "disagreement": "Cases where the methods disagree",
+    None: "Every pair",
+    "misclassified": "Misclassified pairs only",
+    "disagreement": "Pairs where the methods disagree",
 }
 
 
@@ -372,6 +494,11 @@ def write_reviewer_workbook(
     describes its own columns. A list left as ``None`` contributes no columns:
     the package has no default vocabulary, so omitting one drops that question
     from the examination entirely.
+
+    The auto-context columns are chosen for this sample by
+    :func:`_visible_context_cols`, so the layout varies with what the sample
+    actually carries; anything dropped for being constant is recorded on the
+    metadata sheet instead.
     """
     openpyxl = _require_openpyxl()
     from openpyxl.comments import Comment  # type: ignore[import-untyped]
@@ -389,7 +516,10 @@ def write_reviewer_workbook(
         else ()
     )
     response_cols = _response_cols(stages, domains)
-    all_cols = _CONTEXT_COLS + response_cols
+    context_cols, displaced = _visible_context_cols(
+        [case.auto_context for case in sample.cases]
+    )
+    all_cols = context_cols + response_cols
 
     workbook_id = workbook_id or uuid.uuid4().hex[:12]
     sample_checksum = sha256_canonical_json(sample)
@@ -405,8 +535,11 @@ def write_reviewer_workbook(
         "evaluation_component": sample.evaluation_component,
         "sample_checksum": sample_checksum,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "n_cases": str(len(sample.cases)),
+        "n_pairs": str(len(sample.cases)),
     }
+    # Context that is fixed for the whole workbook is stated once here rather
+    # than repeated down a column of its own.
+    meta_rows.update({k: v for k, v in displaced.items() if k not in meta_rows})
     meta["A1"] = "key"
     meta["B1"] = "value"
     meta["A1"].font = meta["B1"].font = Font(bold=True)
@@ -427,12 +560,14 @@ def write_reviewer_workbook(
 
     grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
     na_fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
-    ws = wb.create_sheet(CASES_SHEET)
+    ws = wb.create_sheet(PAIRS_SHEET)
+    header_align, centre, left = _alignments()
 
     # Header row, each cell carrying its question's interpretation as a comment.
     for c_idx, col in enumerate(all_cols, start=1):
         cell = ws.cell(row=1, column=c_idx, value=col.header)
         cell.font = Font(bold=True)
+        cell.alignment = header_align
         if col.kind == "context":
             cell.fill = grey
         guidance = _guidance_for(col)
@@ -461,17 +596,21 @@ def write_reviewer_workbook(
         target = packet_targets.get(case.pair_id)
         for c_idx, col in enumerate(all_cols, start=1):
             cell = ws.cell(row=r_idx, column=c_idx)
+            cell.alignment = left if _is_prose(col) else centre
             if col.kind == "context":
                 cell.fill = grey
-                if col.field == "packet_filename" and target:
-                    _set_packet_hyperlink(cell, target)
+                value = _context_value(col.field, ctx)
+                if col.field == "pair_id" and target:
+                    _set_packet_hyperlink(cell, target, text=value)
                 else:
-                    cell.value = _context_value(col.field, ctx)
+                    cell.value = value
             elif not _applies_to(col, ctx):
                 cell.value = NOT_APPLICABLE
                 cell.fill = na_fill
             elif col.field in validations:
                 validations[col.field].add(cell)
+
+    _style_sheet(ws, [_column_width(col) for col in all_cols])
 
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -523,18 +662,22 @@ def read_reviewer_submission(
     half-read.
 
     Raises ``ValueError`` on any of: checksum mismatch, wrong component, missing
-    or extra pairs, a missing or unexpected generated column, an edited
-    ``not_applicable`` cell, an out-of-vocabulary value, or a dimension filled
-    where it does not apply (or left blank where it does). The returned
+    or extra pairs, a missing or unexpected generated column, an edited ``N/A``
+    cell, an out-of-vocabulary value, or a dimension filled where it does not
+    apply (or left blank where it does). The returned
     :class:`ReviewerSubmission` is trustworthy.
+
+    Auto-context columns are matched by header, so a workbook written without
+    the columns its sample did not need reads back identically — only the pair
+    id column is required.
     """
     openpyxl = _require_openpyxl()
 
     wb = openpyxl.load_workbook(path, data_only=True)
-    if METADATA_SHEET not in wb.sheetnames or CASES_SHEET not in wb.sheetnames:
+    if METADATA_SHEET not in wb.sheetnames or PAIRS_SHEET not in wb.sheetnames:
         raise ValueError(
             f"{path}: workbook must contain '{METADATA_SHEET}' and "
-            f"'{CASES_SHEET}' sheets."
+            f"'{PAIRS_SHEET}' sheets."
         )
 
     meta = wb[METADATA_SHEET]
@@ -565,11 +708,19 @@ def read_reviewer_submission(
         case.pair_id: case.auto_context for case in sample.cases
     }
 
-    ws = wb[CASES_SHEET]
+    ws = wb[PAIRS_SHEET]
     rows = list(ws.iter_rows(values_only=True))
     header = [(_cell_str(h)) for h in rows[0]]
     header_index = {h: i for i, h in enumerate(header)}
     field_by_header = {col.header: col for col in all_cols}
+
+    # Without it every row would be skipped and the failure would surface as a
+    # confusing "missing rows for every pair" instead of the real problem.
+    if _PAIR_ID_HEADER not in header_index:
+        raise ValueError(
+            f"{path}: the '{PAIRS_SHEET}' sheet has no {_PAIR_ID_HEADER!r} "
+            f"column; its header row has been altered."
+        )
 
     assessments: list[SCLECaseAssessment] = []
     seen: set[str] = set()
@@ -640,7 +791,7 @@ def read_reviewer_submission(
 
 
 def _response_or_none(field: str, values: dict[str, object]) -> str | None:
-    """Return the trimmed cell value, or None for blank / not_applicable."""
+    """Return the trimmed cell value, or None for blank / not-applicable."""
     raw = _cell_str(values.get(field))
     if raw == "" or raw == NOT_APPLICABLE:
         return None
@@ -724,29 +875,30 @@ def _instruction_lines(
     lines = [
         "SCLE reviewer workbook — instructions",
         "",
-        "1. Fill only the response columns (right of the greyed auto-context block).",
-        "2. Do NOT edit greyed cells or cells reading 'not_applicable'.",
+        f"1. One row per pair, on the '{PAIRS_SHEET}' sheet. Fill only the "
+        f"response columns (right of the greyed auto-context block).",
+        f"2. Do NOT edit greyed cells or cells reading '{NOT_APPLICABLE}'.",
         "3. Use the dropdown vocabularies for the structured dimensions.",
-        "4. Free-text assessment is required for every case.",
-        "5. Misclassification dimensions apply only to misclassified cases; the "
-        "method-difference note applies only where the methods disagree. Non-"
-        "applicable cells are pre-filled 'not_applicable'.",
+        "4. Free-text assessment is required for every pair.",
+        f"5. Misclassification dimensions apply only to misclassified pairs; the "
+        f"method-difference note applies only where the methods disagree. Non-"
+        f"applicable cells are pre-filled '{NOT_APPLICABLE}'.",
     ]
     # The column prefixes are quoted verbatim so a reviewer can match them
     # against the header row by eye.
     tick_only: list[str] = []
     sheets: list[str] = []
     if error_stages:
-        tick_only.append(f"'{STAGE_HEADER_PREFIX}...'")
+        tick_only.append(f"'{STAGE_HEADER_PREFIX}...' (error stage)")
         sheets.append(f"'{ERROR_STAGES_SHEET}'")
     if feature_domains:
-        tick_only.append(f"'{DOMAIN_HEADER_PREFIX}...'")
+        tick_only.append(f"'{DOMAIN_HEADER_PREFIX}...' (implicated feature domain)")
         sheets.append(f"'{FEATURE_DOMAINS_SHEET}'")
     if tick_only:
         lines.append(
             f"6. The {' and '.join(tick_only)} columns are tick-only: set 'yes' "
             f"on every entry that applies and leave the rest blank. More than "
-            f"one may apply to the same case. The full "
+            f"one may apply to the same pair. The full "
             f"{'lists are' if len(sheets) > 1 else 'list is'} on the "
             f"{' and '.join(sheets)} {'sheets' if len(sheets) > 1 else 'sheet'}."
         )
@@ -757,11 +909,14 @@ def _instruction_lines(
         )
     lines.extend(
         [
-            "7. The Packet column links to the pair's HTML review file (in the "
-            "packets/ folder beside this workbook); click it to open the case.",
+            "7. Click a pair id to open that pair's HTML review packet (in the "
+            "packets/ folder beside this workbook).",
             f"8. Every question has an interpretation: hover over a header cell "
-            f"in '{CASES_SHEET}' to read it, or see the '{GUIDANCE_SHEET}' sheet "
+            f"in '{PAIRS_SHEET}' to read it, or see the '{GUIDANCE_SHEET}' sheet "
             f"for all of them together.",
+            f"9. Auto-context that is the same for every pair in this workbook "
+            f"is stated once on the '{METADATA_SHEET}' sheet rather than "
+            f"repeated in a column.",
         ]
     )
     return tuple(lines)
@@ -769,7 +924,7 @@ def _instruction_lines(
 
 __all__ = [
     "NOT_APPLICABLE",
-    "CASES_SHEET",
+    "PAIRS_SHEET",
     "METADATA_SHEET",
     "INSTRUCTIONS_SHEET",
     "GUIDANCE_SHEET",
@@ -778,5 +933,9 @@ __all__ = [
     "write_reviewer_workbook",
     "read_reviewer_submission",
     "workbook_vocabularies",
+    # Shared with the arbitration workbook so both pair sheets look alike.
     "_set_packet_hyperlink",
+    "_alignments",
+    "_style_sheet",
+    "_PAIR_ID_HEADER",
 ]

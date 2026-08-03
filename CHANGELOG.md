@@ -15,6 +15,24 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+Releases as **0.8.0**. Both breaking changes below ship together.
+
+### 0.7.0 was retired, not released
+
+The version was bumped to 0.7.0 for the SCLE form simplification, and a
+secure-side dry run of the SCLE workbooks and orchestration then ran against it.
+That run baked `0.7.0` into durable artifacts — `dev_package.version` in its
+`evaluation_run_manifest.json`, and `package_version` in every `SamplingRecord`
+inside its `scle_sample_*.json`, which is the file reviewer workbooks checksum
+against. So 0.7.0 already denotes an exercised contract: the simplified form
+with the **previous** workbook layout.
+
+Reusing the number for the new layout would leave `dev_package.version: 0.7.0`
+meaning two different workbook contracts. The next release is therefore 0.8.0,
+and 0.7.0 is spent — it names the dry-run contract and nothing else. There is
+deliberately no `[0.7.0]` heading below; artifacts carrying that version are
+identified by their `dev_git_commit`.
+
 ### Breaking — SCLE form simplified and partly study-configured
 
 The study team refined the Structured Case-Level Examination questions. Full
@@ -59,6 +77,35 @@ analysis (Step 1) is untouched.
   removed (an out-of-vocabulary domain is no longer expressible). The
   `study_eval` CLI's `workbooks` subcommand gained repeatable `--error-stage`
   and `--feature-domain` flags.
+
+### Breaking — SCLE workbooks laid out for surveying
+
+The reviewer and arbitration workbooks are the surface two co-authors work for
+hundreds of pairs, so the pair sheet was rebuilt to fit on a screen. Full detail
+is in `docs/migration_notes_scle_workbook_layout.md`. No model field, JSON
+schema or Python identifier changed — this is the spreadsheet surface only —
+but a workbook written by an earlier version no longer reads back.
+
+- **The `cases` sheet is now `pairs`,** matching the entities of the reference
+  sets; the metadata key `n_cases` is now `n_pairs`, and the reviewer-facing
+  wording says "pair" throughout.
+- **The `not_applicable` sentinel is now `N/A`** (plain text, not Excel's `#N/A`
+  error value), and `Case difficulty` is now `Difficulty`.
+- **The generated column prefixes are `S: ` and `F: `** instead of
+  `Stage contributing: ` and `Implicated: `. The `instructions` and `guidance`
+  sheets spell out what each letter means.
+- **The pair id links to the pair's HTML packet,** so the separate `Packet`
+  column is gone.
+- **Auto-context columns are chosen per sample.** A column holding one value for
+  the whole workbook — the component, the reference set of a single-set sample,
+  the screening verdict on a precision set — is stated once on `metadata`
+  instead; a column no sampled pair populates is dropped. `Misclassified` and
+  the rest are never dropped for merely looking uniform in a small draw.
+- **The pair sheet is formatted**: every cell top-aligned, labels centred, prose
+  columns left-aligned and wrapped, per-column widths, and panes frozen below
+  the header and right of the pair id.
+- `read_reviewer_submission` now rejects a pair sheet whose `Pair ID` column has
+  been renamed away, instead of reporting every row as missing.
 
 ### Documentation and tests
 
