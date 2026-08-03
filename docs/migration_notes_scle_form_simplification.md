@@ -35,8 +35,10 @@ Removed enums: `InputDataLimitationCategory`, `PrimaryErrorSource`. Renamed
 enum: `YesNoUnclear` → `YesNo` (and it no longer carries `unclear`).
 
 Every question now carries a brief interpretation inside the workbook: a comment
-on its header cell in the `cases` sheet, plus a `guidance` sheet listing all of
-them.
+on its header cell in the pair sheet, plus a `guidance` sheet listing all of
+them. That sheet is named `pairs` as of
+[migration_notes_scle_workbook_layout.md](migration_notes_scle_workbook_layout.md),
+which also renames the column headers this document quotes.
 
 ## Configuration: the study now supplies two vocabularies
 

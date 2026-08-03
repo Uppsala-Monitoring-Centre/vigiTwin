@@ -135,13 +135,13 @@ def fill_reviewer_workbook(
     )
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     col = lambda n: hdr.index(n) + 1  # noqa: E731
     for r in range(2, ws.max_row + 1):
         pid = ws.cell(row=r, column=col("Pair ID")).value
         ws.cell(row=r, column=col("Free-text assessment")).value = f"{reviewer}:{pid}"
-        ws.cell(row=r, column=col("Case difficulty")).value = "non_trivial"
+        ws.cell(row=r, column=col("Difficulty")).value = "non_trivial"
         rli = ref_issue_first if (ref_issue_first and r == 2) else "no_apparent_issue"
         ws.cell(row=r, column=col("Reference-label issue")).value = rli
         if ws.cell(row=r, column=col("Never event")).value != NOT_APPLICABLE:
@@ -172,7 +172,7 @@ def fill_arbitration_workbook(path, discrepancy) -> None:
     from llm_dup_dev.study_eval.scle.arbitration import _dim_header
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     col = lambda n: hdr.index(n) + 1  # noqa: E731
     disc = {

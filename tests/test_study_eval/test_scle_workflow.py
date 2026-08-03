@@ -64,7 +64,7 @@ def test_arbitration_workbook_contains_only_disagreement_pairs(tmp_path):
     write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
 
     wb = openpyxl.load_workbook(arb_path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     body_rows = [r for r in ws.iter_rows(min_row=2, values_only=True) if any(r)]
     disagree_pairs = {
         p.pair_id for p in report.pair_discrepancies if p.dimension_disagreements
@@ -170,7 +170,7 @@ def test_consensus_requires_arbitration_for_disagreement(tmp_path):
     write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
     # Deliberately do NOT fill consensus values.
     wb = openpyxl.load_workbook(arb_path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     col = lambda n: hdr.index(n) + 1  # noqa: E731
     for r in range(2, ws.max_row + 1):

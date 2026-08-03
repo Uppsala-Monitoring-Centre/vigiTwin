@@ -249,8 +249,8 @@ def generate_reviewer_workbooks(
 ) -> list[Path]:
     """Step 2 — write one reviewer workbook per reviewer for ``sample``.
 
-    Each row's Packet cell links to ``{packet_dir}/<pair_id>.html`` (relative to
-    the workbook). Pass ``packet_dir=None`` to omit the links.
+    Each row's pair id links to ``{packet_dir}/<pair_id>.html`` (relative to the
+    workbook). Pass ``packet_dir=None`` to omit the links.
 
     ``error_stages`` (the method components a reviewer may flag as contributing
     to a misclassification) and ``feature_domains`` (the feature families a

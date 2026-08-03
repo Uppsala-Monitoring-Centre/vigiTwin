@@ -30,6 +30,14 @@ from tests.test_study_eval.conftest import (
 # A spec producing a TP (correct) and an FN (misclassified) case.
 _SPEC = [("duplicate", "Duplicates"), ("duplicate", "Otherwise_related")]
 
+#: Headers whose cells hold sentences rather than labels, and so are left-aligned.
+_PROSE_HEADERS = {
+    "Decision trace",
+    "Free-text assessment",
+    "Source of error",
+    "Method-difference explanation",
+}
+
 
 def _write(sample, path, reviewer="alice", **kwargs):
     """Write a workbook under the suite's standard vocabularies."""
@@ -70,7 +78,7 @@ def test_generated_columns_follow_the_supplied_order(tmp_path):
     domains = ("narrative", "dates", "drugs")
     _write(sample, path, error_stages=stages, feature_domains=domains)
 
-    hdr = [c.value for c in openpyxl.load_workbook(path)["cases"][1]]
+    hdr = [c.value for c in openpyxl.load_workbook(path)["pairs"][1]]
     assert [h for h in hdr if h.startswith(STAGE_HEADER_PREFIX)] == [
         f"{STAGE_HEADER_PREFIX}{s}" for s in stages
     ]
@@ -109,7 +117,7 @@ def test_omitted_vocabularies_drop_the_questions(tmp_path):
     write_reviewer_workbook(sample, "alice", path)  # no vocabularies
 
     wb = openpyxl.load_workbook(path)
-    hdr = [c.value for c in wb["cases"][1]]
+    hdr = [c.value for c in wb["pairs"][1]]
     assert not [h for h in hdr if h.startswith(STAGE_HEADER_PREFIX)]
     assert not [h for h in hdr if h.startswith(DOMAIN_HEADER_PREFIX)]
     assert ERROR_STAGES_SHEET not in wb.sheetnames
@@ -130,7 +138,7 @@ def test_read_rejects_a_generated_column_not_in_the_vocabulary(tmp_path):
 
     # Tamper: add a stage column the embedded vocabulary does not list.
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     ws.cell(row=1, column=ws.max_column + 1, value=f"{STAGE_HEADER_PREFIX}invented")
     wb.save(path)
 
@@ -145,7 +153,7 @@ def test_read_rejects_a_non_yes_no_tick(tmp_path):
     fill_reviewer_workbook(path, "alice")
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     column = hdr.index(f"{STAGE_HEADER_PREFIX}{ERROR_STAGES[0]}") + 1
     for r in range(2, ws.max_row + 1):
@@ -164,7 +172,7 @@ def test_every_question_carries_guidance(tmp_path):
     _write(sample, path)
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     for cell in ws[1]:
         assert cell.comment is not None, f"no guidance on header {cell.value!r}"
         assert cell.comment.text.strip()
@@ -180,58 +188,122 @@ def test_every_question_carries_guidance(tmp_path):
     difficulty = next(
         guidance.cell(row=r, column=3).value
         for r in range(2, guidance.max_row + 1)
-        if guidance.cell(row=r, column=1).value == "Case difficulty"
+        if guidance.cell(row=r, column=1).value == "Difficulty"
     )
     assert "very rare" in difficulty
     assert "'clear'" in difficulty
 
 
-def test_not_evaluated_case_shows_screening_as_not_applicable(tmp_path):
-    """A reviewer sees "does not apply", not an ambiguous blank."""
+def _recall_sample(specs, modes=None, *, seed="s"):
+    """Draw a recall SCLE sample from a ``make_recall`` spec."""
     from llm_dup_dev.study_eval.aggregate import run_recall_analysis
     from llm_dup_dev.study_eval.sampling import sample_scle_recall
     from tests.test_study_eval.conftest import make_recall
 
-    rsets, preds = make_recall(
+    rsets, preds = make_recall(specs, modes=modes)
+    return sample_scle_recall(
+        run_recall_analysis(rsets, preds), preds, per_stratum=5, seed=seed
+    )
+
+
+def test_screening_columns_are_dropped_when_nothing_was_screened(tmp_path):
+    """A column of nothing but "does not apply" is not worth its width."""
+    sample = _recall_sample(
         {"manual": [(None, "Duplicates"), (None, "Unrelated")]},
         modes={"manual": "not_evaluated"},
-    )
-    sample = sample_scle_recall(
-        run_recall_analysis(rsets, preds), preds, per_stratum=5, seed="s"
     )
     path = tmp_path / "reviewer_a.xlsx"
     write_reviewer_workbook(sample, "alice", path)
 
-    ws = openpyxl.load_workbook(path)["cases"]
+    ws = openpyxl.load_workbook(path)["pairs"]
     header = [c.value for c in ws[1]]
-    for name in ("Screening retrieved", "Methods disagree"):
-        column = header.index(name) + 1
-        values = {ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)}
-        assert values == {NOT_APPLICABLE}
+    assert "Screening retrieved" not in header
+    assert "Methods disagree" not in header
+    # The joint stratum goes too — such a set has none.
+    assert "Joint stratum" not in header
+    assert "Confusion cell" in header
 
-    # The disagreement dimension is switched off for such a case.
+    # The response dimension that depended on them is still shown, as N/A.
     column = header.index("Method-difference explanation") + 1
     values = {ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)}
     assert values == {NOT_APPLICABLE}
 
 
-def test_packet_hyperlinks_written(tmp_path):
+def test_screening_columns_survive_a_partly_screened_sample(tmp_path):
+    """Mixed sets are the case the columns exist for: keep them, mark the gaps."""
+    sample = _recall_sample(
+        {
+            "fda": [(True, "Duplicates"), (False, "Unrelated")],
+            "manual": [(None, "Duplicates")],
+        },
+        modes={"manual": "not_evaluated"},
+    )
+    path = tmp_path / "reviewer_a.xlsx"
+    write_reviewer_workbook(sample, "alice", path)
+
+    ws = openpyxl.load_workbook(path)["pairs"]
+    header = [c.value for c in ws[1]]
+    column = header.index("Screening retrieved") + 1
+    values = {ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)}
+    assert NOT_APPLICABLE in values and values - {NOT_APPLICABLE}
+
+
+def test_constant_context_moves_to_the_metadata_sheet(tmp_path):
+    """One reference set for the whole workbook is stated once, not per row."""
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    _write(sample, path)
+
+    wb = openpyxl.load_workbook(path)
+    header = [c.value for c in wb["pairs"][1]]
+    assert "Reference set" not in header
+    assert "Component" not in header
+    # Every pair in a precision set is screening-positive, so that column would
+    # read "yes" all the way down.
+    assert "Screening retrieved" not in header
+
+    meta = {
+        r[0]: r[1] for r in wb["metadata"].iter_rows(min_row=2, values_only=True) if r
+    }
+    assert meta["reference_set_id"] == sample.cases[0].reference_set_id
+    assert meta["evaluation_component"] == "precision"
+    assert meta["n_pairs"] == str(len(sample.cases))
+    assert meta["screening_retrieved"] == "yes"
+
+
+def test_reference_set_column_stays_when_the_sample_spans_sets(tmp_path):
+    sample = _recall_sample(
+        {
+            "fda": [(True, "Duplicates")],
+            "who": [(True, "Unrelated")],
+        }
+    )
+    path = tmp_path / "reviewer_a.xlsx"
+    write_reviewer_workbook(sample, "alice", path)
+
+    ws = openpyxl.load_workbook(path)["pairs"]
+    header = [c.value for c in ws[1]]
+    column = header.index("Reference set") + 1
+    values = {ws.cell(row=r, column=column).value for r in range(2, ws.max_row + 1)}
+    assert values == {"fda", "who"}
+
+
+def test_pair_id_links_to_the_packet(tmp_path):
     _, _, sample = build_scle_precision_sample(_SPEC)
     path = tmp_path / "reviewer_a.xlsx"
     targets = {c.pair_id: f"packets/{c.pair_id}.html" for c in sample.cases}
     write_reviewer_workbook(sample, "alice", path, packet_targets=targets)
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
-    pcol = hdr.index("Packet") + 1
+    assert "Packet" not in hdr  # the link lives on the id itself
     pid_col = hdr.index("Pair ID") + 1
     for r in range(2, ws.max_row + 1):
-        pid = ws.cell(row=r, column=pid_col).value
-        cell = ws.cell(row=r, column=pcol)
-        assert cell.hyperlink is not None
-        assert cell.hyperlink.target == targets[pid]
-        assert cell.value == f"{pid}.html"
+        cell = ws.cell(row=r, column=pid_col)
+        # The id stays readable; only the link is added.
+        assert cell.value in targets
+        assert cell.hyperlink.target == targets[cell.value]
 
     # Read-back is unaffected by the hyperlinks.
     fill_reviewer_workbook(path, "alice")
@@ -239,19 +311,43 @@ def test_packet_hyperlinks_written(tmp_path):
     assert len(sub.assessments) == len(sample.cases)
 
 
-def test_no_packet_targets_leaves_packet_blank(tmp_path):
+def test_no_packet_targets_leaves_the_pair_id_plain(tmp_path):
     _, _, sample = build_scle_precision_sample(_SPEC)
     path = tmp_path / "reviewer_a.xlsx"
     write_reviewer_workbook(sample, "alice", path)  # no packet_targets
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
-    hdr = [c.value for c in ws[1]]
-    pcol = hdr.index("Packet") + 1
+    ws = wb["pairs"]
+    pid_col = [c.value for c in ws[1]].index("Pair ID") + 1
+    pair_ids = {c.pair_id for c in sample.cases}
     for r in range(2, ws.max_row + 1):
-        cell = ws.cell(row=r, column=pcol)
+        cell = ws.cell(row=r, column=pid_col)
         assert cell.hyperlink is None
-        assert cell.value in (None, "")
+        assert cell.value in pair_ids
+
+
+def test_pairs_sheet_is_laid_out_for_scanning(tmp_path):
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    _write(sample, path)
+
+    ws = openpyxl.load_workbook(path)["pairs"]
+    hdr = [c.value for c in ws[1]]
+    assert ws.freeze_panes == "B2"
+    assert ws.column_dimensions["A"].width  # widths are set, not left to Excel
+
+    # Headers wrap and sit against the data, whatever they wrap to.
+    for cell in ws[1]:
+        assert cell.alignment.vertical == "bottom"
+        assert cell.alignment.wrap_text
+
+    # Everything sits at the top of its cell; only prose is left-aligned.
+    for r in range(2, ws.max_row + 1):
+        for c_idx in range(1, len(hdr) + 1):
+            cell = ws.cell(row=r, column=c_idx)
+            assert cell.alignment.vertical == "top", hdr[c_idx - 1]
+            expected = "left" if hdr[c_idx - 1] in _PROSE_HEADERS else "center"
+            assert cell.alignment.horizontal == expected, hdr[c_idx - 1]
 
 
 def test_read_rejects_checksum_mismatch(tmp_path):
@@ -274,7 +370,7 @@ def test_read_rejects_edited_not_applicable_cell(tmp_path):
 
     # Tamper: fill a never_event cell on the correctly classified TP case.
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     col = lambda n: hdr.index(n) + 1  # noqa: E731
     for r in range(2, ws.max_row + 1):
@@ -294,10 +390,10 @@ def test_read_rejects_out_of_vocabulary_value(tmp_path):
     fill_reviewer_workbook(path, "alice")
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     col = lambda n: hdr.index(n) + 1  # noqa: E731
-    ws.cell(row=2, column=col("Case difficulty")).value = "extremely_hard"
+    ws.cell(row=2, column=col("Difficulty")).value = "extremely_hard"
     wb.save(path)
 
     with pytest.raises(ValueError):
@@ -311,7 +407,7 @@ def test_read_rejects_missing_row(tmp_path):
     fill_reviewer_workbook(path, "alice")
 
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     ws.delete_rows(2, 1)
     wb.save(path)
 

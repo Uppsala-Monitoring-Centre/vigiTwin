@@ -175,14 +175,23 @@ under a different rule.
 ## SCLE reviewer workflow details
 
 - **Reviewer workbook** ([scle/workbook.py](../src/llm_dup_dev/study_eval/scle/workbook.py)):
-  greyed auto-context columns on the left (filled by the package — reference
-  label, adjudicator output, confusion cell / joint stratum, decision trace),
-  dropdown-validated response columns on the right. Non-applicable dimensions are
-  pre-filled `not_applicable`. Every question carries its interpretation as a
-  comment on its header cell plus a row on the `guidance` sheet. Excel protection
-  is advisory, so **read-back is the source of truth**:
-  `read_reviewer_submission` re-validates vocabularies, applicability, coverage,
-  and an embedded sample checksum.
+  a `pairs` sheet with greyed auto-context columns on the left (filled by the
+  package — reference label, adjudicator output, confusion cell / joint stratum,
+  decision trace), dropdown-validated response columns on the right. The pair id
+  links to that pair's HTML packet. Non-applicable dimensions are pre-filled
+  `N/A`. Every question carries its interpretation as a comment on its header
+  cell plus a row on the `guidance` sheet. Excel protection is advisory, so
+  **read-back is the source of truth**: `read_reviewer_submission` re-validates
+  vocabularies, applicability, coverage, and an embedded sample checksum.
+- **The auto-context block is sized to the sample.** A column holding one value
+  for the whole workbook is stated once on `metadata` instead — the component
+  always, the reference set unless a recall sample spans several, the screening
+  verdict on a precision set (where every pair is screening-positive). A column
+  no sampled pair populates is dropped: the joint stratum on a precision sample,
+  the screening columns where screening was not evaluated. Only columns with an
+  explicit policy behave this way, so a small draw that happens to look uniform
+  never loses a column. Read-back matches columns by header and needs only
+  `Pair ID`, so the varying layout costs it nothing.
 - **Study vocabularies** ([scle/vocabularies.py](../src/llm_dup_dev/study_eval/scle/vocabularies.py)):
   two ordered lists the study freezes and the caller supplies —
   `error_stages` (method components a reviewer may flag as contributing to a
@@ -359,7 +368,7 @@ Implement `PacketContentProvider`
 ([scle/packets.py](../src/llm_dup_dev/study_eval/scle/packets.py)) over
 confidential storage for the static review packets; confidential content never
 enters the generic schemas. Put the packets in a `packets/` subfolder **beside
-the workbooks** so the per-row Packet hyperlinks resolve.
+the workbooks** so the pair-id hyperlinks resolve.
 
 The packets can be produced two ways, and the workbook links resolve for either
 because both use the same filename scheme (`review_html`'s `_safe_filename`):

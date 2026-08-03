@@ -26,19 +26,17 @@ from tests.test_study_eval.conftest import (
 
 
 def _packet_hyperlinks(path):
-    """Return {pair_id: hyperlink_target} for the Packet column of a workbook."""
+    """Return {pair_id: hyperlink_target} for the Pair ID column of a workbook."""
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
-    pcol = hdr.index("Packet") + 1
     pid_col = hdr.index("Pair ID") + 1
     out = {}
     for r in range(2, ws.max_row + 1):
-        pid = ws.cell(row=r, column=pid_col).value
-        if pid is None:
+        cell = ws.cell(row=r, column=pid_col)
+        if cell.value is None:
             continue
-        cell = ws.cell(row=r, column=pcol)
-        out[pid] = cell.hyperlink.target if cell.hyperlink else None
+        out[cell.value] = cell.hyperlink.target if cell.hyperlink else None
     return out
 
 _PRECISION_SPEC = (
@@ -278,7 +276,7 @@ _FROZEN_DOMAINS = ("demographics", "drugs")
 def _pair_ids(path):
     """Ordered list of Pair ID values in a workbook's cases sheet."""
     wb = openpyxl.load_workbook(path)
-    ws = wb["cases"]
+    ws = wb["pairs"]
     hdr = [c.value for c in ws[1]]
     pid_col = hdr.index("Pair ID") + 1
     out = []
@@ -316,7 +314,7 @@ def test_omitting_the_vocabularies_drops_the_questions(tmp_path):
     base_wb = openpyxl.load_workbook(baseline[0])
     assert FEATURE_DOMAINS_SHEET not in base_wb.sheetnames
     assert ERROR_STAGES_SHEET not in base_wb.sheetnames
-    base_hdr = [c.value for c in base_wb["cases"][1]]
+    base_hdr = [c.value for c in base_wb["pairs"][1]]
     assert not [h for h in base_hdr if h.startswith(STAGE_HEADER_PREFIX)]
     assert not [h for h in base_hdr if h.startswith(DOMAIN_HEADER_PREFIX)]
     assert _pair_ids(baseline[0]) == _pair_ids(supplied[0])
@@ -336,7 +334,7 @@ def test_generate_reviewer_workbooks_embeds_lists_in_both(tmp_path):
     assert len(workbooks) == 2
     for wbpath in workbooks:
         assert workbook_vocabularies(wbpath) == (_FROZEN_STAGES, _FROZEN_DOMAINS)
-        hdr = [c.value for c in openpyxl.load_workbook(wbpath)["cases"][1]]
+        hdr = [c.value for c in openpyxl.load_workbook(wbpath)["pairs"][1]]
         assert [h for h in hdr if h.startswith(STAGE_HEADER_PREFIX)] == [
             f"{STAGE_HEADER_PREFIX}{s}" for s in _FROZEN_STAGES
         ]
