@@ -107,6 +107,14 @@ but a workbook written by an earlier version no longer reads back.
 - `read_reviewer_submission` now rejects a pair sheet whose `Pair ID` column has
   been renamed away, instead of reporting every row as missing.
 
+### Changed — an empty reference-set bundle is now an input error
+
+`preflight_reference_sets` (and so `run_analysis`) rejects a bundle with no
+reference sets. It previously returned cleanly, writing a manifest, an empty
+`predictions_table.csv` and an estimate-free `study_results.json` — a run that
+measured nothing was indistinguishable from a run that succeeded. Any bundle
+holding at least one set is unaffected.
+
 ### Fixed — `secondary_comparison.csv` mis-attributed precision rows
 
 Every precision row was labelled with the **first** primary result's `set_id`
@@ -130,6 +138,16 @@ workflow has an empty comparison table and no affected figures. Any consumer
 that built one by pooling **more than one precision set** should regenerate it.
 
 ### Documentation and tests
+
+- **Single-role bundles are supported, and now pinned.** A precision-only or a
+  recall-only study runs through all four steps: the absent role's estimands,
+  result tables and SCLE sample are not produced, and `summary.md` carries only
+  the section that applies — an absent table is never a table of zeros. This
+  already worked, but every workflow test used a both-roles bundle, so nothing
+  stopped a future validator from quietly taking it away.
+  `tests/test_study_eval/test_workflow.py` now covers each role alone
+  (including steps 2–4 on a recall-only sample), and `docs/study_eval.md` §
+  Workflow states it.
 
 - Pinned and documented the exact scope of what a canonical `pair_id`
   guarantees about `PairFeatures` content. `generate_pair_features` derives a
