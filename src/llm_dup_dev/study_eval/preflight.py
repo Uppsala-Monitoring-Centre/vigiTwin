@@ -3,8 +3,9 @@
 The structural contract (canonical pair identity, uniqueness, label vocabularies,
 role/label rules) is enforced by the models themselves in
 :mod:`llm_dup_dev.study_eval.schemas`. What is left is everything that needs a
-reference set *and* a prediction set together: prediction coverage, set-ID
-uniqueness across the bundle, and the screening requirements.
+reference set *and* a prediction set together: prediction coverage, bundle
+non-emptiness, set-ID uniqueness across the bundle, and the screening
+requirements.
 
 Screening requirements are conditional on each set's
 :data:`~llm_dup_dev.study_eval.schemas.ScreeningMode`:
@@ -130,10 +131,22 @@ def preflight_reference_sets(
 ) -> None:
     """Validate a whole bundle of reference sets against ``predictions``.
 
-    Checks set-ID uniqueness across the bundle, then every per-set requirement.
-    All problems across all sets are reported together.
+    Checks that the bundle is non-empty and its set IDs unique, then every
+    per-set requirement. All problems across all sets are reported together.
+
+    A bundle of a single role is valid — a precision-only or a recall-only study
+    is a supported configuration, and each role's estimands are computed
+    independently of the other's presence. An *empty* bundle is not: it produces
+    no estimate of anything, so accepting it would let a run that measured
+    nothing look like a run that succeeded.
     """
     problems: list[str] = []
+
+    if not reference_sets:
+        problems.append(
+            "no reference sets supplied: an analysis needs at least one "
+            "precision- or recall-role set (either role alone is fine)."
+        )
 
     ids = [s.set_id for s in reference_sets]
     duplicates = sorted({x for x in ids if ids.count(x) > 1})

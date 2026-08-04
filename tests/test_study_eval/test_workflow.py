@@ -79,6 +79,107 @@ def test_run_analysis_precision_and_recall(tmp_path):
     assert "scle_sample_precision_prec.json" in names
 
 
+# --- single-role bundles ----------------------------------------------------
+#
+# Either role may stand alone. The point of these tests is that the absent
+# role's estimands and tables are simply *not produced* — never emitted as
+# zeros, and never a hard error.
+
+
+def _precision_only_inputs():
+    reference_set, predictions = make_precision(_PRECISION_SPEC, set_id="prec")
+    return [reference_set], predictions
+
+
+def _recall_only_inputs():
+    return make_recall(
+        {
+            "fda_gold": [(True, "Duplicates")] * 3
+            + [(False, "Unrelated")] * 3
+            + [(True, "Unrelated")] * 2
+            + [(False, "Duplicates")] * 2
+        }
+    )
+
+
+def test_run_analysis_precision_only(tmp_path):
+    reference_sets, predictions = _precision_only_inputs()
+    result = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_precision_per_cell=2,
+        output_dir=tmp_path,
+    )
+    assert len(result.precision_results) == 1
+    assert result.recall_result is None
+    assert list(result.scle_samples) == ["precision::prec"]
+
+    names = {p.name for p in tmp_path.iterdir()}
+    assert "precision_metrics.csv" in names
+    assert "recall_metrics.csv" not in names
+    assert "recall_joint_classification.csv" not in names
+
+    summary = (tmp_path / "summary.md").read_text()
+    assert "## Precision (primary)" in summary
+    assert "## Recall" not in summary
+
+
+def test_run_analysis_recall_only(tmp_path):
+    reference_sets, predictions = _recall_only_inputs()
+    result = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_recall_per_stratum=2,
+        output_dir=tmp_path,
+    )
+    assert result.precision_results == []
+    assert result.recall_result is not None
+    assert list(result.scle_samples) == ["recall"]
+
+    names = {p.name for p in tmp_path.iterdir()}
+    assert "recall_metrics.csv" in names
+    assert "precision_metrics.csv" not in names
+    assert "precision_cross_classification.csv" not in names
+
+    summary = (tmp_path / "summary.md").read_text()
+    assert "## Recall (primary), by reference set" in summary
+    assert "## Precision" not in summary
+
+
+def test_recall_only_bundle_runs_all_four_steps(tmp_path):
+    """Steps 2-4 do not depend on a precision component being present."""
+    reference_sets, predictions = _recall_only_inputs()
+    analysis = workflow.run_analysis(
+        reference_sets, predictions, seed="s", scle_recall_per_stratum=2,
+        output_dir=tmp_path / "analysis",
+    )
+    sample = analysis.scle_samples["recall"]
+    assert sample.cases
+
+    workbooks = workflow.generate_reviewer_workbooks(
+        sample, ["alice", "bob"], tmp_path / "wb"
+    )
+    fill_reviewer_workbook(workbooks[0], "alice", never_event="no")
+    fill_reviewer_workbook(workbooks[1], "bob", never_event="yes")
+
+    build = workflow.build_arbitration(sample, workbooks, tmp_path / "arb")
+    assert "scle_agreement_recall.csv" in {p.name for p in (tmp_path / "arb").iterdir()}
+    fill_arbitration_workbook(build.arbitration_workbook, build.discrepancy)
+
+    final = workflow.finalize(
+        sample, workbooks, build.arbitration_workbook, tmp_path / "final"
+    )
+    assert len(final.consensus.consensus) == len(sample.cases)
+    assert "consensus_recall.json" in {p.name for p in (tmp_path / "final").iterdir()}
+
+
+def test_run_analysis_rejects_an_empty_bundle(tmp_path):
+    """A run that measured nothing must not look like a run that succeeded."""
+    from llm_dup_dev.study_eval.schemas import PredictionSet
+
+    with pytest.raises(ValueError, match="no reference sets supplied"):
+        workflow.run_analysis(
+            [], PredictionSet(predictions={}), seed="s", output_dir=tmp_path
+        )
+    assert not tmp_path.exists() or not list(tmp_path.iterdir())
+
+
 def _mixed_mode_inputs():
     """The combined inputs plus a recall set with no screening results."""
     reference_sets, predictions = _combined_inputs()

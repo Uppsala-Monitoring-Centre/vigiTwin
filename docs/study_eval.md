@@ -29,7 +29,7 @@ step's artifacts and writes its own plus a checksummed
 ```python
 from llm_dup_dev.study_eval import workflow
 
-# Step 1 — one call handles a mix of precision- and recall-role reference sets.
+# Step 1 — one call handles any mix of precision- and recall-role reference sets.
 analysis = workflow.run_analysis(
     reference_sets, predictions, seed="study-2026",
     scle_precision_per_cell=10, scle_recall_per_stratum=10,
@@ -50,6 +50,14 @@ build = workflow.build_arbitration(sample, books, "arbitration", arbiter_id="ann
 # Step 4 — consensus + final tables.
 final = workflow.finalize(sample, books, build.arbitration_workbook, "final")
 ```
+
+**Either role may stand alone.** A bundle of precision sets with no recall set,
+or of recall sets with no precision set, is a supported configuration and runs
+through all four steps: the absent role's estimands, result tables and SCLE
+sample are simply not produced, and `summary.md` carries only the section that
+applies. An absent table is never a table of zeros. The one bundle that is
+rejected is the empty one — a run that measured nothing should not look like a
+run that succeeded.
 
 The **SCLE sample sizes are configurable** (`scle_precision_per_cell` per
 confusion cell, `scle_recall_per_stratum` per joint stratum; both default to 10).

@@ -140,7 +140,14 @@ def run_analysis(
 ) -> AnalysisResult:
     """Step 1 — validate, compute estimates, and (optionally) sample SCLE cases.
 
-    ``reference_sets`` may mix precision- and recall-role sets. ``sample_scle``
+    ``reference_sets`` may mix precision- and recall-role sets, or carry just
+    one role: a precision-only or recall-only study is a supported
+    configuration. The absent role's estimands, tables and SCLE sample are
+    simply not produced (``recall_result`` is ``None`` with no recall set;
+    ``precision_results`` is empty with no precision set) — an absent table is
+    never a table of zeros. At least one set is required.
+
+    ``sample_scle``
     draws the SCLE case list; its strata (confusion cells / joint strata) are
     computed under ``variant``. A study typically samples SCLE under the
     ``PRIMARY`` configuration and runs secondary analyses aggregate-only

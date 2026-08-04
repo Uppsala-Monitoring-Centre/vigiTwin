@@ -83,6 +83,21 @@ def test_a_pair_may_belong_to_sets_of_both_modes():
     assert predictions.predictions[shared_id].screening_retrieved is True
 
 
+def test_a_single_role_bundle_is_accepted():
+    """Precision-only and recall-only are supported configurations."""
+    precision_set, ppredictions = make_precision([("duplicate", "Duplicates")])
+    preflight_reference_sets([precision_set], ppredictions)
+
+    recall_sets, rpredictions = make_recall({"r": [(True, "Duplicates")]})
+    preflight_reference_sets(recall_sets, rpredictions)
+
+
+def test_an_empty_bundle_is_rejected():
+    """Nothing to measure is an input error, not a successful empty run."""
+    with pytest.raises(ValueError, match="no reference sets supplied"):
+        preflight_reference_sets([], PredictionSet(predictions={}))
+
+
 def test_duplicate_set_ids_are_rejected():
     sets, predictions = make_recall({"r": [(True, "Duplicates")]})
     with pytest.raises(ValueError, match="duplicate reference set id"):
