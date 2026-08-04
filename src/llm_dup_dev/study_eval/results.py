@@ -207,16 +207,29 @@ def write_secondary_comparison_csv(
     recall_results: list[RecallResult],
     path: str | Path,
 ) -> Path:
+    """Each variant estimate against its own set's primary estimate.
+
+    Both components key their baselines **by set**, so a run pooling several
+    reference sets across variants compares like with like: a variant result is
+    only ever differenced against the primary result for the same set, and the
+    ``set`` column names the set that result actually came from. A variant
+    result for a set with no primary result in ``precision_results`` /
+    ``recall_results`` raises ``KeyError`` — the caller assembled an
+    incomparable bundle, and a silently dropped row would hide that.
+    """
     rows = []
-    primary_p = next((r for r in precision_results if r.variant == "primary"), None)
-    if primary_p is not None:
+    base_by_precision_set = {
+        r.set_id: r for r in precision_results if r.variant == "primary"
+    }
+    if base_by_precision_set:
         for pr in precision_results:
             if pr.variant == "primary":
                 continue
+            base_result = base_by_precision_set[pr.set_id]
             for field in _PRECISION_METRIC_FIELDS:
-                base = getattr(primary_p, field).proportion
+                base = getattr(base_result, field).proportion
                 var = getattr(pr, field).proportion
-                rows.append(["precision", primary_p.set_id, field, pr.variant,
+                rows.append(["precision", pr.set_id, field, pr.variant,
                              _fmt(base), _fmt(var), _delta(base, var)])
     primary_r = next((r for r in recall_results if r.variant == "primary"), None)
     if primary_r is not None:
