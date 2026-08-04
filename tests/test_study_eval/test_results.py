@@ -1,14 +1,24 @@
-"""How absent screening results are represented in the written artifacts."""
+"""What the written artifacts say — and, as much, what they must not say.
+
+Two themes: how absent screening results are represented, and how the
+secondary-comparison table attributes a figure to the set it came from.
+"""
 
 from __future__ import annotations
 
 import csv
 import json
 
-from llm_dup_dev.study_eval.aggregate import run_recall_analysis
-from llm_dup_dev.study_eval.results import summary_to_markdown, write_study_artifacts
+import pytest
 
-from tests.test_study_eval.conftest import make_recall
+from llm_dup_dev.study_eval.aggregate import (
+    run_precision_variants,
+    run_recall_analysis,
+)
+from llm_dup_dev.study_eval.results import summary_to_markdown, write_study_artifacts
+from llm_dup_dev.study_eval.schemas import PredictionSet
+
+from tests.test_study_eval.conftest import make_precision, make_recall
 
 _SCREENING_ESTIMANDS = {"recall_screening", "recall_serial", "recall_reduction"}
 
@@ -110,3 +120,68 @@ def test_observed_only_summary_is_unchanged():
     assert "serial 1.000" in line
     assert "ceiling 1.000" in line
     assert "not evaluated" not in summary
+
+
+# --- secondary comparison: a figure belongs to the set it came from ---------
+
+
+def _two_precision_sets_across_variants():
+    """Three variants over each of two precision sets with different metrics.
+
+    The two sets share pair ids (a pair may legitimately belong to several
+    sets); what makes the bundle discriminating is that their compositions
+    differ, so every metric has a different primary baseline per set.
+    """
+    spec = (
+        [("duplicate", "Duplicates")] * 4
+        + [("non_duplicate", "Duplicates")] * 3
+        + [("duplicate", "Otherwise_related")] * 3
+        + [("non_duplicate", "Unrelated")] * 4
+    )
+    set_a, preds_a = make_precision(spec, set_id="prec_a")
+    set_b, preds_b = make_precision(spec[:6], set_id="prec_b")
+    predictions = PredictionSet(
+        predictions={**preds_a.predictions, **preds_b.predictions}
+    )
+    return (
+        list(run_precision_variants(set_a, predictions).values())
+        + list(run_precision_variants(set_b, predictions).values()),
+        predictions,
+    )
+
+
+def test_secondary_comparison_uses_each_sets_own_primary_baseline(tmp_path):
+    """A pooled bundle must not difference one set against another's baseline."""
+    results, _ = _two_precision_sets_across_variants()
+    baselines = {
+        r.set_id: r.adjudicator_precision.proportion
+        for r in results
+        if r.variant == "primary"
+    }
+    # Guard the guard: identical baselines would make this test pass blind.
+    assert baselines["prec_a"] != baselines["prec_b"]
+
+    write_study_artifacts(tmp_path, precision_results=results)
+    rows = [
+        r
+        for r in _rows(tmp_path / "secondary_comparison.csv")
+        if r["component"] == "precision"
+    ]
+
+    # Both sets are named; neither set's rows are filed under the other.
+    assert {r["set"] for r in rows} == {"prec_a", "prec_b"}
+    for row in rows:
+        if row["metric"] != "adjudicator_precision":
+            continue
+        assert row["primary_proportion"] == f"{baselines[row['set']]:.4f}"
+
+
+def test_secondary_comparison_rejects_a_variant_with_no_baseline(tmp_path):
+    """An incomparable bundle fails loudly rather than dropping the row."""
+    results, _ = _two_precision_sets_across_variants()
+    orphaned = [
+        r for r in results if not (r.set_id == "prec_b" and r.variant == "primary")
+    ]
+
+    with pytest.raises(KeyError):
+        write_study_artifacts(tmp_path, precision_results=orphaned)

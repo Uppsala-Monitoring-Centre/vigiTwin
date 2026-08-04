@@ -107,6 +107,28 @@ but a workbook written by an earlier version no longer reads back.
 - `read_reviewer_submission` now rejects a pair sheet whose `Pair ID` column has
   been renamed away, instead of reporting every row as missing.
 
+### Fixed — `secondary_comparison.csv` mis-attributed precision rows
+
+Every precision row was labelled with the **first** primary result's `set_id`
+and differenced against **that** set's baseline, whichever set the variant
+result actually came from. A bundle pooling two precision sets across the
+re-interpretation variants therefore filed half its rows under the wrong set,
+against the wrong baseline: a row reading `prec_a, adjudicator_precision,
+abstain_positive, 0.5714, 0.6667, 0.0952` was `prec_b`'s result, whose true
+delta against its own 0.6667 baseline is `0.0000`. Recall rows were already
+keyed per set and were never affected.
+
+Precision now keys its baselines by `set_id` as recall does, and each row names
+the set its figure came from. A variant result whose set has no primary result
+in the bundle now raises `KeyError` rather than silently borrowing another
+set's baseline.
+
+The table is only populated by a caller that assembles several variants into
+one `write_study_artifacts` call — via `run_precision_variants` /
+`run_recall_variants` — so a study following the documented one-variant-per-run
+workflow has an empty comparison table and no affected figures. Any consumer
+that built one by pooling **more than one precision set** should regenerate it.
+
 ### Documentation and tests
 
 - Pinned and documented the exact scope of what a canonical `pair_id`
