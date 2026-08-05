@@ -66,7 +66,14 @@ class EvaluationRunManifest(BaseModel):
     inputs: list[ArtifactRef] = Field(default_factory=list)
     outputs: list[ArtifactRef] = Field(default_factory=list)
 
+    #: The name of the :class:`~llm_dup_dev.study_eval.aggregate.PositiveClass`
+    #: the run was analysed under.
     analysis_variant: str | None = None
+    #: The adjudicator labels that rule counted as positive, sorted. Recorded
+    #: alongside the name because rule names are study-supplied: the name alone
+    #: does not identify the collapse, so a frozen result would otherwise not be
+    #: interpretable without the study's own configuration.
+    analysis_positive_labels: list[str] | None = None
     ci_method: str | None = None
 
     #: reference set id -> screening mode, as evaluated in this run.
@@ -116,6 +123,7 @@ def build_manifest(
     inputs: Sequence[str | Path] | None = None,
     outputs: Sequence[str | Path] | None = None,
     analysis_variant: str | None = None,
+    analysis_positive_labels: Sequence[str] | None = None,
     ci_method: str | None = None,
     screening_modes: dict[str, str] | None = None,
     secure_context: dict[str, Any] | None = None,
@@ -134,6 +142,11 @@ def build_manifest(
         inputs=[artifact_ref(p) for p in (inputs or [])],
         outputs=[artifact_ref(p) for p in (outputs or [])],
         analysis_variant=analysis_variant,
+        analysis_positive_labels=(
+            list(analysis_positive_labels)
+            if analysis_positive_labels is not None
+            else None
+        ),
         ci_method=ci_method,
         screening_modes=screening_modes,
         secure_context=secure_context,

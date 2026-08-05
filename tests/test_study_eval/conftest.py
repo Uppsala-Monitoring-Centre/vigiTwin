@@ -7,7 +7,11 @@ the generic :class:`ReferenceSet` / :class:`PredictionSet` inputs.
 
 from __future__ import annotations
 
-from llm_dup_dev.study_eval.aggregate import run_precision_analysis
+from llm_dup_dev.study_eval.aggregate import (
+    PRIMARY,
+    PositiveClass,
+    run_precision_analysis,
+)
 from llm_dup_dev.study_eval.sampling import sample_scle_precision
 from llm_dup_dev.study_eval.schemas import (
     PairPrediction,
@@ -93,13 +97,26 @@ def make_recall(
 
 
 def build_scle_precision_sample(
-    spec: list[tuple[str, str]], *, seed: str = "s", per_cell: int = 10
+    spec: list[tuple[str, str]],
+    *,
+    seed: str = "s",
+    per_cell: int = 10,
+    positive_class: PositiveClass = PRIMARY,
 ):
-    """Return ``(reference_set, predictions, sample)`` for a precision SCLE draw."""
+    """Return ``(reference_set, predictions, sample)`` for a precision SCLE draw.
+
+    ``positive_class`` is used for both the analysis and the draw, so the sample's
+    strata and auto-context always agree.
+    """
     reference_set, predictions = make_precision(spec)
-    result = run_precision_analysis(reference_set, predictions)
+    result = run_precision_analysis(reference_set, predictions, positive_class)
     sample = sample_scle_precision(
-        reference_set, result, predictions, per_cell=per_cell, seed=seed
+        reference_set,
+        result,
+        predictions,
+        per_cell=per_cell,
+        positive_class=positive_class,
+        seed=seed,
     )
     return reference_set, predictions, sample
 

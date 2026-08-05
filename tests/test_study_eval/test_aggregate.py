@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from llm_dup_dev.study_eval.aggregate import (
-    AnalysisVariant,
+    ABSTAIN_POSITIVE,
+    ADJUDICATOR_LABELS,
+    OTHERWISE_RELATED_POSITIVE,
+    PRIMARY,
+    PositiveClass,
     is_positive,
     run_precision_analysis,
     run_precision_variants,
@@ -23,17 +30,84 @@ _PRECISION_SPEC = [
 ]
 
 
+class TestPositiveClassValidation:
+    """A collapse rule is study configuration, so it is validated as such."""
+
+    def test_labels_outside_the_output_vocabulary_are_rejected(self):
+        with pytest.raises(ValidationError, match="Duplicate'"):
+            PositiveClass(
+                name="typo", positive_labels=frozenset({"Duplicate"})
+            )
+
+    def test_empty_positive_labels_is_rejected(self):
+        with pytest.raises(ValidationError, match="non-empty"):
+            PositiveClass(name="empty", positive_labels=frozenset())
+
+    def test_blank_name_is_rejected(self):
+        with pytest.raises(ValidationError, match="blank"):
+            PositiveClass(name="   ", positive_labels=frozenset({"Duplicates"}))
+
+    def test_name_is_trimmed(self):
+        assert (
+            PositiveClass(
+                name="  primary  ", positive_labels=frozenset({"Duplicates"})
+            ).name
+            == "primary"
+        )
+
+    def test_is_frozen_and_hashable(self):
+        pc = PositiveClass(name="primary", positive_labels=frozenset({"Duplicates"}))
+        assert {pc: 1}[pc] == 1
+        with pytest.raises(ValidationError):
+            pc.name = "other"
+
+    def test_every_named_constant_is_within_the_vocabulary(self):
+        for pc in (PRIMARY, ABSTAIN_POSITIVE, OTHERWISE_RELATED_POSITIVE):
+            assert pc.positive_labels <= set(ADJUDICATOR_LABELS)
+
+
+def test_a_study_supplied_rule_the_package_never_named_is_usable():
+    """The protocol's "Abstain *and* Otherwise related positive" analysis.
+
+    This three-label collapse is what the old fixed enum could not express, and is
+    the reason the rule became caller-supplied.
+    """
+    rule = PositiveClass(
+        name="abstain_and_otherwise_positive",
+        positive_labels=frozenset({"Duplicates", "Abstain", "Otherwise_related"}),
+    )
+    rset, preds = make_precision(_PRECISION_SPEC)
+    r = run_precision_analysis(rset, preds, rule)
+
+    assert r.variant == "abstain_and_otherwise_positive"
+    # The FN under the primary rule (duplicate called Otherwise_related) is a TP
+    # here, and the reference-abstain pair stays excluded regardless of the rule.
+    assert r.pair_cells["A3__B3"] == "TP"
+    assert r.pair_cells["A5__B5"] == "excluded"
+    assert r.n_reference_abstain == 1
+    assert r.conditional_recall.numerator == 3
+
+
+def test_variants_helpers_reject_an_empty_or_ambiguous_rule_list():
+    rset, preds = make_precision(_PRECISION_SPEC)
+    with pytest.raises(ValueError, match="at least one"):
+        run_precision_variants(rset, preds, [])
+    twice = PositiveClass(name="primary", positive_labels=frozenset({"Abstain"}))
+    with pytest.raises(ValueError, match="duplicate PositiveClass name"):
+        run_precision_variants(rset, preds, [PRIMARY, twice])
+
+
 def test_positivity_rules():
-    assert is_positive("Duplicates", AnalysisVariant.PRIMARY)
-    assert not is_positive("Abstain", AnalysisVariant.PRIMARY)
-    assert not is_positive("Otherwise_related", AnalysisVariant.PRIMARY)
+    assert is_positive("Duplicates", PRIMARY)
+    assert not is_positive("Abstain", PRIMARY)
+    assert not is_positive("Otherwise_related", PRIMARY)
 
-    assert is_positive("Abstain", AnalysisVariant.ABSTAIN_POSITIVE)
-    assert is_positive("Duplicates", AnalysisVariant.ABSTAIN_POSITIVE)
-    assert not is_positive("Otherwise_related", AnalysisVariant.ABSTAIN_POSITIVE)
+    assert is_positive("Abstain", ABSTAIN_POSITIVE)
+    assert is_positive("Duplicates", ABSTAIN_POSITIVE)
+    assert not is_positive("Otherwise_related", ABSTAIN_POSITIVE)
 
-    assert is_positive("Otherwise_related", AnalysisVariant.OTHERWISE_RELATED_POSITIVE)
-    assert not is_positive("Abstain", AnalysisVariant.OTHERWISE_RELATED_POSITIVE)
+    assert is_positive("Otherwise_related", OTHERWISE_RELATED_POSITIVE)
+    assert not is_positive("Abstain", OTHERWISE_RELATED_POSITIVE)
 
 
 def test_precision_cells_and_metrics():
@@ -78,18 +152,20 @@ def test_abstain_positive_variant_moves_abstain_into_positives():
             ("non_duplicate", "Unrelated"),  # TN in both
         ]
     )
-    primary = run_precision_analysis(rset, preds, AnalysisVariant.PRIMARY)
+    primary = run_precision_analysis(rset, preds, PRIMARY)
     assert primary.pair_cells["A0__B0"] == "FN"
 
-    ap = run_precision_analysis(rset, preds, AnalysisVariant.ABSTAIN_POSITIVE)
+    ap = run_precision_analysis(rset, preds, ABSTAIN_POSITIVE)
     assert ap.pair_cells["A0__B0"] == "TP"
     assert ap.conditional_recall.numerator == 1
 
 
 def test_run_precision_variants_returns_three():
     rset, preds = make_precision(_PRECISION_SPEC)
-    results = run_precision_variants(rset, preds)
-    assert set(v.value for v in results) == {
+    results = run_precision_variants(
+        rset, preds, [PRIMARY, ABSTAIN_POSITIVE, OTHERWISE_RELATED_POSITIVE]
+    )
+    assert set(results) == {
         "primary",
         "abstain_positive",
         "otherwise_related_positive",

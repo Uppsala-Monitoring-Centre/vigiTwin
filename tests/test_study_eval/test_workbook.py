@@ -289,13 +289,17 @@ def test_every_question_carries_guidance(tmp_path):
 
 def _recall_sample(specs, modes=None, *, seed="s"):
     """Draw a recall SCLE sample from a ``make_recall`` spec."""
-    from llm_dup_dev.study_eval.aggregate import run_recall_analysis
+    from llm_dup_dev.study_eval.aggregate import PRIMARY, run_recall_analysis
     from llm_dup_dev.study_eval.sampling import sample_scle_recall
     from tests.test_study_eval.conftest import make_recall
 
     rsets, preds = make_recall(specs, modes=modes)
     return sample_scle_recall(
-        run_recall_analysis(rsets, preds), preds, per_stratum=5, seed=seed
+        run_recall_analysis(rsets, preds),
+        preds,
+        per_stratum=5,
+        positive_class=PRIMARY,
+        seed=seed,
     )
 
 

@@ -6,7 +6,7 @@ import openpyxl
 import pytest
 
 from llm_dup_dev.study_eval import workflow
-from llm_dup_dev.study_eval.aggregate import AnalysisVariant
+from llm_dup_dev.study_eval.aggregate import ABSTAIN_POSITIVE
 from llm_dup_dev.study_eval.scle.vocabularies import (
     ERROR_STAGES_SHEET,
     FEATURE_DOMAINS_SHEET,
@@ -258,24 +258,73 @@ def test_secondary_analysis_is_step1_only_no_scle():
     reference_sets, predictions = _combined_inputs()
     result = workflow.run_analysis(
         reference_sets, predictions, seed="s", sample_scle=False,
-        variant=AnalysisVariant.ABSTAIN_POSITIVE,
+        positive_class=ABSTAIN_POSITIVE,
     )
     assert result.scle_samples == {}
     assert result.variant == "abstain_positive"
 
 
-def test_scle_with_nonprimary_variant_warns_but_samples():
-    import pytest
+def test_scle_under_a_secondary_rule_is_supported_and_unwarned():
+    """SCLE gating and the collapse rule are independent choices.
+
+    A study may examine cases under a secondary rule, so this combination is a
+    plain supported configuration — not something the package second-guesses.
+    """
+    import warnings
 
     reference_sets, predictions = _combined_inputs()
-    with pytest.warns(UserWarning, match="non-primary variant"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         result = workflow.run_analysis(
             reference_sets, predictions, seed="s", sample_scle=True,
-            variant=AnalysisVariant.ABSTAIN_POSITIVE,
+            positive_class=ABSTAIN_POSITIVE,
         )
-    # Sampling still happens; strata reflect the chosen variant.
     assert result.scle_samples != {}
     assert result.variant == "abstain_positive"
+
+
+def test_scle_auto_context_agrees_with_the_stratum_under_a_secondary_rule():
+    """The auto-context must follow the rule that produced the strata.
+
+    Regression test: the samplers used to compute ``methods_disagree`` /
+    ``is_misclassified`` / ``confusion_cell`` under the primary rule regardless of
+    the rule in force, so a case could contradict its own stratum — and those
+    fields gate which conditional dimensions a reviewer is asked.
+    """
+    reference_sets, predictions = _combined_inputs()
+    result = workflow.run_analysis(
+        reference_sets, predictions, seed="s", sample_scle=True,
+        positive_class=ABSTAIN_POSITIVE,
+    )
+    assert result.scle_samples
+
+    for key, sample in result.scle_samples.items():
+        for case in [*sample.cases, *sample.backups]:
+            ctx = case.auto_context
+            positive = case.auto_context.adjudicator_final_label in (
+                "Duplicates",
+                "Abstain",
+            )
+            if key == "recall":
+                # Every recall pair is a known duplicate.
+                if ctx.confusion_cell is not None:
+                    expected = "TP" if positive else "FN"
+                    assert ctx.confusion_cell == expected, (case.pair_id, case.stratum)
+                assert ctx.is_misclassified is (not positive), case.pair_id
+                if ctx.joint_stratum is not None:
+                    assert (
+                        ctx.joint_stratum in ("screening_only", "adjudicator_only")
+                    ) is bool(ctx.methods_disagree), (case.pair_id, ctx.joint_stratum)
+                    # The joint stratum carries the adjudicator verdict too: it
+                    # is positive in 'both' / 'adjudicator_only' only.
+                    assert (
+                        ctx.joint_stratum in ("both", "adjudicator_only")
+                    ) is positive, (case.pair_id, ctx.joint_stratum)
+            else:
+                # Precision sets are the screening candidate set, so the methods
+                # disagree exactly when the adjudicator is not also positive.
+                assert ctx.methods_disagree is (not positive), case.pair_id
+                assert ctx.is_misclassified is (ctx.confusion_cell in ("FP", "FN"))
 
 
 def _fill_arbitration(path, discrepancy):

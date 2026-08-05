@@ -299,6 +299,10 @@ def _manifest():
         outputs=[
             ArtifactRef(path="results/precision_metrics.csv", sha256="b" * 64, n_bytes=2048)
         ],
+        # Name and labels together: rule names are study-supplied, so the name
+        # alone would not tell a later reader what was counted as positive.
+        analysis_variant="primary",
+        analysis_positive_labels=["Duplicates"],
         ci_method="wilson",
         # Both modes, so the committed example shows what a mixed run records.
         screening_modes={

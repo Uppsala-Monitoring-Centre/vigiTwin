@@ -3,11 +3,19 @@
 Inputs are a generic :class:`ReferenceSet` plus a :class:`PredictionSet`; the
 functions here derive the per-pair truth/prediction join and compute the
 protocol quantities. The positive class is expressed as an explicit rule over
-the four-value evaluated-method output (:class:`AnalysisVariant`) rather than
+the four-value evaluated-method output (:class:`PositiveClass`) rather than
 reusing :class:`llm_dup_dev.eval.labels.AbstainMode`, because ``AbstainMode``
 cannot express the "otherwise-related counts as positive" secondary analysis and
 its ``DECIDED_ONLY`` mode contradicts the protocol's primary rule (an abstention
 is a negative classification).
+
+This module owns the **output vocabulary** (:data:`ADJUDICATOR_LABELS`, which is
+the adjudicator's own contract) and the **mechanism** (a positive class is a
+subset of that vocabulary). It does not own *which* collapse rules a study runs,
+their names, or which one is the baseline: those are study configuration, and the
+caller supplies them — the same division :mod:`.scle.vocabularies` applies to the
+SCLE vocabularies. The three constants below are the current study's rules,
+provided for convenience, not the package's opinion about what to run.
 
 Reference-abstain pairs (a human ``abstain``) are excluded from every precision
 estimate and counted. Recall-reference pairs are positive controls, so recall
@@ -25,59 +33,106 @@ supplied reference pairs, which is exactly the estimand such a set supports.
 
 from __future__ import annotations
 
-from enum import Enum
+from collections.abc import Sequence
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from llm_dup_dev.study_eval.preflight import preflight_reference_set
 from llm_dup_dev.study_eval.schemas import PredictionSet, ReferenceSet
 from llm_dup_dev.study_eval.stats import EstimateWithCI, estimate
 
 
-class AnalysisVariant(str, Enum):
-    """How the four-value evaluated-method output collapses to a positive class.
-
-    ``PRIMARY``
-        Positive iff ``Duplicates``. ``Otherwise_related``, ``Unrelated`` and
-        ``Abstain`` are negative — the protocol's primary rule.
-    ``ABSTAIN_POSITIVE``
-        Positive iff ``Duplicates`` or ``Abstain`` (secondary analysis 1).
-    ``OTHERWISE_RELATED_POSITIVE``
-        Positive iff ``Duplicates`` or ``Otherwise_related`` (secondary
-        analysis 2).
-    """
-
-    PRIMARY = "primary"
-    ABSTAIN_POSITIVE = "abstain_positive"
-    OTHERWISE_RELATED_POSITIVE = "otherwise_related_positive"
-
-
-#: The re-interpretation variants that run over a single frozen prediction set.
-REINTERPRETATION_VARIANTS: tuple[AnalysisVariant, ...] = (
-    AnalysisVariant.PRIMARY,
-    AnalysisVariant.ABSTAIN_POSITIVE,
-    AnalysisVariant.OTHERWISE_RELATED_POSITIVE,
+#: The evaluated method's own output vocabulary. Owned here because it is the
+#: adjudicator's contract, not a study choice: a positive class may only ever be
+#: built out of these four labels.
+ADJUDICATOR_LABELS: tuple[str, ...] = (
+    "Duplicates",
+    "Otherwise_related",
+    "Unrelated",
+    "Abstain",
 )
 
-_POSITIVE_LABELS: dict[AnalysisVariant, frozenset[str]] = {
-    AnalysisVariant.PRIMARY: frozenset({"Duplicates"}),
-    AnalysisVariant.ABSTAIN_POSITIVE: frozenset({"Duplicates", "Abstain"}),
-    AnalysisVariant.OTHERWISE_RELATED_POSITIVE: frozenset(
-        {"Duplicates", "Otherwise_related"}
-    ),
-}
+
+class PositiveClass(BaseModel):
+    """A study-supplied rule collapsing the adjudicator output to a positive class.
+
+    ``name`` identifies the rule in every output table (the ``variant`` column),
+    in the run manifest, and as the baseline key for the secondary-comparison
+    and summary artifacts. ``positive_labels`` is the subset of
+    :data:`ADJUDICATOR_LABELS` counted as positive; every other label is
+    negative.
+
+    Validated as configuration, in the same spirit as
+    :func:`~llm_dup_dev.study_eval.scle.vocabularies.normalise_vocabulary`: the
+    name must be non-blank and the labels a non-empty subset of the output
+    vocabulary. Deliberately *not* enforced is that ``Duplicates`` be included or
+    that the subset be proper — a study may define whatever collapse it can
+    justify, and the package checks only what it owns.
+
+    Frozen, so an instance can key a dict and cannot drift after a run has
+    recorded it.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str
+    positive_labels: frozenset[str]
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if stripped == "":
+            raise ValueError("PositiveClass name is blank after trimming.")
+        return stripped
+
+    @field_validator("positive_labels")
+    @classmethod
+    def _labels_in_vocabulary(cls, value: frozenset[str]) -> frozenset[str]:
+        if len(value) == 0:
+            raise ValueError(
+                f"PositiveClass positive_labels must be non-empty; permitted "
+                f"labels are {list(ADJUDICATOR_LABELS)}."
+            )
+        unknown = sorted(value - set(ADJUDICATOR_LABELS))
+        if unknown:
+            raise ValueError(
+                f"PositiveClass positive_labels contains {unknown}, which is not "
+                f"in the adjudicator output vocabulary "
+                f"{list(ADJUDICATOR_LABELS)}."
+            )
+        return value
 
 
-def is_positive(adjudicator_label: str, variant: AnalysisVariant) -> bool:
-    """Return whether ``adjudicator_label`` counts as positive under ``variant``."""
-    return adjudicator_label in _POSITIVE_LABELS[variant]
+# The current study's rules, provided for convenience. The package does not
+# decide which of these (or which others) a study runs: pass whichever
+# ``PositiveClass`` values the protocol prespecifies, and name the baseline
+# explicitly when writing the comparison and summary artifacts.
+PRIMARY = PositiveClass(name="primary", positive_labels=frozenset({"Duplicates"}))
+ABSTAIN_POSITIVE = PositiveClass(
+    name="abstain_positive",
+    positive_labels=frozenset({"Duplicates", "Abstain"}),
+)
+OTHERWISE_RELATED_POSITIVE = PositiveClass(
+    name="otherwise_related_positive",
+    positive_labels=frozenset({"Duplicates", "Otherwise_related"}),
+)
+
+
+def is_positive(adjudicator_label: str, positive_class: PositiveClass) -> bool:
+    """Return whether ``adjudicator_label`` counts as positive under the rule."""
+    return adjudicator_label in positive_class.positive_labels
 
 
 # --- Precision ------------------------------------------------------------
 
 
 class PrecisionResult(BaseModel):
-    """Precision-evaluation results for one reference set under one variant."""
+    """Precision-evaluation results for one reference set under one variant.
+
+    ``variant`` holds the :class:`PositiveClass` name the estimates were computed
+    under; it is the ``variant`` column of every output table.
+    """
 
     variant: str
     set_id: str
@@ -105,16 +160,22 @@ class PrecisionResult(BaseModel):
     pair_cells: dict[str, str]
 
 
-_ADJ_LABELS = ("Duplicates", "Otherwise_related", "Unrelated", "Abstain")
 _REF_LABELS = ("duplicate", "non_duplicate", "abstain")
 
 
 def run_precision_analysis(
     reference_set: ReferenceSet,
     predictions: PredictionSet,
-    variant: AnalysisVariant = AnalysisVariant.PRIMARY,
+    positive_class: PositiveClass = PRIMARY,
 ) -> PrecisionResult:
-    """Compute the protocol precision-evaluation quantities for one set."""
+    """Compute the protocol precision-evaluation quantities for one set.
+
+    Note the deliberate asymmetry around abstention, which ``positive_class``
+    does **not** govern: ``Abstain`` as an *adjudicator* label participates in the
+    collapse rule like any other output label, whereas ``abstain`` as a
+    *reference* label is a protocol-level exclusion from the precision
+    denominator and is never configurable here.
+    """
     if reference_set.role != "precision":
         raise ValueError(
             f"run_precision_analysis needs a precision set; {reference_set.set_id!r} "
@@ -122,7 +183,7 @@ def run_precision_analysis(
         )
     preflight_reference_set(reference_set, predictions)
 
-    cross = {a: {r: 0 for r in _REF_LABELS} for a in _ADJ_LABELS}
+    cross = {a: {r: 0 for r in _REF_LABELS} for a in ADJUDICATOR_LABELS}
     cells: dict[str, str] = {}
 
     n_ref_dup = n_ref_non = n_ref_abstain = 0
@@ -142,7 +203,7 @@ def run_precision_analysis(
             cells[pair.pair_id] = "excluded"
             continue
 
-        positive = is_positive(adj, variant)
+        positive = is_positive(adj, positive_class)
         if positive:
             n_adj_positive += 1
         if ref == "duplicate":
@@ -162,12 +223,12 @@ def run_precision_analysis(
         1
         for pair in reference_set.pairs
         if not is_positive(
-            predictions.predictions[pair.pair_id].adjudicator_label, variant
+            predictions.predictions[pair.pair_id].adjudicator_label, positive_class
         )
     )
 
     return PrecisionResult(
-        variant=variant.value,
+        variant=positive_class.name,
         set_id=reference_set.set_id,
         screening_mode=reference_set.screening_mode,
         n_pairs=len(reference_set.pairs),
@@ -200,11 +261,19 @@ def run_precision_analysis(
 def run_precision_variants(
     reference_set: ReferenceSet,
     predictions: PredictionSet,
-) -> dict[AnalysisVariant, PrecisionResult]:
-    """Run the three re-interpretation variants over one precision set."""
+    variants: Sequence[PositiveClass],
+) -> dict[str, PrecisionResult]:
+    """Run each supplied collapse rule over one precision set, keyed by name.
+
+    ``variants`` is required: which rules a study runs is its own prespecified
+    choice, not a package default. Duplicate names are rejected, since the result
+    dict — and the ``variant`` column of every table built from it — is keyed by
+    name.
+    """
+    _check_distinct_names(variants)
     return {
-        v: run_precision_analysis(reference_set, predictions, v)
-        for v in REINTERPRETATION_VARIANTS
+        pc.name: run_precision_analysis(reference_set, predictions, pc)
+        for pc in variants
     }
 
 
@@ -308,7 +377,7 @@ def _adjudicator_stratum(adjudicator_positive: bool) -> str:
 def run_recall_analysis(
     reference_sets: list[ReferenceSet],
     predictions: PredictionSet,
-    variant: AnalysisVariant = AnalysisVariant.PRIMARY,
+    positive_class: PositiveClass = PRIMARY,
 ) -> RecallResult:
     """Compute the protocol recall estimands for every recall reference set.
 
@@ -343,7 +412,7 @@ def run_recall_analysis(
         for pair in eval_set.pairs:
             pred = predictions.predictions[pair.pair_id]
             adj = pred.adjudicator_label
-            positive = is_positive(adj, variant)
+            positive = is_positive(adj, positive_class)
             if adj == "Abstain":
                 n_abstain += 1
             n_ceiling += positive
@@ -377,7 +446,7 @@ def run_recall_analysis(
 
         sets.append(
             RecallSetResult(
-                variant=variant.value,
+                variant=positive_class.name,
                 reference_set_id=eval_set.set_id,
                 reference_set_label=eval_set.label or eval_set.set_id,
                 screening_mode=eval_set.screening_mode,
@@ -399,7 +468,7 @@ def run_recall_analysis(
             )
         )
     return RecallResult(
-        variant=variant.value,
+        variant=positive_class.name,
         sets=sets,
         screening_evaluated_set_ids=[
             s.reference_set_id for s in sets if s.screening_mode == "observed"
@@ -413,17 +482,38 @@ def run_recall_analysis(
 def run_recall_variants(
     reference_sets: list[ReferenceSet],
     predictions: PredictionSet,
-) -> dict[AnalysisVariant, RecallResult]:
-    """Run the three re-interpretation variants over the recall sets."""
+    variants: Sequence[PositiveClass],
+) -> dict[str, RecallResult]:
+    """Run each supplied collapse rule over the recall sets, keyed by name.
+
+    As for :func:`run_precision_variants`, ``variants`` is required and names
+    must be distinct.
+    """
+    _check_distinct_names(variants)
     return {
-        v: run_recall_analysis(reference_sets, predictions, v)
-        for v in REINTERPRETATION_VARIANTS
+        pc.name: run_recall_analysis(reference_sets, predictions, pc)
+        for pc in variants
     }
 
 
+def _check_distinct_names(variants: Sequence[PositiveClass]) -> None:
+    """Reject an empty rule list or repeated rule names."""
+    if len(variants) == 0:
+        raise ValueError("variants must contain at least one PositiveClass.")
+    names = [pc.name for pc in variants]
+    if len(names) != len(set(names)):
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        raise ValueError(
+            f"duplicate PositiveClass name(s): {dupes}; results are keyed by name."
+        )
+
+
 __all__ = [
-    "AnalysisVariant",
-    "REINTERPRETATION_VARIANTS",
+    "ADJUDICATOR_LABELS",
+    "PositiveClass",
+    "PRIMARY",
+    "ABSTAIN_POSITIVE",
+    "OTHERWISE_RELATED_POSITIVE",
     "JOINT_STRATA",
     "ADJUDICATOR_STRATA",
     "is_positive",

@@ -14,8 +14,40 @@ import argparse
 from pathlib import Path
 
 from llm_dup_dev.study_eval import loading, workflow
-from llm_dup_dev.study_eval.aggregate import AnalysisVariant
+from llm_dup_dev.study_eval.aggregate import (
+    ABSTAIN_POSITIVE,
+    ADJUDICATOR_LABELS,
+    OTHERWISE_RELATED_POSITIVE,
+    PRIMARY,
+    PositiveClass,
+)
 from llm_dup_dev.study_eval.sampling import SCLESample
+
+#: The named rules this CLI offers. The CLI is a dev-side smoke-test surface, so
+#: it carries the current study's rules for convenience; the secure-side runner
+#: calls the API directly and supplies whatever the protocol prespecifies. Use
+#: ``--positive-label`` to build an ad-hoc rule instead.
+_NAMED_RULES: dict[str, PositiveClass] = {
+    pc.name: pc for pc in (PRIMARY, ABSTAIN_POSITIVE, OTHERWISE_RELATED_POSITIVE)
+}
+
+
+def _resolve_positive_class(args: argparse.Namespace) -> PositiveClass:
+    """Build the collapse rule from ``--variant`` and any ``--positive-label``.
+
+    Without ``--positive-label`` the name must be one of the rules this CLI
+    carries; with it, any name is accepted and the labels define the rule.
+    """
+    if args.positive_label:
+        return PositiveClass(
+            name=args.variant, positive_labels=frozenset(args.positive_label)
+        )
+    if args.variant not in _NAMED_RULES:
+        raise SystemExit(
+            f"unknown --variant {args.variant!r}: pass one of "
+            f"{sorted(_NAMED_RULES)}, or give --positive-label to define a rule."
+        )
+    return _NAMED_RULES[args.variant]
 
 
 def _load_sample(path: str) -> SCLESample:
@@ -32,7 +64,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         sample_scle=not args.no_scle,
         scle_precision_per_cell=args.per_cell,
         scle_recall_per_stratum=args.per_stratum,
-        variant=AnalysisVariant(args.variant),
+        positive_class=_resolve_positive_class(args),
         output_dir=args.output_dir,
     )
     print(
@@ -100,8 +132,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--per-stratum", type=int, default=10)
     p.add_argument(
         "--variant",
-        choices=[v.value for v in AnalysisVariant],
-        default=AnalysisVariant.PRIMARY.value,
+        default=PRIMARY.name,
+        help=(
+            "name of the collapse rule: one of "
+            f"{sorted(_NAMED_RULES)}, or any name when --positive-label is given"
+        ),
+    )
+    p.add_argument(
+        "--positive-label",
+        action="append",
+        choices=list(ADJUDICATOR_LABELS),
+        help=(
+            "adjudicator label counted as positive (repeatable). When given, "
+            "builds an ad-hoc rule named by --variant instead of using a named one."
+        ),
     )
     p.set_defaults(func=_cmd_analyze)
 

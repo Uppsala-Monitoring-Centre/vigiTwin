@@ -23,7 +23,10 @@
       "n_bytes": 2048
     }
   ],
-  "analysis_variant": null,
+  "analysis_variant": "primary",
+  "analysis_positive_labels": [
+    "Duplicates"
+  ],
   "ci_method": "wilson",
   "screening_modes": {
     "precision_primary": "observed",
