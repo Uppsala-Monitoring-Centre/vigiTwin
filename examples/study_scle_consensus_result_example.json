@@ -160,7 +160,8 @@
         },
         "free_text_materially_different": false,
         "consensus_free_text": "Agreed after discussion.",
-        "arbiter_rationale": "No never-event."
+        "arbiter_rationale": "No never-event.",
+        "consensus_method_difference": ""
       }
     ]
   },
@@ -183,6 +184,7 @@
       },
       "consensus_free_text": "",
       "free_text_materially_different": false,
+      "consensus_method_difference": "",
       "arbiter_rationale": "",
       "arbitrated": false
     },
@@ -209,6 +211,7 @@
       },
       "consensus_free_text": "Agreed after discussion.",
       "free_text_materially_different": false,
+      "consensus_method_difference": "",
       "arbiter_rationale": "No never-event.",
       "arbitrated": true
     }

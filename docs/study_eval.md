@@ -191,6 +191,16 @@ under a different rule.
   cell plus a row on the `guidance` sheet. Excel protection is advisory, so
   **read-back is the source of truth**: `read_reviewer_submission` re-validates
   vocabularies, applicability, coverage, and an embedded sample checksum.
+- **Which cells must be filled is visible in the sheet.** Only the
+  always-applicable questions, the free-text source of error on misclassified
+  pairs, and the method-difference note on disagreement pairs are required;
+  those cells are shaded pale yellow. Everything else in the response block is
+  blank-tolerant — the tick-only stage and domain columns and the three yes/no
+  misclassification dimensions all read a blank cell as "no", resolved at
+  read-back where the auto-context says whether the question was asked. The
+  shading exists because two empty cells with opposite meanings sitting side by
+  side is what tripped reviewers before
+  ([migration_notes_scle_blank_means_no.md](migration_notes_scle_blank_means_no.md)).
 - **The auto-context block is sized to the sample.** A column holding one value
   for the whole workbook is stated once on `metadata` instead — the component
   always, the reference set unless a recall sample spans several, the screening
@@ -215,7 +225,15 @@ under a different rule.
   (`error_stage::<stage>`) with its own kappa; the feature domains stay a single
   set-valued dimension.
 - **Arbitration** focuses on the structurally-disagreeing pairs only; agreement
-  pairs are auto-resolved from the reviews at finalize time.
+  pairs are auto-resolved from the reviews at finalize time. The sheet uses the
+  same fill vocabulary as the reviewer workbook: both reviewers' free-text
+  assessments come first, a dimension the two already agreed on is pre-filled
+  with the settled value and shaded do-not-edit, one that never applied reads
+  `N/A` across all three of its columns, and only a cell needing a decision is
+  left blank and shaded. Editing a pre-filled cell cannot change the outcome, so
+  `merge_consensus` raises rather than discarding it. The method-difference
+  explanations are carried across too, resolved by a single consensus column —
+  the arbiter's rationale covers both free-text blocks.
 - **Consensus** ([scle/consensus.py](../src/llm_dup_dev/study_eval/scle/consensus.py))
   preserves both reviews verbatim (with checksums); every consensus dimension
   records whether it came from `reviewer_agreement` or `arbitration`. Primary

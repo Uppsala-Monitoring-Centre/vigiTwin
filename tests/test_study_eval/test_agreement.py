@@ -142,6 +142,34 @@ def test_both_ticking_nothing_counts_as_agreement_not_a_skip():
     assert diff["error_stage::evidence_extraction"].n_compared == 1
 
 
+def test_blank_defaulted_yes_no_dimensions_stay_in_the_denominator():
+    """A blank yes/no cell reads as "no", so it is compared, not skipped.
+
+    Read-back resolves blanks to an explicit "no" on misclassified pairs, which
+    is what these submissions represent. The denominator is unchanged from when
+    the cells were mandatory — only the answers can now differ where one
+    reviewer ticked and the other left the cell empty.
+    """
+    sub_a = _stage_submission("alice", [()], stage_vocab=_STAGES)
+    ticked = _misclassified("A0__B0", "bob", stages=())
+    sub_b = ReviewerSubmission(
+        workbook_id="w",
+        reviewer_id="bob",
+        evaluation_component="precision",
+        sample_checksum="x",
+        error_stages=list(_STAGES),
+        assessments=[
+            ticked.model_copy(update={"never_event": YesNo.YES}),
+        ],
+    )
+    diff = {d.field: d for d in compute_agreement(sub_a, sub_b).dimensions}
+    assert diff["never_event"].n_compared == 1
+    assert diff["never_event"].n_agree == 0
+    # The two the reviewers left blank agree at "no".
+    assert diff["unexpected_method_behaviour"].n_agree == 1
+    assert diff["incorrect_or_imprecise_input_data"].n_agree == 1
+
+
 def test_agreement_rejects_mismatched_vocabularies():
     sub_a = _stage_submission("alice", [()], stage_vocab=_STAGES)
     sub_b = _stage_submission("bob", [()], stage_vocab=("evidence_extraction",))

@@ -60,6 +60,7 @@ class ConsensusAssessment(BaseModel):
     reviewer_free_texts: dict[str, str] = {}
     consensus_free_text: str = ""
     free_text_materially_different: bool = False
+    consensus_method_difference: str = ""
     arbiter_rationale: str = ""
     arbitrated: bool = False
 
@@ -86,6 +87,20 @@ def _parse_domains(raw: str) -> list[str]:
         return []
     parts = raw.replace(";", ",").split(",")
     return [p.strip() for p in parts if p.strip()]
+
+
+def _same_answer(field: str, supplied: str, agreed: str | None) -> bool:
+    """Whether an arbitration cell still holds the value it was pre-filled with.
+
+    The set-valued dimension is compared as a set: the workbook renders it with
+    ", " for readability while the comparison form uses ",", so a plain string
+    compare would call every pre-filled domain cell an edit.
+    """
+    if field == "implicated_feature_domains":
+        return sorted(_parse_domains(supplied)) == sorted(
+            _parse_domains(agreed or "")
+        )
+    return supplied == agreed
 
 
 def merge_consensus(
@@ -133,6 +148,20 @@ def merge_consensus(
             if va == vb:
                 value = va
                 sources[field] = _SOURCE_AGREEMENT
+                # The workbook pre-fills agreed dimensions as read-only context.
+                # An arbiter who edits one would otherwise have the change
+                # dropped here without a word, so refuse instead: agreed
+                # dimensions are resolved from the reviews, not by arbitration.
+                if decision is not None and field in decision.consensus_dimensions:
+                    supplied = decision.consensus_dimensions[field]
+                    if not _same_answer(field, supplied, va):
+                        raise ValueError(
+                            f"pair {pair_id!r}: the arbitration workbook sets "
+                            f"{field!r} to {supplied!r}, but both reviewers "
+                            f"answered {va!r}. Agreed dimensions are resolved "
+                            f"from the reviews; clear the consensus cell or "
+                            f"restore the pre-filled value."
+                        )
             else:
                 if decision is None or field not in decision.consensus_dimensions:
                     raise ValueError(
@@ -170,6 +199,9 @@ def merge_consensus(
             consensus_free_text=decision.consensus_free_text if decision else "",
             free_text_materially_different=(
                 decision.free_text_materially_different if decision else False
+            ),
+            consensus_method_difference=(
+                decision.consensus_method_difference if decision else ""
             ),
             arbiter_rationale=decision.arbiter_rationale if decision else "",
             arbitrated=decision is not None,

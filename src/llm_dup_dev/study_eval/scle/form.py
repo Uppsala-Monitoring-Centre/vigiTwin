@@ -22,8 +22,13 @@ Two of the misclassification dimensions are *list-valued* and study-configured:
 ``error_stages`` (which method components contributed) and
 ``implicated_feature_domains``. The study supplies the two vocabularies; this
 package hard-codes neither. Both are answered tick-only in the workbook — an
-unticked entry means "no", so an empty list is a valid answer and neither field
-joins the required-together block in :data:`MISCLASSIFICATION_DIMENSIONS`.
+unticked entry means "no", so an empty list is a valid answer.
+
+A blank cell means "no" for the yes/no misclassification dimensions too (see
+:data:`MISCLASSIFICATION_YESNO_DIMENSIONS`), resolved at workbook read-back.
+Only :data:`MISCLASSIFICATION_REQUIRED_DIMENSIONS` — the free-text description of
+what went wrong, which has no sensible blank default — must be filled explicitly
+wherever it applies.
 
 The contributing stages are compared one dimension per stage (see
 :func:`structured_dimensions`), while the feature domains are compared as a
@@ -167,13 +172,27 @@ ALWAYS_DIMENSIONS: tuple[str, ...] = (
     "reference_label_issue",
 )
 
-#: Dimensions a misclassified pair must answer. The two list-valued fields are
-#: deliberately absent: they are answered tick-only, so an empty list is valid.
-MISCLASSIFICATION_DIMENSIONS: tuple[str, ...] = (
+#: Yes/no dimensions a misclassified pair is asked but need not tick: a blank
+#: cell reads as "no" at workbook read-back, the same convention the tick-only
+#: list columns use. A correctly classified pair must leave them empty.
+MISCLASSIFICATION_YESNO_DIMENSIONS: tuple[str, ...] = (
     "never_event",
     "unexpected_method_behaviour",
     "incorrect_or_imprecise_input_data",
+)
+
+#: Dimensions a misclassified pair must answer explicitly. Free text has no
+#: sensible blank default, so it stays required wherever it applies.
+MISCLASSIFICATION_REQUIRED_DIMENSIONS: tuple[str, ...] = (
     "error_source_description",
+)
+
+#: Every dimension the misclassification block covers, excluding the two
+#: list-valued fields below. Drives applicability — and so the ``N/A`` prefill —
+#: without saying anything about which members must be filled.
+MISCLASSIFICATION_DIMENSIONS: tuple[str, ...] = (
+    *MISCLASSIFICATION_YESNO_DIMENSIONS,
+    *MISCLASSIFICATION_REQUIRED_DIMENSIONS,
 )
 
 #: List-valued fields that a misclassified pair *may* answer and a correctly
@@ -205,7 +224,7 @@ class SCLECaseAssessment(BaseModel):
     """One reviewer's assessment of one SCLE case.
 
     Conditional dimensions are ``None`` (or an empty list) when they do not
-    apply. The model enforces *internal* consistency — the required
+    apply. The model enforces *internal* consistency — the yes/no
     misclassification dimensions are all-present or all-absent. The full check
     that presence matches the paired :class:`SCLEAutoContext` is done by
     :func:`check_assessment_against_context`, because the model does not carry
@@ -234,17 +253,25 @@ class SCLECaseAssessment(BaseModel):
     def misclassification_answered(self) -> bool:
         """Whether the misclassification block was applicable to this case.
 
-        The block is filled all-or-nothing (enforced below), so any one of its
-        required members answers the question. Comparison code uses this to tell
+        The yes/no block is filled all-or-nothing (enforced below), so any one
+        of its members answers the question. Comparison code uses this to tell
         "the reviewer ticked nothing" apart from "the question was never asked",
         which matters for the two tick-only list dimensions.
+
+        This relies on a **read-back invariant**: because a blank yes/no cell is
+        resolved to "no" on a misclassified pair, an assessment read from a
+        workbook has the block set exactly when the pair is misclassified. An
+        assessment built directly in code that leaves the yes/no fields ``None``
+        on a misclassified pair breaks that invariant, and its stage and domain
+        ticks will compare as "not asked" rather than as "nothing ticked".
         """
         return self.never_event is not None
 
     @model_validator(mode="after")
     def _check_internal_consistency(self) -> "SCLECaseAssessment":
         block = {
-            name: getattr(self, name) for name in MISCLASSIFICATION_DIMENSIONS
+            name: getattr(self, name)
+            for name in MISCLASSIFICATION_YESNO_DIMENSIONS
         }
         set_fields = [
             name for name, val in block.items() if val not in (None, "")
@@ -252,8 +279,9 @@ class SCLECaseAssessment(BaseModel):
         if set_fields and len(set_fields) != len(block):
             missing = [name for name, val in block.items() if val in (None, "")]
             raise ValueError(
-                f"pair {self.pair_id!r}: misclassification dimensions must be "
-                f"filled as a group; set {set_fields} but missing {missing}."
+                f"pair {self.pair_id!r}: the yes/no misclassification dimensions "
+                f"must be filled as a group; set {set_fields} but missing "
+                f"{missing}."
             )
 
         for name in MISCLASSIFICATION_LIST_DIMENSIONS:
@@ -271,11 +299,15 @@ def check_assessment_against_context(
 ) -> list[str]:
     """Return a list of problems where ``assessment`` mismatches ``context``.
 
-    An empty list means the assessment fills exactly the applicable dimensions
-    (and no inapplicable ones). This is the source-of-truth check run when a
-    reviewer submission is read back. The two list-valued dimensions are checked
-    one-sidedly: they may be empty on a misclassified case (nothing was
-    implicated) but must be empty on a correctly classified one.
+    An empty list means the assessment fills every dimension that must be
+    filled, and none that do not apply. This is the source-of-truth check run
+    when a reviewer submission is read back.
+
+    Three groups are checked one-sidedly — they may be absent where they apply
+    but must be absent where they do not. The two list-valued dimensions may be
+    empty on a misclassified case because nothing was implicated, and the yes/no
+    misclassification dimensions because a blank cell means "no" (read-back
+    resolves those to an explicit "no", so they normally arrive filled).
     """
     problems: list[str] = []
     if assessment.pair_id != context.pair_id:
@@ -285,11 +317,13 @@ def check_assessment_against_context(
         )
     applicable = applicable_dimensions(context)
 
-    conditional = set(MISCLASSIFICATION_DIMENSIONS) | set(DISAGREEMENT_DIMENSIONS)
-    for field in conditional:
+    required = set(MISCLASSIFICATION_REQUIRED_DIMENSIONS) | set(
+        DISAGREEMENT_DIMENSIONS
+    )
+    for field in required | set(MISCLASSIFICATION_YESNO_DIMENSIONS):
         value = getattr(assessment, field)
         is_applicable = field in applicable
-        if is_applicable and value in (None, ""):
+        if is_applicable and field in required and value in (None, ""):
             problems.append(
                 f"{context.pair_id}: dimension {field!r} is applicable "
                 f"(misclassified={context.is_misclassified}, "
@@ -349,6 +383,8 @@ __all__ = [
     "SCLEAutoContext",
     "ALWAYS_DIMENSIONS",
     "MISCLASSIFICATION_DIMENSIONS",
+    "MISCLASSIFICATION_YESNO_DIMENSIONS",
+    "MISCLASSIFICATION_REQUIRED_DIMENSIONS",
     "MISCLASSIFICATION_LIST_DIMENSIONS",
     "DISAGREEMENT_DIMENSIONS",
     "applicable_dimensions",

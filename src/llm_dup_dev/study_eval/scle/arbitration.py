@@ -2,11 +2,21 @@
 
 The arbiter (the co-author who produced the original reference annotation) works
 one workbook covering the structurally discrepant SCLE pairs, on a ``pairs``
-sheet laid out like the reviewers'. Each row shows both reviewers' values for every
-structured dimension side by side and both free-text assessments; the arbiter
-fills a consensus value for the dimensions that disagreed, judges whether the
-free-text interpretations differ materially, and writes a consensus free-text
-plus a rationale.
+sheet laid out like the reviewers'. Both free-text assessments come first, so the
+arbiter reads what each reviewer said before judging any single answer; then each
+structured dimension appears as the two reviewers' values side by side plus a
+consensus cell. The arbiter fills a consensus value for the dimensions that
+disagreed, judges whether the free-text interpretations differ materially, and
+writes a consensus free-text, a consensus method-difference, and a rationale
+covering both free-text blocks.
+
+Consensus cells carry the same fill vocabulary as the reviewer workbook: a
+dimension the two reviewers already agreed on is **pre-filled** with the settled
+value and shaded as do-not-edit context, one that never applied to the pair reads
+``N/A``, and only a cell that genuinely needs a decision is left blank and
+shaded. Editing a pre-filled cell has no effect on the outcome — agreed
+dimensions are resolved from the reviews — so ``merge_consensus`` raises rather
+than dropping such an edit silently.
 
 As with the reviewer workbook, the read-back is the source of truth and is
 validated against the originating sample.
@@ -34,7 +44,9 @@ from llm_dup_dev.study_eval.scle.form import (
     CaseDifficulty,
     ReferenceLabelIssue,
     ReviewerSubmission,
+    SCLEAutoContext,
     YesNo,
+    applicable_dimensions,
     error_stage_name,
 )
 from llm_dup_dev.study_eval.scle.vocabularies import (
@@ -42,8 +54,12 @@ from llm_dup_dev.study_eval.scle.vocabularies import (
     write_vocabulary_sheet,
 )
 from llm_dup_dev.study_eval.scle.workbook import (
+    CONTEXT_FILL_RGB,
     METADATA_SHEET,
+    NOT_APPLICABLE,
+    NOT_APPLICABLE_FILL_RGB,
     PAIRS_SHEET,
+    REQUIRED_FILL_RGB,
     STAGE_HEADER_PREFIX,
     _DEFAULT_WIDTH,
     _PAIR_ID_HEADER,
@@ -51,6 +67,7 @@ from llm_dup_dev.study_eval.scle.workbook import (
     _PROSE_WIDTH,
     _alignments,
     _cell_str,
+    _fill,
     _set_packet_hyperlink,
     _style_sheet,
 )
@@ -102,6 +119,9 @@ def _dim_header(dimension: str) -> str:
 _MATERIALLY_DIFFERENT_HEADER = "Free-text materially different"
 _CONSENSUS_FREE_TEXT_HEADER = "Consensus free-text"
 _ARBITER_RATIONALE_HEADER = "Arbiter rationale"
+_METHOD_DIFF_A_HEADER = "Method-difference (A)"
+_METHOD_DIFF_B_HEADER = "Method-difference (B)"
+_CONSENSUS_METHOD_DIFF_HEADER = "Consensus method-difference"
 
 #: Columns holding sentences rather than labels, mirroring the reviewer
 #: workbook's prose columns: left-aligned, with room to wrap.
@@ -109,10 +129,24 @@ _PROSE_HEADERS: frozenset[str] = frozenset(
     {
         "Free-text (A)",
         "Free-text (B)",
+        _METHOD_DIFF_A_HEADER,
+        _METHOD_DIFF_B_HEADER,
+        _CONSENSUS_METHOD_DIFF_HEADER,
         _CONSENSUS_FREE_TEXT_HEADER,
         _ARBITER_RATIONALE_HEADER,
     }
 )
+
+
+def _dimension_applies(dimension: str, ctx: SCLEAutoContext) -> bool:
+    """Whether a structured dimension was asked of this pair at all.
+
+    Taken from the auto-context rather than from either reviewer's answer, which
+    cannot tell "the question did not apply" apart from "nothing was ticked".
+    The per-stage dimensions all follow the one ``error_stages`` field.
+    """
+    field = "error_stages" if error_stage_name(dimension) is not None else dimension
+    return field in applicable_dimensions(ctx)
 
 
 def _arbitration_width(header: str) -> int:
@@ -128,8 +162,13 @@ class ArbitrationDecision(BaseModel):
 
     ``consensus_dimensions`` carries a value only for the structured dimensions
     the arbiter chose to set (required for those that disagreed; ignored for
-    those that already agreed). ``free_text_materially_different`` records the
-    arbiter's judgement on the two free-text assessments.
+    those that already agreed, where the workbook pre-fills the agreed value as
+    read-only context). ``free_text_materially_different`` records the arbiter's
+    judgement on the two free-text assessments.
+
+    ``consensus_method_difference`` is the arbiter's resolution of the two
+    method-difference explanations. It has no materially-different flag and no
+    rationale of its own: ``arbiter_rationale`` covers both free-text blocks.
     """
 
     pair_id: str
@@ -137,6 +176,7 @@ class ArbitrationDecision(BaseModel):
     free_text_materially_different: bool
     consensus_free_text: str
     arbiter_rationale: str
+    consensus_method_difference: str = ""
 
 
 class ArbitrationSubmission(BaseModel):
@@ -238,6 +278,9 @@ def write_arbitration_workbook(
     ):
         if any(getattr(ctx_by_pair[pair_id], field) for pair_id in ordered):
             headers.append(header)
+    # Both free-text assessments sit before the first dimension, so the arbiter
+    # reads what each reviewer actually said before judging any single answer.
+    headers.extend(["Free-text (A)", "Free-text (B)"])
     consensus_col_of: dict[str, int] = {}
     for field in dimensions:
         h = _dim_header(field)
@@ -247,8 +290,9 @@ def write_arbitration_workbook(
         consensus_col_of[field] = len(headers)  # 1-based col index
     headers.extend(
         [
-            "Free-text (A)",
-            "Free-text (B)",
+            _METHOD_DIFF_A_HEADER,
+            _METHOD_DIFF_B_HEADER,
+            _CONSENSUS_METHOD_DIFF_HEADER,
             _MATERIALLY_DIFFERENT_HEADER,
             _CONSENSUS_FREE_TEXT_HEADER,
             _ARBITER_RATIONALE_HEADER,
@@ -256,7 +300,9 @@ def write_arbitration_workbook(
     )
     materially_col = headers.index(_MATERIALLY_DIFFERENT_HEADER) + 1
 
-    grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+    grey = _fill(PatternFill, CONTEXT_FILL_RGB)
+    na_fill = _fill(PatternFill, NOT_APPLICABLE_FILL_RGB)
+    required_fill = _fill(PatternFill, REQUIRED_FILL_RGB)
     context_headers = {
         _PAIR_ID_HEADER,
         "Reference label",
@@ -265,6 +311,11 @@ def write_arbitration_workbook(
         "Joint stratum",
         "Free-text (A)",
         "Free-text (B)",
+    }
+    field_by_consensus_col = {col: field for field, col in consensus_col_of.items()}
+    disagreed_by_pair = {
+        p.pair_id: {d.field for d in p.dimension_disagreements}
+        for p in report.pair_discrepancies
     }
     header_align, centre, left = _alignments()
     for c_idx, h in enumerate(headers, start=1):
@@ -292,6 +343,7 @@ def write_arbitration_workbook(
         a = a_by_pair.get(pair_id)
         b = b_by_pair.get(pair_id)
         target = (packet_targets or {}).get(pair_id)
+        disagreed = disagreed_by_pair.get(pair_id, set())
         row = {
             _PAIR_ID_HEADER: pair_id,
             "Reference label": ctx.reference_label,
@@ -303,22 +355,53 @@ def write_arbitration_workbook(
         }
         for field in dimensions:
             h = _dim_header(field)
+            if not _dimension_applies(field, ctx):
+                # Never asked of this pair, so neither reviewer answered it and
+                # there is nothing to resolve. Say so, rather than leaving three
+                # blanks that read as unanswered questions.
+                row[f"{h} (A)"] = NOT_APPLICABLE
+                row[f"{h} (B)"] = NOT_APPLICABLE
+                row[f"{h} consensus"] = NOT_APPLICABLE
+                continue
             row[f"{h} (A)"] = _dim_value(a, field) if a else ""
             row[f"{h} (B)"] = _dim_value(b, field) if b else ""
+            if field not in disagreed:
+                # Already settled between the reviewers: show the agreed value as
+                # read-only context so only the cells needing a decision are
+                # blank. Editing it here has no effect and `merge_consensus`
+                # raises rather than dropping the change silently.
+                row[f"{h} consensus"] = _dim_value(a, field) if a else ""
+
+        if _dimension_applies("method_difference_explanation", ctx):
+            row[_METHOD_DIFF_A_HEADER] = (a.method_difference_explanation or "") if a else ""
+            row[_METHOD_DIFF_B_HEADER] = (b.method_difference_explanation or "") if b else ""
+        else:
+            row[_METHOD_DIFF_A_HEADER] = NOT_APPLICABLE
+            row[_METHOD_DIFF_B_HEADER] = NOT_APPLICABLE
+            row[_CONSENSUS_METHOD_DIFF_HEADER] = NOT_APPLICABLE
+
         for c_idx, h in enumerate(headers, start=1):
             cell = ws.cell(row=r_idx, column=c_idx)
             cell.alignment = left if h in _PROSE_HEADERS else centre
-            if h not in row:
+            if h in row:
+                if h in context_headers or h.endswith("(A)") or h.endswith("(B)"):
+                    cell.fill = grey
+                if h == _PAIR_ID_HEADER and target:
+                    _set_packet_hyperlink(cell, target, text=pair_id)
+                else:
+                    cell.value = row[h]
+            if row.get(h) == NOT_APPLICABLE:
+                cell.fill = na_fill
                 continue
-            if h in context_headers or h.endswith("(A)") or h.endswith("(B)"):
-                cell.fill = grey
-            if h == _PAIR_ID_HEADER and target:
-                _set_packet_hyperlink(cell, target, text=pair_id)
+            field = field_by_consensus_col.get(c_idx)
+            if field is None:
+                continue
+            if field in disagreed:
+                cell.fill = required_fill
+                if c_idx in dv_by_col:
+                    dv_by_col[c_idx].add(cell)
             else:
-                cell.value = row[h]
-        # Attach dropdowns to consensus + materially-different cells.
-        for col_idx, dv in dv_by_col.items():
-            dv.add(ws.cell(row=r_idx, column=col_idx))
+                cell.fill = grey
         dv_material.add(ws.cell(row=r_idx, column=materially_col))
 
     _style_sheet(ws, [_arbitration_width(h) for h in headers])
@@ -380,33 +463,30 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
             problems.append(f"{path}: pair {pair_id!r} is not in the sample.")
             continue
 
+        def _answer(header: str) -> str:
+            """The arbiter's entry in one column, ignoring the N/A sentinel."""
+            if header not in idx:
+                return ""
+            val = _cell_str(row[idx[header]])
+            return "" if val == NOT_APPLICABLE else val
+
         consensus: dict[str, str] = {}
         for field in dimensions:
-            col = f"{_dim_header(field)} consensus"
-            if col in idx:
-                val = _cell_str(row[idx[col]])
-                if val:
-                    consensus[field] = val
+            val = _answer(f"{_dim_header(field)} consensus")
+            if val:
+                consensus[field] = val
 
-        materially = _cell_str(row[idx.get(_MATERIALLY_DIFFERENT_HEADER, -1)]).lower() \
-            if _MATERIALLY_DIFFERENT_HEADER in idx else ""
-        consensus_free_text = (
-            _cell_str(row[idx[_CONSENSUS_FREE_TEXT_HEADER]])
-            if _CONSENSUS_FREE_TEXT_HEADER in idx
-            else ""
-        )
-        rationale = (
-            _cell_str(row[idx[_ARBITER_RATIONALE_HEADER]])
-            if _ARBITER_RATIONALE_HEADER in idx
-            else ""
-        )
+        materially = _answer(_MATERIALLY_DIFFERENT_HEADER).lower()
         decisions.append(
             ArbitrationDecision(
                 pair_id=pair_id,
                 consensus_dimensions=consensus,
                 free_text_materially_different=(materially == "yes"),
-                consensus_free_text=consensus_free_text,
-                arbiter_rationale=rationale,
+                consensus_free_text=_answer(_CONSENSUS_FREE_TEXT_HEADER),
+                arbiter_rationale=_answer(_ARBITER_RATIONALE_HEADER),
+                consensus_method_difference=_answer(
+                    _CONSENSUS_METHOD_DIFF_HEADER
+                ),
             )
         )
 
