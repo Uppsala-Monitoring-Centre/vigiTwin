@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.study_eval.aggregate import run_precision_analysis, run_recall_analysis
+from llm_dup_dev.study_eval.aggregate import (
+    PRIMARY,
+    run_precision_analysis,
+    run_recall_analysis,
+)
 from llm_dup_dev.study_eval.sampling import (
     promote_backup,
     sample_scle_precision,
@@ -30,8 +34,8 @@ def _all_tp(n: int):
 def test_precision_sampling_is_deterministic():
     rset, preds = _all_tp(25)
     res = run_precision_analysis(rset, preds)
-    a = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
-    b = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    a = sample_scle_precision(rset, res, preds, per_cell=10, positive_class=PRIMARY, seed="s")
+    b = sample_scle_precision(rset, res, preds, per_cell=10, positive_class=PRIMARY, seed="s")
     assert [c.pair_id for c in a.cases] == [c.pair_id for c in b.cases]
     assert [c.pair_id for c in a.backups] == [c.pair_id for c in b.backups]
 
@@ -39,7 +43,7 @@ def test_precision_sampling_is_deterministic():
 def test_precision_sampling_golden_order():
     rset, preds = _all_tp(20)
     res = run_precision_analysis(rset, preds)
-    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="golden-seed-1")
+    s = sample_scle_precision(rset, res, preds, per_cell=3, positive_class=PRIMARY, seed="golden-seed-1")
     assert [c.pair_id for c in s.cases] == _PRIMARY_GOLDEN
     assert [c.pair_id for c in s.backups[:4]] == _BACKUP_HEAD_GOLDEN
     assert [c.backup_rank for c in s.backups[:4]] == [1, 2, 3, 4]
@@ -48,7 +52,7 @@ def test_precision_sampling_golden_order():
 def test_precision_cap_and_backups():
     rset, preds = _all_tp(25)
     res = run_precision_analysis(rset, preds)
-    s = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    s = sample_scle_precision(rset, res, preds, per_cell=10, positive_class=PRIMARY, seed="s")
     tp_primary = [c for c in s.cases if c.stratum == "TP"]
     tp_backups = [c for c in s.backups if c.stratum == "TP"]
     assert len(tp_primary) == 10
@@ -61,7 +65,7 @@ def test_precision_cap_and_backups():
 def test_takes_all_when_under_cap_no_backups():
     rset, preds = _all_tp(3)
     res = run_precision_analysis(rset, preds)
-    s = sample_scle_precision(rset, res, preds, per_cell=10, seed="s")
+    s = sample_scle_precision(rset, res, preds, per_cell=10, positive_class=PRIMARY, seed="s")
     assert len([c for c in s.cases if c.stratum == "TP"]) == 3
     assert s.backups == []
 
@@ -81,8 +85,8 @@ def test_precision_preserves_reference_set_id():
 def test_different_seed_changes_draw():
     rset, preds = _all_tp(20)
     res = run_precision_analysis(rset, preds)
-    a = sample_scle_precision(rset, res, preds, per_cell=5, seed="A")
-    b = sample_scle_precision(rset, res, preds, per_cell=5, seed="B")
+    a = sample_scle_precision(rset, res, preds, per_cell=5, positive_class=PRIMARY, seed="A")
+    b = sample_scle_precision(rset, res, preds, per_cell=5, positive_class=PRIMARY, seed="B")
     assert [c.pair_id for c in a.cases] != [c.pair_id for c in b.cases]
 
 
@@ -91,7 +95,7 @@ def test_recall_caps_per_stratum_per_set():
         {"fda_gold": [(True, "Duplicates")] * 8 + [(False, "Unrelated")] * 8}
     )
     result = run_recall_analysis(rsets, preds)
-    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+    s = sample_scle_recall(result, preds, per_stratum=5, positive_class=PRIMARY, seed="s")
     both = [c for c in s.cases if c.stratum == "both"]
     neither = [c for c in s.cases if c.stratum == "neither"]
     assert len(both) == 5
@@ -111,7 +115,7 @@ def test_recall_preserves_per_set_reference_set_id():
         }
     )
     result = run_recall_analysis(rsets, preds)
-    s = sample_scle_recall(result, preds, per_stratum=3, seed="s")
+    s = sample_scle_recall(result, preds, per_stratum=3, positive_class=PRIMARY, seed="s")
     seen = set()
     for case in [*s.cases, *s.backups]:
         expected = case.pair_id.split("_")[0] + "_gold"
@@ -127,7 +131,7 @@ def test_recall_not_evaluated_uses_adjudicator_strata():
         modes={"manual": "not_evaluated"},
     )
     result = run_recall_analysis(rsets, preds)
-    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+    s = sample_scle_recall(result, preds, per_stratum=5, positive_class=PRIMARY, seed="s")
 
     assert {c.stratum for c in s.cases} == {
         "adjudicator_positive",
@@ -147,7 +151,7 @@ def test_recall_not_evaluated_still_flags_misclassification():
         modes={"manual": "not_evaluated"},
     )
     result = run_recall_analysis(rsets, preds)
-    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+    s = sample_scle_recall(result, preds, per_stratum=5, positive_class=PRIMARY, seed="s")
     by_stratum = {c.stratum: c for c in s.cases}
 
     pos = by_stratum["adjudicator_positive"].auto_context
@@ -171,7 +175,7 @@ def test_observed_recall_leaves_confusion_cell_unset():
         {"fda_gold": [(True, "Duplicates")] * 5 + [(False, "Unrelated")] * 5}
     )
     result = run_recall_analysis(rsets, preds)
-    s = sample_scle_recall(result, preds, per_stratum=5, seed="s")
+    s = sample_scle_recall(result, preds, per_stratum=5, positive_class=PRIMARY, seed="s")
 
     assert s.cases  # guard against a vacuous assertion
     assert all(c.auto_context.confusion_cell is None for c in s.cases)
@@ -190,10 +194,18 @@ def test_observed_recall_draw_is_unchanged_by_a_mixed_bundle():
         modes={"manual": "not_evaluated"},
     )
     a = sample_scle_recall(
-        run_recall_analysis(alone, preds_alone), preds_alone, per_stratum=5, seed="s"
+        run_recall_analysis(alone, preds_alone),
+        preds_alone,
+        per_stratum=5,
+        positive_class=PRIMARY,
+        seed="s",
     )
     b = sample_scle_recall(
-        run_recall_analysis(mixed, preds_mixed), preds_mixed, per_stratum=5, seed="s"
+        run_recall_analysis(mixed, preds_mixed),
+        preds_mixed,
+        per_stratum=5,
+        positive_class=PRIMARY,
+        seed="s",
     )
 
     picked = [c.pair_id for c in a.cases]
@@ -203,7 +215,7 @@ def test_observed_recall_draw_is_unchanged_by_a_mixed_bundle():
 def test_promote_backup_swaps_in_next_ranked():
     rset, preds = _all_tp(20)
     res = run_precision_analysis(rset, preds)
-    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="golden-seed-1")
+    s = sample_scle_precision(rset, res, preds, per_cell=3, positive_class=PRIMARY, seed="golden-seed-1")
     disq = s.cases[0].pair_id
     promoted_expected = s.backups[0].pair_id  # rank 1, same TP stratum
 
@@ -220,7 +232,7 @@ def test_promote_backup_swaps_in_next_ranked():
 def test_promote_backup_errors_when_no_backup():
     rset, preds = _all_tp(3)  # cell has 3 == cap -> no backups
     res = run_precision_analysis(rset, preds)
-    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="s")
+    s = sample_scle_precision(rset, res, preds, per_cell=3, positive_class=PRIMARY, seed="s")
     with pytest.raises(ValueError, match="no backup available"):
         promote_backup(s, s.cases[0].pair_id)
 
@@ -228,6 +240,6 @@ def test_promote_backup_errors_when_no_backup():
 def test_promote_backup_rejects_unknown_pair():
     rset, preds = _all_tp(10)
     res = run_precision_analysis(rset, preds)
-    s = sample_scle_precision(rset, res, preds, per_cell=3, seed="s")
+    s = sample_scle_precision(rset, res, preds, per_cell=3, positive_class=PRIMARY, seed="s")
     with pytest.raises(ValueError, match="not a primary"):
         promote_backup(s, "does__notexist")

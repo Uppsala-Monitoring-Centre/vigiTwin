@@ -15,7 +15,8 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
-Releases as **0.8.0**. Both breaking changes below ship together.
+Releases as **0.9.0** (the version in `pyproject.toml`). The breaking changes
+below ship together.
 
 ### 0.7.0 was retired, not released
 
@@ -106,6 +107,70 @@ but a workbook written by an earlier version no longer reads back.
   the header and right of the pair id.
 - `read_reviewer_submission` now rejects a pair sheet whose `Pair ID` column has
   been renamed away, instead of reporting every row as missing.
+
+### Breaking — the analysis variant is study configuration, not a dev-side enum
+
+`AnalysisVariant` is removed. Which label collapses a study runs, what they are
+called, and which one is the baseline are the study's prespecified choices, so the
+package now owns only the adjudicator's output vocabulary
+(`ADJUDICATOR_LABELS`) and the mechanism: a `PositiveClass(name,
+positive_labels)` whose labels are validated as a non-empty subset of it. This is
+the division `scle/vocabularies.py` already applies to the SCLE vocabularies.
+
+The fixed enum could not express the protocol's own secondary analysis 2
+("*Abstain* **and** *Otherwise related* positive"): `OTHERWISE_RELATED_POSITIVE`
+is `{Duplicates, Otherwise_related}`, so that analysis was unrunnable without a
+dev-side code change.
+
+Full detail, including what the secure side must do and the checks to run before
+the frozen analysis, is in `docs/migration_notes_positive_class.md`.
+
+- **`run_analysis`, `run_precision_analysis` and `run_recall_analysis` take
+  `positive_class: PositiveClass`** in place of `variant`, defaulting to `PRIMARY`.
+  `PRIMARY`, `ABSTAIN_POSITIVE` and `OTHERWISE_RELATED_POSITIVE` remain as
+  convenience constants for this study; a study may define its own instead.
+- **`run_precision_variants` / `run_recall_variants` require an explicit
+  `variants` sequence** and return dicts keyed by rule name. The
+  `REINTERPRETATION_VARIANTS` tuple is removed — which rules to run is not a
+  package default. Empty lists and repeated names are rejected.
+- **The baseline is named explicitly.** `write_study_artifacts`,
+  `write_secondary_comparison_csv` and `summary_to_markdown` take `baseline=<rule
+  name>`, required wherever results are supplied. Both writers previously found
+  the baseline by matching the literal string `"primary"` and, finding nothing,
+  emitted a header-only `secondary_comparison.csv` and a title-only `summary.md`
+  — silently, and reachable today by any run under a non-primary variant. A
+  missing baseline now raises.
+- **`secondary_comparison.csv` is written only when the results span two or more
+  rules**, so a single-rule run no longer produces an empty comparison file. Its
+  `primary_proportion` column is renamed `baseline_proportion`, and `summary.md`
+  headings name the baseline rule rather than saying "primary".
+- **The manifest records the rule's labels alongside its name.**
+  `EvaluationRunManifest` gains `analysis_positive_labels`; because rule names are
+  study-supplied, `analysis_variant` alone no longer identifies what was counted
+  as positive. Schema and example regenerated.
+- The CLI keeps `--variant` over the three named rules and gains a repeatable
+  `--positive-label` for defining an ad-hoc rule.
+
+### Fixed — SCLE auto-context could contradict its own stratum
+
+`sample_scle_precision` and `sample_scle_recall` derived `methods_disagree`,
+`is_misclassified` and `confusion_cell` under the **primary** rule regardless of
+the rule the analysis actually ran under, while taking the strata from the
+variant-aware result. Under any non-primary rule the two disagreed: a recall pair
+whose adjudicator label was `Abstain` landed in the `both` stratum — positive
+under `ABSTAIN_POSITIVE` — while being flagged `is_misclassified=True`. Since
+`methods_disagree` and `is_misclassified` gate which conditional dimensions a
+reviewer is asked, a reviewer would have been asked the wrong questions.
+
+Both samplers now take a required `positive_class` and use it, so a sample is
+internally consistent whichever rule produced it. `run_analysis` forwards the rule
+in force.
+
+Consequently **SCLE sampling and the collapse rule are now independent**, and the
+warning that fired when `sample_scle=True` met a non-primary variant is gone: it
+claimed the strata reflected that variant's rule, which was only half true, and
+examining cases under a secondary rule is a legitimate study configuration.
+Running the primary rule aggregate-only was, and remains, equally supported.
 
 ### Changed — an empty reference-set bundle is now an input error
 

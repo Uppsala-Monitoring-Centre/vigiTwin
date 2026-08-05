@@ -31,7 +31,7 @@ from importlib import metadata
 from pydantic import BaseModel
 
 from llm_dup_dev.study_eval.aggregate import (
-    AnalysisVariant,
+    PositiveClass,
     PrecisionResult,
     RecallResult,
     is_positive,
@@ -151,13 +151,16 @@ def sample_scle_precision(
     predictions: PredictionSet,
     per_cell: int = 10,
     *,
+    positive_class: PositiveClass,
     seed: str,
     procedure_id: str = "scle_precision_v1",
 ) -> SCLESample:
     """Draw up to ``per_cell`` pairs from each confusion cell (TP/FP/FN/TN).
 
-    ``result`` must be the **primary** precision result — the SCLE confusion
-    matrix is the adjudicator-vs-reference matrix under the primary rule.
+    ``positive_class`` must be the rule ``result`` was computed under: the
+    confusion cells come from ``result`` while ``methods_disagree`` is derived
+    here, so a mismatch would put contradictory facts in one case record. It has
+    no default for that reason — the sampler must not guess a rule.
     ``per_cell`` sets the per-cell sample size (default 10).
     """
     ref_by_pair = {p.pair_id: p.reference_label for p in reference_set.pairs}
@@ -168,7 +171,7 @@ def sample_scle_precision(
 
     def build(pair_id: str, cell: str, backup_rank: int | None) -> SCLECase:
         pred = predictions.predictions[pair_id]
-        adj_positive = is_positive(pred.adjudicator_label, AnalysisVariant.PRIMARY)
+        adj_positive = is_positive(pred.adjudicator_label, positive_class)
         return SCLECase(
             pair_id=pair_id,
             evaluation_component="precision",
@@ -228,13 +231,17 @@ def sample_scle_recall(
     predictions: PredictionSet,
     per_stratum: int = 10,
     *,
+    positive_class: PositiveClass,
     seed: str,
     procedure_id: str = "scle_recall_v1",
 ) -> SCLESample:
     """Draw up to ``per_stratum`` pairs per joint stratum, per reference set.
 
-    ``result`` must be the **primary** recall result. Sampling by joint stratum
-    (rather than per method) avoids double-counting a disagreement pair.
+    ``positive_class`` must be the rule ``result`` was computed under, for the
+    reason given in :func:`sample_scle_precision`: the strata come from ``result``
+    while ``confusion_cell`` and ``is_misclassified`` are derived here, so a
+    mismatch would contradict the stratum in the same record. Sampling by joint
+    stratum (rather than per method) avoids double-counting a disagreement pair.
     ``per_stratum`` sets the per-stratum sample size (default 10).
 
     A set with ``screening_mode: not_evaluated`` has no joint strata, so its
@@ -251,7 +258,7 @@ def sample_scle_recall(
         screening_observed: bool,
     ) -> SCLECase:
         pred = predictions.predictions[pair_id]
-        adj_positive = is_positive(pred.adjudicator_label, AnalysisVariant.PRIMARY)
+        adj_positive = is_positive(pred.adjudicator_label, positive_class)
         return SCLECase(
             pair_id=pair_id,
             evaluation_component="recall",

@@ -129,6 +129,21 @@
       "default": null,
       "title": "Analysis Variant"
     },
+    "analysis_positive_labels": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Analysis Positive Labels"
+    },
     "ci_method": {
       "anyOf": [
         {

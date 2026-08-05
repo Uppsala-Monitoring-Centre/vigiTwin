@@ -199,31 +199,39 @@ def write_recall_joint_classification_csv(
     )
 
 
-# --- Secondary comparison (variants vs primary) ----------------------------
+# --- Secondary comparison (variants vs baseline) ----------------------------
 
 
 def write_secondary_comparison_csv(
     precision_results: list[PrecisionResult],
     recall_results: list[RecallResult],
     path: str | Path,
+    *,
+    baseline: str,
 ) -> Path:
-    """Each variant estimate against its own set's primary estimate.
+    """Each variant estimate against its own set's baseline estimate.
+
+    ``baseline`` is the :class:`~llm_dup_dev.study_eval.aggregate.PositiveClass`
+    name to difference against — required, because which rule is the baseline is a
+    study choice and matching a hardcoded name would silently produce an empty
+    table for any study that names its rules differently.
 
     Both components key their baselines **by set**, so a run pooling several
     reference sets across variants compares like with like: a variant result is
-    only ever differenced against the primary result for the same set, and the
+    only ever differenced against the baseline result for the same set, and the
     ``set`` column names the set that result actually came from. A variant
-    result for a set with no primary result in ``precision_results`` /
+    result for a set with no baseline result in ``precision_results`` /
     ``recall_results`` raises ``KeyError`` — the caller assembled an
     incomparable bundle, and a silently dropped row would hide that.
     """
+    _require_baseline(precision_results, recall_results, baseline)
     rows = []
     base_by_precision_set = {
-        r.set_id: r for r in precision_results if r.variant == "primary"
+        r.set_id: r for r in precision_results if r.variant == baseline
     }
     if base_by_precision_set:
         for pr in precision_results:
-            if pr.variant == "primary":
+            if pr.variant == baseline:
                 continue
             base_result = base_by_precision_set[pr.set_id]
             for field in _PRECISION_METRIC_FIELDS:
@@ -231,11 +239,11 @@ def write_secondary_comparison_csv(
                 var = getattr(pr, field).proportion
                 rows.append(["precision", pr.set_id, field, pr.variant,
                              _fmt(base), _fmt(var), _delta(base, var)])
-    primary_r = next((r for r in recall_results if r.variant == "primary"), None)
+    primary_r = next((r for r in recall_results if r.variant == baseline), None)
     if primary_r is not None:
         base_by_set = {s.reference_set_id: s for s in primary_r.sets}
         for rr in recall_results:
-            if rr.variant == "primary":
+            if rr.variant == baseline:
                 continue
             for s in rr.sets:
                 base_set = base_by_set[s.reference_set_id]
@@ -252,10 +260,30 @@ def write_secondary_comparison_csv(
                                  _fmt(bp), _fmt(vp), _delta(bp, vp)])
     return _write_csv(
         Path(path),
-        ["component", "set", "metric", "variant", "primary_proportion",
+        ["component", "set", "metric", "variant", "baseline_proportion",
          "variant_proportion", "delta"],
         rows,
     )
+
+
+def _require_baseline(
+    precision_results: list[PrecisionResult],
+    recall_results: list[RecallResult],
+    baseline: str,
+) -> None:
+    """Fail loudly when no supplied result was computed under ``baseline``.
+
+    Without this the comparison and summary writers silently emitted a
+    header-only CSV and a title-only summary, which is indistinguishable from a
+    genuine absence of differences.
+    """
+    present = {r.variant for r in precision_results} | {r.variant for r in recall_results}
+    if baseline not in present:
+        raise ValueError(
+            f"baseline {baseline!r} is not among the supplied results "
+            f"({sorted(present)}); pass the PositiveClass name the study "
+            f"designated as its baseline."
+        )
 
 
 def write_evaluable_counts_csv(
@@ -400,12 +428,21 @@ def _delta(a: float | None, b: float | None) -> str:
 def summary_to_markdown(
     precision_results: list[PrecisionResult],
     recall_results: list[RecallResult],
+    *,
+    baseline: str,
 ) -> str:
+    """Human-facing summary of the ``baseline`` rule's estimates.
+
+    ``baseline`` is the :class:`~llm_dup_dev.study_eval.aggregate.PositiveClass`
+    name to summarise, and must be present among the supplied results — a missing
+    baseline raises rather than yielding a summary containing only its title.
+    """
+    _require_baseline(precision_results, recall_results, baseline)
     lines = ["# Duplicate-adjudication performance evaluation — summary", ""]
-    primary_p = next((r for r in precision_results if r.variant == "primary"), None)
+    primary_p = next((r for r in precision_results if r.variant == baseline), None)
     if primary_p is not None:
         lines += [
-            "## Precision (primary)",
+            f"## Precision ({baseline})",
             "",
             f"- Evaluable pairs: {primary_p.n_evaluable} "
             f"(excluded reference-abstain: {primary_p.n_reference_abstain})",
@@ -419,9 +456,9 @@ def summary_to_markdown(
             f"- Adjudicator abstentions: {_ci_str(primary_p.abstention_proportion)}",
             "",
         ]
-    primary_r = next((r for r in recall_results if r.variant == "primary"), None)
+    primary_r = next((r for r in recall_results if r.variant == baseline), None)
     if primary_r is not None:
-        lines += ["## Recall (primary), by reference set", ""]
+        lines += [f"## Recall ({baseline}), by reference set", ""]
         for s in primary_r.sets:
             if s.screening_mode == "observed":
                 reduction = (
@@ -480,11 +517,20 @@ def write_study_artifacts(
     consensus: dict[str, SCLEConsensusResult] | None = None,
     discrepancies: dict[str, DiscrepancyReport] | None = None,
     agreements: dict[str, AgreementReport] | None = None,
+    baseline: str | None = None,
 ) -> list[Path]:
     """Write the full set of result artifacts under ``output_dir``.
 
     Returns the list of written paths. Only the tables for the provided inputs
     are written, so aggregate-only and SCLE-only runs both work.
+
+    ``baseline`` is the :class:`~llm_dup_dev.study_eval.aggregate.PositiveClass`
+    name that ``summary.md`` summarises and ``secondary_comparison.csv``
+    differences against. It is required whenever precision or recall results are
+    supplied. ``secondary_comparison.csv`` is written only when the results span
+    two or more rules: with a single rule there is nothing to compare, and the
+    header-only file that used to be produced was indistinguishable from a real
+    comparison that found no differences.
     """
     out = Path(output_dir)
     precision_results = precision_results or []
@@ -506,17 +552,32 @@ def write_study_artifacts(
             )
         )
     if precision_results or recall_results:
-        written.append(
-            write_secondary_comparison_csv(
-                precision_results, recall_results, out / "secondary_comparison.csv"
+        if baseline is None:
+            raise ValueError(
+                "write_study_artifacts needs `baseline` (the PositiveClass name "
+                "to summarise and compare against) whenever precision or recall "
+                "results are supplied."
             )
-        )
+        variant_names = {r.variant for r in precision_results} | {
+            r.variant for r in recall_results
+        }
+        if len(variant_names) > 1:
+            written.append(
+                write_secondary_comparison_csv(
+                    precision_results,
+                    recall_results,
+                    out / "secondary_comparison.csv",
+                    baseline=baseline,
+                )
+            )
         written.append(
             write_evaluable_counts_csv(
                 precision_results, recall_results, out / "evaluable_counts.csv"
             )
         )
-        summary = summary_to_markdown(precision_results, recall_results)
+        summary = summary_to_markdown(
+            precision_results, recall_results, baseline=baseline
+        )
         summary_path = out / "summary.md"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(summary, encoding="utf-8")

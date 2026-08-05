@@ -15,8 +15,9 @@ steps are file-mediated and idempotent.
 4. :func:`finalize` — merge reviews + arbitration into consensus and write the
    final SCLE tables and summaries.
 
-Secondary analyses re-run **only** step 1 with ``sample_scle=False`` and either a
-different :class:`PredictionSet` or a re-interpretation ``variant``.
+Secondary analyses re-run step 1 with either a different :class:`PredictionSet` or
+a different ``positive_class`` (the study's collapse rule). Whether such a run also
+samples SCLE is an independent choice — see :func:`run_analysis`.
 """
 
 from __future__ import annotations
@@ -30,7 +31,8 @@ from pydantic import BaseModel
 
 from llm_dup_dev.study_eval import loading, results
 from llm_dup_dev.study_eval.aggregate import (
-    AnalysisVariant,
+    PRIMARY,
+    PositiveClass,
     PrecisionResult,
     RecallResult,
     run_precision_analysis,
@@ -134,7 +136,7 @@ def run_analysis(
     sample_scle: bool = True,
     scle_precision_per_cell: int = 10,
     scle_recall_per_stratum: int = 10,
-    variant: AnalysisVariant = AnalysisVariant.PRIMARY,
+    positive_class: PositiveClass = PRIMARY,
     output_dir: str | Path | None = None,
     repo_path: str | Path | None = None,
 ) -> AnalysisResult:
@@ -147,28 +149,14 @@ def run_analysis(
     ``precision_results`` is empty with no precision set) — an absent table is
     never a table of zeros. At least one set is required.
 
-    ``sample_scle``
-    draws the SCLE case list; its strata (confusion cells / joint strata) are
-    computed under ``variant``. A study typically samples SCLE under the
-    ``PRIMARY`` configuration and runs secondary analyses aggregate-only
-    (``sample_scle=False``); sampling SCLE under a non-primary variant is allowed
-    but warns, since the resulting strata then reflect that variant's positivity
-    rule. Enforcing "SCLE only on primary" is a study-execution policy, so it
-    lives in the caller, not here.
+    ``sample_scle`` and ``positive_class`` are **independent**: whether the
+    examination happens is a study-execution choice, and the collapse rule is a
+    separate one. Sampling SCLE under a secondary rule is a supported
+    configuration, not a warned-about one, and running the primary rule
+    aggregate-only is equally supported. Both the strata (confusion cells / joint
+    strata) and the per-case auto-context are computed under ``positive_class``,
+    so a sample is internally consistent whichever rule produced it.
     """
-    if sample_scle and variant != AnalysisVariant.PRIMARY:
-        import warnings
-
-        warnings.warn(
-            f"Sampling SCLE cases under a non-primary variant "
-            f"({variant.value!r}): the SCLE strata will reflect that variant's "
-            f"positivity rule rather than the primary confusion matrix. Studies "
-            f"usually sample SCLE under the primary configuration — pass "
-            f"variant=AnalysisVariant.PRIMARY (or sample_scle=False) if that is "
-            f"what you intend.",
-            stacklevel=2,
-        )
-
     # One preflight over the whole bundle first, so a caller sees every blocking
     # input problem at once rather than the first one the analysis trips over.
     preflight_reference_sets(reference_sets, predictions)
@@ -177,21 +165,33 @@ def run_analysis(
     recall_sets = [s for s in reference_sets if s.role == "recall"]
 
     precision_results = [
-        run_precision_analysis(s, predictions, variant) for s in precision_sets
+        run_precision_analysis(s, predictions, positive_class)
+        for s in precision_sets
     ]
     recall_result = (
-        run_recall_analysis(recall_sets, predictions, variant) if recall_sets else None
+        run_recall_analysis(recall_sets, predictions, positive_class)
+        if recall_sets
+        else None
     )
 
     scle_samples: dict[str, SCLESample] = {}
     if sample_scle:
         for rset, pres in zip(precision_sets, precision_results):
             scle_samples[f"precision::{rset.set_id}"] = sample_scle_precision(
-                rset, pres, predictions, per_cell=scle_precision_per_cell, seed=seed
+                rset,
+                pres,
+                predictions,
+                per_cell=scle_precision_per_cell,
+                positive_class=positive_class,
+                seed=seed,
             )
         if recall_result is not None:
             scle_samples["recall"] = sample_scle_recall(
-                recall_result, predictions, per_stratum=scle_recall_per_stratum, seed=seed
+                recall_result,
+                predictions,
+                per_stratum=scle_recall_per_stratum,
+                positive_class=positive_class,
+                seed=seed,
             )
 
     written: list[str] = []
@@ -201,6 +201,7 @@ def run_analysis(
             out,
             precision_results=precision_results,
             recall_results=[recall_result] if recall_result else [],
+            baseline=positive_class.name,
         )
         table = out / "predictions_table.csv"
         table.parent.mkdir(parents=True, exist_ok=True)
@@ -225,7 +226,8 @@ def run_analysis(
             "analysis",
             _new_run_id(),
             outputs=paths,
-            analysis_variant=variant.value,
+            analysis_variant=positive_class.name,
+            analysis_positive_labels=sorted(positive_class.positive_labels),
             ci_method="wilson",
             screening_modes={s.set_id: s.screening_mode for s in reference_sets},
             repo_path=repo_path,
@@ -233,7 +235,7 @@ def run_analysis(
         write_manifest(out, manifest)
 
     return AnalysisResult(
-        variant=variant.value,
+        variant=positive_class.name,
         configuration_id=predictions.configuration_id,
         precision_results=precision_results,
         recall_result=recall_result,

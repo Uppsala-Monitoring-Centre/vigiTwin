@@ -163,22 +163,44 @@ analysis variant and CI method.
 
 ## Analysis variants and secondary analyses
 
-`run_analysis` takes a `variant` that sets the positive class over the four-value
-adjudicator output: `PRIMARY` (positive = `Duplicates`), `ABSTAIN_POSITIVE`, or
-`OTHERWISE_RELATED_POSITIVE`. The variant drives both the aggregate estimates and
-— when `sample_scle=True` — the SCLE strata (confusion cells / joint strata).
+`run_analysis` takes a `positive_class`: a `PositiveClass(name, positive_labels)`
+([aggregate.py](../src/llm_dup_dev/study_eval/aggregate.py)) saying which of the
+adjudicator's four output labels count as positive. It drives the aggregate
+estimates and — when `sample_scle=True` — both the SCLE strata (confusion cells /
+joint strata) and each case's auto-context.
 
-For **this** study, SCLE is examined on the primary configuration and the
-secondary analyses are aggregate-only, so run secondaries as **Step 1 with
-`sample_scle=False`** (passing a re-interpretation `variant`, or a different
-`PredictionSet` for a genuinely different frozen configuration). That produces
-the aggregate tables and the per-pair prediction table, no SCLE artifacts.
+The division of ownership is deliberate, and matches the one
+[`scle/vocabularies.py`](../src/llm_dup_dev/study_eval/scle/vocabularies.py)
+applies to the SCLE vocabularies:
 
-Sampling SCLE under a non-primary variant is **allowed but warns** — the strata
-then reflect that variant's positivity rule. "SCLE only on primary" is a
-study-execution policy, not a package rule, so the package permits either and
-leaves the choice to the caller; a future study could deliberately sample SCLE
-under a different rule.
+- **The package owns** the output vocabulary (`ADJUDICATOR_LABELS`, the
+  adjudicator's own contract) and the mechanism. A rule's labels are validated as
+  a non-empty subset of it.
+- **The study owns** which rules it runs, what they are called, and which one is
+  the baseline. Pass whatever the protocol prespecifies — including collapses the
+  package never named, e.g.
+  `PositiveClass(name="abstain_and_otherwise_positive", positive_labels=frozenset({"Duplicates", "Abstain", "Otherwise_related"}))`.
+
+`PRIMARY`, `ABSTAIN_POSITIVE` and `OTHERWISE_RELATED_POSITIVE` are exported as
+convenience constants for the current study; `PRIMARY` is `run_analysis`'s
+default. They are not a menu — a study is free to define its own.
+
+**The baseline is always named explicitly.** `write_study_artifacts`,
+`write_secondary_comparison_csv` and `summary_to_markdown` take `baseline=<rule
+name>` and raise if no supplied result carries it. `secondary_comparison.csv` is
+written only when the results span two or more rules, so a single-rule run
+produces no empty comparison file.
+
+**`sample_scle` and `positive_class` are independent.** Examining SCLE under a
+secondary rule is a supported configuration, and so is running the primary rule
+aggregate-only (`sample_scle=False`) — which is what **this** study does for its
+secondary analyses. Because the auto-context is computed under the rule in force,
+a sample is internally consistent whichever rule produced it.
+
+Every run records its rule in the manifest as `analysis_variant` (the name) plus
+`analysis_positive_labels` (the labels). Both are needed: names are
+study-supplied, so the name alone would not tell a later reader what was counted
+as positive.
 
 ## SCLE reviewer workflow details
 
@@ -384,9 +406,18 @@ workflow.run_analysis(
     [prec], to_prediction_set(LLM_AE_RUN / "pair_results.json",
                               "llm_ae_clinical_picture", screened_pair_ids),
     seed=STUDY_SEED, sample_scle=False, output_dir=SECURE_OUT / "sec_llm")
-from llm_dup_dev.study_eval import AnalysisVariant
+from llm_dup_dev.study_eval import ABSTAIN_POSITIVE, PositiveClass
 workflow.run_analysis([prec], predictions, seed=STUDY_SEED, sample_scle=False,
-                      variant=AnalysisVariant.ABSTAIN_POSITIVE, output_dir=SECURE_OUT / "sec_abstain")
+                      positive_class=ABSTAIN_POSITIVE, output_dir=SECURE_OUT / "sec_abstain")
+
+# A rule the package does not name — define the study's own and pass it:
+ABSTAIN_AND_OTHERWISE = PositiveClass(
+    name="abstain_and_otherwise_positive",
+    positive_labels=frozenset({"Duplicates", "Abstain", "Otherwise_related"}),
+)
+workflow.run_analysis([prec], predictions, seed=STUDY_SEED, sample_scle=False,
+                      positive_class=ABSTAIN_AND_OTHERWISE,
+                      output_dir=SECURE_OUT / "sec_abstain_otherwise")
 ```
 
 ### Confidential content
@@ -428,9 +459,14 @@ make between the adjudicator and the screening method. Format and semantics:
   (Wilson), and the sampling `seed` are frozen and recorded. The two lists are
   passed to `generate_reviewer_workbooks`; **omitting one drops that question
   from the examination**, so an accidental omission is a silent scope change.
+- [ ] The study's `PositiveClass` rules are frozen, and each one's
+  `positive_labels` matches the protocol text — not just its name. One rule is
+  designated the baseline and passed as `baseline=` wherever comparison or summary
+  artifacts are written.
 - [ ] Read submissions/arbitration back through `read_reviewer_submission` /
   `read_arbitration` (Excel protection is advisory; these are the source of truth).
-- [ ] Secondary configurations run as Step-1-only (`sample_scle=False`).
+- [ ] Secondary configurations run as Step-1-only (`sample_scle=False`) — a study
+  choice for this protocol, not a package constraint.
 - [ ] All workbooks, packets, and outputs stored inside the secure environment.
 
 ## Regenerating schemas and examples

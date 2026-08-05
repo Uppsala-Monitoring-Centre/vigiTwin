@@ -22,7 +22,11 @@ adapter builds the input models from a frozen run and invokes the steps. See
 from __future__ import annotations
 
 from llm_dup_dev.study_eval.aggregate import (
-    AnalysisVariant,
+    ABSTAIN_POSITIVE,
+    ADJUDICATOR_LABELS,
+    OTHERWISE_RELATED_POSITIVE,
+    PRIMARY,
+    PositiveClass,
     PrecisionResult,
     RecallResult,
     run_precision_analysis,
@@ -60,7 +64,11 @@ __all__ = [
     "PairPrediction",
     "PredictionSet",
     # aggregate + stats
-    "AnalysisVariant",
+    "ADJUDICATOR_LABELS",
+    "PositiveClass",
+    "PRIMARY",
+    "ABSTAIN_POSITIVE",
+    "OTHERWISE_RELATED_POSITIVE",
     "PrecisionResult",
     "RecallResult",
     "run_precision_analysis",
