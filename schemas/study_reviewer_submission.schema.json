@@ -22,7 +22,7 @@
       "type": "string"
     },
     "SCLECaseAssessment": {
-      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` (or an empty list) when they do not\napply. The model enforces *internal* consistency \u2014 the required\nmisclassification dimensions are all-present or all-absent. The full check\nthat presence matches the paired :class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context; validation of the two list-valued fields against the study's\nfrozen vocabularies happens at workbook read-back, which is where those\nlists are available.",
+      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` (or an empty list) when they do not\napply. The model enforces *internal* consistency \u2014 the yes/no\nmisclassification dimensions are all-present or all-absent. The full check\nthat presence matches the paired :class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context; validation of the two list-valued fields against the study's\nfrozen vocabularies happens at workbook read-back, which is where those\nlists are available.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",

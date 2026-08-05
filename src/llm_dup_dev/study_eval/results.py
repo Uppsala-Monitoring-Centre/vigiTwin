@@ -288,7 +288,13 @@ def write_scle_consensus_csv(result: SCLEConsensusResult, path: str | Path) -> P
     for dim in dimensions:
         header.append(dim)
         header.append(f"{dim}_source")
-    header.extend(["free_text_materially_different", "arbiter_rationale"])
+    header.extend(
+        [
+            "free_text_materially_different",
+            "consensus_method_difference",
+            "arbiter_rationale",
+        ]
+    )
     rows = []
     for a in result.consensus:
         row = [a.pair_id]
@@ -298,7 +304,13 @@ def write_scle_consensus_csv(result: SCLEConsensusResult, path: str | Path) -> P
                 value = ";".join(value)
             row.append("" if value is None else value)
             row.append(a.dimension_sources.get(dim, ""))
-        row.extend([str(a.free_text_materially_different), a.arbiter_rationale])
+        row.extend(
+            [
+                str(a.free_text_materially_different),
+                a.consensus_method_difference,
+                a.arbiter_rationale,
+            ]
+        )
         rows.append(row)
     return _write_csv(Path(path), header, rows)
 

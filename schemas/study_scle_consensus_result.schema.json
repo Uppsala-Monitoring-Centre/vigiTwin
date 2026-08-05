@@ -1,7 +1,7 @@
 {
   "$defs": {
     "ArbitrationDecision": {
-      "description": "The arbiter's resolution for one pair.\n\n``consensus_dimensions`` carries a value only for the structured dimensions\nthe arbiter chose to set (required for those that disagreed; ignored for\nthose that already agreed). ``free_text_materially_different`` records the\narbiter's judgement on the two free-text assessments.",
+      "description": "The arbiter's resolution for one pair.\n\n``consensus_dimensions`` carries a value only for the structured dimensions\nthe arbiter chose to set (required for those that disagreed; ignored for\nthose that already agreed, where the workbook pre-fills the agreed value as\nread-only context). ``free_text_materially_different`` records the arbiter's\njudgement on the two free-text assessments.\n\n``consensus_method_difference`` is the arbiter's resolution of the two\nmethod-difference explanations. It has no materially-different flag and no\nrationale of its own: ``arbiter_rationale`` covers both free-text blocks.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -24,6 +24,11 @@
         },
         "arbiter_rationale": {
           "title": "Arbiter Rationale",
+          "type": "string"
+        },
+        "consensus_method_difference": {
+          "default": "",
+          "title": "Consensus Method Difference",
           "type": "string"
         }
       },
@@ -201,6 +206,11 @@
           "default": false,
           "title": "Free Text Materially Different",
           "type": "boolean"
+        },
+        "consensus_method_difference": {
+          "default": "",
+          "title": "Consensus Method Difference",
+          "type": "string"
         },
         "arbiter_rationale": {
           "default": "",
@@ -385,7 +395,7 @@
       "type": "object"
     },
     "SCLECaseAssessment": {
-      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` (or an empty list) when they do not\napply. The model enforces *internal* consistency \u2014 the required\nmisclassification dimensions are all-present or all-absent. The full check\nthat presence matches the paired :class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context; validation of the two list-valued fields against the study's\nfrozen vocabularies happens at workbook read-back, which is where those\nlists are available.",
+      "description": "One reviewer's assessment of one SCLE case.\n\nConditional dimensions are ``None`` (or an empty list) when they do not\napply. The model enforces *internal* consistency \u2014 the yes/no\nmisclassification dimensions are all-present or all-absent. The full check\nthat presence matches the paired :class:`SCLEAutoContext` is done by\n:func:`check_assessment_against_context`, because the model does not carry\nthe context; validation of the two list-valued fields against the study's\nfrozen vocabularies happens at workbook read-back, which is where those\nlists are available.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",

@@ -42,6 +42,10 @@ from pathlib import Path
 from llm_dup_dev.study_eval.checksums import sha256_canonical_json
 from llm_dup_dev.study_eval.sampling import SCLESample
 from llm_dup_dev.study_eval.scle.form import (
+    ALWAYS_DIMENSIONS,
+    DISAGREEMENT_DIMENSIONS,
+    MISCLASSIFICATION_REQUIRED_DIMENSIONS,
+    MISCLASSIFICATION_YESNO_DIMENSIONS,
     CaseDifficulty,
     ReferenceLabelIssue,
     ReviewerSubmission,
@@ -212,6 +216,21 @@ def _response_cols(
     )
 
 
+#: Cell fills, shared with the arbitration workbook so the two sheets teach the
+#: reviewer and the arbiter the same vocabulary: dark grey is filled by the
+#: package and must not be edited, pale grey carries the ``N/A`` sentinel for a
+#: question that was not asked, and pale yellow marks a cell that must be filled.
+#: An unshaded response cell is one where a blank is itself an answer.
+CONTEXT_FILL_RGB = "DDDDDD"
+NOT_APPLICABLE_FILL_RGB = "F0F0F0"
+REQUIRED_FILL_RGB = "FDF0D5"
+
+
+def _fill(pattern_fill_cls, rgb: str):
+    """Build a solid ``PatternFill`` from one of the fill constants above."""
+    return pattern_fill_cls(start_color=rgb, end_color=rgb, fill_type="solid")
+
+
 def _applies_to(col: _Col, ctx: SCLEAutoContext) -> bool:
     """Whether a response column applies to a case, given its auto-context."""
     if col.applies is None:
@@ -223,6 +242,25 @@ def _applies_to(col: _Col, ctx: SCLEAutoContext) -> bool:
         # (screening_mode: not_evaluated), so the dimension does not apply.
         return bool(ctx.methods_disagree)
     return True
+
+
+#: Response fields a reviewer must fill wherever they apply. Everything else in
+#: the response block is blank-tolerant: the tick-only stage and domain columns
+#: and the yes/no misclassification dimensions all read a blank cell as "no".
+#: The workbook shades these, and only these, so the two classes of empty cell
+#: are told apart by eye.
+_REQUIRED_FIELDS: frozenset[str] = frozenset(
+    {
+        *ALWAYS_DIMENSIONS,
+        *MISCLASSIFICATION_REQUIRED_DIMENSIONS,
+        *DISAGREEMENT_DIMENSIONS,
+    }
+)
+
+
+def _is_required(col: _Col, ctx: SCLEAutoContext) -> bool:
+    """Whether a response cell must be filled for this case."""
+    return col.field in _REQUIRED_FIELDS and _applies_to(col, ctx)
 
 
 #: Context fields whose ``None`` means "does not apply to this case" rather than
@@ -406,19 +444,22 @@ _GUIDANCE: dict[str, str] = {
     "transparently and may support a labelled sensitivity analysis.",
     "never_event": "Misclassified pairs only. Would an error of this type be "
     "unacceptable in the intended operational use, or likely to seriously "
-    "undermine trust in the method?",
+    "undermine trust in the method? Leave the cell blank for 'no'.",
     "unexpected_method_behaviour": "Misclassified pairs only. Was the "
     "classification inconsistent with, or not readily explainable from, the "
-    "prespecified method logic and the recorded decision trace?",
+    "prespecified method logic and the recorded decision trace? Leave the cell "
+    "blank for 'no'.",
     "incorrect_or_imprecise_input_data": "Misclassified pairs only. Did "
     "incorrect or imprecise input data materially contribute to the "
-    "misclassification?",
-    "error_source_description": "Misclassified pairs only, and required there. "
-    "Describe in free text what went wrong. Errors often involve an interaction "
-    "between components, so describe the interaction rather than forcing a "
-    "single cause; use the 'S:' stage columns to flag every stage involved.",
+    "misclassification? Leave the cell blank for 'no'.",
+    "error_source_description": "Misclassified pairs only, and required there — "
+    "this cell is shaded because it must be filled. Describe in free text what "
+    "went wrong. Errors often involve an interaction between components, so "
+    "describe the interaction rather than forcing a single cause; use the 'S:' "
+    "stage columns to flag every stage involved.",
     "method_difference_explanation": "Only where screening and the adjudicator "
-    "disagree. Describe the evidence or decision mechanism that most plausibly "
+    "disagree, and required there — this cell is shaded because it must be "
+    "filled. Describe the evidence or decision mechanism that most plausibly "
     "explains the difference between the two methods.",
 }
 
@@ -558,8 +599,9 @@ def write_reviewer_workbook(
     if domains:
         write_vocabulary_sheet(wb, FEATURE_DOMAINS_SHEET, domains, Font)
 
-    grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
-    na_fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
+    grey = _fill(PatternFill, CONTEXT_FILL_RGB)
+    na_fill = _fill(PatternFill, NOT_APPLICABLE_FILL_RGB)
+    required_fill = _fill(PatternFill, REQUIRED_FILL_RGB)
     ws = wb.create_sheet(PAIRS_SHEET)
     header_align, centre, left = _alignments()
 
@@ -607,8 +649,13 @@ def write_reviewer_workbook(
             elif not _applies_to(col, ctx):
                 cell.value = NOT_APPLICABLE
                 cell.fill = na_fill
-            elif col.field in validations:
-                validations[col.field].add(cell)
+            else:
+                # Shade the cells that must be filled, so they are not mistaken
+                # for the blank-tolerant ones sitting beside them.
+                if _is_required(col, ctx):
+                    cell.fill = required_fill
+                if col.field in validations:
+                    validations[col.field].add(cell)
 
     _style_sheet(ws, [_column_width(col) for col in all_cols])
 
@@ -763,7 +810,7 @@ def read_reviewer_submission(
             continue
 
         assessment = _row_to_assessment(
-            pair_id, reviewer_id, values, response_cols, problems
+            pair_id, reviewer_id, values, response_cols, ctx, problems
         )
         if assessment is not None:
             problems.extend(check_assessment_against_context(assessment, ctx))
@@ -795,6 +842,24 @@ def _response_or_none(field: str, values: dict[str, object]) -> str | None:
     raw = _cell_str(values.get(field))
     if raw == "" or raw == NOT_APPLICABLE:
         return None
+    return raw
+
+
+def _yes_no_or_default(
+    field: str, values: dict[str, object], ctx: SCLEAutoContext
+) -> str | None:
+    """Resolve one yes/no misclassification cell, blank meaning "no".
+
+    The default applies only where the question was asked: on a correctly
+    classified pair the cell carries the ``N/A`` sentinel and stays ``None``, so
+    a reviewer who edits a cell they should not have is still caught by
+    :func:`check_assessment_against_context`.
+    """
+    raw = _cell_str(values.get(field))
+    if raw == NOT_APPLICABLE:
+        return None
+    if raw == "":
+        return YesNo.NO.value if ctx.is_misclassified else None
     return raw
 
 
@@ -832,22 +897,24 @@ def _row_to_assessment(
     reviewer_id: str,
     values: dict[str, object],
     response_cols: Sequence[_Col],
+    ctx: SCLEAutoContext,
     problems: list[str],
 ) -> SCLECaseAssessment | None:
-    """Build one assessment from a row, appending any construction error."""
+    """Build one assessment from a row, appending any construction error.
+
+    ``ctx`` is needed because a blank yes/no misclassification cell means "no"
+    on a misclassified pair and "not asked" anywhere else.
+    """
     payload = {
         "pair_id": pair_id,
         "reviewer_id": reviewer_id,
         "free_text_assessment": _cell_str(values.get("free_text_assessment")),
         "case_difficulty": _response_or_none("case_difficulty", values),
         "reference_label_issue": _response_or_none("reference_label_issue", values),
-        "never_event": _response_or_none("never_event", values),
-        "unexpected_method_behaviour": _response_or_none(
-            "unexpected_method_behaviour", values
-        ),
-        "incorrect_or_imprecise_input_data": _response_or_none(
-            "incorrect_or_imprecise_input_data", values
-        ),
+        **{
+            field: _yes_no_or_default(field, values, ctx)
+            for field in MISCLASSIFICATION_YESNO_DIMENSIONS
+        },
         "error_source_description": _response_or_none(
             "error_source_description", values
         ),
@@ -877,12 +944,18 @@ def _instruction_lines(
         "",
         f"1. One row per pair, on the '{PAIRS_SHEET}' sheet. Fill only the "
         f"response columns (right of the greyed auto-context block).",
-        f"2. Do NOT edit greyed cells or cells reading '{NOT_APPLICABLE}'.",
+        f"2. Cell shading tells you what each cell wants: dark grey = "
+        f"auto-context, do NOT edit; pale grey '{NOT_APPLICABLE}' = not asked of "
+        f"this pair, do NOT edit; pale yellow = must be filled. An unshaded "
+        f"response cell is a question you may leave blank, and blank there "
+        f"counts as an answer of 'no' rather than as a gap.",
         "3. Use the dropdown vocabularies for the structured dimensions.",
         "4. Free-text assessment is required for every pair.",
         f"5. Misclassification dimensions apply only to misclassified pairs; the "
         f"method-difference note applies only where the methods disagree. Non-"
-        f"applicable cells are pre-filled '{NOT_APPLICABLE}'.",
+        f"applicable cells are pre-filled '{NOT_APPLICABLE}'. Within the "
+        f"misclassification block only the free-text source of error must be "
+        f"filled; its three yes/no questions may be left blank for 'no'.",
     ]
     # The column prefixes are quoted verbatim so a reviewer can match them
     # against the header row by eye.

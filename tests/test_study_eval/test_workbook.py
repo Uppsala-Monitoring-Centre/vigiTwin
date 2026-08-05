@@ -111,6 +111,99 @@ def test_tick_only_columns_read_back_as_lists(tmp_path):
     assert by_pair[tp_pair].error_stages == []
 
 
+def _blank_yes_no_cells(path, *, also_blank_source_of_error=False):
+    """Clear the yes/no misclassification cells a reviewer may leave empty."""
+    wb = openpyxl.load_workbook(path)
+    ws = wb["pairs"]
+    hdr = [c.value for c in ws[1]]
+    headers = [
+        "Never event",
+        "Unexpected method behaviour",
+        "Incorrect or imprecise input data",
+    ]
+    if also_blank_source_of_error:
+        headers.append("Source of error")
+    for r in range(2, ws.max_row + 1):
+        for header in headers:
+            cell = ws.cell(row=r, column=hdr.index(header) + 1)
+            if cell.value != NOT_APPLICABLE:
+                cell.value = None
+    wb.save(path)
+
+
+def test_blank_yes_no_cells_read_back_as_no(tmp_path):
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    _write(sample, path)
+    fill_reviewer_workbook(path, "alice")
+    _blank_yes_no_cells(path)
+
+    sub = read_reviewer_submission(path, sample)
+    by_pair = {a.pair_id: a for a in sub.assessments}
+    fn_pair = next(c.pair_id for c in sample.cases if c.stratum == "FN")
+    assert by_pair[fn_pair].never_event == YesNo.NO
+    assert by_pair[fn_pair].unexpected_method_behaviour == YesNo.NO
+    assert by_pair[fn_pair].incorrect_or_imprecise_input_data == YesNo.NO
+    # The block still counts as answered, so tick-only comparisons stay valid.
+    assert by_pair[fn_pair].misclassification_answered
+
+
+def test_correctly_classified_pairs_keep_the_block_unanswered(tmp_path):
+    # The default must not leak onto pairs that were never asked the question.
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    _write(sample, path)
+    fill_reviewer_workbook(path, "alice")
+    _blank_yes_no_cells(path)
+
+    sub = read_reviewer_submission(path, sample)
+    by_pair = {a.pair_id: a for a in sub.assessments}
+    tp_pair = next(c.pair_id for c in sample.cases if c.stratum == "TP")
+    assert by_pair[tp_pair].never_event is None
+    assert not by_pair[tp_pair].misclassification_answered
+
+
+def test_blank_source_of_error_still_fails_on_a_misclassified_pair(tmp_path):
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    _write(sample, path)
+    fill_reviewer_workbook(path, "alice")
+    _blank_yes_no_cells(path, also_blank_source_of_error=True)
+
+    with pytest.raises(ValueError) as exc:
+        read_reviewer_submission(path, sample)
+    message = str(exc.value)
+    assert "error_source_description" in message
+    # Only the free text is missing — the blank yes/no cells are not gaps.
+    assert "never_event" not in message
+
+
+def test_required_cells_are_shaded_and_blank_tolerant_ones_are_not(tmp_path):
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    path = tmp_path / "reviewer_a.xlsx"
+    _write(sample, path)
+
+    ws = openpyxl.load_workbook(path)["pairs"]
+    hdr = [c.value for c in ws[1]]
+    fill_of = lambda r, n: ws.cell(  # noqa: E731
+        row=r, column=hdr.index(n) + 1
+    ).fill.start_color.rgb
+    fn_row = next(
+        r
+        for r in range(2, ws.max_row + 1)
+        if ws.cell(row=r, column=hdr.index("Source of error") + 1).value
+        != NOT_APPLICABLE
+    )
+    shaded = fill_of(fn_row, "Source of error")
+    assert shaded.endswith("FDF0D5")
+    # Always-applicable questions are shaded too.
+    assert fill_of(fn_row, "Free-text assessment").endswith("FDF0D5")
+    assert fill_of(fn_row, "Difficulty").endswith("FDF0D5")
+    # Blank-tolerant cells are left unshaded, which is the whole distinction.
+    for header in ("Never event", f"{STAGE_HEADER_PREFIX}evidence_extraction"):
+        assert not fill_of(fn_row, header).endswith("FDF0D5")
+
+
 def test_omitted_vocabularies_drop_the_questions(tmp_path):
     _, _, sample = build_scle_precision_sample(_SPEC)
     path = tmp_path / "reviewer_a.xlsx"

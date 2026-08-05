@@ -101,11 +101,23 @@ def test_yes_no_dimensions_reject_unclear():
         _misclassified_assessment(never_event="unclear")
 
 
-def test_missing_misclassification_dimension_flagged():
+def test_missing_free_text_source_of_error_flagged():
     a = _correct_assessment()  # no misclassification block
     ctx = _ctx(misclassified=True, disagree=False)
     problems = check_assessment_against_context(a, ctx)
-    assert any("never_event" in p for p in problems)
+    assert any("error_source_description" in p for p in problems)
+
+
+def test_absent_yes_no_dimensions_are_not_flagged():
+    # A blank yes/no cell means "no", so an absent one is not a gap. Read-back
+    # resolves them to an explicit "no"; the context check must not object
+    # either way.
+    a = _correct_assessment()
+    ctx = _ctx(misclassified=True, disagree=False)
+    problems = check_assessment_against_context(a, ctx)
+    assert not any("never_event" in p for p in problems)
+    assert not any("unexpected_method_behaviour" in p for p in problems)
+    assert not any("incorrect_or_imprecise_input_data" in p for p in problems)
 
 
 def test_inapplicable_dimension_filled_flagged():
@@ -145,9 +157,18 @@ def test_misclassification_block_must_be_all_or_nothing():
         )
 
 
-def test_free_text_source_of_error_is_part_of_the_block():
+def test_free_text_source_of_error_is_required_where_it_applies():
+    # No longer a model-level group member: the three yes/no dimensions may be
+    # blank alongside it, so the requirement is enforced against the context.
+    a = _misclassified_assessment(error_source_description=None)
+    ctx = _ctx(misclassified=True, disagree=False)
+    problems = check_assessment_against_context(a, ctx)
+    assert any("error_source_description" in p for p in problems)
+
+
+def test_yes_no_dimensions_are_filled_as_a_group():
     with pytest.raises(ValidationError):
-        _misclassified_assessment(error_source_description=None)
+        _misclassified_assessment(unexpected_method_behaviour=None)
 
 
 def test_repeated_tick_only_entry_rejected():
