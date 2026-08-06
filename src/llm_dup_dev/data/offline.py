@@ -95,7 +95,13 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
+from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
+from llm_dup_dev.models.report import Report
+
 _BundleT = TypeVar("_BundleT", bound=BaseModel)
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 def _save_frozen_bundle(bundle: BaseModel, path: str | Path) -> None:
@@ -118,9 +124,105 @@ def _load_frozen_bundle(
     """
     return model_cls.model_validate_json(Path(path).read_text())
 
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
-from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
+# ------------------------------------------------------------------
+# Id-keyed artifacts (reports, pair bundles)
+# ------------------------------------------------------------------
+
+
+def index_by_id(
+    raw: object,
+    *,
+    id_attr: str,
+    model_cls: type[_ModelT],
+    artifact: str,
+    path: str | Path = "<in memory>",
+) -> dict[str, _ModelT]:
+    """Index a list- or mapping-shaped artifact into ``{id: model}``.
+
+    Two shapes for the same artifact exist in the wild and both are correct:
+    the secure runner writes reports and pair-frequency bundles as JSON
+    **lists** of objects, while the review CLI writes them as objects **keyed
+    by id**. Rather than make every caller pick one, this accepts either — and
+    validates both hard, so tolerance never becomes guesswork:
+
+    * list → every item must be an object; the id is taken from the validated
+      model's ``id_attr``; duplicate ids are rejected.
+    * mapping → every value is validated; the mapping key must equal the
+      validated model's ``id_attr`` (a key/id conflict is rejected); duplicate
+      ids are rejected.
+    * any other top-level shape is rejected.
+
+    Rejecting a key/id mismatch matters more than it looks: a mapping whose key
+    disagrees with the record inside it has two answers to "which report is
+    this?", and silently trusting either one would mis-join every downstream
+    artifact keyed on the other.
+
+    ``artifact`` and ``path`` only shape the error messages.
+    """
+    prefix = f"Invalid {artifact} artifact {path}"
+    out: dict[str, _ModelT] = {}
+
+    def _add(key: str, model: _ModelT) -> None:
+        if key in out:
+            raise ValueError(f"{prefix}: duplicate {id_attr}={key!r}.")
+        out[key] = model
+
+    if isinstance(raw, list):
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"{prefix}: item {i} must be an object, got "
+                    f"{type(item).__name__}."
+                )
+            try:
+                model = model_cls.model_validate(item)
+            except ValidationError as exc:
+                raise ValueError(f"{prefix}: item {i} is invalid: {exc}") from exc
+            _add(str(getattr(model, id_attr)), model)
+    elif isinstance(raw, dict):
+        for key, value in raw.items():
+            try:
+                model = model_cls.model_validate(value)
+            except ValidationError as exc:
+                raise ValueError(
+                    f"{prefix}: value for {key!r} is invalid: {exc}"
+                ) from exc
+            model_id = str(getattr(model, id_attr))
+            if model_id != str(key):
+                raise ValueError(
+                    f"{prefix}: mapping key {key!r} does not match "
+                    f"{id_attr}={model_id!r} in the record."
+                )
+            _add(model_id, model)
+    else:
+        raise ValueError(
+            f"{prefix}: top-level JSON must be a list or an object, got "
+            f"{type(raw).__name__}."
+        )
+    return out
+
+
+def load_reports(path: str | Path) -> dict[str, Report]:
+    """Load ``{report_id: Report}`` from a reports artifact on disk.
+
+    Accepts either frozen shape — a JSON array of ``Report`` objects (what the
+    secure-side runner writes as ``validation_reports.json``) or an object keyed
+    by ``report_id`` (what ``review_html`` writes). See :func:`index_by_id` for
+    the validation both shapes get.
+
+    This is the reports counterpart to
+    :func:`llm_dup_dev.pipeline.export.read_pair_results` and friends: one
+    deserialisation, so a caller never has to know which convention produced the
+    file it was handed.
+
+    A repeated ``report_id`` raises rather than resolving to one of the entries.
+    The two records may differ, and quietly keeping either would change every
+    statistic computed downstream with nothing to show for it.
+    """
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return index_by_id(
+        raw, id_attr="report_id", model_cls=Report, artifact="reports", path=path
+    )
 
 
 class FrozenScopeStats(BaseModel):

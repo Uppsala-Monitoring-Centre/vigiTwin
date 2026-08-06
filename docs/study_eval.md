@@ -116,6 +116,13 @@ Two model families, both in
   `screening_retrieved` flag, and an optional full `ClassificationResult`
   decision trace.
 
+`loading.reference_set_from_report_pairs(pairs, set_id=..., role=...)` builds a
+`ReferenceSet` from `ReportPair`s a caller already holds — it handles the
+`report_1_id` → `report_id1` rename and nothing else. Set *construction* proper
+(which pairs, sampled how) remains the secure side's job; this only re-shapes
+pairs that already exist, and ids are carried across rather than re-derived, so
+a noncanonical pair still fails at load.
+
 ## Screening modes
 
 Each reference set declares, in `screening_mode`, whether screening performance

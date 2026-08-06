@@ -13,46 +13,21 @@ analysis. Running this first, standalone, keeps that boundary intact::
 
 The ``--reference-set`` files are the same ``study_reference_set.schema.json``
 documents ``study_eval analyze`` reads, so no separate export is needed.
-``--reports`` is a JSON array of ``Report`` objects, matching the convention of
-``scripts/extract_frozen_*.py``.
+``--reports`` accepts either frozen shape — a JSON array of ``Report`` objects
+(``validation_reports.json``) or an object keyed by ``report_id`` (what
+``review_html`` writes); see :func:`llm_dup_dev.data.offline.load_reports`.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 from llm_dup_dev.characterization.builder import build_characterization_report
 from llm_dup_dev.characterization.writer import write_characterization_report
-from llm_dup_dev.models.report import Report
+from llm_dup_dev.data.offline import load_reports
 from llm_dup_dev.study_eval.loading import load_reference_sets
-
-
-def _load_reports(path: Path) -> dict[str, Report]:
-    """Read a JSON array of ``Report`` objects into a ``{report_id: Report}`` map.
-
-    A repeated ``report_id`` is an error rather than a last-one-wins overwrite:
-    the two entries may differ, and silently keeping one would change every
-    number downstream with no trace.
-    """
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, list):
-        raise ValueError(
-            f"{path}: expected a JSON array of Report objects, got "
-            f"{type(raw).__name__}"
-        )
-    by_id: dict[str, Report] = {}
-    for item in raw:
-        report = Report.model_validate(item)
-        if report.report_id in by_id:
-            raise ValueError(
-                f"{path}: report_id {report.report_id!r} appears more than once; "
-                f"the two entries may differ, so pick one before characterising."
-            )
-        by_id[report.report_id] = report
-    return by_id
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -72,7 +47,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--reports",
         required=True,
         type=Path,
-        help="Path to a JSON array of Report objects covering every referenced id.",
+        help=(
+            "Path to a reports JSON covering every referenced id — either a "
+            "list of Report objects or a dict keyed by report_id."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -124,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     reference_sets = load_reference_sets(list(args.reference_sets))
-    reports = _load_reports(args.reports)
+    reports = load_reports(args.reports)
 
     report = build_characterization_report(
         reference_sets,

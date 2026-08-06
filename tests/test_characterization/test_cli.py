@@ -128,7 +128,7 @@ def test_duplicate_report_id_is_rejected_rather_than_overwritten(tmp_path, repor
     set_path = tmp_path / "set.json"
     set_path.write_text(make_reference_set([("R001", "R002")]).model_dump_json())
 
-    with pytest.raises(ValueError, match="appears more than once"):
+    with pytest.raises(ValueError, match="duplicate report_id"):
         main(
             [
                 "--reference-set", str(set_path),
@@ -138,13 +138,34 @@ def test_duplicate_report_id_is_rejected_rather_than_overwritten(tmp_path, repor
         )
 
 
-def test_reports_file_must_be_an_array(tmp_path):
+def test_reports_may_be_a_mapping_keyed_by_report_id(tmp_path, report_a, report_b):
+    """The review_html shape works too — the two frozen conventions coexist."""
     reports_path = tmp_path / "reports.json"
-    reports_path.write_text(json.dumps({"R001": {}}))
+    reports_path.write_text(
+        json.dumps({r.report_id: r.model_dump(mode="json") for r in (report_a, report_b)})
+    )
+    set_path = tmp_path / "set.json"
+    set_path.write_text(make_reference_set([("R001", "R002")]).model_dump_json())
+    out = tmp_path / "out"
+
+    assert main(
+        [
+            "--reference-set", str(set_path),
+            "--reports", str(reports_path),
+            "--output-dir", str(out),
+        ]
+    ) == 0
+    payload = CharacterizationReport.model_validate_json((out / JSON_FILENAME).read_text())
+    assert payload.sets[0].reports.n_unique_reports == 2
+
+
+def test_reports_file_must_be_a_list_or_a_mapping(tmp_path):
+    reports_path = tmp_path / "reports.json"
+    reports_path.write_text(json.dumps("not an artifact"))
     set_path = tmp_path / "set.json"
     set_path.write_text(make_reference_set([("R001", "R002")]).model_dump_json())
 
-    with pytest.raises(ValueError, match="expected a JSON array"):
+    with pytest.raises(ValueError, match="must be a list or an object"):
         main(
             [
                 "--reference-set", str(set_path),
