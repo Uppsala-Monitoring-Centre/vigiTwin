@@ -417,6 +417,22 @@ Attributes with no reliable value are represented as:
 []
 ```
 
+------
+
+### Reducing multi-valued attributes to one value
+
+This contract deliberately does **not** say how to pick one value when an
+attribute holds several — preserving all candidates is the point, and the
+pipeline compares whole candidate sets (`v1 ∩ v2 ≠ ∅`) rather than reducing
+them.
+
+Descriptive tabulation cannot do that: a Table 1 needs one row per report. The
+reduction rule used for that purpose — structured sources preferred, with
+disagreement recorded as a `conflicting` category rather than silently resolved
+— is defined once in `llm_dup_dev.characterization.policy` and documented in
+[`reference_set_characteristics.md`](reference_set_characteristics.md). It is a
+*reporting* convention, and applies to nothing in the adjudication pipeline.
+
 Missing values must **not produce matching evidence**.
 
 ------

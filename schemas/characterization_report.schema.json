@@ -1,0 +1,692 @@
+{
+  "$defs": {
+    "CategoricalDistribution": {
+      "description": "A tabulated categorical field, with its missingness fully accounted for.\n\nThe disposition counts partition the denominator::\n\n    n_resolved + n_missing + n_conflicting + n_unrecognised\n        + n_out_of_range == denominator\n\n``categories`` covers the ``n_resolved`` reports only, sorted by descending\ncount then key. For a top-N list ``truncated_to`` is set and ``n_distinct``\nrecords how many distinct values were observed before truncation, so a\nreader can tell a complete table from a truncated one. ``n_distinct`` counts\nonly keys actually observed; a category emitted with a count of zero (as sex\ndoes, so an all-female set is legible as one) does not inflate it.\n\n``unavailable_reason`` distinguishes \"this question could not be asked of\nthis data\" from \"the answer is empty\". An empty ``categories`` list with no\nreason means no report resolved a value; with a reason it means the input\nnever carried the field at all (no MedDRA hierarchy, no drug roles).",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "denominator": {
+          "title": "Denominator",
+          "type": "integer"
+        },
+        "n_resolved": {
+          "title": "N Resolved",
+          "type": "integer"
+        },
+        "n_missing": {
+          "title": "N Missing",
+          "type": "integer"
+        },
+        "n_conflicting": {
+          "title": "N Conflicting",
+          "type": "integer"
+        },
+        "n_unrecognised": {
+          "default": 0,
+          "title": "N Unrecognised",
+          "type": "integer"
+        },
+        "n_out_of_range": {
+          "default": 0,
+          "title": "N Out Of Range",
+          "type": "integer"
+        },
+        "n_distinct": {
+          "title": "N Distinct",
+          "type": "integer"
+        },
+        "categories": {
+          "items": {
+            "$ref": "#/$defs/CategoryCount"
+          },
+          "title": "Categories",
+          "type": "array"
+        },
+        "truncated_to": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Truncated To"
+        },
+        "boundary_tie": {
+          "default": false,
+          "title": "Boundary Tie",
+          "type": "boolean"
+        },
+        "unavailable_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unavailable Reason"
+        }
+      },
+      "required": [
+        "field",
+        "denominator",
+        "n_resolved",
+        "n_missing",
+        "n_conflicting",
+        "n_distinct"
+      ],
+      "title": "CategoricalDistribution",
+      "type": "object"
+    },
+    "CategoryCount": {
+      "description": "One row of a categorical distribution.\n\n``key`` is the normalised tabulation key (what values were grouped by);\n``label`` is the form shown to a reader, which for free-text fields such as\ncountry is the most frequent original spelling behind that key. Keeping both\nmeans a reader sees ``United States`` while the grouping stays deterministic.",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "count": {
+          "title": "Count",
+          "type": "integer"
+        },
+        "proportion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proportion"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "count"
+      ],
+      "title": "CategoryCount",
+      "type": "object"
+    },
+    "Concordance": {
+      "description": "How often the two reports of a pair agree on one field.\n\nDeliberately three-way. ``not_comparable`` holds every pair where at least\none side had no usable value, and it is reported rather than folded into\n``different`` \u2014 two reports that are silent about country do not disagree\nabout it.\n\nBoth proportions are given because either alone can mislead:\n``proportion_same_comparable`` is the figure a reader usually wants, and\n``proportion_same_all`` keeps the not-comparable mass visible beside it.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "n_pairs": {
+          "title": "N Pairs",
+          "type": "integer"
+        },
+        "n_same": {
+          "title": "N Same",
+          "type": "integer"
+        },
+        "n_different": {
+          "title": "N Different",
+          "type": "integer"
+        },
+        "n_not_comparable": {
+          "title": "N Not Comparable",
+          "type": "integer"
+        },
+        "proportion_same_comparable": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proportion Same Comparable"
+        },
+        "proportion_same_all": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proportion Same All"
+        }
+      },
+      "required": [
+        "field",
+        "n_pairs",
+        "n_same",
+        "n_different",
+        "n_not_comparable"
+      ],
+      "title": "Concordance",
+      "type": "object"
+    },
+    "DataAvailability": {
+      "description": "Coverage counts over unique reports, for reading the tables above.\n\nThese answer \"was the field there at all?\", which is what turns an empty or\nthin distribution from a puzzle into a fact about the extract. The drug-role\ncounts matter most: the top-drug table counts only suspected/interacting\ndrugs, so a set whose loader leaves ``role`` unset yields an empty table for\na reason that is invisible without them.",
+      "properties": {
+        "n_reports_with_narrative": {
+          "default": 0,
+          "title": "N Reports With Narrative",
+          "type": "integer"
+        },
+        "n_reports_with_any_drug": {
+          "default": 0,
+          "title": "N Reports With Any Drug",
+          "type": "integer"
+        },
+        "n_reports_with_any_suspect_or_interacting_drug": {
+          "default": 0,
+          "title": "N Reports With Any Suspect Or Interacting Drug",
+          "type": "integer"
+        },
+        "n_reports_with_any_drug_role_recorded": {
+          "default": 0,
+          "title": "N Reports With Any Drug Role Recorded",
+          "type": "integer"
+        },
+        "n_reports_with_any_adverse_event": {
+          "default": 0,
+          "title": "N Reports With Any Adverse Event",
+          "type": "integer"
+        },
+        "n_reports_with_any_hlt": {
+          "default": 0,
+          "title": "N Reports With Any Hlt",
+          "type": "integer"
+        },
+        "n_reports_with_case_identifiers": {
+          "default": 0,
+          "title": "N Reports With Case Identifiers",
+          "type": "integer"
+        }
+      },
+      "title": "DataAvailability",
+      "type": "object"
+    },
+    "DevPackageInfo": {
+      "description": "Identity of the dev-side package that produced the manifest.",
+      "properties": {
+        "name": {
+          "default": "llm-dup-dev",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "title": "DevPackageInfo",
+      "type": "object"
+    },
+    "NumericSummary": {
+      "description": "Median / IQR / range for a numeric field, with its exclusions stated.\n\n``n_used`` is the median's denominator. The remaining counts say why the\nother observations were left out, so a median over 6 of 50 reports cannot\nbe mistaken for a median over 50.\n\nAll three of ``median`` / ``q1`` / ``q3`` are ``None`` when ``n_used`` is 0.\nAt ``n_used == 1`` they are all the single observed value: a one-observation\nIQR is degenerate rather than undefined, and raising would be wrong for a\nlegitimately tiny reference set.",
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        },
+        "n_used": {
+          "title": "N Used",
+          "type": "integer"
+        },
+        "n_missing": {
+          "title": "N Missing",
+          "type": "integer"
+        },
+        "n_conflicting": {
+          "title": "N Conflicting",
+          "type": "integer"
+        },
+        "n_unrecognised_unit": {
+          "default": 0,
+          "title": "N Unrecognised Unit",
+          "type": "integer"
+        },
+        "n_out_of_range": {
+          "default": 0,
+          "title": "N Out Of Range",
+          "type": "integer"
+        },
+        "median": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Median"
+        },
+        "q1": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Q1"
+        },
+        "q3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Q3"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "quantile_method": {
+          "default": "inclusive_linear",
+          "title": "Quantile Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "unit",
+        "n_used",
+        "n_missing",
+        "n_conflicting"
+      ],
+      "title": "NumericSummary",
+      "type": "object"
+    },
+    "PairCharacteristics": {
+      "description": "Pair-level statistics for one set.\n\nSeparate from :class:`ReportCharacteristics` because the unit of analysis is\ndifferent: these describe *relationships between* the two reports of a pair,\nwhich no report-level table can express.\n\n``n_pairs_evaluable`` is the denominator for every statistic here; it falls\nbelow ``n_pairs`` only when reports were missing and the caller asked for\nthem to be skipped.",
+      "properties": {
+        "n_pairs": {
+          "title": "N Pairs",
+          "type": "integer"
+        },
+        "n_pairs_evaluable": {
+          "title": "N Pairs Evaluable",
+          "type": "integer"
+        },
+        "country": {
+          "$ref": "#/$defs/Concordance"
+        },
+        "report_year": {
+          "$ref": "#/$defs/Concordance"
+        },
+        "patient_sex": {
+          "$ref": "#/$defs/Concordance"
+        },
+        "year_difference": {
+          "$ref": "#/$defs/NumericSummary"
+        },
+        "age_difference_years": {
+          "$ref": "#/$defs/NumericSummary"
+        },
+        "n_pairs_with_identical_age": {
+          "default": 0,
+          "title": "N Pairs With Identical Age",
+          "type": "integer"
+        },
+        "shared_drugs": {
+          "$ref": "#/$defs/NumericSummary"
+        },
+        "shared_adverse_events_pt": {
+          "$ref": "#/$defs/NumericSummary"
+        },
+        "n_pairs_with_any_shared_drug": {
+          "default": 0,
+          "title": "N Pairs With Any Shared Drug",
+          "type": "integer"
+        },
+        "n_pairs_with_any_shared_adverse_event": {
+          "default": 0,
+          "title": "N Pairs With Any Shared Adverse Event",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "n_pairs",
+        "n_pairs_evaluable",
+        "country",
+        "report_year",
+        "patient_sex",
+        "year_difference",
+        "age_difference_years",
+        "shared_drugs",
+        "shared_adverse_events_pt"
+      ],
+      "title": "PairCharacteristics",
+      "type": "object"
+    },
+    "ReferenceSetCharacteristics": {
+      "description": "Everything this artifact says about one reference set.\n\nThe set's own identity (``set_id`` / ``role`` / ``provenance`` /\n``screening_mode``) is carried here so a block stays interpretable when\nlifted out of the report, and ``reference_label_counts`` gives the set's\ncomposition in the human-reference vocabulary without splitting any of the\ndistributions by it.",
+      "properties": {
+        "set_id": {
+          "title": "Set Id",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provenance"
+        },
+        "screening_mode": {
+          "default": "observed",
+          "title": "Screening Mode",
+          "type": "string"
+        },
+        "reference_label_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Reference Label Counts",
+          "type": "object"
+        },
+        "reports": {
+          "$ref": "#/$defs/ReportCharacteristics"
+        },
+        "pairs": {
+          "$ref": "#/$defs/PairCharacteristics"
+        }
+      },
+      "required": [
+        "set_id",
+        "role",
+        "reports",
+        "pairs"
+      ],
+      "title": "ReferenceSetCharacteristics",
+      "type": "object"
+    },
+    "ReportCharacteristics": {
+      "description": "Report-level statistics over the **unique** reports of one set.\n\nA report appearing in two pairs is counted once. ``n_report_instances`` is\nstated beside ``n_unique_reports`` so the inflation factor is visible: it is\nthe pair count doubled, and the gap between the two is exactly how much a\nnaive per-pair tabulation would have over-counted.\n\n``n_unique_reports`` is the denominator of every distribution below it.",
+      "properties": {
+        "n_pairs": {
+          "title": "N Pairs",
+          "type": "integer"
+        },
+        "n_report_instances": {
+          "title": "N Report Instances",
+          "type": "integer"
+        },
+        "n_unique_reports": {
+          "title": "N Unique Reports",
+          "type": "integer"
+        },
+        "n_reports_in_multiple_pairs": {
+          "title": "N Reports In Multiple Pairs",
+          "type": "integer"
+        },
+        "n_reports_unavailable": {
+          "default": 0,
+          "title": "N Reports Unavailable",
+          "type": "integer"
+        },
+        "availability": {
+          "$ref": "#/$defs/DataAvailability"
+        },
+        "report_year": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "country_of_origin": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "patient_sex": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "patient_age_years": {
+          "$ref": "#/$defs/NumericSummary"
+        },
+        "patient_age_bands": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "drug_roles": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "top_drugs": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "top_adverse_events_pt": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        },
+        "top_adverse_events_hlt": {
+          "$ref": "#/$defs/CategoricalDistribution"
+        }
+      },
+      "required": [
+        "n_pairs",
+        "n_report_instances",
+        "n_unique_reports",
+        "n_reports_in_multiple_pairs",
+        "availability",
+        "report_year",
+        "country_of_origin",
+        "patient_sex",
+        "patient_age_years",
+        "patient_age_bands",
+        "drug_roles",
+        "top_drugs",
+        "top_adverse_events_pt",
+        "top_adverse_events_hlt"
+      ],
+      "title": "ReportCharacteristics",
+      "type": "object"
+    },
+    "ResolutionPolicySummary": {
+      "description": "The rules the numbers in this artifact were produced under.\n\nEmbedded rather than documented elsewhere because a Table 1 whose reduction\nrule is unknown is not interpretable: \"median age 54\" means something\ndifferent if narrative-extracted ages were preferred, or if conflicting\nreports were dropped instead of counted.",
+      "properties": {
+        "source_preference": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Preference",
+          "type": "array"
+        },
+        "conflict_handling": {
+          "title": "Conflict Handling",
+          "type": "string"
+        },
+        "age_unit_conversions": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Age Unit Conversions",
+          "type": "object"
+        },
+        "age_band_width_years": {
+          "title": "Age Band Width Years",
+          "type": "integer"
+        },
+        "age_plausible_range": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Age Plausible Range",
+          "type": "array"
+        },
+        "country_key_normalisation": {
+          "title": "Country Key Normalisation",
+          "type": "string"
+        },
+        "drug_roles_counted": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Drug Roles Counted",
+          "type": "array"
+        },
+        "top_n": {
+          "title": "Top N",
+          "type": "integer"
+        },
+        "tie_break": {
+          "title": "Tie Break",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conflict_handling",
+        "age_band_width_years",
+        "country_key_normalisation",
+        "top_n",
+        "tie_break"
+      ],
+      "title": "ResolutionPolicySummary",
+      "type": "object"
+    }
+  },
+  "description": "Descriptive characteristics of one or more reference sets.\n\nOne block per set, in the order the sets were supplied. There is\ndeliberately no pooled across-sets block: the sets differ in provenance and\nrole, and a pooled table would invite exactly the comparison the per-set\nreporting exists to prevent \u2014 the same reason recall is reported per set and\nnever pooled in ``study_eval``.\n\n``dataset_id`` joins the artifact back to the ``DatasetManifest`` of the\nvalidation set the reports came from, which is what pins the database\nsnapshot and MedDRA version these numbers describe.\n\nReal counts computed on the secure side describe real reports. The artifact\napplies no small-cell suppression by design: whether a given report may\nleave the secure environment is a human decision, made with the numbers in\nview rather than pre-empted by a threshold this package chose.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "characterization_id": {
+      "title": "Characterization Id",
+      "type": "string"
+    },
+    "dataset_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dataset Id"
+    },
+    "dev_package": {
+      "$ref": "#/$defs/DevPackageInfo"
+    },
+    "dev_git_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dev Git Commit"
+    },
+    "policy": {
+      "$ref": "#/$defs/ResolutionPolicySummary"
+    },
+    "sets": {
+      "items": {
+        "$ref": "#/$defs/ReferenceSetCharacteristics"
+      },
+      "title": "Sets",
+      "type": "array"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    }
+  },
+  "required": [
+    "created_at",
+    "characterization_id",
+    "policy"
+  ],
+  "title": "CharacterizationReport",
+  "type": "object"
+}

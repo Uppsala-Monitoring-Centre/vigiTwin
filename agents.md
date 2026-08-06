@@ -106,6 +106,11 @@ If specifications conflict with legacy code, **the specification takes precedenc
     ├── narrative_analysis/            # (planned) LLM-based narrative assessment
     ├── prompts/                       # (planned) LLM prompt templates
     │
+    ├── characterization/              # Descriptive "Table 1" for reference sets
+    │   ├── policy.py                  # Multi-valued → one value; missingness rules
+    │   ├── builder.py                 # Statistics over Report objects
+    │   └── writer.py                  # JSON / markdown / CSV artifact
+    │
     ├── eval/                          # Evaluation framework (imported by secure repo)
     │   ├── labels.py                  # Canonical label constants
     │   ├── metrics.py                 # ConfusionMatrix, accuracy functions, EvalSummary

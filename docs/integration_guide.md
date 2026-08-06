@@ -1044,7 +1044,9 @@ The dev repo does not enforce a layout — secure-side scripts choose paths. The
 ```
 validation_sets/
 └── vs_2026Q1/
-    ├── dataset_manifest.yaml          ← canonical provenance
+    ├── dataset_manifest.yaml                  ← canonical provenance
+    ├── reference_set_characteristics.json     ← what is in the sets (dataset_id → manifest)
+    ├── reference_set_characteristics.md
     ├── run_2026-04-27_baseline/
     │   ├── run_manifest.yaml          ← dataset_ref → dataset_manifest
     │   └── …
@@ -1052,6 +1054,33 @@ validation_sets/
         ├── run_manifest.yaml          ← same dataset_id
         └── …
 ```
+
+### Describing the extracted set
+
+Once a validation set's reports are extracted, run
+[`llm_dup_dev.characterization`](reference_set_characteristics.md) over its
+reference sets to produce the descriptive "Table 1" alongside the manifest —
+reporting years, countries, patient age and sex, commonest drugs and adverse
+events, and pair-level agreement on country, year and sex. It is aggregate-only
+(no report content) and joins back to the manifest via `dataset_id`:
+
+```python
+from llm_dup_dev.characterization import (
+    build_characterization_report, write_characterization_report,
+)
+
+write_characterization_report(
+    validation_set_dir,
+    build_characterization_report(
+        [precision_set, *recall_sets], report_loader,
+        dataset_id=manifest.dataset_id,
+        notes="reports as loaded post narrative-demographics merge",
+    ),
+)
+```
+
+Doing it at freeze time rather than at analysis time means the description
+belongs to the *extract*, and one run covers every study that later uses it.
 
 ### Usage
 
