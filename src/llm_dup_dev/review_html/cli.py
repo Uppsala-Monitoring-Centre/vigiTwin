@@ -22,7 +22,8 @@ Optionally include features, classifications, and frozen frequency statistics::
 
 Expected JSON formats
 ---------------------
-- ``reports.json``: ``{ "<report_id>": { ...Report fields... }, ... }``
+- ``reports.json``: either ``{ "<report_id>": { ...Report fields... }, ... }``
+  or ``[ { ...Report fields... }, ... ]`` — both frozen shapes are accepted
 - ``pairs.json``: ``[ { "pair_id": "...", "report_1_id": "...", "report_2_id": "..." }, ... ]``
 - ``features.json`` (optional): ``{ "<pair_id>": { ...PairFeatures fields... }, ... }``
 - ``classifications.json`` (optional): ``{ "<pair_id>": { ...ClassificationResult fields... }, ... }``
@@ -47,6 +48,7 @@ from typing import Sequence
 from llm_dup_dev.data.offline import (
     FrozenPairBundle,
     load_frozen_narrative_demographics,
+    load_reports,
     load_screening_details,
 )
 from llm_dup_dev.models.classification import ClassificationResult
@@ -78,7 +80,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--reports",
         type=Path,
         required=True,
-        help="Path to reports JSON (dict keyed by report_id).",
+        help=(
+            "Path to reports JSON — either a list of Report objects or a dict "
+            "keyed by report_id."
+        ),
     )
     parser.add_argument(
         "--pairs",
@@ -158,12 +163,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     """CLI entrypoint."""
     args = _parse_args(argv)
 
-    # Load reports
-    raw_reports = _load_json(args.reports)
-    reports: dict[str, Report] = {
-        rid: Report.model_validate(rdata)
-        for rid, rdata in raw_reports.items()
-    }
+    # Load reports (either frozen shape — see data.offline.load_reports)
+    reports: dict[str, Report] = load_reports(args.reports)
 
     # Load pairs
     raw_pairs = _load_json(args.pairs)

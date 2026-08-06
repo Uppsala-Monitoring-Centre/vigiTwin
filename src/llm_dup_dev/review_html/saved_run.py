@@ -42,12 +42,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Callable
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from llm_dup_dev.data.offline import (
     FrozenNarrativeDemographics,
     FrozenPairBundle,
     ScreeningDetails,
+    index_by_id,
+    load_reports,
     load_screening_details,
 )
 from llm_dup_dev.models.classification import ClassificationResult
@@ -57,7 +59,6 @@ from llm_dup_dev.models.pair_identity import (
     canonical_report_ids,
     split_pair_id,
 )
-from llm_dup_dev.models.report import Report
 from llm_dup_dev.models.report_pair import (
     ALLOW_NONCANONICAL_CONTEXT_KEY,
     ReportPair,
@@ -144,81 +145,9 @@ def _load_json(path: str | Path):
         return json.load(f)
 
 
-def _index_by_id(
-    raw,
-    *,
-    id_attr: str,
-    model_cls: type[BaseModel],
-    artifact: str,
-    path: str | Path,
-) -> dict[str, BaseModel]:
-    """Index a list- or mapping-shaped artifact into ``{id: model}``.
-
-    The secure runner writes reports and pair-frequency bundles as JSON *lists*
-    of objects; the review CLI writes them as objects keyed by id. Both are
-    accepted, and both are validated hard:
-
-    * list  → every item must be an object; the id is taken from the validated
-      model's ``id_attr``; duplicate ids are rejected.
-    * mapping → every value is validated; the mapping key must equal the
-      validated model's ``id_attr`` (a key/id conflict is rejected); duplicate
-      ids are rejected.
-    * any other top-level shape is rejected.
-
-    ``artifact`` and ``path`` only shape the error messages.
-    """
-    prefix = f"Invalid {artifact} artifact {path}"
-    out: dict[str, BaseModel] = {}
-
-    def _add(key: str, model: BaseModel) -> None:
-        if key in out:
-            raise ValueError(f"{prefix}: duplicate {id_attr}={key!r}.")
-        out[key] = model
-
-    if isinstance(raw, list):
-        for i, item in enumerate(raw):
-            if not isinstance(item, dict):
-                raise ValueError(
-                    f"{prefix}: item {i} must be an object, got "
-                    f"{type(item).__name__}."
-                )
-            try:
-                model = model_cls.model_validate(item)
-            except ValidationError as exc:
-                raise ValueError(f"{prefix}: item {i} is invalid: {exc}") from exc
-            _add(str(getattr(model, id_attr)), model)
-    elif isinstance(raw, dict):
-        for key, value in raw.items():
-            try:
-                model = model_cls.model_validate(value)
-            except ValidationError as exc:
-                raise ValueError(
-                    f"{prefix}: value for {key!r} is invalid: {exc}"
-                ) from exc
-            model_id = str(getattr(model, id_attr))
-            if model_id != str(key):
-                raise ValueError(
-                    f"{prefix}: mapping key {key!r} does not match "
-                    f"{id_attr}={model_id!r} in the record."
-                )
-            _add(model_id, model)
-    else:
-        raise ValueError(
-            f"{prefix}: top-level JSON must be a list or an object, got "
-            f"{type(raw).__name__}."
-        )
-    return out
-
-
-def _load_reports(path: str | Path) -> dict[str, Report]:
-    """Load ``{report_id: Report}`` from a list- or mapping-shaped artifact."""
-    return _index_by_id(
-        _load_json(path),
-        id_attr="report_id",
-        model_cls=Report,
-        artifact="reports",
-        path=path,
-    )
+# ``index_by_id`` and ``load_reports`` moved to ``data.offline`` so the review
+# renderer, the characterization CLI and any secure-side notebook share one
+# definition of "read an id-keyed artifact" rather than three.
 
 
 def _load_pairs(
@@ -285,7 +214,7 @@ def _load_bundles(path: str | Path | None) -> dict[str, FrozenPairBundle]:
     """
     if path is None:
         return {}
-    return _index_by_id(
+    return index_by_id(
         _load_json(path),
         id_attr="pair_id",
         model_cls=FrozenPairBundle,
@@ -500,7 +429,7 @@ def load_saved_run(
             narrative_demographics_path
         )
 
-    reports = _load_reports(reports_path)
+    reports = load_reports(reports_path)
     pairs = _load_pairs(pairs_path, allow_noncanonical=allow_noncanonical_pairs)
     bundles = _load_bundles(bundles_path)
     annotations = _load_annotations(annotations_path)

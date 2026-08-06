@@ -32,6 +32,14 @@ from llm_dup_dev.study_eval.aggregate import (
     run_precision_analysis,
     run_recall_analysis,
 )
+from llm_dup_dev.study_eval.loading import (
+    load_prediction_set,
+    load_reference_set,
+    load_reference_sets,
+    load_report_pairs,
+    reference_set_from_report_pairs,
+    write_json,
+)
 from llm_dup_dev.study_eval.records import SamplingRecord
 from llm_dup_dev.study_eval.sampling import (
     SCLECase,
@@ -63,6 +71,13 @@ __all__ = [
     "ReferenceSet",
     "PairPrediction",
     "PredictionSet",
+    # loading / construction
+    "load_reference_set",
+    "load_reference_sets",
+    "load_prediction_set",
+    "load_report_pairs",
+    "reference_set_from_report_pairs",
+    "write_json",
     # aggregate + stats
     "ADJUDICATOR_LABELS",
     "PositiveClass",

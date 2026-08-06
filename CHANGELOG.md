@@ -15,6 +15,46 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-06
+
+### Added — shared loaders for the two frozen artifact shapes
+
+Driving `characterization` from a notebook against an existing frozen validation
+set surfaced two papercuts, both from the same root: a reports file has two
+equally-correct shapes in this project, and the pair models spell their id
+fields differently. Both are now handled once, in the library, instead of by
+every caller. Purely additive; no schema changed.
+
+- **`data.offline.load_reports(path) -> {report_id: Report}`** accepts **either**
+  frozen shape — a JSON array of `Report` objects (the secure runner's
+  `validation_reports.json`) or an object keyed by `report_id` (what
+  `review_html` writes). The tolerance stops at the shape: a duplicate id, a
+  mapping key that disagrees with the record inside it, a non-object list item,
+  or any other top-level type is still rejected.
+- **`data.offline.index_by_id(...)`** is the generic helper underneath it,
+  promoted from `review_html.saved_run._index_by_id`. It also serves pair-keyed
+  artifacts (`FrozenPairBundle`), which is why it stays generic.
+- **`review_html`'s `--reports` now accepts a list as well as a mapping**, and
+  **`characterization`'s `--reports` now accepts a mapping as well as a list**.
+  Both are widenings — every file that worked before still works.
+- **`study_eval.loading.reference_set_from_report_pairs(pairs, set_id=...)`**
+  builds a `ReferenceSet` from `ReportPair`s a caller already holds, handling the
+  `report_1_id` → `report_id1` rename. Ids are carried across, never re-derived,
+  so a noncanonical pair still fails rather than being quietly repaired.
+  `load_report_pairs(path)` reads a frozen `pairs.json` for it. Both are
+  re-exported from `llm_dup_dev.study_eval`.
+- `role` defaults to `"recall"` there, because that is the cheapest legal set —
+  no per-pair labels. Describing a set should not require first inventing a
+  mapping from the annotation vocabulary (`duplicates` / `otherwise_related` /
+  `unrelated`) onto the human-reference one (`duplicate` / `non_duplicate`);
+  that collapse is a study decision and the helper will not make it. Conversely
+  `screening_mode` keeps the model's `"observed"` default — `not_evaluated` is a
+  claim about the estimand and is never inferred.
+
+`scripts/extract_frozen_*.py` keep their own array-only loader on purpose: they
+warn-and-keep-first on a duplicate `report_id` rather than raising, which suits a
+batch extraction job and is a separate decision from this one.
+
 ## [0.9.1] - 2026-08-06
 
 ### Added — reference-set characteristics ("Table 1")

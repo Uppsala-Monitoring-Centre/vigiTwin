@@ -57,10 +57,61 @@ python -m llm_dup_dev.characterization \
 ```
 
 `--reference-set` reads the same `study_reference_set.schema.json` documents
-`study_eval analyze` reads, so no separate export is needed. `--reports` is a
-JSON array of `Report` objects, matching `scripts/extract_frozen_*.py`. Other
-flags: `--top-n` (default 10), `--dataset-id`, `--format` (repeatable; `json`
-and `md` by default, `csv` on request), `--allow-missing-reports`, `--notes`.
+`study_eval analyze` reads, so no separate export is needed. `--reports` accepts
+**either frozen shape** — a JSON array of `Report` objects
+(`validation_reports.json`, what the secure-side runner writes) or an object
+keyed by `report_id` (what `review_html` writes); see
+`llm_dup_dev.data.offline.load_reports`. Other flags: `--top-n` (default 10),
+`--dataset-id`, `--format` (repeatable; `json` and `md` by default, `csv` on
+request), `--allow-missing-reports`, `--notes`.
+
+### In a notebook, against an existing frozen validation set
+
+Use the library rather than the CLI when you want the tables rendered inline and
+the numbers in hand. Two loaders do the fiddly parts:
+`data.offline.load_reports` absorbs either reports shape, and
+`study_eval.loading.reference_set_from_report_pairs` turns a frozen `pairs.json`
+into a `ReferenceSet` (the two pair models spell their id fields differently —
+`report_1_id` vs `report_id1`).
+
+```python
+import pathlib
+from IPython.display import Markdown
+from llm_dup_dev.characterization import (
+    build_characterization_report, characterization_to_markdown,
+)
+from llm_dup_dev.data.offline import load_reports
+from llm_dup_dev.study_eval import load_report_pairs, reference_set_from_report_pairs
+
+FROZEN = pathlib.Path("validation_sets/vs_2026Q1")
+
+reports = load_reports(FROZEN / "validation_reports.json")
+reference_set = reference_set_from_report_pairs(
+    load_report_pairs(FROZEN / "validation_pairs.json"),
+    set_id="frozen_vs_2026Q1",
+    provenance="vs_2026Q1",
+)
+
+report = build_characterization_report(
+    [reference_set], reports, notes="reports as stored, no narrative merge"
+)
+Markdown(characterization_to_markdown(report))
+```
+
+`reference_set_from_report_pairs` defaults to `role="recall"`, which needs no
+per-pair labels. That is deliberate: **describing** a set should not require
+first inventing a mapping from the annotation vocabulary (`duplicates` /
+`otherwise_related` / `unrelated`) onto the human-reference one (`duplicate` /
+`non_duplicate`). That collapse is a study decision, no distribution here is
+split by it, and it feeds only `reference_label_counts`. Pass
+`role="precision"` with `reference_labels={pair_id: label}` if you do want those
+counts.
+
+**Reports are not in `pair_results.json`.** `PairResult` carries features, the
+classification and the narrative extractions — never the reports themselves, by
+the same boundary that lets `PairFeatures` exist dev-side at all. A caller
+holding only `pair_results.json`, `features.json` or `classifications.json`
+cannot characterise anything; the reports file is required.
 
 ### Why this is not a `study_eval` subcommand
 
@@ -120,10 +171,26 @@ can recognise as one country. Check that table before quoting the pair-level
 same-country figure — a loader that spells the same country two ways will score
 such pairs as *different*.
 
-**Which `Report` objects you pass changes the numbers.** Reports read straight
-from the database and reports that have been through
-`merge_narrative_demographics` resolve differently, and nothing in the artifact
-can detect which it was. Record it in `notes=`.
+**Which `Report` objects you pass changes the numbers — but narrowly.** Because
+structured sources win outright, merging a `FrozenNarrativeDemographics` bundle
+in first can only affect reports whose structured field was **empty**: it never
+overrides a structured value and never creates a conflict with one. So the
+choice moves coverage, not existing values. Nothing in the artifact can detect
+which you passed, so record it in `notes=`:
+
+```python
+from llm_dup_dev.data.offline import load_frozen_narrative_demographics
+from llm_dup_dev.feature_generation.narrative_demographics import (
+    merge_narrative_demographics,
+)
+
+bundle = load_frozen_narrative_demographics(FROZEN / "validation_narrative_demographics.json")
+merged = {
+    rid: merge_narrative_demographics(r, bundle.extractions[rid])
+    if rid in bundle.extractions else r
+    for rid, r in reports.items()
+}
+```
 
 ## What is computed
 
