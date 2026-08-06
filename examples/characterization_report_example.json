@@ -1,0 +1,740 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-03-01T12:00:00Z",
+  "characterization_id": "abc123def456",
+  "dataset_id": "dataset0001ab",
+  "dev_package": {
+    "name": "llm-dup-dev",
+    "version": null
+  },
+  "dev_git_commit": null,
+  "policy": {
+    "source_preference": [
+      "structured"
+    ],
+    "conflict_handling": "candidates are compared at tabulation granularity; two that would land in the same table cell agree, and only a genuine disagreement is counted as conflicting rather than resolved",
+    "age_unit_conversions": {
+      "years": 1.0,
+      "months": 0.08333333333333333,
+      "days": 0.0027378507871321013
+    },
+    "age_band_width_years": 10,
+    "age_plausible_range": [
+      0.0,
+      130.0
+    ],
+    "country_key_normalisation": "strip and lowercase; values otherwise verbatim",
+    "drug_roles_counted": [
+      "suspected",
+      "interacting"
+    ],
+    "top_n": 10,
+    "tie_break": "descending count, then tabulation key ascending"
+  },
+  "sets": [
+    {
+      "set_id": "precision_primary",
+      "role": "precision",
+      "label": "Screening candidate set",
+      "provenance": "manual_annotation",
+      "screening_mode": "observed",
+      "reference_label_counts": {
+        "duplicate": 1,
+        "non_duplicate": 1
+      },
+      "reports": {
+        "n_pairs": 2,
+        "n_report_instances": 4,
+        "n_unique_reports": 4,
+        "n_reports_in_multiple_pairs": 0,
+        "n_reports_unavailable": 0,
+        "availability": {
+          "n_reports_with_narrative": 2,
+          "n_reports_with_any_drug": 3,
+          "n_reports_with_any_suspect_or_interacting_drug": 3,
+          "n_reports_with_any_drug_role_recorded": 3,
+          "n_reports_with_any_adverse_event": 3,
+          "n_reports_with_any_hlt": 3,
+          "n_reports_with_case_identifiers": 0
+        },
+        "report_year": {
+          "field": "report_year",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "2020",
+              "label": "2020",
+              "count": 2,
+              "proportion": 0.5
+            },
+            {
+              "key": "2022",
+              "label": "2022",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "country_of_origin": {
+          "field": "country_of_origin",
+          "denominator": 4,
+          "n_resolved": 2,
+          "n_missing": 2,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 1,
+          "categories": [
+            {
+              "key": "us",
+              "label": "US",
+              "count": 2,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "patient_sex": {
+          "field": "patient_sex",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "female",
+              "label": "female",
+              "count": 2,
+              "proportion": 0.5
+            },
+            {
+              "key": "male",
+              "label": "male",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "patient_age_years": {
+          "field": "patient_age_years",
+          "unit": "completed_years",
+          "n_used": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 54.0,
+          "q1": 41.0,
+          "q3": 54.0,
+          "minimum": 28.0,
+          "maximum": 54.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "patient_age_bands": {
+          "field": "patient_age_bands",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "50-59",
+              "label": "50-59",
+              "count": 2,
+              "proportion": 0.5
+            },
+            {
+              "key": "20-29",
+              "label": "20-29",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "drug_roles": {
+          "field": "drug_roles",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "suspected",
+              "label": "suspected",
+              "count": 3,
+              "proportion": 0.75
+            },
+            {
+              "key": "unrecorded",
+              "label": "unrecorded",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "top_drugs": {
+          "field": "top_drugs",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "pregabalin",
+              "label": "pregabalin",
+              "count": 2,
+              "proportion": 0.5
+            },
+            {
+              "key": "metformin",
+              "label": "metformin",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "top_adverse_events_pt": {
+          "field": "top_adverse_events_pt",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 3,
+          "categories": [
+            {
+              "key": "somnolence",
+              "label": "somnolence",
+              "count": 2,
+              "proportion": 0.5
+            },
+            {
+              "key": "dizziness",
+              "label": "dizziness",
+              "count": 1,
+              "proportion": 0.25
+            },
+            {
+              "key": "headache",
+              "label": "headache",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "top_adverse_events_hlt": {
+          "field": "top_adverse_events_hlt",
+          "denominator": 4,
+          "n_resolved": 3,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "disturbances in consciousness nec",
+              "label": "disturbances in consciousness nec",
+              "count": 2,
+              "proportion": 0.5
+            },
+            {
+              "key": "headaches nec",
+              "label": "headaches nec",
+              "count": 1,
+              "proportion": 0.25
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        }
+      },
+      "pairs": {
+        "n_pairs": 2,
+        "n_pairs_evaluable": 2,
+        "country": {
+          "field": "country",
+          "n_pairs": 2,
+          "n_same": 1,
+          "n_different": 0,
+          "n_not_comparable": 1,
+          "proportion_same_comparable": 1.0,
+          "proportion_same_all": 0.5
+        },
+        "report_year": {
+          "field": "report_year",
+          "n_pairs": 2,
+          "n_same": 1,
+          "n_different": 0,
+          "n_not_comparable": 1,
+          "proportion_same_comparable": 1.0,
+          "proportion_same_all": 0.5
+        },
+        "patient_sex": {
+          "field": "patient_sex",
+          "n_pairs": 2,
+          "n_same": 1,
+          "n_different": 0,
+          "n_not_comparable": 1,
+          "proportion_same_comparable": 1.0,
+          "proportion_same_all": 0.5
+        },
+        "year_difference": {
+          "field": "year_difference",
+          "unit": "years",
+          "n_used": 1,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "minimum": 0.0,
+          "maximum": 0.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "age_difference_years": {
+          "field": "age_difference_years",
+          "unit": "completed_years",
+          "n_used": 1,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "minimum": 0.0,
+          "maximum": 0.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "n_pairs_with_identical_age": 1,
+        "shared_drugs": {
+          "field": "shared_drugs",
+          "unit": "drugs",
+          "n_used": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 0.5,
+          "q1": 0.25,
+          "q3": 0.75,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "shared_adverse_events_pt": {
+          "field": "shared_adverse_events_pt",
+          "unit": "preferred_terms",
+          "n_used": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 0.5,
+          "q1": 0.25,
+          "q3": 0.75,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "n_pairs_with_any_shared_drug": 1,
+        "n_pairs_with_any_shared_adverse_event": 1
+      }
+    },
+    {
+      "set_id": "recall_regulator_gold",
+      "role": "recall",
+      "label": null,
+      "provenance": "regulator_reference_set",
+      "screening_mode": "not_evaluated",
+      "reference_label_counts": {
+        "unlabelled": 1
+      },
+      "reports": {
+        "n_pairs": 1,
+        "n_report_instances": 2,
+        "n_unique_reports": 2,
+        "n_reports_in_multiple_pairs": 0,
+        "n_reports_unavailable": 0,
+        "availability": {
+          "n_reports_with_narrative": 1,
+          "n_reports_with_any_drug": 2,
+          "n_reports_with_any_suspect_or_interacting_drug": 2,
+          "n_reports_with_any_drug_role_recorded": 2,
+          "n_reports_with_any_adverse_event": 2,
+          "n_reports_with_any_hlt": 2,
+          "n_reports_with_case_identifiers": 0
+        },
+        "report_year": {
+          "field": "report_year",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "2020",
+              "label": "2020",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "2022",
+              "label": "2022",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "country_of_origin": {
+          "field": "country_of_origin",
+          "denominator": 2,
+          "n_resolved": 1,
+          "n_missing": 1,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 1,
+          "categories": [
+            {
+              "key": "us",
+              "label": "US",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "patient_sex": {
+          "field": "patient_sex",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "female",
+              "label": "female",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "male",
+              "label": "male",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "patient_age_years": {
+          "field": "patient_age_years",
+          "unit": "completed_years",
+          "n_used": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 41.0,
+          "q1": 34.5,
+          "q3": 47.5,
+          "minimum": 28.0,
+          "maximum": 54.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "patient_age_bands": {
+          "field": "patient_age_bands",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "20-29",
+              "label": "20-29",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "50-59",
+              "label": "50-59",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "drug_roles": {
+          "field": "drug_roles",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "suspected",
+              "label": "suspected",
+              "count": 2,
+              "proportion": 1.0
+            },
+            {
+              "key": "unrecorded",
+              "label": "unrecorded",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "top_drugs": {
+          "field": "top_drugs",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "metformin",
+              "label": "metformin",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "pregabalin",
+              "label": "pregabalin",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "top_adverse_events_pt": {
+          "field": "top_adverse_events_pt",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 3,
+          "categories": [
+            {
+              "key": "dizziness",
+              "label": "dizziness",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "headache",
+              "label": "headache",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "somnolence",
+              "label": "somnolence",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        },
+        "top_adverse_events_hlt": {
+          "field": "top_adverse_events_hlt",
+          "denominator": 2,
+          "n_resolved": 2,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised": 0,
+          "n_out_of_range": 0,
+          "n_distinct": 2,
+          "categories": [
+            {
+              "key": "disturbances in consciousness nec",
+              "label": "disturbances in consciousness nec",
+              "count": 1,
+              "proportion": 0.5
+            },
+            {
+              "key": "headaches nec",
+              "label": "headaches nec",
+              "count": 1,
+              "proportion": 0.5
+            }
+          ],
+          "truncated_to": null,
+          "boundary_tie": false,
+          "unavailable_reason": null
+        }
+      },
+      "pairs": {
+        "n_pairs": 1,
+        "n_pairs_evaluable": 1,
+        "country": {
+          "field": "country",
+          "n_pairs": 1,
+          "n_same": 0,
+          "n_different": 0,
+          "n_not_comparable": 1,
+          "proportion_same_comparable": null,
+          "proportion_same_all": 0.0
+        },
+        "report_year": {
+          "field": "report_year",
+          "n_pairs": 1,
+          "n_same": 0,
+          "n_different": 1,
+          "n_not_comparable": 0,
+          "proportion_same_comparable": 0.0,
+          "proportion_same_all": 0.0
+        },
+        "patient_sex": {
+          "field": "patient_sex",
+          "n_pairs": 1,
+          "n_same": 0,
+          "n_different": 1,
+          "n_not_comparable": 0,
+          "proportion_same_comparable": 0.0,
+          "proportion_same_all": 0.0
+        },
+        "year_difference": {
+          "field": "year_difference",
+          "unit": "years",
+          "n_used": 1,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 2.0,
+          "q1": 2.0,
+          "q3": 2.0,
+          "minimum": 2.0,
+          "maximum": 2.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "age_difference_years": {
+          "field": "age_difference_years",
+          "unit": "completed_years",
+          "n_used": 1,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 26.0,
+          "q1": 26.0,
+          "q3": 26.0,
+          "minimum": 26.0,
+          "maximum": 26.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "n_pairs_with_identical_age": 0,
+        "shared_drugs": {
+          "field": "shared_drugs",
+          "unit": "drugs",
+          "n_used": 1,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "minimum": 0.0,
+          "maximum": 0.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "shared_adverse_events_pt": {
+          "field": "shared_adverse_events_pt",
+          "unit": "preferred_terms",
+          "n_used": 1,
+          "n_missing": 0,
+          "n_conflicting": 0,
+          "n_unrecognised_unit": 0,
+          "n_out_of_range": 0,
+          "median": 0.0,
+          "q1": 0.0,
+          "q3": 0.0,
+          "minimum": 0.0,
+          "maximum": 0.0,
+          "quantile_method": "inclusive_linear"
+        },
+        "n_pairs_with_any_shared_drug": 0,
+        "n_pairs_with_any_shared_adverse_event": 0
+      }
+    }
+  ],
+  "notes": "Synthetic reports; illustrates the committed artifact shape."
+}

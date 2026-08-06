@@ -77,6 +77,25 @@ python -m llm_dup_dev.study_eval arbitrate  --sample ... --workbook r1.xlsx --wo
 python -m llm_dup_dev.study_eval finalize   --sample ... --workbook r1.xlsx --workbook r2.xlsx --arbitration arb.xlsx --output-dir final/
 ```
 
+## Reference-set characteristics ("Table 1")
+
+Before Step 1, describe the sets themselves — reporting years, countries, patient
+age and sex, commonest drugs and adverse events, and how often the two reports of
+a pair share a country. That is
+[`llm_dup_dev.characterization`](reference_set_characteristics.md), a separate
+command that runs against the *same* `ReferenceSet` files `analyze` reads:
+
+```
+python -m llm_dup_dev.characterization --reference-set precision.json \
+    --reports validation_reports.json --output-dir results/characteristics
+```
+
+It is deliberately **not** a `study_eval` subcommand or a parameter on
+`run_analysis`. `study_eval` never handles `Report` objects — its whole input
+contract is pair ids, labels and predictions — and threading reports through it
+would put report content into the signature of the performance analysis. Nothing
+in `llm_dup_dev` imports `characterization`, and a test enforces that.
+
 ## Input models (generic)
 
 Two model families, both in
@@ -377,6 +396,16 @@ recalls = [to_reference_set(s) for s in frozen_recall_sets]
 predictions = to_prediction_set(
     PRIMARY_RUN / "pair_results.json", "primary", screened_pair_ids)
 
+# Describe the sets before estimating anything over them (see the section above).
+from llm_dup_dev.characterization import (
+    build_characterization_report, write_characterization_report,
+)
+write_characterization_report(
+    SECURE_OUT / "characteristics",
+    build_characterization_report([prec, *recalls], report_loader,
+                                  dataset_id=DATASET_ID, notes="post-merge reports"),
+)
+
 analysis = workflow.run_analysis(
     [prec, *recalls], predictions,
     seed=STUDY_SEED, scle_precision_per_cell=10, scle_recall_per_stratum=10,
@@ -443,6 +472,10 @@ make between the adjudicator and the screening method. Format and semantics:
 [`data_contracts.md` § Screening Algorithm Details](data_contracts.md).
 
 ### Pre-flight checklist
+- [ ] Reference-set characteristics produced for every set and **read** before
+  the analysis is run — in particular the country distribution, since a loader
+  that spells one country two ways inflates the "different country" figure. See
+  [reference_set_characteristics.md](reference_set_characteristics.md).
 - [ ] `ReferenceSet` / `PredictionSet` round-trip against the committed schemas.
 - [ ] `pair_id` built with `canonical_pair_id` everywhere. Reference sets and
   predictions then agree by construction; a noncanonical `ReferencePair` is
@@ -478,3 +511,7 @@ model:
 ```
 python scripts/generate_study_eval_schemas.py
 ```
+
+The characterization artifact has its own generator —
+`python scripts/generate_characterization_schema.py` — drift-checked by
+`tests/test_schemas_examples.py`.
