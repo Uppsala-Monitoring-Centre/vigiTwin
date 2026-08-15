@@ -463,17 +463,33 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
             problems.append(f"{path}: pair {pair_id!r} is not in the sample.")
             continue
 
+        def _cell(header: str) -> str | None:
+            """The raw entry in one column; ``None`` where the column is absent."""
+            if header not in idx:
+                return None
+            return _cell_str(row[idx[header]])
+
         def _answer(header: str) -> str:
             """The arbiter's entry in one column, ignoring the N/A sentinel."""
-            if header not in idx:
-                return ""
-            val = _cell_str(row[idx[header]])
-            return "" if val == NOT_APPLICABLE else val
+            val = _cell(header)
+            return "" if val is None or val == NOT_APPLICABLE else val
 
         consensus: dict[str, str] = {}
         for field in dimensions:
-            val = _answer(f"{_dim_header(field)} consensus")
+            val = _cell(f"{_dim_header(field)} consensus")
+            if val is None or val == NOT_APPLICABLE:
+                # No such column, or the dimension never applied to this pair:
+                # there is no decision to carry either way.
+                continue
             if val:
+                consensus[field] = val
+            elif field == "implicated_feature_domains":
+                # The one set-valued dimension: "no domains implicated" is a real
+                # answer, and the workbook can only render it as a blank cell.
+                # Keeping the key makes that decision explicit, so consensus
+                # construction resolves it to an empty list rather than reporting
+                # the arbitration as missing. For every other dimension a blank
+                # still means undecided and must fail validation downstream.
                 consensus[field] = val
 
         materially = _answer(_MATERIALLY_DIFFERENT_HEADER).lower()
