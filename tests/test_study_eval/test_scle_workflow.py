@@ -237,6 +237,11 @@ def test_non_applicable_dimensions_read_na_across_the_triple(tmp_path):
     assert arbitration.decisions[0].consensus_method_difference == ""
     assert NOT_APPLICABLE not in arbitration.decisions[0].consensus_dimensions.values()
     assert "never_event" not in arbitration.decisions[0].consensus_dimensions
+    # Nor is the set-valued dimension given an empty answer where it never applied.
+    assert (
+        "implicated_feature_domains"
+        not in arbitration.decisions[0].consensus_dimensions
+    )
 
 
 def test_merge_consensus_rejects_an_edited_agreed_dimension(tmp_path):
@@ -281,6 +286,70 @@ def test_merge_consensus_accepts_untouched_prefilled_values(tmp_path):
         assert a.dimension_sources["implicated_feature_domains"] == (
             "reviewer_agreement"
         )
+
+
+def _blank_consensus_cell(arb_path, header):
+    """Clear one consensus cell on the first arbitration row, as the arbiter would."""
+    wb = openpyxl.load_workbook(arb_path)
+    ws = wb["pairs"]
+    hdr = [c.value for c in ws[1]]
+    ws.cell(row=2, column=hdr.index(header) + 1).value = None
+    wb.save(arb_path)
+
+
+def test_blank_feature_domain_arbitration_means_no_domains(tmp_path):
+    # Reviewer A implicates no feature domains, reviewer B implicates one, and
+    # the arbiter sides with A — which the workbook can only express as a blank
+    # consensus cell. That is a decision, not a missing answer.
+    _, _, sample = build_scle_precision_sample(_SPEC)
+    pa, pb = tmp_path / "wa.xlsx", tmp_path / "wb.xlsx"
+    vocab = {"error_stages": ERROR_STAGES, "feature_domains": FEATURE_DOMAINS}
+    write_reviewer_workbook(sample, "alice", pa, **vocab)
+    write_reviewer_workbook(sample, "bob", pb, **vocab)
+    fill_reviewer_workbook(pa, "alice", ticked_domains=())
+    fill_reviewer_workbook(pb, "bob", ticked_domains=("narrative",))
+    sub_a = read_reviewer_submission(pa, sample)
+    sub_b = read_reviewer_submission(pb, sample)
+
+    report = detect_discrepancies(sub_a, sub_b)
+    assert {
+        d.field for p in report.pair_discrepancies for d in p.dimension_disagreements
+    } == {"implicated_feature_domains"}
+
+    arb_path = tmp_path / "arb.xlsx"
+    write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
+    fill_arbitration_workbook(arb_path, report)
+    _blank_consensus_cell(arb_path, "Implicated feature domains consensus")
+
+    arbitration = read_arbitration(arb_path, sample)
+    # The blank is retained as an explicit empty answer rather than dropped.
+    assert arbitration.decisions[0].consensus_dimensions[
+        "implicated_feature_domains"
+    ] == ""
+
+    result = merge_consensus(sub_a, sub_b, arbitration, report)
+    arbitrated = [a for a in result.consensus if a.arbitrated]
+    assert len(arbitrated) == 1
+    assert arbitrated[0].implicated_feature_domains == []
+    assert arbitrated[0].dimension_sources["implicated_feature_domains"] == (
+        "arbitration"
+    )
+
+
+def test_blank_arbitration_still_fails_for_a_non_set_valued_dimension(tmp_path):
+    # Blank is not made generally acceptable: on every other disagreed dimension
+    # it still means the arbiter has not decided, and must block finalization.
+    sample, sub_a, sub_b = _two_submissions(tmp_path, disagree=True, vocabularies=True)
+    report = detect_discrepancies(sub_a, sub_b)
+    arb_path = tmp_path / "arb.xlsx"
+    write_arbitration_workbook(report, sub_a, sub_b, sample, arb_path)
+    fill_arbitration_workbook(arb_path, report)
+    _blank_consensus_cell(arb_path, "Never event consensus")
+
+    arbitration = read_arbitration(arb_path, sample)
+    assert "never_event" not in arbitration.decisions[0].consensus_dimensions
+    with pytest.raises(ValueError, match="no.*consensus value"):
+        merge_consensus(sub_a, sub_b, arbitration, report)
 
 
 def test_read_arbitration_tolerates_a_workbook_without_the_new_column(tmp_path):

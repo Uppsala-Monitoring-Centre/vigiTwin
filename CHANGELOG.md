@@ -15,6 +15,43 @@ While pre-1.0: a breaking schema/API change bumps the **minor**
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-08-15
+
+### Fixed — a blank feature-domain arbitration cell is a decision, not a gap
+
+`read_arbitration` dropped every blank consensus cell, which is right for the
+dimensions that carry a single value and wrong for the one that carries a set.
+"No feature domains are implicated" is a real arbitration outcome, and the
+workbook has no way to render it other than an empty cell. Read-back therefore
+reported the decision as missing, and `merge_consensus` refused to finalize a
+pair the arbiter had in fact resolved.
+
+Encountered during finalization of the frozen SCLE evaluation: reviewer A
+implicated no domains, reviewer B implicated one, and the arbiter sided with A.
+
+- **A blank but applicable `implicated_feature_domains` consensus cell is now
+  retained** as an explicit empty value, so the consensus resolves to
+  `implicated_feature_domains == []` with
+  `dimension_sources["implicated_feature_domains"] == "arbitration"`.
+- **Blank stays "undecided" everywhere else.** Every other disagreed structured
+  dimension still fails validation when its consensus cell is empty — this is
+  not a general relaxation, and is pinned by a test.
+- **A dimension that never applied to the pair is still not an answer.** An
+  `N/A` cell, and an absent column in an older workbook, are both dropped as
+  before, so no empty decision is invented for a question that was never asked.
+
+`merge_consensus` is unchanged: `_parse_domains("") -> []` already carried the
+empty case correctly once the key survives read-back. No schema changed and no
+public API shape changed; this is behaviour-only, and ships as a patch.
+
+One narrow consequence worth knowing: where the two reviewers *agreed* on a
+non-empty domain set and the arbiter *cleared* that pre-filled cell, read-back
+now surfaces it as an edit of a do-not-edit cell and `merge_consensus` raises,
+where before the clearing was silently dropped and the agreed value stood. That
+matches the workbook's stated rule — agreed dimensions are resolved from the
+reviews — but the error text still offers "clear the consensus cell" as a remedy,
+which no longer applies to this one dimension.
+
 ## [0.9.2] - 2026-08-06
 
 ### Added — shared loaders for the two frozen artifact shapes
