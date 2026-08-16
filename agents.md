@@ -84,58 +84,40 @@ If specifications conflict with legacy code, **the specification takes precedenc
 ├── pyproject.toml
 │
 ├── docs/
-│   ├── data_contracts.md                   # Data layer schemas and contracts
+│   ├── duplicate_adjudication_spec.md      # Primary method specification
 │   ├── pipeline_overview.md                # End-to-end pipeline description
+│   ├── data_contracts.md                   # Data layer schemas and contracts
+│   ├── integration_guide.md                # Running the pipeline; public surface
 │   ├── repository_roles.md                 # Repo separation and security controls
-│   └── duplicate_adjudication_spec.md      # Primary method specification
+│   ├── study_eval.md                       # Performance-evaluation package
+│   ├── reference_set_characteristics.md    # "Table 1" for reference sets
+│   └── migration_notes_*.md                # One per breaking contract change
 │
-├── examples/
-│   ├── pair_features_example.json
-│   ├── report_example.json
-│   └── report_pair_example.json
-│
-├── schemas/
-│   ├── pair_features.schema.json
-│   ├── report.schema.json
-│   └── report_pair.schema.json
+├── examples/                          # One valid document per schema
+├── schemas/                           # JSON Schema for every emitted artifact
 │
 └── src/llm_dup_dev/
-    ├── classifier/                    # (planned) Duplicate classification logic
-    ├── data_extraction/               # (planned) Report extraction and structuring
-    ├── feature_generation/            # (planned) PairFeatures computation
-    ├── narrative_analysis/            # (planned) LLM-based narrative assessment
-    ├── prompts/                       # (planned) LLM prompt templates
-    │
-    ├── characterization/              # Descriptive "Table 1" for reference sets
-    │   ├── policy.py                  # Multi-valued → one value; missingness rules
-    │   ├── builder.py                 # Statistics over Report objects
-    │   └── writer.py                  # JSON / markdown / CSV artifact
+    ├── models/                        # Report, ReportPair, PairFeatures, results
+    ├── data/                          # ReportLoader / StatsProvider protocols;
+    │                                  #   synthetic + offline (frozen) providers
+    ├── feature_generation/            # PairFeatures from two Reports + stats
+    ├── classifier/                    # Decision logic and configurable thresholds
+    ├── llm/                           # LLM boundary: protocols, models, fake client
+    │   └── tasks/                     # Prompt construction + typed extractions
+    ├── pipeline/                      # runner.py (main entry point), export.py
     │
     ├── eval/                          # Evaluation framework (imported by secure repo)
-    │   ├── labels.py                  # Canonical label constants
-    │   ├── metrics.py                 # ConfusionMatrix, accuracy functions, EvalSummary
-    │   ├── comparison.py              # evaluate() — main entry point
-    │   └── report.py                  # Text/markdown summary formatting
+    ├── study_eval/                    # Study workflow: sampling, estimation,
+    │   └── scle/                      #   two-reviewer SCLE + arbitration workbooks
+    ├── characterization/              # Descriptive "Table 1" for reference sets
+    ├── review_html/                   # Side-by-side HTML review renderer
     │
-    ├── lib/                           # LEGACY reference implementations
-    │   ├── data_extraction.py         # LEGACY - Fetches & structures individual reports from SQL Server
-    │   ├── data_extraction_demographics.py  # LEGACY - Aggregate demographic profiles (joblib-cached SQL CTEs)
-    │   ├── decision_logic.py          # LEGACY - Deterministic classification decision tree
-    │   ├── fetch_study.py             # LEGACY - Multi-source literature lookup (PubMed/Crossref/EuropePMC)
-    │   ├── html_rendering_functions.py  # LEGACY - HTML output generation
-    │   └── util.py                    # LEGACY - Shared helpers (JSON parsing, missing-value checks)
-    │
-    └── vigiMatchContext/              # LEGACY - LLM system prompts and annotation guidelines
-        ├── prompt_system.txt          # LEGACY - LLM role definition
-        ├── prompt_same_patient.txt    # LEGACY - Same-patient assessment prompt
-        ├── prompt_AE_similarity.txt   # LEGACY - Adverse-event similarity prompt
-        ├── prompt_clustering.txt      # LEGACY - Cluster-detection prompt
-        ├── prompt_DecisionLogic.txt   # LEGACY - LLM-based final classification (not production)
-        ├── prompt_literature.txt      # LEGACY - Literature/study evaluation prompt
-        ├── context01.txt              # Full vigiMatch annotation guidelines
-        ├── context_nn1.txt            # LEGACY — combined drug+AE prompt (superseded)
-        └── context_nn1b.txt           # LEGACY — revised combined prompt (superseded)
+    ├── dataset_manifest/              # Per-validation-set manifest
+    └── run_manifest/                  # Per-run manifest (version + git provenance)
 ```
+
+The legacy reference implementations (`lib/`, `vigiMatchContext/`) have been
+removed; consult git history if an original is needed.
 
 ## Companion Repository
 Sensitive constants and secure data extraction utilities live in a **separate private repo**
@@ -162,9 +144,17 @@ FETCH_STUDY_HIGH_CONFIDENCE=0.85   # Minimum confidence to accept a study hit
 DB connection details live in the secure companion repo.
 
 ## Dependencies
-- `umc-research` — proprietary UMC library for DB access and MedDRA codes
-- `beautifulsoup4` — HTML parsing for PDF discovery
-- `pandas`, `sqlalchemy`, `requests`, `joblib`, `dateutil` — standard stack
+This package is public and must stay installable by anyone: **no proprietary or
+internal-index dependency may be added here.** Anything needing `umc-research`,
+a database driver, or an Azure client belongs in the secure companion repo.
+
+- `pydantic` — all data models
+- `jinja2` — HTML review rendering
+- `pyyaml` — manifest writers
+- `openpyxl` — SCLE reviewer/arbitration workbooks (core, not an extra:
+  `study_eval` imports it at module level and is a documented entry point)
+
+Keep the list short and justified; each addition is a cost to every consumer.
 
 ## Conventions
 - Python ≥3.11, <3.13
@@ -182,13 +172,28 @@ in this repo and as an extra precaution are gitignored — never commit them
   contract* — it is deliberately sticky and changes only when that
   contract changes. Don't couple the version to git; the commit already
   identifies the code.
-- **The contract = the JSON schemas + the public API the secure repo
-  imports.** Bump the version in the *same PR* that changes any
-  `schemas/*.schema.json` or a public API shape:
-  - pre-1.0: breaking change (renamed/removed field, changed manifest
-    shape or label semantics) → minor (`0.2.0` → `0.3.0`); additive or
-    backward-compatible change / fix → patch (`0.2.0` → `0.2.1`).
-  - reserve `1.0.0` for a deliberately-declared stable schema/API.
+- **The contract = the JSON schemas + the public surface enumerated in
+  `docs/integration_guide.md` § Public surface.** Anything not listed
+  there is internal and may change in any release. Bump the version in
+  the *same PR* that changes any `schemas/*.schema.json` or any listed
+  name:
+  - breaking change (renamed/removed field or name, changed manifest
+    shape or label semantics) → **major** (`1.4.2` → `2.0.0`)
+  - additive, backward-compatible change → **minor** (`1.4.2` → `1.5.0`)
+  - fix with no contract change → **patch** (`1.4.2` → `1.4.3`); this
+    applies to behaviour fixes too, even where no schema or API shape
+    moves — the fix changes what a consumer gets back, so it gets its
+    own version and its own CHANGELOG heading
+  - (pre-1.0 the rule was breaking → minor, everything else → patch;
+    that is history now, retained only to read old entries.)
+- **No deprecation window.** With a single known consumer, a breaking
+  change ships as a major bump plus a `docs/migration_notes_*.md`, not
+  as a two-release deprecation cycle. Say what moved and how to update.
+- **Releases and study cycles are different things.** The version tracks
+  compatibility only. A completed study cycle is marked by a git tag and
+  an archived snapshot (DOI), which is what a publication cites — do not
+  reach for a major bump to signal "this is the version behind the
+  paper".
 - Record every bump in `CHANGELOG.md` under a new version heading —
   that file carries the "what changed for consumers" narrative that
   neither the SHA nor the version number expresses on its own.

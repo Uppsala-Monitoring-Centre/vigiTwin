@@ -9,11 +9,70 @@ provenance lives in the `dev_git_commit` field of each manifest; this file and
 the version number carry the *meaning* of a change. See `agents.md` §
 Conventions → Versioning for the bump rules.
 
-While pre-1.0: a breaking schema/API change bumps the **minor**
-(`0.2.0` → `0.3.0`); additive or backward-compatible changes and fixes bump the
-**patch** (`0.2.0` → `0.2.1`).
+From 1.0.0 on: a breaking schema/API change bumps the **major**, an additive
+backward-compatible change bumps the **minor**, and a fix — including a
+behaviour fix that moves no schema or API shape — bumps the **patch**. Entries
+below `1.0.0` follow the older pre-1.0 rule, where a breaking change bumped the
+minor and everything else the patch.
+
+**A release is not a study.** The version tracks compatibility only. The version
+behind a given published analysis is identified by a git tag and an archived
+snapshot, not by a round version number.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-08-16
+
+### The schema and API contract is now declared stable
+
+**No code changed.** `git diff v0.9.3..v1.0.0 -- src/` is empty: this release is
+the 0.9.3 tree with packaging metadata and documentation brought up to the
+standard a stable, publicly installable release needs.
+
+1.0.0 is cut because a full study cycle — the four `study_eval` steps of the
+performance evaluation — completed without the contract moving underneath it.
+That is the evidence the contract is stable; the version number now says so.
+
+**Provenance of the performance-evaluation study.** Its artifacts record
+`dev_package.version` `0.9.2` for steps 1–3 and `0.9.3` for step 4 (`finalize`).
+Those are the versions that ran, and 1.0.0 deliberately appears in no artifact.
+The entire 0.9.2 → 0.9.3 code difference is contained in `read_arbitration`
+(`study_eval/scle/arbitration.py`), whose only caller is `finalize`; steps 1–3
+have no call path to it. Re-running the whole study under 0.9.3 or 1.0.0 would
+therefore reproduce the same results.
+
+- **`umc-research` and `beautifulsoup4` are removed from the dependencies.**
+  Neither was imported anywhere in `src/`, `tests/`, or `scripts/` — both were
+  left over from the legacy `lib/` modules deleted earlier. `umc-research` is
+  proprietary and resolvable only from an internal index, so its removal is
+  what makes the package installable outside UMC. Consumers that use
+  `umc-research` themselves must declare it directly; the secure repo already
+  does, with its own `[tool.uv.sources]` index mapping.
+- **`openpyxl` moves from the `study` extra to a core dependency, and the
+  extra is removed.** Four `study_eval` modules import it at module level, and
+  `study_eval` is a documented entry point, so `pip install llm-dup-dev`
+  followed by `docs/study_eval.md` used to end in an `ImportError`. The extra
+  had no consumer: the secure repo installed plain `llm_dup_dev` and declared
+  `openpyxl` directly. `llm-dup-dev[study]` still resolves for anyone who has
+  it written down — it is now a no-op rather than an error.
+- **`requires-python` is now `>=3.11,<3.13`**, matching what `agents.md` has
+  always claimed, what the development environment uses (3.12), and what the
+  secure repo enforces. The metadata previously said `>=3.11` with no upper
+  bound.
+- **`docs/integration_guide.md` § Public surface** enumerates the contract for
+  the first time. Previously it was described as "the public API the secure
+  repo imports", which named no actual set. Everything not listed there is
+  internal and may change in any release — that boundary is what keeps future
+  major bumps affordable.
+- **`agents.md` § Conventions → Versioning** gains the post-1.0 bump rules, an
+  explicit no-deprecation-window policy, and the separation between releases
+  and study cycles. § Repository Structure has been rewritten — it described a
+  layout with five "(planned)" packages that shipped long ago and two legacy
+  packages that no longer exist. § Dependencies now records that no
+  proprietary or internal-index dependency may be added to this package.
+- **`README.md` was empty and is now written**, aimed at a reader arriving from
+  the publication: what the method does, what can be run without database
+  access, and how the two repositories divide.
 
 ## [0.9.3] - 2026-08-15
 
