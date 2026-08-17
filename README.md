@@ -106,10 +106,14 @@ Versioning for the bump rules.
 
 ## Citation
 
-<!-- TODO before publication: add CITATION.cff (authors, ORCIDs, DOI) and
-     replace this section with a pointer to it plus the archived DOI. -->
+Citation metadata is in [`CITATION.cff`](CITATION.cff).
+
+<!-- TODO before publication: uncomment `doi` in CITATION.cff and add the
+     Zenodo concept-DOI badge here once the first release is archived. -->
 
 ## License
 
-<!-- TODO before publication: add a LICENSE file and name it here. -->
+<!-- TODO before publication: add a LICENSE file and name it here, and
+     uncomment `license` in CITATION.cff with the matching SPDX identifier. -->
+
 
