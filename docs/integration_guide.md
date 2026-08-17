@@ -63,6 +63,81 @@ print("llm_dup_dev installed successfully")
 
 ---
 
+## Public surface
+
+This section defines the **consumer contract**. Everything listed here is
+covered by the versioning guarantees in `agents.md` § Conventions → Versioning:
+a breaking change to any of it requires a major bump and a migration note.
+
+**Anything not listed here is internal**, regardless of whether its name begins
+with an underscore, and may be renamed, moved, or removed in any release. If you
+need something internal, ask for it to be promoted rather than importing it.
+
+The contract has two halves. The first is the JSON schemas in `schemas/`,
+one per emitted artifact, each with a valid example in `examples/`. The second
+is the importable API below.
+
+### Pipeline
+
+| Import path | Names |
+|---|---|
+| `llm_dup_dev.pipeline.runner` | `PipelineRunner`, `PairResult`, `BatchResult` |
+| `llm_dup_dev.pipeline.export` | `write_pair_features`, `read_pair_features`, `write_classifications`, `read_classifications`, `write_pair_results`, `read_pair_results` |
+| `llm_dup_dev.classifier` | `classify`, `PipelineConfig`, `DecisionThresholds` |
+| `llm_dup_dev.classifier.config` | `PipelineConfig`, `DecisionThresholds` |
+
+### Data access — the protocols you implement
+
+| Import path | Names |
+|---|---|
+| `llm_dup_dev.data.protocols` | `ReportLoader`, `StatsProvider`, `PairContextSink` |
+| `llm_dup_dev.data.synthetic` | `SyntheticReportLoader`, `SyntheticStatsProvider` |
+| `llm_dup_dev.data.offline` | `FrozenStatsProvider`, `FrozenPairBundle`, `FrozenScopeStats`, `FrozenSourceCaseExtractions`, `FrozenNarrativeDemographics`, `ScreeningDetails`, `load_reports`, `index_by_id`, and the `save_*` / `load_*` pair for each frozen artifact above |
+| `llm_dup_dev.feature_generation.probability` | `FrequencyStats` |
+
+### Models
+
+`llm_dup_dev.models` re-exports every model name that is part of the contract;
+importing from the package root is preferred over the submodule path. The
+submodules `llm_dup_dev.models.report`, `.report_pair`, `.pair_features`,
+`.classification`, `.narrative_source_case`, `.enums`, and `.pair_identity` are
+also stable paths.
+
+Key names: `Report`, `ReportPair`, `PairFeatures`, `ClassificationResult`,
+`Drug`, `AdverseEvent`, `SourcedValue`, `AgeValue`, `DateValue`, `PartialDate`,
+`AnchorPopulation`, `ProbabilityEstimate`, `ReportingContext`, `Inconsistency`,
+plus the label enums (`IndependenceAssessment`, `RelationshipAssessment`,
+`AnchorType`, `DrugRole`, …) and the pair-identity helpers
+(`canonical_pair_id`, `validate_pair_identity`, …).
+
+### LLM boundary
+
+| Import path | Names |
+|---|---|
+| `llm_dup_dev.llm` | `LLMClient`, `LLMRequest`, `LLMResponse`, `LLMInfo`, `TokenUsage`, `LLMConfigurationError` |
+| `llm_dup_dev.llm.tasks.narrative_source_case` | `extract_source_case` |
+| `llm_dup_dev.llm.tasks.narrative_demographics` | the extraction entry points documented below |
+| `llm_dup_dev.feature_generation.narrative_demographics` | the merge entry points documented below |
+
+### Evaluation, study workflow, and reporting
+
+Each of these packages declares `__all__`; **the contract is exactly its
+`__all__`**, and the tables elsewhere in this guide show the intended usage.
+
+| Import path | Covers |
+|---|---|
+| `llm_dup_dev.eval` | `evaluate`, `evaluate_batch`, `EvalSummary`, `ConfusionMatrix`, sweeps, text/markdown formatting |
+| `llm_dup_dev.study_eval` | the four workflow steps (`run_analysis`, `generate_reviewer_workbooks`, `build_arbitration`, `finalize`), reference/prediction set models and loaders, sampling, estimation |
+| `llm_dup_dev.characterization` | reference-set "Table 1" builders, models, and writers |
+| `llm_dup_dev.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models |
+| `llm_dup_dev.dataset_manifest` | `build_dataset_manifest`, `write_dataset_manifest`, models |
+| `llm_dup_dev.run_manifest` | `build_run_manifest`, `write_run_manifest`, models |
+
+> **Known gap.** `llm_dup_dev.data`, `.pipeline`, and `.feature_generation` do
+> not yet declare `__all__`, so for those three the tables above are the only
+> statement of the boundary. Adding the declarations is a backward-compatible
+> follow-up.
+
 ---
 
 ## Offline frozen-validation mode

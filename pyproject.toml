@@ -1,26 +1,22 @@
 [project]
 name = "llm-dup-dev"
-version = "0.9.3"
+version = "1.0.0"
 description = "LLM duplicate detection development utilities"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    "beautifulsoup4>=4.14.3",
     "jinja2>=3.1",
+    # Reviewer/arbitration workbooks (study_eval.scle.workbook / arbitration).
+    # Core, not an extra: study_eval imports it at module level and is a
+    # documented entry point, so `pip install llm-dup-dev` must be enough.
+    "openpyxl>=3.1",
     "pydantic>=2.0",
     "pyyaml>=6.0",
-    "umc-research>=2.6.25",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
-    "openpyxl>=3.1",
-]
-# Reviewer/arbitration workbooks (study_eval.scle.workbook / arbitration).
-# The secure repo installs llm-dup-dev[study]; the core package stays lean.
-study = [
-    "openpyxl>=3.1",
 ]
 
 [build-system]

@@ -1,0 +1,63 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "llm-dup-dev: duplicate adjudication for pharmacovigilance reports"
+abstract: >-
+  A duplicate adjudication pipeline for pharmacovigilance adverse event reports,
+  with the evaluation framework used to measure its performance. Report pairs
+  flagged as suspected duplicates by an upstream candidate-generation method are
+  classified as Duplicates, Otherwise related, Unrelated, or Abstain by a
+  transparent rule-based decision logic combining rarity-based matching
+  evidence, structured and clinical-date inconsistency signals, LLM-derived
+  narrative signals, and explicit inter-report links.
+type: software
+authors:
+  - family-names: "Norén"
+    given-names: "G. Niklas"
+    orcid: "https://orcid.org/0000-0002-4595-230X"
+    # TODO confirm affiliation string before publishing.
+    affiliation: "Uppsala Monitoring Centre"
+version: 1.0.0
+keywords:
+  - pharmacovigilance
+  - duplicate detection
+  - record linkage
+  - adverse drug reactions
+  - large language models
+
+# ---------------------------------------------------------------------------
+# Fill these in before tagging v1.0.0 and publishing.
+#
+# license          SPDX identifier once the organisational decision lands
+#                  (e.g. Apache-2.0, MIT). Must be a valid SPDX id.
+# repository-code  The public URL, once the host is chosen.
+# url              Optional landing page, if different from repository-code.
+# date-released    The date of the v1.0.0 tag, as YYYY-MM-DD.
+# doi              The Zenodo *concept* DOI — it always resolves to the latest
+#                  version, so it stays correct across future releases. Reserve
+#                  it up front via Zenodo's "Reserve DOI" button if you want
+#                  1.0.0 to carry its own citation; otherwise add it in a
+#                  follow-up commit after the first release is archived.
+#
+# Each line below is valid as written — uncomment and replace the placeholder.
+# ---------------------------------------------------------------------------
+# license: "Apache-2.0"
+# repository-code: "https://github.com/ORG/llm_dup_dev"
+# date-released: "2026-09-01"
+# doi: "10.5281/zenodo.0000000"
+
+# ---------------------------------------------------------------------------
+# Once the performance-evaluation paper is published, uncomment and complete
+# this block. CFF's `preferred-citation` tells citation tools to cite the paper
+# rather than the software itself; the software DOI above remains the way to
+# cite a specific version.
+# ---------------------------------------------------------------------------
+# preferred-citation:
+#   type: article
+#   title: "TODO paper title"
+#   authors:
+#     - family-names: "Norén"
+#       given-names: "G. Niklas"
+#       orcid: "https://orcid.org/0000-0002-4595-230X"
+#   journal: "TODO"
+#   year: 2026
+#   doi: "TODO"
