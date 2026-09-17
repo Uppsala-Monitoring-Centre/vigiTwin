@@ -21,7 +21,7 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-08-16
+## [1.0.0] - 2026-09-17
 
 ### The schema and API contract is now declared stable
 
@@ -59,6 +59,14 @@ therefore reproduce the same results.
   always claimed, what the development environment uses (3.12), and what the
   secure repo enforces. The metadata previously said `>=3.11` with no upper
   bound.
+- **The package is licensed**, under the Apache License 2.0, copyright 2026
+  Uppsala Monitoring Centre. It had no licence before, which made it legally
+  unusable by anyone outside UMC however openly it was shared. Apache-2.0 over
+  a shorter permissive licence for the explicit patent grant and the explicit
+  non-grant of trademark rights. `LICENSE` carries the verbatim licence text
+  and `NOTICE` the copyright assertion; per-file licence headers are
+  deliberately *not* added, so that the no-code-changed invariant above holds
+  at the `v1.0.0` tag.
 - **`docs/integration_guide.md` § Public surface** enumerates the contract for
   the first time. Previously it was described as "the public API the secure
   repo imports", which named no actual set. Everything not listed there is
