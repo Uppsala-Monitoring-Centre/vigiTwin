@@ -17,6 +17,7 @@ authors:
     # TODO confirm affiliation string before publishing.
     affiliation: "Uppsala Monitoring Centre"
 version: 1.0.0
+license: "Apache-2.0"
 keywords:
   - pharmacovigilance
   - duplicate detection
@@ -27,9 +28,7 @@ keywords:
 # ---------------------------------------------------------------------------
 # Fill these in before tagging v1.0.0 and publishing.
 #
-# license          SPDX identifier once the organisational decision lands
-#                  (e.g. Apache-2.0, MIT). Must be a valid SPDX id.
-# repository-code  The public URL, once the host is chosen.
+# repository-code  The public GitHub URL, once the repository exists.
 # url              Optional landing page, if different from repository-code.
 # date-released    The date of the v1.0.0 tag, as YYYY-MM-DD.
 # doi              The Zenodo *concept* DOI — it always resolves to the latest
@@ -40,7 +39,6 @@ keywords:
 #
 # Each line below is valid as written — uncomment and replace the placeholder.
 # ---------------------------------------------------------------------------
-# license: "Apache-2.0"
 # repository-code: "https://github.com/ORG/llm_dup_dev"
 # date-released: "2026-09-01"
 # doi: "10.5281/zenodo.0000000"

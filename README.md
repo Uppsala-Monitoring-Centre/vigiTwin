@@ -113,7 +113,13 @@ Citation metadata is in [`CITATION.cff`](CITATION.cff).
 
 ## License
 
-<!-- TODO before publication: add a LICENSE file and name it here, and
-     uncomment `license` in CITATION.cff with the matching SPDX identifier. -->
+Apache License 2.0 — see [`LICENSE`](LICENSE). Copyright 2026 Uppsala
+Monitoring Centre.
+
+Apache-2.0 was chosen over a shorter permissive licence for its explicit patent
+grant and its explicit non-grant of trademark rights: the licence permits use,
+modification and redistribution, including commercially, but confers no right
+to use the names or marks of Uppsala Monitoring Centre, or to imply its
+endorsement of a modified version.
 
 
