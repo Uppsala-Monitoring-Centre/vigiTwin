@@ -1,5 +1,7 @@
 # vigiTwin
 
+[![CI](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/actions/workflows/ci.yml/badge.svg)](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/actions/workflows/ci.yml)
+
 A **duplicate adjudication pipeline** for pharmacovigilance adverse event
 reports, plus the evaluation framework used to measure its performance.
 

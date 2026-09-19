@@ -17,6 +17,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML",
 ]
 
 [build-system]
@@ -25,3 +28,43 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/llm_dup_dev"]
+
+# ---------------------------------------------------------------------------
+# Lint and type-check configuration.
+#
+# The rule selection is explicit rather than left to the tool default, so that
+# a check run here, in CI, and on a contributor's clone all agree regardless of
+# which ruff version is installed — before this config existed, they did not.
+#
+# Both checks currently run as ADVISORY in CI (see .github/workflows/ci.yml):
+# they report but do not block. The existing findings are pre-existing debt,
+# not regressions, and clearing them means changing `src/`, which 1.0.0
+# deliberately does not do. They become blocking in 2.0.0, where the cleanup
+# lands with the package rename.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-exclude = ["_reference_secure_side", ".venv", "dist", "outputs"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = [
+    # "Ambiguous" unicode in docstrings and comments. This codebase writes
+    # prose with em-dashes and typographic quotes on purpose; the rule is
+    # aimed at homoglyph attacks in identifiers, which is not what these are.
+    # Deliberate style, not deferred debt — unlike everything else currently
+    # reported, this is not expected to be cleared.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest passes fixtures as parameters, which ruff reads as redefining the
+# fixture function. All 72 occurrences are this pattern; no test is shadowed.
+"tests/**" = ["F811"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/llm_dup_dev"]

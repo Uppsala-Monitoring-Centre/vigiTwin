@@ -162,6 +162,29 @@ Keep the list short and justified; each addition is a cost to every consumer.
 - Data files (`.csv`, `.parquet`, `.pkl`, `.json`, `.xlsx`) should not be saved 
 in this repo and as an extra precaution are gitignored — never commit them
 
+### Checks
+Run all three before opening a PR. They are configured in `pyproject.toml` and
+run in CI (`.github/workflows/ci.yml`):
+
+```
+.venv/bin/python -m pytest      # blocking in CI — must stay green
+.venv/bin/ruff check src tests  # advisory in CI
+.venv/bin/mypy                  # advisory in CI
+```
+
+- **`pytest` is the gate.** 1781 tests, all on synthetic data, no network or
+  database. A PR that reddens it does not merge.
+- **`ruff` and `mypy` are advisory for now.** They report ~222 and ~33
+  pre-existing findings respectively, dominated by import ordering and
+  annotation modernization. These are debt, not regressions: clearing them
+  means changing `src/`, which 1.0.0 deliberately does not do. They become
+  blocking in 2.0.0, alongside the package rename.
+- **Do not add new findings.** Advisory does not mean ignored — check that your
+  diff introduces none before opening the PR.
+- The ruff rule selection is pinned explicitly rather than left to the tool
+  default, so a check here, in CI, and on a contributor's clone agree
+  regardless of installed version.
+
 ### Versioning
 - The single source of truth is `version` in `pyproject.toml`; it is
   SemVer and consumed at runtime (baked into manifests as
