@@ -1,7 +1,14 @@
-# llm-dup-dev
+# vigiTwin
 
 A **duplicate adjudication pipeline** for pharmacovigilance adverse event
 reports, plus the evaluation framework used to measure its performance.
+
+> **On names.** The method is **vigiTwin**. The Python package is still
+> `llm_dup_dev`, the working name it carried before the method was named.
+> Renaming the package changes two JSON schemas and every import in the
+> companion repository, so it is deliberately held back to 2.0.0 where it can
+> ship with a migration note — see [`CHANGELOG.md`](CHANGELOG.md). Until then:
+> the repository is `vigiTwin`, the import is `llm_dup_dev`.
 
 Report pairs that an upstream candidate-generation method (e.g. [vigiMatch
 2025](https://doi.org/10.48550/arXiv.2504.03729)) has flagged as suspected
@@ -43,11 +50,13 @@ Shorter tour: [`docs/pipeline_overview.md`](docs/pipeline_overview.md).
 ## Install
 
 ```bash
-pip install llm-dup-dev
+pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.0.0
 ```
 
 Python 3.11 or 3.12. The package is pure Python with four dependencies
-(`pydantic`, `jinja2`, `pyyaml`, `openpyxl`) and installs anywhere.
+(`pydantic`, `jinja2`, `pyyaml`, `openpyxl`) and installs anywhere. It is not
+on PyPI yet; a PyPI release is planned to accompany the package rename in
+2.0.0.
 
 ## What you can run without database access
 
@@ -70,7 +79,7 @@ secure side.
 
 ## Two repositories
 
-| | `llm_dup_dev` (this repo) | `llm_dup_pv_secure` (private) |
+| | `vigiTwin` (this repo) | `llm_dup_pv_secure` (private) |
 |---|---|---|
 | **Holds** | Models, feature generation, decision logic, evaluation framework, schemas | Database access, real data, LLM execution |
 | **Defines** | `Report`, `ReportPair`, `PairFeatures`, `PipelineRunner`, `ClassificationResult`, `EvalSummary` | Concrete `ReportLoader` and `StatsProvider` implementations |
