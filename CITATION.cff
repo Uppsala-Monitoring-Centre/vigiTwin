@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "llm-dup-dev: duplicate adjudication for pharmacovigilance reports"
+title: "vigiTwin: duplicate adjudication for pharmacovigilance reports"
 abstract: >-
   A duplicate adjudication pipeline for pharmacovigilance adverse event reports,
   with the evaluation framework used to measure its performance. Report pairs
@@ -14,10 +14,10 @@ authors:
   - family-names: "Norén"
     given-names: "G. Niklas"
     orcid: "https://orcid.org/0000-0002-4595-230X"
-    # TODO confirm affiliation string before publishing.
     affiliation: "Uppsala Monitoring Centre"
 version: 1.0.0
 license: "Apache-2.0"
+repository-code: "https://github.com/Uppsala-Monitoring-Centre/vigiTwin"
 keywords:
   - pharmacovigilance
   - duplicate detection
@@ -28,8 +28,6 @@ keywords:
 # ---------------------------------------------------------------------------
 # Fill these in before tagging v1.0.0 and publishing.
 #
-# repository-code  The public GitHub URL, once the repository exists.
-# url              Optional landing page, if different from repository-code.
 # date-released    The date of the v1.0.0 tag, as YYYY-MM-DD.
 # doi              The Zenodo *concept* DOI — it always resolves to the latest
 #                  version, so it stays correct across future releases. Reserve
@@ -39,7 +37,6 @@ keywords:
 #
 # Each line below is valid as written — uncomment and replace the placeholder.
 # ---------------------------------------------------------------------------
-# repository-code: "https://github.com/ORG/llm_dup_dev"
 # date-released: "2026-09-01"
 # doi: "10.5281/zenodo.0000000"
 

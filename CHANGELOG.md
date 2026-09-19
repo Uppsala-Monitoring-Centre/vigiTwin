@@ -67,6 +67,18 @@ therefore reproduce the same results.
   and `NOTICE` the copyright assertion; per-file licence headers are
   deliberately *not* added, so that the no-code-changed invariant above holds
   at the `v1.0.0` tag.
+- **The method is named vigiTwin**, and the repository is published as
+  <https://github.com/Uppsala-Monitoring-Centre/vigiTwin>. The **Python package
+  is deliberately not renamed** in this release: `DevPackageInfo.name` is a
+  default baked into `characterization_report.schema.json` and
+  `study_evaluation_run_manifest.schema.json`, the module path appears in
+  generated schema descriptions across five more schema files, and every import
+  in the companion repository would break. That is a contract change on three
+  fronts, so it belongs to 2.0.0 with a migration note — alongside the
+  regulator-pilot work already expected to be breaking. Until then the
+  repository is `vigiTwin` and the import is `llm_dup_dev`, and the artifacts
+  recording `dev_package.name: "llm-dup-dev"` continue to match the releases
+  that produced them.
 - **`docs/integration_guide.md` § Public surface** enumerates the contract for
   the first time. Previously it was described as "the public API the secure
   repo imports", which named no actual set. Everything not listed there is
