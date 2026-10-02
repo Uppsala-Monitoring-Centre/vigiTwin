@@ -72,8 +72,16 @@ pip install -e ".[dev]" && python -m pytest
 `llm_dup_dev.study_eval` — the performance-evaluation package, including
 sampling, precision/recall estimation, and the two-reviewer structured
 case-level examination (SCLE) with arbitration — is entirely deterministic and
-runs end-to-end on synthetic input. See [`docs/study_eval.md`](docs/study_eval.md)
-for a worked four-step example you can execute as written.
+runs end-to-end on synthetic input. To watch all four steps execute:
+
+```bash
+python scripts/study_eval_demo.py
+```
+
+The script builds its own synthetic reference and prediction sets, and fills
+the reviewer and arbitration workbooks that a human would fill in a real study,
+so the whole chain runs unattended. [`docs/study_eval.md`](docs/study_eval.md)
+explains what each step does; the script is the executable version of it.
 
 What you **cannot** run here is the pipeline against real reports. That needs a
 pharmacovigilance database and an LLM deployment, both of which live on the

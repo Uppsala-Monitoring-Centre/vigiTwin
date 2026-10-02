@@ -26,6 +26,11 @@ step's artifacts and writes its own plus a checksummed
 | 3 | `build_arbitration` | the two completed reviewer XLSX | inter-reviewer **agreement statistics** + an arbitration XLSX focused on the **disagreement pairs** |
 | 4 | `finalize` | reviewer XLSX + completed arbitration XLSX | consensus (preserving originals) + final SCLE tables/summaries |
 
+The snippet below is a **usage sketch**: `reference_sets` and `predictions` are
+the caller's own inputs, so it is not runnable on its own. For a version that
+is — one that builds synthetic inputs and fills the workbooks a human would
+otherwise fill — run [`scripts/study_eval_demo.py`](../scripts/study_eval_demo.py).
+
 ```python
 from llm_dup_dev.study_eval import workflow
 
