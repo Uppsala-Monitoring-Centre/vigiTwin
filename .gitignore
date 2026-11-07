@@ -45,3 +45,11 @@ outputs/
 
 # Read-only secure-side architectural references — never tracked
 _reference_secure_side/
+# Coverage artifacts. Unlike the pytest/ruff/mypy caches, which each write a
+# self-ignoring .gitignore into their own directory, coverage.py does not — so
+# without these entries a `git add -A` sweeps .coverage into a commit. It is a
+# SQLite database of absolute local paths, which is not something to publish.
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
