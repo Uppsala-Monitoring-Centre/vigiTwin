@@ -172,18 +172,21 @@ run in CI (`.github/workflows/ci.yml`):
 .venv/bin/mypy                  # advisory in CI
 ```
 
-- **`pytest` is the gate.** 1781 tests, all on synthetic data, no network or
+- **`pytest` is the gate.** 1825 tests, all on synthetic data, no network or
   database. A PR that reddens it does not merge.
-- **`ruff` and `mypy` are advisory for now.** They report ~222 and ~33
-  pre-existing findings respectively, dominated by import ordering and
-  annotation modernization. These are debt, not regressions: clearing them
-  means changing `src/`, which 1.0.0 deliberately does not do. They become
-  blocking in 2.0.0, alongside the package rename.
+- **`ruff` and `mypy` are advisory only until 1.0.1.** They report 36 and 33
+  pre-existing findings. These are debt, not regressions: clearing them means
+  changing `src/`, which 1.0.0 deliberately does not do. **Clear them in 1.0.1
+  and make both blocking** — 20 of the ruff findings are auto-fixable unused
+  imports, so this is a short job, and an advisory check that nobody has to
+  satisfy stops being a check.
 - **Do not add new findings.** Advisory does not mean ignored — check that your
   diff introduces none before opening the PR.
-- The ruff rule selection is pinned explicitly rather than left to the tool
-  default, so a check here, in CI, and on a contributor's clone agree
-  regardless of installed version.
+- **The rule selection is narrow on purpose**, and pinned explicitly rather than
+  left to the tool default, so a check here, in CI, and on a contributor's clone
+  agree regardless of installed version. It selects rules that find defects, not
+  rules that express formatting preferences — see the comment in
+  `pyproject.toml` for what was excluded and why.
 
 ### Versioning
 - The single source of truth is `version` in `pyproject.toml`; it is

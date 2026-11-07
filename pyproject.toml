@@ -48,17 +48,24 @@ target-version = "py311"
 extend-exclude = ["_reference_secure_side", ".venv", "dist", "outputs"]
 
 [tool.ruff.lint]
-select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = [
-    # "Ambiguous" unicode in docstrings and comments. This codebase writes
-    # prose with em-dashes and typographic quotes on purpose; the rule is
-    # aimed at homoglyph attacks in identifiers, which is not what these are.
-    # Deliberate style, not deferred debt — unlike everything else currently
-    # reported, this is not expected to be cleared.
-    "RUF001",
-    "RUF002",
-    "RUF003",
-]
+# Deliberately narrow: rules that find defects, not rules that express
+# formatting preferences. pyflakes (F) plus the pycodestyle error subsets, plus
+# flake8-bugbear (B) for the two bug classes pyflakes misses — B905 (`zip`
+# without `strict=`, which truncates silently) and B023 (a closure not binding
+# its loop variable).
+#
+# The wider selection this started as (adding I, UP, SIM and the rest of RUF)
+# reported 222 findings, of which about 195 were import ordering, `__all__`
+# sorting and annotation modernization — no defects among them. At that volume
+# the "do not add new findings" rule below is unenforceable and the advisory
+# job is noise. At 36 it is a list someone can actually clear, which is the
+# point: 20 of them are auto-fixable unused imports, so these checks can become
+# blocking in 1.0.1 rather than waiting for 2.0.0. A narrow blocking check
+# prevents regressions; a broad advisory one does not.
+#
+# Widening later is this one line. If you widen, do it in the same change that
+# clears what the new rules report, so the job stays green.
+select = ["E4", "E7", "E9", "F", "B"]
 
 [tool.ruff.lint.per-file-ignores]
 # pytest passes fixtures as parameters, which ruff reads as redefining the

@@ -30,9 +30,14 @@ jobs:
         run: python -m pytest -q
 
   lint:
-    # Advisory: reports findings without blocking. The current findings are
-    # pre-existing debt, and clearing them means changing src/, which 1.0.0
-    # deliberately does not do. Flip continue-on-error off in 2.0.0.
+    # Advisory: reports findings without blocking. The 36 ruff and 33 mypy
+    # findings are pre-existing debt, and clearing them means changing src/,
+    # which 1.0.0 deliberately does not do.
+    #
+    # Clear them in 1.0.1 and drop the three continue-on-error lines below.
+    # The rule selection was narrowed specifically so that this is a short job
+    # rather than a 2.0.0-sized one; leaving the checks advisory indefinitely
+    # would make them decorative.
     name: lint and types (advisory)
     runs-on: ubuntu-latest
     continue-on-error: true
