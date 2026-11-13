@@ -143,6 +143,11 @@ releases each mint their own, listed on the Zenodo record.
 The code behind the 2026 performance-evaluation study is additionally tagged
 `study-2026-performance-evaluation`, which points at `v1.0.0`.
 
+That study was pre-registered. Cite the protocol alongside the software when
+reporting results from it:
+
+> [10.17605/OSF.IO/HVTFS](https://doi.org/10.17605/OSF.IO/HVTFS)
+
 ## License
 
 Apache License 2.0 — see [`LICENSE`](LICENSE). Copyright 2026 Uppsala
