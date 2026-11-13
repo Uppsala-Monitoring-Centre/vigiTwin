@@ -1,0 +1,15 @@
+# Canonical author identities.
+#
+# This repository was developed across two git configurations, so the same
+# person appears under two spellings — differing in the diacritic and in the
+# capitalisation of the address. Without this file GitHub counts them as two
+# contributors.
+#
+# A .mailmap corrects how identities are displayed (git log, git shortlog,
+# git blame, and GitHub's contributor graph) without rewriting any commit, so
+# no hashes change and provenance is untouched.
+#
+# Format: Canonical Name <canonical@email> <commit@email>
+
+Niklas Norén <niklas.noren@who-umc.org>
+Niklas Norén <niklas.noren@who-umc.org> <Niklas.Noren@who-umc.org>
