@@ -21,6 +21,14 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+### Documentation
+
+- `CITATION.cff` carries the Zenodo concept DOI `10.5281/zenodo.24198670`, and
+  the README has the matching badge and guidance on concept vs. version DOIs.
+  Added after the v1.0.0 release, because Zenodo mints a DOI only once a GitHub
+  Release exists — which is why these two files differ between the `v1.0.0` tag
+  and `main` with no code change between them.
+
 ## [1.0.0] - 2026-11-13
 
 ### The schema and API contract is now declared stable

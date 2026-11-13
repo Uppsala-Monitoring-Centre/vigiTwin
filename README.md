@@ -1,6 +1,7 @@
 # vigiTwin
 
 [![CI](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/actions/workflows/ci.yml/badge.svg)](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24198670.svg)](https://doi.org/10.5281/zenodo.24198670)
 
 A **duplicate adjudication pipeline** for pharmacovigilance adverse event
 reports, plus the evaluation framework used to measure its performance.
@@ -125,10 +126,22 @@ Versioning for the bump rules.
 
 ## Citation
 
-Citation metadata is in [`CITATION.cff`](CITATION.cff).
+Every release is archived on Zenodo. Citation metadata — including author ORCID
+and the DOI — is in [`CITATION.cff`](CITATION.cff), which GitHub reads to
+populate the *Cite this repository* sidebar.
 
-<!-- TODO before publication: uncomment `doi` in CITATION.cff and add the
-     Zenodo concept-DOI badge here once the first release is archived. -->
+Cite the **concept DOI** when you mean the software in general; it always
+resolves to the latest release:
+
+> [10.5281/zenodo.24198670](https://doi.org/10.5281/zenodo.24198670)
+
+Cite the **version DOI** when reproducing a specific result, so the reader gets
+the exact code that produced it. For v1.0.0 that is
+[10.5281/zenodo.24198671](https://doi.org/10.5281/zenodo.24198671); later
+releases each mint their own, listed on the Zenodo record.
+
+The code behind the 2026 performance-evaluation study is additionally tagged
+`study-2026-performance-evaluation`, which points at `v1.0.0`.
 
 ## License
 

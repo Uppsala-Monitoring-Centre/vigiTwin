@@ -18,6 +18,7 @@ authors:
 version: 1.0.0
 date-released: "2026-11-13"
 license: "Apache-2.0"
+doi: "10.5281/zenodo.24198670"
 repository-code: "https://github.com/Uppsala-Monitoring-Centre/vigiTwin"
 keywords:
   - pharmacovigilance
@@ -26,17 +27,12 @@ keywords:
   - adverse drug reactions
   - large language models
 
-# ---------------------------------------------------------------------------
-# Add once the first GitHub Release is archived by Zenodo.
-#
-# doi    The Zenodo *concept* DOI — it always resolves to the latest version, so
-#        it stays correct across future releases and is the one to cite in the
-#        README badge. Zenodo also mints a version DOI per release; that one
-#        belongs in a citation of a specific version, not here.
-#
-# The line below is valid as written — uncomment and replace the placeholder.
-# ---------------------------------------------------------------------------
-# doi: "10.5281/zenodo.0000000"
+# The `doi` above is the Zenodo *concept* DOI: it always resolves to the latest
+# archived release, so it stays correct without being edited at each release and
+# is the one the README badge points at. Zenodo also mints a per-release version
+# DOI — v1.0.0 is 10.5281/zenodo.24198671 — which is what a reader should
+# cite when reproducing a specific result. Do not swap the concept DOI for one
+# here; `version:` above already says which release this file describes.
 
 # ---------------------------------------------------------------------------
 # Once the performance-evaluation paper is published, uncomment and complete
