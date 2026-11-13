@@ -16,6 +16,7 @@ authors:
     orcid: "https://orcid.org/0000-0002-4595-230X"
     affiliation: "Uppsala Monitoring Centre"
 version: 1.0.0
+date-released: "2026-11-13"
 license: "Apache-2.0"
 repository-code: "https://github.com/Uppsala-Monitoring-Centre/vigiTwin"
 keywords:
@@ -26,18 +27,15 @@ keywords:
   - large language models
 
 # ---------------------------------------------------------------------------
-# Fill these in before tagging v1.0.0 and publishing.
+# Add once the first GitHub Release is archived by Zenodo.
 #
-# date-released    The date of the v1.0.0 tag, as YYYY-MM-DD.
-# doi              The Zenodo *concept* DOI — it always resolves to the latest
-#                  version, so it stays correct across future releases. Reserve
-#                  it up front via Zenodo's "Reserve DOI" button if you want
-#                  1.0.0 to carry its own citation; otherwise add it in a
-#                  follow-up commit after the first release is archived.
+# doi    The Zenodo *concept* DOI — it always resolves to the latest version, so
+#        it stays correct across future releases and is the one to cite in the
+#        README badge. Zenodo also mints a version DOI per release; that one
+#        belongs in a citation of a specific version, not here.
 #
-# Each line below is valid as written — uncomment and replace the placeholder.
+# The line below is valid as written — uncomment and replace the placeholder.
 # ---------------------------------------------------------------------------
-# date-released: "2026-09-01"
 # doi: "10.5281/zenodo.0000000"
 
 # ---------------------------------------------------------------------------

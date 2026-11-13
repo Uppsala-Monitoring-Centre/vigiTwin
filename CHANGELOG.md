@@ -21,7 +21,7 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-09-17
+## [1.0.0] - 2026-11-13
 
 ### The schema and API contract is now declared stable
 
