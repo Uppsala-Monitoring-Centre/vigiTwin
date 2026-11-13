@@ -21,6 +21,13 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+### Infrastructure
+
+- CI pins `runs-on: ubuntu-24.04` instead of `ubuntu-latest`, which began
+  migrating to Ubuntu 26 on 2026-10-19. No effect on the package; recorded so
+  that a CI result cited alongside a published analysis names the image it ran
+  on.
+
 ## [1.0.1] - 2026-11-13
 
 ### `ruff` and `mypy` now block, at zero findings

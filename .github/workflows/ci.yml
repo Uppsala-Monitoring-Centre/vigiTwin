@@ -9,10 +9,16 @@ on:
 permissions:
   contents: read
 
+# Both jobs pin the runner image rather than tracking `ubuntu-latest`: the
+# `latest` label began migrating to Ubuntu 26 on 2026-10-19, so an unpinned run
+# can land on a different image than the one before it. A CI result a
+# publication cites should not depend on when it happened to run. Bump this
+# deliberately, in a change that confirms the suite still passes on the new
+# image.
 jobs:
   test:
     name: tests (py${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -34,7 +40,7 @@ jobs:
     # selection is narrow on purpose (see pyproject.toml) so that staying at
     # zero is cheap. A finding here is a regression, not a backlog item.
     name: lint and types
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
