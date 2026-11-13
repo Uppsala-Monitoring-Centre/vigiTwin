@@ -1,6 +1,5 @@
 """Tests for data models — serialization, validation, defaults."""
 
-import json
 
 import pytest
 

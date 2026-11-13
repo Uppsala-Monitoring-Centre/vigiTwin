@@ -168,20 +168,23 @@ run in CI (`.github/workflows/ci.yml`):
 
 ```
 .venv/bin/python -m pytest      # blocking in CI — must stay green
-.venv/bin/ruff check src tests  # advisory in CI
-.venv/bin/mypy                  # advisory in CI
+.venv/bin/ruff check src tests  # blocking in CI — must stay at zero
+.venv/bin/mypy                  # blocking in CI — must stay at zero
 ```
 
-- **`pytest` is the gate.** 1825 tests, all on synthetic data, no network or
-  database. A PR that reddens it does not merge.
-- **`ruff` and `mypy` are advisory only until 1.0.1.** They report 36 and 33
-  pre-existing findings. These are debt, not regressions: clearing them means
-  changing `src/`, which 1.0.0 deliberately does not do. **Clear them in 1.0.1
-  and make both blocking** — 20 of the ruff findings are auto-fixable unused
-  imports, so this is a short job, and an advisory check that nobody has to
-  satisfy stops being a check.
-- **Do not add new findings.** Advisory does not mean ignored — check that your
-  diff introduces none before opening the PR.
+- **All three block.** 1825 tests, all on synthetic data, no network or
+  database; zero ruff findings; zero mypy errors. A PR that reddens any of them
+  does not merge.
+- **Zero is the baseline, so a finding is a regression.** Through 1.0.0 ruff and
+  mypy were advisory and carried 36 and 33 inherited findings, because 1.0.0
+  deliberately changed no `src/`. Those were cleared in 1.0.1 and both checks
+  turned blocking in the same change — an advisory check nobody has to satisfy
+  stops being a check.
+- **Suppress only with a reason.** A `# noqa: <code>` or `# type: ignore[<code>]`
+  needs a comment saying why, and must name the specific code — a bare
+  suppression hides the next defect in that line. Where an invariant is real but
+  not expressible in the type, prefer a guard or an `assert` that would fail
+  loudly, over a silent cast.
 - **The rule selection is narrow on purpose**, and pinned explicitly rather than
   left to the tool default, so a check here, in CI, and on a contributor's clone
   agree regardless of installed version. It selects rules that find defects, not

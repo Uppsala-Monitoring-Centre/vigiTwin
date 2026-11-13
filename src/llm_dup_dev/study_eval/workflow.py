@@ -176,7 +176,7 @@ def run_analysis(
 
     scle_samples: dict[str, SCLESample] = {}
     if sample_scle:
-        for rset, pres in zip(precision_sets, precision_results):
+        for rset, pres in zip(precision_sets, precision_results, strict=True):
             scle_samples[f"precision::{rset.set_id}"] = sample_scle_precision(
                 rset,
                 pres,

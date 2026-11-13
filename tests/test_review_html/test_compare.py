@@ -42,7 +42,6 @@ from llm_dup_dev.review_html.models import (
     FeatureContributionVM,
     FeaturesSummaryVM,
     FieldComparison,
-    InconsistencyCountsVM,
     PairViewModel,
 )
 

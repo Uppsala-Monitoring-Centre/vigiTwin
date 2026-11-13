@@ -5,7 +5,6 @@ All reports use synthetic data only — no real pharmacovigilance data.
 
 from __future__ import annotations
 
-import pytest
 
 from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
     ClinicalDateFinding,
@@ -1021,6 +1020,7 @@ class TestSymmetry:
         # should not fire because R2's report date is not before R1's onset
         # (R1 has no onset).
         assert result.n_decisive <= 2
+        assert len(decisive_findings) == result.n_decisive
 
     def test_single_count_for_identical_mismatch(self):
         """A single drug mismatch should produce exactly one counted inconsistency.

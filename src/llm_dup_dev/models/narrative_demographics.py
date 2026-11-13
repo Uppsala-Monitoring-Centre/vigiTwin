@@ -146,6 +146,7 @@ class NarrativeDemographics(BaseModel):
         if not isinstance(value, list):
             return value
         kept = []
+        raw: object
         for item in value:
             if isinstance(item, NarrativeSexValue):
                 raw = item.value

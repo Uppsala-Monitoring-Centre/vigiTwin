@@ -66,10 +66,10 @@ from llm_dup_dev.study_eval.scle.vocabularies import (
 def _require_openpyxl():
     try:
         import openpyxl  # type: ignore[import-untyped]  # noqa: F401
-    except ImportError as exc:  # pragma: no cover - exercised only without extra
+    except ImportError as exc:  # pragma: no cover - needs a broken install
         raise ImportError(
-            "Reviewer workbooks require openpyxl. Install the study extra: "
-            "pip install 'llm-dup-dev[study]'."
+            "Reviewer workbooks require openpyxl, which is a core dependency "
+            "of this package -- reinstall it to repair the environment."
         ) from exc
     return __import__("openpyxl")
 

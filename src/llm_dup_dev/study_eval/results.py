@@ -461,6 +461,12 @@ def summary_to_markdown(
         lines += [f"## Recall ({baseline}), by reference set", ""]
         for s in primary_r.sets:
             if s.screening_mode == "observed":
+                # Documented on RecallSetResult: the screening-dependent fields
+                # are None only under screening_mode "not_evaluated". Asserting
+                # rather than printing "n/a" keeps *not estimated* distinct from
+                # *estimate undefined*, which the model deliberately separates.
+                assert s.recall_screening is not None
+                assert s.recall_serial is not None
                 reduction = (
                     "n/a" if s.recall_reduction is None else f"{s.recall_reduction:.4f}"
                 )

@@ -213,7 +213,7 @@ def sweep_to_text(result: SweepResult) -> str:
     if result.skipped:
         lines.append("")
         lines.append(f"Skipped {len(result.skipped)} invalid setting(s):")
-        for raw, reason in result.skipped:
+        for _raw, reason in result.skipped:
             lines.append(f"  {reason}")
     return "\n".join(lines)
 

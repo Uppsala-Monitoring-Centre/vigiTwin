@@ -8,7 +8,6 @@ from llm_dup_dev.models.report import (
     Drug,
     PartialDate,
     Report,
-    SourcedValue,
 )
 from llm_dup_dev.feature_generation.matching import (
     _compare_partial_dates,

@@ -218,14 +218,18 @@ def generate_pair_features(
     clinical_date_findings = [
         ClinicalDateFindingSummary(
             entity_label=f.entity_label,
-            severity=f.final_severity.to_inconsistency_severity(),
+            severity=severity,
             source_date=f.source_date.value,
             matched_date=f.matched_date.value if f.matched_date else "",
             diff_days=f.raw_diff_days,
             downgrades=f.downgrades,
         )
-        for f in cdi_result.findings
-        if f.selected and f.final_severity.to_inconsistency_severity() is not None
+        for f, severity in (
+            (f, f.final_severity.to_inconsistency_severity())
+            for f in cdi_result.findings
+            if f.selected
+        )
+        if severity is not None
     ]
 
     # Step 6: Build evidence summary

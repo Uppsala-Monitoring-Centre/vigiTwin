@@ -4,8 +4,8 @@
 
 Each subcommand wraps the matching function in
 :mod:`llm_dup_dev.study_eval.workflow`. The workflow is notebook-first; this CLI
-exists for scripted or one-off runs. Reviewer/arbitration workbooks require the
-optional ``study`` extra (openpyxl).
+exists for scripted or one-off runs. Reviewer/arbitration workbooks need
+openpyxl, which is a core dependency -- nothing extra to install.
 """
 
 from __future__ import annotations

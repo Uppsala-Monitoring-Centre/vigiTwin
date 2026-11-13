@@ -297,13 +297,16 @@ def assess_relationship(
     asm = features.source_case_assessment
     verdict = asm.verdict if asm is not None else None
 
-    if verdict in (
+    # Every `verdict` test below also tests `asm`: the two are set together, so
+    # the extra clause is redundant at runtime and load-bearing for the reader
+    # (and the type checker) -- a verdict never arrives without its assessment.
+    if asm is not None and verdict in (
         SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
         SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
     ):
         return _identity_zone(features, verdict, asm, penalty, thresholds)
 
-    if verdict == SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE:
+    if asm is not None and verdict == SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE:
         return _RelationshipDecision(
             relationship=RelationshipAssessment.DIFFERENT_CASE,
             # Pinned regardless of w_tot, so the penalty carries no comparison.
@@ -318,7 +321,7 @@ def assess_relationship(
     if link is not None:
         return _explicit_link_zone(features, link, penalty, thresholds)
 
-    if verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE:
+    if asm is not None and verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE:
         prefix = f"Shared source ({verdict.value}{_format_shared_identifier(asm)})"
         return _unresolved_zone(features, prefix, penalty, thresholds)
 

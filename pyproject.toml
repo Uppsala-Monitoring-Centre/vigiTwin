@@ -1,6 +1,6 @@
 [project]
 name = "llm-dup-dev"
-version = "1.0.0"
+version = "1.0.1"
 description = "LLM duplicate detection development utilities"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
@@ -36,11 +36,11 @@ packages = ["src/llm_dup_dev"]
 # a check run here, in CI, and on a contributor's clone all agree regardless of
 # which ruff version is installed — before this config existed, they did not.
 #
-# Both checks currently run as ADVISORY in CI (see .github/workflows/ci.yml):
-# they report but do not block. The existing findings are pre-existing debt,
-# not regressions, and clearing them means changing `src/`, which 1.0.0
-# deliberately does not do. They become blocking in 2.0.0, where the cleanup
-# lands with the package rename.
+# Both checks BLOCK in CI (see .github/workflows/ci.yml) and both report zero
+# findings as of 1.0.1. They were advisory through 1.0.0, which deliberately
+# changed no `src/`; the 36 ruff and 33 mypy findings inherited from that were
+# cleared in 1.0.1 and the checks turned blocking in the same change, since an
+# advisory check nobody has to satisfy stops being a check.
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 88
@@ -57,11 +57,10 @@ extend-exclude = ["_reference_secure_side", ".venv", "dist", "outputs"]
 # The wider selection this started as (adding I, UP, SIM and the rest of RUF)
 # reported 222 findings, of which about 195 were import ordering, `__all__`
 # sorting and annotation modernization — no defects among them. At that volume
-# the "do not add new findings" rule below is unenforceable and the advisory
-# job is noise. At 36 it is a list someone can actually clear, which is the
-# point: 20 of them are auto-fixable unused imports, so these checks can become
-# blocking in 1.0.1 rather than waiting for 2.0.0. A narrow blocking check
-# prevents regressions; a broad advisory one does not.
+# a blocking check is unaffordable and an advisory one is noise. At 36 it was a
+# list someone could actually clear, which is what happened in 1.0.1 — and a
+# narrow blocking check prevents regressions, where a broad advisory one does
+# not.
 #
 # Widening later is this one line. If you widen, do it in the same change that
 # clears what the new rules report, so the job stays green.

@@ -19,8 +19,8 @@ jobs:
         # Matches requires-python = ">=3.11,<3.13".
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -30,28 +30,20 @@ jobs:
         run: python -m pytest -q
 
   lint:
-    # Advisory: reports findings without blocking. The 36 ruff and 33 mypy
-    # findings are pre-existing debt, and clearing them means changing src/,
-    # which 1.0.0 deliberately does not do.
-    #
-    # Clear them in 1.0.1 and drop the three continue-on-error lines below.
-    # The rule selection was narrowed specifically so that this is a short job
-    # rather than a 2.0.0-sized one; leaving the checks advisory indefinitely
-    # would make them decorative.
-    name: lint and types (advisory)
+    # Blocking since 1.0.1. Both checks report zero findings; the rule
+    # selection is narrow on purpose (see pyproject.toml) so that staying at
+    # zero is cheap. A finding here is a regression, not a backlog item.
+    name: lint and types
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
       - name: Install
         run: pip install -e ".[dev]"
       - name: ruff
-        continue-on-error: true
         run: ruff check --output-format=github src tests
       - name: mypy
-        continue-on-error: true
         run: mypy

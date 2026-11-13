@@ -21,6 +21,75 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-13
+
+### `ruff` and `mypy` now block, at zero findings
+
+1.0.0 shipped with both checks advisory, carrying 36 ruff findings and 33 mypy
+errors inherited from before the config existed. Clearing them required
+touching `src/`, which 1.0.0 deliberately did not do. They are cleared here and
+both checks are blocking in the same change: an advisory check nobody has to
+satisfy stops being a check.
+
+Nothing in the schemas or the public surface moved — `git diff v1.0.0..v1.0.1
+-- schemas/` is empty, and regenerating every schema from the models produces
+no diff. The patch bump is for the behaviour fixes below.
+
+### Fixed
+
+- **`_parse_date_string` carried an unresolvable return annotation.**
+  `probability.py` annotated `-> "date | None"` while importing `date` only
+  inside the function body under a different name, so the module-level name
+  never existed. `from __future__ import annotations` kept it from failing at
+  runtime, but anything resolving the annotation — `typing.get_type_hints`, a
+  type checker, a doc generator — would raise `NameError`. `date` is now
+  imported at module level and the local re-imports are gone.
+- **Seven `zip()` calls could truncate silently.** Each pairs sequences that
+  are equal-length by construction (or asserted equal immediately above), so
+  all seven now pass `strict=True`. A length mismatch raises instead of
+  producing a short, wrong result. This affects
+  `eval.metrics.confusion_matrix`, whose docstring already required "two
+  aligned sequences": mismatched input is now an error rather than a quietly
+  truncated matrix.
+- **Two stale install instructions named an extra that no longer exists.** The
+  `study` extra was removed when `openpyxl` became a core dependency, but
+  `study_eval.cli`'s module docstring and the `ImportError` raised by
+  `scle.workbook` both still told the reader to run
+  `pip install 'llm-dup-dev[study]'`, which cannot succeed. Both now say
+  openpyxl is core.
+- **`_z_for_level` documented its accuracy five orders of magnitude too
+  loosely** — "good to ~1e-4" against a measured worst-case relative error of
+  1.1e-9 versus `statistics.NormalDist.inv_cdf`. It also carried an unreachable
+  lower-tail branch: `p = 1 - (1 - level)/2` is at least 0.5 for every level in
+  `(0, 1)`, while that branch needed `p < 0.02425`. The docstring is corrected
+  and the dead branch removed, with a comment recording why only two of
+  Acklam's three regions are reachable.
+- **`review_html.cli` crashed with `AttributeError` on a bundles artifact that
+  was a JSON array** rather than an object keyed by `pair_id`. It now raises
+  `ValueError` naming the file and the type it found.
+- **A test built a list of decisive findings and discarded it**, asserting only
+  the aggregate count. It now also asserts the list length matches
+  `n_decisive`, which is what the comment above it described.
+
+### Changed
+
+- `review_html.saved_run` builds its `PairResult` in the branch that loads the
+  inputs, rather than in a second branch keyed off the same `source` string.
+  Same behaviour, with `result`, `features` and `classification` all provably
+  non-`None` at the point of use.
+- `read_arbitration`'s two cell readers were closures over the loop variable
+  `row`. Both were only ever called within the same iteration, so this was
+  benign, but it is the shape that breaks the first time a caller defers the
+  call. They are now module-level helpers taking `row` explicitly.
+- `_check_artifact_keys_canonical` accepts `path=None`. The path is only
+  interpolated into an error message, and callers legitimately hold `None` for
+  an artifact that was not supplied.
+- Four `l`/`r` locals in `review_html.compare` renamed (`l` is unreadable next
+  to `1`), and `_scope` is typed `FrozenScopeStats` instead of `object` with a
+  `type: ignore` naming the wrong error code.
+- `actions/checkout` and `actions/setup-python` bumped v4/v5 → v7, off the
+  deprecated Node 20 runtime.
+
 ### Documentation
 
 - `CITATION.cff` carries the Zenodo concept DOI `10.5281/zenodo.24198670`, and
@@ -28,6 +97,8 @@ snapshot, not by a round version number.
   Added after the v1.0.0 release, because Zenodo mints a DOI only once a GitHub
   Release exists — which is why these two files differ between the `v1.0.0` tag
   and `main` with no code change between them.
+- `agents.md` § Checks rewritten: all three checks block, zero is the baseline,
+  and a suppression needs a named code plus a reason.
 
 ## [1.0.0] - 2026-11-13
 

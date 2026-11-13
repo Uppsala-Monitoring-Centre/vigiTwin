@@ -191,6 +191,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     bundles: dict[str, FrozenPairBundle] = {}
     if args.bundles:
         raw_bundles = _load_json(args.bundles)
+        if not isinstance(raw_bundles, dict):
+            raise ValueError(
+                f"{args.bundles}: expected a JSON object keyed by pair_id, "
+                f"got a {type(raw_bundles).__name__}."
+            )
         bundles = {
             pid: FrozenPairBundle.model_validate(bdata)
             for pid, bdata in raw_bundles.items()

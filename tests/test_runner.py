@@ -4,22 +4,18 @@ import logging
 
 import pytest
 
-from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
+from llm_dup_dev.classifier.config import DecisionThresholds
 from llm_dup_dev.llm import LLMConfigurationError
 from llm_dup_dev.data.offline import (
     FrozenNarrativeDemographics,
     FrozenSourceCaseExtractions,
 )
 from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
-from llm_dup_dev.feature_generation.probability import FrequencyStats
 from llm_dup_dev.llm.fake import FakeLLMClient
 from llm_dup_dev.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
 from llm_dup_dev.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
-    NarrativeMeasurementValue,
-    NarrativeSex,
-    NarrativeSexValue,
 )
 from llm_dup_dev.models.narrative_source_case import (
     CaseIdentifierFamily,

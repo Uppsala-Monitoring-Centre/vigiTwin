@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable
+from datetime import date
 from dataclasses import dataclass, field as dc_field
-from typing import Protocol
+from typing import Protocol, cast
 
 from pydantic import BaseModel
 
@@ -421,10 +422,8 @@ def compute_probability(
     matched_age_years: float | None = None
     for dm in match_result.demographic_matches:
         if dm.feature == "patient_age" and dm.matched and dm.matched_value is not None:
-            if dm.age_unit == "months":
-                matched_age_years = float(dm.matched_value) / 12.0
-            else:
-                matched_age_years = float(dm.matched_value)
+            age = float(cast("float | int | str", dm.matched_value))
+            matched_age_years = age / 12.0 if dm.age_unit == "months" else age
             break
 
     for dm in match_result.demographic_matches:
@@ -461,8 +460,9 @@ def compute_probability(
         config,
         is_country_year=is_country_year,
     )
+    # _clinical_date_domain_sizes returns one entry per input date, in order.
     for cd, domain_size in zip(
-        match_result.matched_clinical_dates, clinical_domain_sizes
+        match_result.matched_clinical_dates, clinical_domain_sizes, strict=True
     ):
         if domain_size is None or domain_size <= 0:
             continue
@@ -559,7 +559,7 @@ def _marginal_with_backoff(
             return (n_f - 2) / (n_t - 2), f"lpo@{label}"
 
     if n_total_global is not None and n_total_global > 2:
-        return 1.0 / (n_total_global - 2), f"floor=1/(N_total_global-2)"
+        return 1.0 / (n_total_global - 2), "floor=1/(N_total_global-2)"
     return MARGINAL_FLOOR, f"floor={MARGINAL_FLOOR:g}"
 
 
@@ -574,16 +574,14 @@ def _empirical_frequency(count: int, total: int) -> float | None:
     return count / total
 
 
-def _parse_date_string(val: str) -> "date | None":
+def _parse_date_string(val: str) -> date | None:
     """Parse an ISO date string, padding partial dates to day resolution."""
-    from datetime import date as date_type
-
     try:
         parts = val.split("-")
         year = int(parts[0])
         month = int(parts[1]) if len(parts) > 1 else 1
         day = int(parts[2]) if len(parts) > 2 else 1
-        return date_type(year, month, day)
+        return date(year, month, day)
     except (ValueError, IndexError):
         return None
 
@@ -686,9 +684,7 @@ def _clinical_date_domain_sizes(
     the context default — the ranking is by calendar date, not input
     position).
     """
-    from datetime import date as date_type
-
-    parsed: list[tuple[date_type, int]] = []  # (date, original index)
+    parsed: list[tuple[date, int]] = []  # (date, original index)
     result: list[float | None] = [None] * len(clinical_dates)
 
     for idx, cd in enumerate(clinical_dates):
@@ -702,7 +698,7 @@ def _clinical_date_domain_sizes(
     # (should not occur given upstream uniqueness + subsumption).
     parsed.sort(key=lambda item: (item[0], item[1]), reverse=True)
 
-    prev_date: date_type | None = None
+    prev_date: date | None = None
     for rank, (d, orig_idx) in enumerate(parsed):
         cd = clinical_dates[orig_idx]
         if rank == 0:

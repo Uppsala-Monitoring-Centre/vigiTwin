@@ -255,7 +255,7 @@ def grid_over(
     out: list[DecisionThresholds] = []
     for combo in itertools.product(*(axes[n] for n in names)):
         try:
-            out.append(base.model_copy(update=dict(zip(names, combo))))
+            out.append(base.model_copy(update=dict(zip(names, combo, strict=True))))
         except ValidationError:
             # model_copy does not re-validate; kept for safety if that changes.
             continue

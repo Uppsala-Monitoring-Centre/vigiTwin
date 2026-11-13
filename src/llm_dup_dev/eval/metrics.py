@@ -89,7 +89,7 @@ def confusion_matrix(
     idx_map = {label: i for i, label in enumerate(labels)}
     n = len(labels)
     mat = [[0] * n for _ in range(n)]
-    for p, a in zip(predicted, actual):
+    for p, a in zip(predicted, actual, strict=True):
         if p in idx_map and a in idx_map:
             mat[idx_map[p]][idx_map[a]] += 1
     return ConfusionMatrix(labels=labels, matrix=mat)

@@ -393,10 +393,10 @@ def write_arbitration_workbook(
             if row.get(h) == NOT_APPLICABLE:
                 cell.fill = na_fill
                 continue
-            field = field_by_consensus_col.get(c_idx)
-            if field is None:
+            consensus_field = field_by_consensus_col.get(c_idx)
+            if consensus_field is None:
                 continue
-            if field in disagreed:
+            if consensus_field in disagreed:
                 cell.fill = required_fill
                 if c_idx in dv_by_col:
                     dv_by_col[c_idx].add(cell)
@@ -410,6 +410,19 @@ def write_arbitration_workbook(
     out.parent.mkdir(parents=True, exist_ok=True)
     wb.save(out)
     return out, arbitration_id
+
+
+def _row_cell(row: tuple, idx: dict[str, int], header: str) -> str | None:
+    """The raw entry in one column of one row; ``None`` where the column is absent."""
+    if header not in idx:
+        return None
+    return _cell_str(row[idx[header]])
+
+
+def _row_answer(row: tuple, idx: dict[str, int], header: str) -> str:
+    """The arbiter's entry in one column, ignoring the N/A sentinel."""
+    val = _row_cell(row, idx, header)
+    return "" if val is None or val == NOT_APPLICABLE else val
 
 
 def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmission:
@@ -463,20 +476,9 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
             problems.append(f"{path}: pair {pair_id!r} is not in the sample.")
             continue
 
-        def _cell(header: str) -> str | None:
-            """The raw entry in one column; ``None`` where the column is absent."""
-            if header not in idx:
-                return None
-            return _cell_str(row[idx[header]])
-
-        def _answer(header: str) -> str:
-            """The arbiter's entry in one column, ignoring the N/A sentinel."""
-            val = _cell(header)
-            return "" if val is None or val == NOT_APPLICABLE else val
-
         consensus: dict[str, str] = {}
         for field in dimensions:
-            val = _cell(f"{_dim_header(field)} consensus")
+            val = _row_cell(row, idx, f"{_dim_header(field)} consensus")
             if val is None or val == NOT_APPLICABLE:
                 # No such column, or the dimension never applied to this pair:
                 # there is no decision to carry either way.
@@ -492,16 +494,18 @@ def read_arbitration(path: str | Path, sample: SCLESample) -> ArbitrationSubmiss
                 # still means undecided and must fail validation downstream.
                 consensus[field] = val
 
-        materially = _answer(_MATERIALLY_DIFFERENT_HEADER).lower()
+        materially = _row_answer(row, idx, _MATERIALLY_DIFFERENT_HEADER).lower()
         decisions.append(
             ArbitrationDecision(
                 pair_id=pair_id,
                 consensus_dimensions=consensus,
                 free_text_materially_different=(materially == "yes"),
-                consensus_free_text=_answer(_CONSENSUS_FREE_TEXT_HEADER),
-                arbiter_rationale=_answer(_ARBITER_RATIONALE_HEADER),
-                consensus_method_difference=_answer(
-                    _CONSENSUS_METHOD_DIFF_HEADER
+                consensus_free_text=_row_answer(
+                    row, idx, _CONSENSUS_FREE_TEXT_HEADER
+                ),
+                arbiter_rationale=_row_answer(row, idx, _ARBITER_RATIONALE_HEADER),
+                consensus_method_difference=_row_answer(
+                    row, idx, _CONSENSUS_METHOD_DIFF_HEADER
                 ),
             )
         )

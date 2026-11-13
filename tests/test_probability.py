@@ -139,7 +139,9 @@ class TestProbabilityComputation:
         assert len(estimate.feature_contributions) == len(result.feature_probabilities)
 
         # Each contribution should mirror the internal FeatureProbability
-        for fc, fp in zip(estimate.feature_contributions, result.feature_probabilities):
+        for fc, fp in zip(
+            estimate.feature_contributions, result.feature_probabilities, strict=True
+        ):
             assert fc.feature == fp.feature
             assert fc.p_f == fp.p_f
             assert fc.method == fp.method

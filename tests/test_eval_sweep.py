@@ -24,7 +24,6 @@ from llm_dup_dev.models.narrative_source_case import (
 )
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
-    FeatureContribution,
     InconsistencyCounts,
     PairFeatures,
     ProbabilityEstimate,

@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from collections import OrderedDict
 
-from llm_dup_dev.data.offline import FrozenPairBundle
+from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 from llm_dup_dev.feature_generation.matching import (
     _coarser_resolution,
     _truncate_to_resolution,
@@ -86,7 +86,6 @@ from .models import (
     SubfieldStatus,
 )
 from .normalize import (
-    MISSING,
     format_age_values,
     format_date_values,
     format_measurement_values,
@@ -168,8 +167,8 @@ def _compare_sourced_values(
 def _min_pairwise_diff(
     left: list[float], right: list[float]
 ) -> float:
-    """Minimum absolute difference across all (l, r) pairs."""
-    return min(abs(l - r) for l in left for r in right)
+    """Minimum absolute difference across all (left, right) value pairs."""
+    return min(abs(lv - rv) for lv in left for rv in right)
 
 
 def _compare_age_values(
@@ -370,16 +369,16 @@ def _compare_partial_date_str(
     return ComparisonStatus.MATCH if t1 == t2 else ComparisonStatus.MISMATCH
 
 
-def _build_subfield_status(l: Drug, r: Drug) -> SubfieldStatus:
+def _build_subfield_status(lhs: Drug, rhs: Drug) -> SubfieldStatus:
     """Build per-sub-field comparison statuses for a drug present in both reports."""
-    role_l = l.role.value if l.role else None
-    role_r = r.role.value if r.role else None
+    role_l = lhs.role.value if lhs.role else None
+    role_r = rhs.role.value if rhs.role else None
     return SubfieldStatus(
         role=_compare_optional_str(role_l, role_r),
-        form=_compare_optional_str(l.form, r.form),
-        strength=_compare_optional_str(l.strength, r.strength),
-        start_date=_compare_partial_date_str(l, r, "start_date"),
-        end_date=_compare_partial_date_str(l, r, "end_date"),
+        form=_compare_optional_str(lhs.form, rhs.form),
+        strength=_compare_optional_str(lhs.strength, rhs.strength),
+        start_date=_compare_partial_date_str(lhs, rhs, "start_date"),
+        end_date=_compare_partial_date_str(lhs, rhs, "end_date"),
     )
 
 
@@ -467,12 +466,10 @@ def _compare_drug_details(
     Uses first instance from each side for comparison heuristic.
     Returns the row-level status and detail lists with subfield_status populated.
     """
-    l, r = left[0], right[0]
-
     # Row background colour is driven by date sub-fields only.
     # Dose / form / role mismatches are shown via inline sub-field coloring
     # but do not escalate the row to yellow.
-    sub = _build_subfield_status(l, r)
+    sub = _build_subfield_status(left[0], right[0])
     date_mismatch = (
         sub.start_date == ComparisonStatus.MISMATCH
         or sub.end_date == ComparisonStatus.MISMATCH
@@ -499,13 +496,13 @@ def _compare_drug_details(
 
 def _ae_dates_match(left_ae: AdverseEvent, right_ae: AdverseEvent) -> bool:
     """Return True if the two AEs have compatible start dates (or either is absent)."""
-    l, r = left_ae.start_date, right_ae.start_date
-    if l is None or r is None:
+    left_date, right_date = left_ae.start_date, right_ae.start_date
+    if left_date is None or right_date is None:
         return True  # no date on at least one side → not a conflict
-    coarse = _coarser_resolution(l.resolution, r.resolution)
+    coarse = _coarser_resolution(left_date.resolution, right_date.resolution)
     return (
-        _truncate_to_resolution(l.value, coarse)
-        == _truncate_to_resolution(r.value, coarse)
+        _truncate_to_resolution(left_date.value, coarse)
+        == _truncate_to_resolution(right_date.value, coarse)
     )
 
 
@@ -1046,10 +1043,10 @@ def _build_freq_stats_vm(
 
     scopes: list[FreqScopeVM] = []
 
-    def _scope(label: str, s: object) -> FreqScopeVM:
+    def _scope(label: str, s: FrozenScopeStats) -> FreqScopeVM:
         return FreqScopeVM(
             label=label,
-            N_total=s.N_total,  # type: ignore[union-attr]
+            N_total=s.N_total,
             N_drugs=s.N_drugs,
             N_AEs=s.N_AEs,
             N_drugs_AEs=s.N_drugs_AEs,
@@ -1354,9 +1351,9 @@ def build_pair_view_model(
     }
 
     demographics = [
-        demographic_builders[key]
+        comparison
         for key in _DEMOGRAPHIC_FIELD_ORDER
-        if demographic_builders.get(key) is not None
+        if (comparison := demographic_builders.get(key)) is not None
     ]
 
     # Evidence comes off the extractions rather than the merged reports, and
@@ -1385,7 +1382,7 @@ def build_pair_view_model(
     features_summary = (
         _build_features_summary(features) if features else None
     )
-    if features_summary is not None:
+    if features is not None and features_summary is not None:
         _annotate_demographic_contributions(
             demographics, features_summary.feature_contributions
         )
@@ -1597,7 +1594,7 @@ _FEATURE_TO_DEMO_LABEL: dict[str, str] = {
 # suite import these names from this module. The implementations live
 # in review_html.index.
 from .index import (  # noqa: E402  (intentional bottom-of-file import to avoid cycle)
-    _format_matching_features,
+    _format_matching_features,  # noqa: F401  (re-export; imported from here by tests)
     build_batch_index_item,
 )
 

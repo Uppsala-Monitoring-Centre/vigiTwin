@@ -68,7 +68,6 @@ from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
 from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.enums import (
     AEClinicalPictureStatus,
-    ReportingContextLevel,
 )
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.narrative_source_case import (

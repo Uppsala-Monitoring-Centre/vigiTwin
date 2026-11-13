@@ -1,6 +1,5 @@
 """Tests for llm_dup_dev.review_html.render."""
 
-from pathlib import Path
 
 from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 from llm_dup_dev.models.classification import ClassificationResult
@@ -32,11 +31,9 @@ from llm_dup_dev.review_html.compare import build_pair_view_model
 from llm_dup_dev.review_html.models import (
     BatchIndexItem,
     ComparisonStatus,
-    DecisionSummaryVM,
     FieldComparison,
     FreqScopeVM,
     FreqStatsVM,
-    InconsistencyCountsVM,
     NarrativeComparison,
     PairViewModel,
 )

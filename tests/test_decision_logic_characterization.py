@@ -355,7 +355,7 @@ def test_classify_with_explicit_link_matches_golden():
     )
 
     mismatches = []
-    for cell, expected in zip(cells, golden_rows):
+    for cell, expected in zip(cells, golden_rows, strict=True):
         actual = _link_cell_row(cell[1], cell)
         if actual != expected:
             mismatches.append(
@@ -389,7 +389,7 @@ def test_classify_matches_golden():
     )
 
     mismatches = []
-    for cell, expected in zip(cells, golden_rows):
+    for cell, expected in zip(cells, golden_rows, strict=True):
         expected = _adjust_for_multi_patient_reason(cell, expected)
         actual = _cell_row(cell[1], cell)
         if actual != expected:

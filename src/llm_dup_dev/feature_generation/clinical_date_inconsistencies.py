@@ -586,6 +586,7 @@ def _build_finding(
     raw_sev = classify(diff)
     current_sev = raw_sev
     downgrades: list[str] = []
+    reason: str | None
 
     if raw_sev != Severity.NONE:
         if entity_type == EntityType.CONCOMITANT_DRUG_START:

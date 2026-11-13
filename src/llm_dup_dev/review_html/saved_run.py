@@ -172,7 +172,7 @@ def _load_pairs(
 
 
 def _check_artifact_keys_canonical(
-    keys: Iterable[str], *, artifact: str, path: str | Path
+    keys: Iterable[str], *, artifact: str, path: str | Path | None
 ) -> None:
     """Raise if a pair-keyed artifact still uses pre-canonical pair ids.
 
@@ -492,6 +492,14 @@ def load_saved_run(
                 skip(pid, SkipReason.MISSING_CLASSIFICATION,
                      "no entry in classifications artifact")
                 continue
+            result = PairResult(
+                pair_id=pid,
+                features=features,
+                classification=classification,
+                source_case_assessment=features.source_case_assessment,
+                narrative_demographics_1=demographics_by_report.get(r1_id),
+                narrative_demographics_2=demographics_by_report.get(r2_id),
+            )
 
         report_1 = reports.get(r1_id)
         report_2 = reports.get(r2_id)
@@ -501,16 +509,6 @@ def load_saved_run(
         if report_2 is None:
             skip(pid, SkipReason.MISSING_REPORT_2, f"missing report {r2_id}")
             continue
-
-        if source == "split":
-            result = PairResult(
-                pair_id=pid,
-                features=features,
-                classification=classification,
-                source_case_assessment=features.source_case_assessment,
-                narrative_demographics_1=demographics_by_report.get(r1_id),
-                narrative_demographics_2=demographics_by_report.get(r2_id),
-            )
 
         external_url: str | None = None
         if external_url_builder is not None:

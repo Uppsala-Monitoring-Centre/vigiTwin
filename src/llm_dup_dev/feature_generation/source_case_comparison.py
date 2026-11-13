@@ -48,7 +48,6 @@ from llm_dup_dev.models.narrative_source_case import (
     NarrativeSourceCase,
     SourceCaseAssessment,
     SourceCaseVerdict,
-    SourceIdentifier,
     SourceIdentifierType,
 )
 

@@ -25,9 +25,12 @@ _Z_95 = 1.959963984540054
 def _z_for_level(level: float) -> float:
     """Return the two-sided z multiplier for ``level``.
 
-    Only the 95% level is needed by the study and is returned exactly; other
-    levels fall back to an inverse-normal approximation good to ~1e-4, which is
-    ample for reporting. Kept internal so callers stay on the prespecified 95%.
+    ``level`` is a two-sided confidence level in (0, 1). Only 95% is needed by
+    the study and is returned exactly from a hard-coded constant; any other
+    level falls back to Acklam's rational approximation, whose relative error
+    against :meth:`statistics.NormalDist.inv_cdf` stays below 1.2e-9 across
+    that range — far tighter than anything reporting needs. Kept internal so
+    callers stay on the prespecified 95%.
     """
     if abs(level - 0.95) < 1e-9:
         return _Z_95
@@ -62,13 +65,14 @@ def _z_for_level(level: float) -> float:
         2.445134137142996e00,
         3.754408661907416e00,
     ]
-    p_low = 0.02425
-    p_high = 1 - p_low
-    if p < p_low:
-        q = math.sqrt(-2 * math.log(p))
-        return (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / (
-            (((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1
-        )
+    # Acklam splits the domain into a central region and two tails. Only the
+    # central region and the *upper* tail are reachable here: p is 1 - (1 -
+    # level)/2, so p >= 0.5 for every level in (0, 1), while the lower tail
+    # needs p < 0.02425. The lower-tail branch is therefore omitted rather
+    # than carried as dead code -- `c` and `d` below still serve the upper
+    # tail. Restore it from the published coefficients if this is ever reused
+    # for a raw quantile rather than a two-sided level.
+    p_high = 1 - 0.02425
     if p <= p_high:
         q = p - 0.5
         r = q * q
