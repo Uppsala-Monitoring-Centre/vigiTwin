@@ -21,6 +21,39 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-14
+
+### Fixed — `dev_git_commit` could name the caller's repository
+
+`study_eval.manifest.build_manifest` read git state from
+`Path.cwd()` when no `repo_path` was given. A study-eval stage is normally
+driven from the consumer's repository, so every manifest it wrote recorded the
+**consumer's** commit in a field documented as "which precise dev code ran".
+The failure was silent: the sha is well-formed, present, and wrong.
+
+Reported from the secure side, whose own overarching finalization manifest
+already resolved this correctly and so was unaffected.
+
+- **Provenance now resolves from the package's own source**, not the working
+  directory, in all four manifest builders (`run_manifest`, `dataset_manifest`,
+  `characterization`, `study_eval`). Passing `repo_path` / `dev_repo_path`
+  explicitly still overrides it — a caller naming a checkout means it.
+- **Enclosure is no longer mistaken for provenance.** The three builders that
+  already resolved from the package source were still wrong whenever the
+  package was installed as a wheel rather than editable: `git` searches
+  upwards, and a venv normally sits *inside* the consumer's checkout, so the
+  lookup returned the consumer's sha. `try_dev_git_commit` now requires that
+  git actually **tracks** the package's `__init__.py`, and returns `None`
+  otherwise. For an installed wheel `dev_package.version` is the identity, and
+  `None` states the absence honestly rather than inventing a sha.
+- **`run_manifest._git` gains `dev_repo_path` and `try_dev_git_commit`**,
+  replacing three identical private copies of the former. `try_git_commit` is
+  unchanged and still answers the enclosure question, which remains the right
+  answer for an explicitly supplied path.
+
+No schema changed and no public name moved; `dev_git_commit`'s documented
+meaning is what it always was. What changed is that the value now matches it.
+
 ### Infrastructure
 
 - CI pins `runs-on: ubuntu-24.04` instead of `ubuntu-latest`, which began

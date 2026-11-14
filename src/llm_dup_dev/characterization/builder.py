@@ -48,7 +48,7 @@ from llm_dup_dev.feature_generation.matching import (
     compute_matching_drugs,
 )
 from llm_dup_dev.models.report import Report
-from llm_dup_dev.run_manifest._git import try_git_commit
+from llm_dup_dev.run_manifest._git import try_dev_git_commit, try_git_commit
 from llm_dup_dev.run_manifest.models import DevPackageInfo
 from llm_dup_dev.study_eval.schemas import ReferencePair, ReferenceSet
 
@@ -773,7 +773,6 @@ def build_characterization_report(
         )
 
     by_id = _resolve_reports(list(reference_sets), reports, on_missing_report)
-    repo_path = Path(dev_repo_path) if dev_repo_path else _default_dev_repo_path()
 
     return CharacterizationReport(
         created_at=created_at or datetime.now(timezone.utc),
@@ -782,7 +781,11 @@ def build_characterization_report(
         dev_package=DevPackageInfo(
             name=_PACKAGE_NAME, version=_detect_package_version()
         ),
-        dev_git_commit=try_git_commit(repo_path),
+        dev_git_commit=(
+            try_git_commit(dev_repo_path)
+            if dev_repo_path is not None
+            else try_dev_git_commit()
+        ),
         policy=resolution_policy_summary(top_n),
         sets=[
             _characterise(reference_set, by_id, top_n=top_n)
@@ -797,12 +800,6 @@ def _detect_package_version() -> str | None:
         return version(_PACKAGE_NAME)
     except PackageNotFoundError:
         return None
-
-
-def _default_dev_repo_path() -> Path:
-    import llm_dup_dev
-
-    return Path(llm_dup_dev.__file__).resolve().parent
 
 
 __all__ = [

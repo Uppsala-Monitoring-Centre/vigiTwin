@@ -12,7 +12,7 @@ from llm_dup_dev.dataset_manifest.models import (
     DatasetManifest,
     DatasetSnapshot,
 )
-from llm_dup_dev.run_manifest._git import try_git_commit
+from llm_dup_dev.run_manifest._git import try_dev_git_commit, try_git_commit
 from llm_dup_dev.run_manifest.builder import _llm_info_to_dict
 from llm_dup_dev.run_manifest.models import DevPackageInfo
 
@@ -24,12 +24,6 @@ def _detect_package_version() -> str | None:
         return version(_PACKAGE_NAME)
     except PackageNotFoundError:
         return None
-
-
-def _default_dev_repo_path() -> Path:
-    import llm_dup_dev
-
-    return Path(llm_dup_dev.__file__).resolve().parent
 
 
 def build_dataset_manifest(
@@ -58,14 +52,16 @@ def build_dataset_manifest(
     - ``created_at``: timezone-aware ``datetime.now(UTC)``.
     - ``dev_package.version``: from ``importlib.metadata`` if installed,
       else ``None``.
-    - ``dev_git_commit``: from ``git rev-parse --short HEAD`` rooted at
-      ``dev_repo_path`` (defaults to the package source directory);
-      ``None`` if git metadata is unavailable.
+    - ``dev_git_commit``: short HEAD sha of the checkout that *tracks* this
+      package's source. ``None`` when the running source is not a working copy
+      — an installed wheel has no commit to report, and the repository merely
+      enclosing it (a venv inside the consumer's checkout) is not provenance.
+      ``dev_repo_path`` overrides the lookup for callers who mean a specific
+      checkout.
 
     Secrets in ``llm_config`` and ``secure_context`` are redacted by the
     model validator — see ``run_manifest._redaction.SECRET_KEY_PATTERNS``.
     """
-    repo_path = Path(dev_repo_path) if dev_repo_path else _default_dev_repo_path()
 
     return DatasetManifest(
         created_at=created_at or datetime.now(timezone.utc),
@@ -75,7 +71,11 @@ def build_dataset_manifest(
         dev_package=DevPackageInfo(
             name=_PACKAGE_NAME, version=_detect_package_version()
         ),
-        dev_git_commit=try_git_commit(repo_path),
+        dev_git_commit=(
+            try_git_commit(dev_repo_path)
+            if dev_repo_path is not None
+            else try_dev_git_commit()
+        ),
         llm_config=_llm_info_to_dict(llm_config),
         secure_context=dict(secure_context) if secure_context is not None else None,
         notes=notes,

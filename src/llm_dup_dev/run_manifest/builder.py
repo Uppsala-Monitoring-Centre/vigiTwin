@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from llm_dup_dev.classifier.config import DecisionThresholds, PipelineConfig
-from llm_dup_dev.run_manifest._git import try_git_commit
+from llm_dup_dev.run_manifest._git import try_dev_git_commit, try_git_commit
 from llm_dup_dev.run_manifest.models import DatasetRef, DevPackageInfo, RunManifest
 
 if TYPE_CHECKING:
@@ -25,14 +25,6 @@ def _detect_package_version() -> str | None:
         return version(_PACKAGE_NAME)
     except PackageNotFoundError:
         return None
-
-
-def _default_dev_repo_path() -> Path:
-    # Use the package directory as a stable starting point for git lookup.
-    # In editable installs this resolves to the source tree.
-    import llm_dup_dev
-
-    return Path(llm_dup_dev.__file__).resolve().parent
 
 
 def _llm_info_to_dict(info: Any) -> dict[str, Any] | None:
@@ -151,9 +143,12 @@ def build_run_manifest(
     - ``created_at``: timezone-aware ``datetime.now(UTC)``.
     - ``dev_package.version``: from ``importlib.metadata`` if installed,
       else ``None``.
-    - ``dev_git_commit``: from ``git rev-parse --short HEAD`` rooted at
-      ``dev_repo_path`` (defaults to the package source directory); ``None``
-      if git metadata is unavailable.
+    - ``dev_git_commit``: short HEAD sha of the checkout that *tracks* this
+      package's source. ``None`` when the running source is not a working copy
+      — an installed wheel has no commit to report, and the repository merely
+      enclosing it (a venv inside the consumer's checkout) is not provenance.
+      ``dev_repo_path`` overrides the lookup for callers who mean a specific
+      checkout.
     - ``llm_config``: the run's *live inference-time* model. When not
       supplied, extracted via duck-typing from ``runner._llm_client.info()``
       (see the ``LLMClient`` protocol docstring). Clients that don't expose
@@ -199,8 +194,6 @@ def build_run_manifest(
     if resolved_decision_thresholds is None:
         resolved_decision_thresholds = DecisionThresholds()
 
-    repo_path = Path(dev_repo_path) if dev_repo_path else _default_dev_repo_path()
-
     return RunManifest(
         created_at=created_at or datetime.now(timezone.utc),
         run_id=run_id or uuid.uuid4().hex[:12],
@@ -208,7 +201,11 @@ def build_run_manifest(
         dev_package=DevPackageInfo(
             name=_PACKAGE_NAME, version=_detect_package_version()
         ),
-        dev_git_commit=try_git_commit(repo_path),
+        dev_git_commit=(
+            try_git_commit(dev_repo_path)
+            if dev_repo_path is not None
+            else try_dev_git_commit()
+        ),
         input_paths=dict(input_paths or {}),
         pipeline_config=resolved_pipeline_config.model_dump(mode="json"),
         decision_thresholds=resolved_decision_thresholds.model_dump(mode="json"),

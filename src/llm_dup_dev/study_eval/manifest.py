@@ -21,7 +21,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from llm_dup_dev.run_manifest._git import try_git_commit
+from llm_dup_dev.run_manifest._git import try_dev_git_commit, try_git_commit
 from llm_dup_dev.run_manifest._redaction import redact_secrets
 from llm_dup_dev.study_eval.checksums import sha256_canonical_json, sha256_file
 
@@ -130,14 +130,25 @@ def build_manifest(
     repo_path: str | Path | None = None,
     notes: str | None = None,
 ) -> EvaluationRunManifest:
-    """Assemble a manifest, hashing the input/output files and reading git state."""
+    """Assemble a manifest, hashing the input/output files and reading git state.
+
+    ``repo_path`` overrides which checkout ``dev_git_commit`` is read from. The
+    default is this package's own source, never the caller's working directory:
+    a study-eval stage is normally driven from the consumer's repository, and
+    reading git state there would record the consumer's commit under a field
+    that means "which dev code ran".
+    """
     py = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     return EvaluationRunManifest(
         created_at=datetime.now(timezone.utc),
         run_id=run_id,
         stage=stage,
         dev_package=DevPackageInfo(version=_package_version()),
-        dev_git_commit=try_git_commit(repo_path or Path.cwd()),
+        dev_git_commit=(
+            try_git_commit(repo_path)
+            if repo_path is not None
+            else try_dev_git_commit()
+        ),
         python_version=py,
         inputs=[artifact_ref(p) for p in (inputs or [])],
         outputs=[artifact_ref(p) for p in (outputs or [])],

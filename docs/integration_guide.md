@@ -1085,7 +1085,7 @@ write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
 | `run_name` | str \| null | caller | Optional human-readable label. |
 | `dev_package.name` | str | auto | Always `"llm-dup-dev"`. |
 | `dev_package.version` | str \| null | auto | From `importlib.metadata`; `null` if the package is not installed via metadata (e.g. PYTHONPATH dev runs). |
-| `dev_git_commit` | str \| null | auto | Short SHA of the dev repo's HEAD; `null` if git is unavailable. |
+| `dev_git_commit` | str \| null | auto | Short SHA of HEAD in the checkout that tracks the dev package's source. `null` when the running package is not a working copy (an installed wheel), or git is unavailable — never the calling repository's commit. |
 | `input_paths` | dict | caller | Free-form. Suggested keys: `frozen_bundles`, `frozen_source_case`, `frozen_narrative_demographics`, `report_loader`. |
 | `pipeline_config` | dict | runner / caller | `PipelineConfig.model_dump()` — *effective* values, defaults included. |
 | `decision_thresholds` | dict | runner / caller | `DecisionThresholds.model_dump()` — *effective* values. |
