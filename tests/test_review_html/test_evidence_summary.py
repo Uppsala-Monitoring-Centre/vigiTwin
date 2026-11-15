@@ -225,7 +225,8 @@ class TestWorkedExamples:
             "evidence was identified. The matching score of 0 did not support "
             "rejection of independence, and the reports were classified as "
             "unrelated. Two minor adverse event inconsistencies were "
-            "identified, but no same-case decision was reached."
+            "identified, but not weighed against the same-case tolerance: "
+            "that comparison is only reached once independence is rejected."
         )
 
 
@@ -263,7 +264,7 @@ class TestThresholdsAreOnlyQuotedWhenKnown:
 class TestNoComparisonWasMade:
     """``penalty.threshold is None`` means no comparison, and must read so."""
 
-    def test_independent_pair_says_no_decision_was_reached(self):
+    def test_independent_pair_says_why_no_comparison_was_made(self):
         classification = _classification(
             independence_assessment=IndependenceAssessment.INDEPENDENT,
             relationship_assessment=None,
@@ -273,8 +274,10 @@ class TestNoComparisonWasMade:
         text = build_assessment_summary(
             _features(L_match=0.5), classification
         ).as_text()
-        assert "no same-case decision was reached" in text
+        assert "because independence was not rejected" in text
         assert "below the same-case threshold" not in text
+        # The old wording read as though the comparison ran and stalled.
+        assert "no same-case decision was reached" not in text
 
     def test_pinned_different_case_reports_no_penalty_comparison(self):
         """``SAME_SOURCE_DIFFERENT_CASE`` is pinned regardless of the penalty."""

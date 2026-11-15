@@ -432,6 +432,17 @@ class DiscrepancyVM(BaseModel):
     #: ``weight`` rendered, e.g. ``"+1.0"``; empty when it is unknown.
     weight_text: str = ""
 
+    @property
+    def row_css_class(self) -> str:
+        """Row tint: a retained finding is red, a superseded one is not.
+
+        The same two classes the drug and adverse-event tables use, so one
+        visual language covers the whole page. A superseded finding stays
+        untinted because it contributed nothing — tinting it red would say
+        the assessment weighed it.
+        """
+        return "row-mismatch" if self.retained else "row-neutral"
+
 
 class AssessmentRowVM(BaseModel):
     """One row of the vigiTwin assessment table."""
@@ -521,11 +532,34 @@ class EvidenceGapCode(str, Enum):
     SCORE_UNRECONCILED = "score_unreconciled"
 
 
+#: Gaps that explain *how* something shown was obtained, rather than what is
+#: missing. They are recorded like any other gap — a test can assert them, and
+#: a caller can read them off the case — but the page does not print them: a
+#: reader-facing "Limitations" list earns its space by naming what is absent,
+#: and a provenance note names something that is right there in the tables.
+_PROVENANCE_CODES = frozenset(
+    {
+        EvidenceGapCode.DRUG_SET_TERMS_RECOVERED,
+        EvidenceGapCode.CLINICAL_DATE_VALUE_RECOVERED,
+    }
+)
+
+
 class EvidenceGap(BaseModel):
     """One recorded gap, with the reader-facing sentence that explains it."""
 
     code: EvidenceGapCode
     message: str
+
+    @property
+    def is_provenance(self) -> bool:
+        """Whether this records how evidence was obtained, not what is absent.
+
+        The page's limitations list is filtered on this, so recovering a date
+        from a description stays in the record without costing the reader a
+        paragraph about something the tables already show.
+        """
+        return self.code in _PROVENANCE_CODES
 
 
 # ---------------------------------------------------------------------------

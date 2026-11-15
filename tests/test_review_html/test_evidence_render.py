@@ -381,8 +381,9 @@ class TestAbsentValueRendering:
         assert "Not reported" not in html
 
     def test_blanks_are_explained(self):
-        assert "A blank" in _html()
-        assert "means the information was not reported" in _html()
+        """The one glyph key the compact legend keeps: a blank is an absence."""
+        text = " ".join(_html().split())
+        assert "blank cells, which mean the information was not reported" in text
 
     def test_a_date_range_boundary_keeps_its_dash(self):
         """Inside "X to Y" the slot must hold something, or the phrase truncates."""
@@ -477,3 +478,99 @@ class TestFindingWeightsAreRendered:
         html = _html(features=self._features_with_finding())
         assert "Moderate" in html
         assert "Moderate (+" not in html
+
+
+class TestFindingRowsAreRed:
+    """Section 3 tints its rows with the same classes the tables above use."""
+
+    @staticmethod
+    def _features_with(*, suppressed: bool):
+        return _features(
+            matching_drugs=["topiramate"],
+            inconsistencies=[
+                Inconsistency(
+                    feature="patient_age",
+                    severity=InconsistencySeverity.MODERATE,
+                    difference=7.0,
+                    units="years",
+                    suppressed=suppressed,
+                    suppressed_by="llm_ae_clinical_picture" if suppressed else "",
+                )
+            ],
+            inconsistency_counts=InconsistencyCounts(moderate=1),
+        )
+
+    def test_a_retained_finding_row_is_red(self):
+        html = _html(features=self._features_with(suppressed=False))
+        assert '<tr class="row-mismatch">' in html
+
+    def test_a_superseded_finding_row_is_not(self):
+        """It contributed nothing; red would say the assessment weighed it."""
+        html = _html(features=self._features_with(suppressed=True))
+        assert '<tr class="row-mismatch">' not in html
+        assert '<tr class="row-neutral">' in html
+
+
+class TestTheLegendStaysCompact:
+    """Guards against the explanatory paragraphs creeping back in."""
+
+    def test_the_colour_key_is_still_there(self):
+        html = _html()
+        assert "Green: matching evidence or anchor pattern" in html
+        assert "Red: retained inconsistency" in html
+
+    def test_the_two_warnings_that_stop_a_misreading_are_kept(self):
+        text = " ".join(_html().split())
+        assert "not how severe it was" in text
+        assert "member of a shared pattern" in text
+
+    def test_the_table_prose_is_gone(self):
+        text = " ".join(_html().split())
+        assert "Rows are ordered by presence" not in text
+        assert "MedDRA preferred terms as each report coded them" not in text
+        assert "A dash inside a treatment period" not in text
+
+
+class TestLimitationsListsAbsencesOnly:
+    """A provenance note is recorded but not printed."""
+
+    @staticmethod
+    def _case_with_gaps(*gaps):
+        case = _case()
+        case.gaps.extend(gaps)
+        return case
+
+    def test_a_provenance_gap_is_recorded_but_not_printed(self):
+        from llm_dup_dev.review_html.evidence.models import (
+            EvidenceGap,
+            EvidenceGapCode,
+        )
+
+        gap = EvidenceGap(
+            code=EvidenceGapCode.CLINICAL_DATE_VALUE_RECOVERED,
+            message="Read from the contribution's own stored description.",
+        )
+        case = self._case_with_gaps(gap)
+        assert gap in case.gaps
+        assert gap.is_provenance
+        html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
+        assert "own stored description" not in html
+        # The fixture carries absence gaps of its own, so the section is
+        # still rendered; what must not appear is this gap's sentence.
+        assert "Limitations of this review" in html
+
+    def test_an_absence_gap_is_printed(self):
+        from llm_dup_dev.review_html.evidence.models import (
+            EvidenceGap,
+            EvidenceGapCode,
+        )
+
+        case = self._case_with_gaps(
+            EvidenceGap(
+                code=EvidenceGapCode.CLINICAL_DATE_VALUE_MISSING,
+                message="A date could not be attributed.",
+            )
+        )
+        html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
+        assert "Limitations of this review" in html
+        assert "A date could not be attributed." in html

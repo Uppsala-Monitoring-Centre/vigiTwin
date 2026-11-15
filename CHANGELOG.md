@@ -21,6 +21,77 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-11-15
+
+A compaction pass on the rendered page, from reading the first secure-side
+output end to end. No assessment logic, no colour rule and no stored evidence
+changed; the page says less about itself.
+
+### Changed — the page explains itself in three lines instead of three paragraphs
+
+The colour key, the drug table's ordering note and the adverse-event table's
+ordering note together ran to about 250 words on every case, repeated for every
+example in a collection. They are gone from the template. What survives is what
+a reader cannot get anywhere else:
+
+- the colour key itself;
+- the two warnings that stop a misreading — colour shows what the assessment
+  used rather than how severe it was, and a green drug or AE term is a member
+  of a shared pattern rather than a term with its own score;
+- the one glyph key that is not self-evident: a blank cell means the
+  information was not reported.
+
+The ordering rules, the treatment-period dash, the grey strengths and the
+mirrored one-sided AE groups are all still true and all still documented — in
+`docs/evidence_format.md`, which is where a reader who wants the rationale
+should be sent, rather than on every page of a supplement.
+
+### Changed — "Limitations" lists what is absent, not how evidence was obtained
+
+The two gaps added in 1.1.2 say a date or a substance was read out of the run's
+own description. That is provenance for something the tables *do* show, and it
+cost a reader two paragraphs about a value sitting in front of them. Both are
+now `is_provenance` gaps: still on `case.gaps`, still assertable in a test,
+still in the record — simply not printed. The limitations list keeps the gaps
+that name something missing.
+
+### Changed — retained inconsistency rows are tinted red
+
+Section 3's retained findings carry `row-mismatch`, the same row class the drug
+and adverse-event tables use, so one visual language covers the page. Superseded
+findings stay untinted: they contributed nothing, and a red row would say the
+assessment weighed them.
+
+### Changed — an `Unrelated` pair says why no same-case comparison was made
+
+"Two minor adverse event inconsistencies were identified, but no same-case
+decision was reached" reads as though the relationship assessment ran and
+stalled. It never ran: the question is only reached once independence is
+rejected. The sentence now says so, in both the prose summary and
+`same_case_clause`:
+
+> Two minor adverse event inconsistencies were identified, but not weighed
+> against the same-case tolerance: that comparison is only reached once
+> independence is rejected.
+
+and, with nothing recorded, "No inconsistencies were identified, and the
+relationship question was not reached, because independence was not rejected."
+The assessment table's *Same case* row already said this ("Not assessed: the
+relationship question is only reached once independence has been rejected");
+the prose now agrees with it.
+
+### Public surface
+
+Unchanged, which is why this is a patch and not a minor. The two new
+properties — `EvidenceGap.is_provenance` and `DiscrepancyVM.row_css_class` —
+sit on models that are **not** in `docs/integration_guide.md` § Public surface
+and not in `review_html.__all__`, so they are internal by this repo's own
+rule. Everything a consumer can observe here is rendered text, and a
+behaviour change that moves no schema and no listed name takes the patch.
+
+A collection's own `note` is unaffected — that text is the manifest author's,
+not the template's.
+
 ## [1.1.2] - 2026-11-15
 
 Refinements from the first secure-side run of the evidence format. Nothing in

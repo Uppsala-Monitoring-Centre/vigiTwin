@@ -51,9 +51,9 @@ would say something vigiTwin did not:
   selects the comparison population the rarity calculation runs against — and
   contributes no term of its own. (Structurally: `patient_country` has no
   entry in the domain-size map, so it can never yield a contribution.)
-- **A retained inconsistency stays red on an `Unrelated` pair**, where no
-  same-case decision was reached. The finding was still recorded; what did not
-  happen is the weighing of it.
+- **A retained inconsistency stays red on an `Unrelated` pair**, where the
+  relationship question was never reached. The finding was still recorded;
+  what did not happen is the weighing of it.
 - **Green on a drug or AE term is coarser than it looks.** The drug set
   contributes one figure, not one per substance, so green on a term means
   "member of a shared pattern that contributed", not "this term contributed
@@ -101,7 +101,12 @@ other than `true` or `false` is reported as a gap rather than coerced.
 Then four numbered sections:
 
 1. **Report comparison** — patient characteristics, drugs, adverse events,
-   narratives. The report values, coloured by the rule above.
+   narratives. The report values, coloured by the rule above. The page carries
+   a three-line legend: the colour key, the two warnings that stop a
+   misreading (colour is not severity, and a green term is a set member rather
+   than a scored term), and the one glyph key a reader cannot infer — a blank
+   cell is an absence of reported information. The ordering rules and the rest
+   of the rationale live in this document rather than on every page.
 2. **Context and matching evidence** — the reporting context, the anchor
    population, the shared drug and AE terms spelled out, the per-feature
    contributions in decades, and the reconciliation row (below). Each
@@ -113,6 +118,9 @@ Then four numbered sections:
    value.
 3. **Inconsistencies** — retained findings with their domain, severity and the
    element each names, then *Superseded findings* for the suppressed ones.
+   Retained rows are tinted red, with the same two row classes the drug and
+   adverse-event tables use; a superseded row is not, because it contributed
+   nothing and a red row would say the assessment weighed it.
    Severity carries the weight the run applied to it, as `Moderate (+1.0)`,
    and the retained weights are what sum to the inconsistency penalty. The
    weight comes from the stored `InconsistencyPenalty.terms`, which records
@@ -402,12 +410,19 @@ test-assertable record, never a silent omission. An evidence review that
 quietly drops what it could not compute is indistinguishable from one where
 there was nothing to show.
 
+Two of the codes below are **provenance** rather than absence: they say how a
+value that *is* shown was obtained. Those are recorded on the case and
+assertable in a test, but the page does not print them — a reader-facing
+"Limitations" list earns its space by naming what is missing, and a note about
+a date sitting in the table above it does not. `EvidenceGap.is_provenance`
+says which is which, and the template filters on it.
+
 | Code | Means |
 |---|---|
 | `drug_set_terms_missing` | A drug-set inconsistency carries no `terms`, and none could be read from its description either, so the offending substances cannot be highlighted individually. |
-| `drug_set_terms_recovered` | The substances were read from the finding's own stored description, because the run predates `terms`. The highlighting is the run's finding, not a recomputed comparison. |
+| `drug_set_terms_recovered` *(provenance)* | The substances were read from the finding's own stored description, because the run predates `terms`. The highlighting is the run's finding, not a recomputed comparison. |
 | `clinical_date_value_missing` | A clinical-date contribution carries no `matched_value`, and none could be read from its description either. |
-| `clinical_date_value_recovered` | The matched date was read from the contribution's own stored description, because the run predates `matched_value`. The date is highlighted wherever it appears; the run did not record which date *field* it came from, so a report carrying it twice shows both. |
+| `clinical_date_value_recovered` *(provenance)* | The matched date was read from the contribution's own stored description, because the run predates `matched_value`. The date is highlighted wherever it appears; the run did not record which date *field* it came from, so a report carrying it twice shows both. |
 | `screening_verdict_unreadable` | A screening entry's verdict key held something other than `true` or `false`, or a named `screening_verdict_key` was absent. The tile reads "Not evaluated". |
 | `unmapped_inconsistency` | An inconsistency whose `feature` this format does not know how to attach to a report element. It is still listed in section 3. |
 | `unknown_entity_label` | A clinical-date finding whose `entity_label` does not parse into one of the four known forms. |
@@ -424,7 +439,9 @@ the information, only of the field: the drug-set check wrote the offending
 substances into its own `description`, and each clinical-date contribution
 wrote its matched date into its own. Both are read from there, so an older run
 highlights its drugs and its dates like any other, and the recovery is
-footnoted as such (`drug_set_terms_recovered`, `clinical_date_value_recovered`).
+recorded as such (`drug_set_terms_recovered`,
+`clinical_date_value_recovered`). Those two are provenance gaps, so they stay
+on the case for a caller and a test without being printed on the page.
 
 Two things this deliberately does *not* do. It does not recompute the finding
 from the two reports — key drugs on one report absent from the other would be

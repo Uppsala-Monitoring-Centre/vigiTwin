@@ -91,15 +91,11 @@
   <p class="comparison-key">
     <span class="value-match">Green: matching evidence or anchor pattern</span>
     <span class="value-mismatch">Red: retained inconsistency</span>
-    Neutral: all other reported information, including agreements that were not
-    scored, differences vigiTwin did not record as inconsistencies, and missing
-    values. Red marks a retained inconsistency even where independence was not
-    rejected and no same-case decision was reached. Colours do not indicate
-    severity. A green drug or adverse event term is a member of a shared
-    pattern that contributed evidence, not a term with its own score. A blank
-    cell means the information was not reported; in the drug and adverse event
-    tables an empty column means that report did not list the entity at all,
-    as the presence column states.
+    Neutral: everything else — unscored agreements, differences not recorded
+    as inconsistencies, and blank cells, which mean the information was not
+    reported. Colour shows what the assessment used, not how severe it was,
+    and a green drug or adverse event term is a member of a shared pattern
+    rather than a term with its own score.
   </p>
 
   <table class="characteristics">
@@ -146,17 +142,6 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="note">
-    Rows are ordered by presence — both reports, then report A only, then
-    report B only — and within the one-sided groups by whether the drug was
-    reported in a key role. Repeated records of one substance are shown
-    separately, each with its own treatment period. A dash inside a treatment
-    period denotes an unreported boundary. Clinical dates are highlighted
-    where vigiTwin
-    scored them as matching evidence; roles are shown neutrally unless vigiTwin
-    recorded them as inconsistent, and strengths and formulations are shown in
-    grey because vigiTwin does not consider them.
-  </p>
   {% endif %}
 
   {% if case.adverse_events %}
@@ -179,13 +164,6 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="note">
-    MedDRA preferred terms as each report coded them, ordered by presence —
-    both reports, then report A only, then report B only. Within the
-    one-sided groups the retained inconsistencies sit at the outer edges, so
-    the terms vigiTwin did not treat as inconsistent form a single band in
-    the middle rather than appearing twice.
-  </p>
   {% set onset_rows = case.adverse_events | selectattr('has_onsets') | list %}
   {% if onset_rows %}
   <table class="onsets">
@@ -303,7 +281,7 @@
     </thead>
     <tbody>
       {% for d in case.retained_discrepancies %}
-      <tr>
+      <tr class="{{ d.row_css_class }}">
         <td>{{ d.feature_label }}</td>
         <td>{{ d.severity | capitalize }}{% if d.weight_text %} ({{ d.weight_text }}){% endif %}</td>
         <td>{{ d.text }}</td>
@@ -334,7 +312,7 @@
     </thead>
     <tbody>
       {% for d in case.suppressed_discrepancies %}
-      <tr>
+      <tr class="{{ d.row_css_class }}">
         <td>{{ d.feature_label }}</td>
         <td>{{ d.severity | capitalize }}{% if d.weight_text %} ({{ d.weight_text }}){% endif %}</td>
         <td>{{ d.text }}</td>
@@ -364,11 +342,18 @@
   </table>
   {% endif %}
 
-  {% if case.gaps %}
+{#
+  Only the gaps that name something *absent* are printed. A provenance gap —
+  a date or a substance read out of the run's own description — stays on
+  ``case.gaps`` for a caller and a test, but a reader does not need a
+  paragraph about how a value in the table above was obtained.
+#}
+  {% set absences = case.gaps | rejectattr('is_provenance') | list %}
+  {% if absences %}
   <div class="gaps">
     <strong>Limitations of this review</strong>
     <ul>
-      {% for gap in case.gaps %}<li>{{ gap.message }}</li>{% endfor %}
+      {% for gap in absences %}<li>{{ gap.message }}</li>{% endfor %}
     </ul>
   </div>
   {% endif %}

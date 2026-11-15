@@ -465,7 +465,10 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
             classification.independence_assessment
             is IndependenceAssessment.INDEPENDENT
         ):
-            return "no same-case decision was reached"
+            return (
+                "the relationship question was not reached, because "
+                "independence was not rejected"
+            )
         return (
             "the reports were assessed on source context alone, with no "
             "inconsistency-penalty comparison"
@@ -593,18 +596,23 @@ def build_assessment_summary(
         SummarySlot.DECISION,
         f"{independence}, and the reports were classified as {label}.",
     )
+    # Say *why* no same-case comparison happened. "No same-case decision was
+    # reached" reads as though the relationship assessment ran and stalled;
+    # what actually happened is that it was never reached, because the
+    # question only arises once independence is rejected.
     if phrases:
         add(
             SummarySlot.RELATIONSHIP,
             f"{_join(phrases).capitalize()} "
             + ("were" if _total_findings(features) != 1 else "was")
-            + " identified, but no same-case decision was reached.",
+            + " identified, but not weighed against the same-case tolerance: "
+            "that comparison is only reached once independence is rejected.",
         )
     else:
         add(
             SummarySlot.RELATIONSHIP,
-            "No inconsistencies were identified, and no same-case decision "
-            "was reached.",
+            "No inconsistencies were identified, and the relationship "
+            "question was not reached, because independence was not rejected.",
         )
     return AssessmentSummary(sentences=sentences, gaps=gaps)
 
