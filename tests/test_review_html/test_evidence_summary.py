@@ -239,22 +239,50 @@ class TestThresholdsAreOnlyQuotedWhenKnown:
         assert "exceeding" not in text
 
     def test_threshold_quoted_from_run_settings(self):
+        """The independence bound is lmatch_limited, whatever zone applied.
+
+        ``decision_logic`` rejects independence on ``L_match >
+        lmatch_limited`` and only then asks which zone the score sits in, so
+        quoting the zone's own bound told a compelling pair it had to clear
+        3.0 when it had to clear 1.0.
+        """
         settings = EvidenceRunSettings(
-            lmatch_compelling=3.0, epsilon=1e-15, source="run_manifest.yaml"
+            lmatch_compelling=3.0,
+            lmatch_limited=1.0,
+            epsilon=1e-15,
+            source="run_manifest.yaml",
         )
         text = build_assessment_summary(
             _features(), _classification(), run_settings=settings
         ).as_text()
-        assert "exceeding the compelling threshold of 3.0" in text
+        assert "exceeding the independence threshold of 1.0" in text
 
-    def test_custom_threshold_is_used_not_the_default(self):
-        """A run with its own thresholds is described with its own numbers."""
-        settings = EvidenceRunSettings(lmatch_compelling=2.5, epsilon=1e-12)
+    def test_the_zone_is_named_without_a_threshold_of_its_own(self):
+        """The zone selects the same-case tolerance, so it is still named."""
+        settings = EvidenceRunSettings(lmatch_compelling=3.0, lmatch_limited=1.0)
         text = build_assessment_summary(
             _features(), _classification(), run_settings=settings
         ).as_text()
-        assert "threshold of 2.5" in text
-        assert "3.0" not in text
+        assert "falling in the compelling range" in text
+        assert "compelling threshold" not in text
+
+    def test_the_zone_bound_alone_quotes_nothing(self):
+        """A run that recorded only the zone bound recorded no independence
+        threshold, and inventing one from it is the bug this replaced."""
+        settings = EvidenceRunSettings(lmatch_compelling=3.0)
+        text = build_assessment_summary(
+            _features(), _classification(), run_settings=settings
+        ).as_text()
+        assert "independence threshold of" not in text
+
+    def test_custom_threshold_is_used_not_the_default(self):
+        """A run with its own thresholds is described with its own numbers."""
+        settings = EvidenceRunSettings(lmatch_limited=0.5, epsilon=1e-12)
+        text = build_assessment_summary(
+            _features(), _classification(), run_settings=settings
+        ).as_text()
+        assert "threshold of 0.5" in text
+        assert "1.0" not in text
 
     def test_missing_settings_are_recorded_as_a_gap(self):
         summary = build_assessment_summary(_features(), _classification())

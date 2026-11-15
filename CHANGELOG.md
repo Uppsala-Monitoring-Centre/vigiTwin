@@ -21,6 +21,73 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-11-15
+
+A second pass over the rendered page, from reading a generated collection.
+No assessment logic and no colour rule changed; one quoted number was wrong
+and is now right.
+
+### Fixed — the summary quoted the wrong independence threshold
+
+A compelling pair was described as "supports non-independence, exceeding the
+compelling threshold of 3.0". Independence is not decided at 3.0.
+`decision_logic` rejects independence on `L_match > lmatch_limited` — 1.0 by
+default — and *only then* asks which zone the score sits in;
+`lmatch_compelling` and `lmatch_intermediate` are not independence
+thresholds at all, they select the **same-case** tolerance for a question
+that comes later. `EvidenceRunSettings.independence_threshold` returned the
+zone's own bound, so every compelling pair was told it had to clear a number
+it did not.
+
+It now returns `lmatch_limited` for every rarity reason, and the sentence
+reads "exceeding the independence threshold of 1.0 and falling in the
+compelling range" — the zone still named, because it is what sets the
+tolerance the next sentence quotes, but without a threshold number of its
+own. A run that recorded only `lmatch_compelling` now quotes no independence
+threshold rather than quoting that one.
+
+### Changed — the sections are named for the two questions
+
+Section 2 "Context and matching evidence" is now **Independence
+assessment**, and sections 3 and 4 are merged into **Relationship
+assessment**, holding the inconsistencies and then the decision table. The
+page now names the two questions vigiTwin is described as answering, instead
+of naming the material each section happens to contain.
+
+The reporting-context note moved with them: it explains the population the
+rarity is judged against, so it opens the independence section at body size
+rather than trailing section 1's comparison table as a footnote.
+
+### Changed — the score arithmetic is a total, not a paragraph
+
+The reconciliation paragraph is replaced by a **Total** row at the foot of
+the contributions table, with the anchor adjustment shown as its own row
+whenever it is non-zero so the column adds up to the figure beneath it. A
+pair with 17.2 decades of contributions now reads `Total +17.2` and nothing
+else.
+
+Specifically, the page no longer explains the ceiling or the floor. Neither
+moves a classification — every zone boundary sits far below the ceiling, and
+a score at the floor is an absence of matching evidence either way — so the
+explanation cost a reader more attention than it returned.
+`ReconciliationVM.ceiling_reached` and `.floor_reached` remain, because they
+are what distinguishes a bound from a genuine disagreement: a Total and a
+stored score that differ with no `epsilon` to explain it still raise
+`score_unreconciled` under *Limitations of this review*.
+`ReconciliationVM.note` is gone.
+
+### Changed — two more explanations off the page
+
+The legend keeps the colour key and the blank-cell key. The caveats that
+colour is not severity and that a green term is a set member, and the claim
+that nothing depends on hovering, are now in `docs/evidence_format.md`. The
+hovering claim in particular was addressed to a reader of a printed page,
+who cannot act on it; the property it described still holds and is still
+asserted in the renderer tests.
+
+The frequency table's note is reduced to "Counts include the two reports
+under review" — the one fact a reader cannot get from the table itself.
+
 ## [1.1.5] - 2026-11-15
 
 Examples in a collection are now labelled and placed. Nothing about the

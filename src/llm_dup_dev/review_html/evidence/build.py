@@ -1304,9 +1304,15 @@ def _build_reconciliation(
 ) -> ReconciliationVM:
     """Relate the listed contributions to the stored matching score.
 
-    The numbers do not simply add up, and a reader who tries to add them
-    deserves an explanation rather than the impression that the table
-    contradicts its own score. The stored score is
+    The page states the total the contributions and the anchor adjustment
+    come to, and leaves it at that: the bounds below move no classification,
+    and a paragraph of arithmetic on every case cost more attention than it
+    returned. What survives here is the part that is not presentational —
+    deciding whether a difference between that total and the stored score is
+    explained by a bound or is a genuine disagreement worth recording as a
+    gap.
+
+    The stored score is
 
         L_match = max(0, -log10(P_match + epsilon)),
         P_match  = 1 - (1 - p_joint) ** M,
@@ -1351,33 +1357,7 @@ def _build_reconciliation(
         and abs(additive - stored) > _RECONCILE_TOLERANCE
     )
 
-    if at_ceiling and ceiling is not None:
-        note = (
-            "The contributions imply more evidence than the score can express. "
-            f"The score is capped at {ceiling:.1f} by the numerical stabiliser "
-            "this run used, so it reads as that ceiling rather than the larger "
-            "total. The individual contributions are the evidence; the score is "
-            "a bounded summary of it."
-        )
-    elif at_floor:
-        note = (
-            f"The two figures come to {additive:+.1f}, and the score is held "
-            "at its lower bound of 0.0. The anchor population offers more "
-            "pairwise opportunities than the shared features are rare, so a "
-            "match like this one would not be surprising within it: the "
-            "chance-match probability reaches its maximum and the score, "
-            "which cannot fall below zero, reads as no evidence rather than "
-            "as negative evidence. A score of 0.0 here means the matching "
-            "evidence is absent, not that it was not computed."
-        )
-    elif unexplained and ceiling is None:
-        note = (
-            "The contributions and the stored score differ. The score is "
-            "computed from a multiplicity-adjusted probability and is capped by "
-            "a numerical stabiliser, so the two need not agree exactly; this "
-            "run's stabiliser was not recorded, so the cap cannot be stated "
-            "here."
-        )
+    if unexplained and ceiling is None:
         gaps.append(
             EvidenceGap(
                 code=EvidenceGapCode.SCORE_UNRECONCILED,
@@ -1388,17 +1368,6 @@ def _build_reconciliation(
                     "Supply the run manifest to resolve this."
                 ),
             )
-        )
-    elif unexplained:
-        note = (
-            "The contributions and the stored score differ slightly: the score "
-            "is computed from a multiplicity-adjusted probability rather than "
-            "by summing the rounded contributions shown here."
-        )
-    else:
-        note = (
-            "The contributions, the anchor adjustment and the score agree to "
-            "the precision shown."
         )
 
     return ReconciliationVM(
@@ -1419,7 +1388,6 @@ def _build_reconciliation(
         score_ceiling=ceiling,
         ceiling_reached=at_ceiling,
         floor_reached=at_floor,
-        note=note,
     )
 
 

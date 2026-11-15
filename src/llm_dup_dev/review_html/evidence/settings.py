@@ -116,20 +116,28 @@ class EvidenceRunSettings(BaseModel):
         return -math.log10(self.epsilon)
 
     def independence_threshold(self, reason: str | None) -> float | None:
-        """The boundary the given independence reason was decided against.
+        """The score a pair had to beat for independence to be rejected.
 
-        The reason names the zone; this maps it to that zone's lower bound, so
-        a summary can say "exceeding the compelling threshold of 3.0" without
-        assuming which zone applied. ``None`` for a reason that is not a rarity
-        zone — a shared source or an explicit link is not a score comparison —
-        and for any zone whose boundary this run did not record.
+        One boundary, ``lmatch_limited``, whatever zone the score landed in:
+        ``decision_logic`` rejects independence on ``L_match >
+        lmatch_limited`` and only then asks which zone applies. The zone
+        boundaries are not independence thresholds — they set the *same-case*
+        penalty tolerance, which is a different question asked later — so
+        quoting one here said a compelling pair had to clear 3.0 when it had
+        to clear 1.0.
+
+        ``None`` for a reason that is not a rarity zone, since a shared
+        source or an explicit link is not a score comparison at all, and when
+        this run did not record the boundary.
         """
-        return {
-            "rarity_compelling": self.lmatch_compelling,
-            "rarity_intermediate": self.lmatch_intermediate,
-            "rarity_limited": self.lmatch_limited,
-            "rarity_insufficient": self.lmatch_limited,
-        }.get(reason or "")
+        if (reason or "") not in {
+            "rarity_compelling",
+            "rarity_intermediate",
+            "rarity_limited",
+            "rarity_insufficient",
+        }:
+            return None
+        return self.lmatch_limited
 
 
 def _load_mapping(path: Path) -> dict:

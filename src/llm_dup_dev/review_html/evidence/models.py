@@ -396,8 +396,10 @@ class ReconciliationVM(BaseModel):
       towards one and the additive figure, which can go negative, stops
       describing anything.
 
-    Showing the numbers together with whichever bound applies is what stops a
-    reader concluding the table contradicts its own score.
+    The page shows ``additive_total`` as the contributions table's total and
+    says nothing about the bounds, which move no classification. The flags
+    remain because they decide whether a difference between that total and
+    the stored score is a bound or a disagreement worth a gap.
     """
 
     contributions_total: float
@@ -416,7 +418,6 @@ class ReconciliationVM(BaseModel):
     #: The score sits at its lower bound of zero while the additive figure is
     #: negative — the floor, the mirror of ``ceiling_reached``.
     floor_reached: bool = False
-    note: str = ""
 
 
 # ---------------------------------------------------------------------------

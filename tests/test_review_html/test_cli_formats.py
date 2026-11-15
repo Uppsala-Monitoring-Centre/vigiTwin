@@ -62,7 +62,10 @@ def artifacts(tmp_path, report_a, report_b, report_c):
         json.dumps(
             {
                 "pipeline_config": {"epsilon": 1e-15},
-                "decision_thresholds": {"lmatch_compelling": 3.0},
+                "decision_thresholds": {
+                    "lmatch_compelling": 3.0,
+                    "lmatch_limited": 1.0,
+                },
             }
         )
     )
@@ -112,7 +115,7 @@ class TestEvidenceFormat:
         main(_argv(artifacts, out, "--format", "evidence"))
         html = (out / "R001__R002.html").read_text(encoding="utf-8")
         assert "1. Report comparison" in html
-        assert "4. vigiTwin assessment" in html
+        assert "3. Relationship assessment" in html
         assert "@page" in html
 
     def test_set_label_names_the_reference_tile(self, artifacts, tmp_path):
@@ -138,7 +141,7 @@ class TestEvidenceFormat:
             )
         )
         html = (out / "R001__R002.html").read_text(encoding="utf-8")
-        assert "threshold of 3.0" in html
+        assert "independence threshold of 1.0" in html
 
     def test_an_unrecorded_reason_quotes_no_threshold(
         self, artifacts, tmp_path
@@ -173,7 +176,7 @@ class TestEvidenceFormat:
         out = tmp_path / "out"
         main(_argv(artifacts, out, "--format", "evidence"))
         html = (out / "R001__R002.html").read_text(encoding="utf-8")
-        assert "exceeding the compelling threshold" not in html
+        assert "exceeding the independence threshold" not in html
         assert "were not recorded" in html
 
 

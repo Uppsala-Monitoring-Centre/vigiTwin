@@ -434,13 +434,18 @@ def independence_clause(
 
     clause = f"The matching score of {score} supports non-independence"
     if threshold is not None:
+        # The zone is named without a number of its own. It is not what
+        # independence required — it selects the same-case tolerance, which
+        # the next sentence states — and attaching the zone's boundary here
+        # said this pair had to clear 3.0 when it had to clear 1.0.
         zone = _ZONE_NAME.get(reason) if reason else None
-        named = f" the {zone}" if zone else " the"
         decimals = _separating_decimals(features.L_match, threshold)
         clause += (
-            f", exceeding{named} threshold of "
+            f", exceeding the independence threshold of "
             f"{_penalty(threshold, decimals)}"
         )
+        if zone:
+            clause += f" and falling in the {zone} range"
     elif reason is None:
         clause = "vigiTwin assessed the reports as non-independent"
     return clause

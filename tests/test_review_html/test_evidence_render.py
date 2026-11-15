@@ -100,19 +100,31 @@ class TestEvidenceColouring:
 class TestSections:
     """The document carries the sections the format promises."""
 
-    def test_four_numbered_sections(self):
-        """Inconsistencies are their own section, before the assessment.
+    def test_the_sections_name_the_two_questions(self):
+        """Three sections: the evidence, then each question in order.
 
-        They feed the same-case decision, so a reader following the reasoning
-        meets the findings before the conclusion drawn from them.
+        The headings match how vigiTwin is described elsewhere — an
+        independence assessment, then a relationship assessment — rather than
+        naming the material each section happens to contain.
         """
         html = _html()
         assert "1. Report comparison" in html
-        assert "2. Context and matching evidence" in html
-        assert "3. Inconsistencies" in html
-        assert "4. vigiTwin assessment" in html
-        assert html.index("3. Inconsistencies") < html.index(
-            "4. vigiTwin assessment"
+        assert "2. Independence assessment" in html
+        assert "3. Relationship assessment" in html
+        assert html.index("2. Independence assessment") < html.index(
+            "3. Relationship assessment"
+        )
+
+    def test_the_findings_come_before_the_verdict(self):
+        """Within the relationship section, evidence then conclusion.
+
+        Matched on the headings themselves: "vigiTwin assessment summary" is
+        the narrative callout at the top of the case and would otherwise be
+        what a bare substring search finds.
+        """
+        html = _html()
+        assert html.index("<h4>Inconsistencies</h4>") < html.index(
+            "<h4>vigiTwin assessment</h4>"
         )
 
     def test_four_outcome_tiles(self):
@@ -144,7 +156,7 @@ class TestSections:
         assert "Shared drug set" in html
         assert "Shared AE set" in html
         assert "Both sets" in html
-        assert "co-occurrence of the whole set" in html
+        assert "Counts include the two reports under review" in html
 
     def test_uses_vigitwin_not_generic_terms(self):
         html = _html()
@@ -519,10 +531,16 @@ class TestTheLegendStaysCompact:
         assert "Green: matching evidence or anchor pattern" in html
         assert "Red: retained inconsistency" in html
 
-    def test_the_two_warnings_that_stop_a_misreading_are_kept(self):
+    def test_the_blank_cell_key_is_kept(self):
+        """The one glyph a reader cannot infer from the colours."""
         text = " ".join(_html().split())
-        assert "not how severe it was" in text
-        assert "member of a shared pattern" in text
+        assert "blank cells, which mean the information was not reported" in text
+
+    def test_the_colour_caveats_are_gone(self):
+        """Documented in docs/evidence_format.md, not on every case."""
+        text = " ".join(_html().split())
+        assert "not how severe it was" not in text
+        assert "member of a shared pattern" not in text
 
     def test_the_table_prose_is_gone(self):
         text = " ".join(_html().split())
@@ -638,9 +656,13 @@ class TestTheInconsistencyNoteFollowsTheDecision:
 
 
 class TestTooltipsAreNotLoadBearing:
-    def test_the_legend_says_so(self):
-        text = " ".join(_html().split())
-        assert "nothing on this page depends on hovering" in text
+    """Still true, and still tested — the page just no longer says it.
+
+    Every tooltip repeats evidence the tables name, so a printed copy loses
+    nothing. The claim was removed from the legend because a reader of a
+    printed page cannot act on it; the property it described has to hold
+    regardless, which is what these assert.
+    """
 
     def test_no_print_rule_hides_content(self):
         """A print stylesheet that hides a section would defeat the claim."""

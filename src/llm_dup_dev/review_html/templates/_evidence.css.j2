@@ -36,6 +36,14 @@ h4{font-size:14px;margin:18px 0 6px;color:var(--accent)}
 */
 .example-label{color:var(--accent)}
 .position{font-weight:normal;letter-spacing:0.5px;color:var(--muted)}
+/*
+  The reporting context opens the independence section and is read, not
+  skimmed past: body size rather than the muted note size it had while it sat
+  under the comparison table.
+*/
+.context{max-width:760px}
+/* The contributions table's total: ruled off, so it reads as a sum. */
+table tfoot td{border-top:2px solid var(--line);font-weight:bold}
 .intro{color:var(--muted);max-width:760px}
 .case{margin-top:32px;border-top:3px solid var(--accent);padding-top:18px}
 .lede{font-size:16px;margin:8px 0 15px}

@@ -1,12 +1,16 @@
-"""Tests for how the page reconciles its contributions with the stored score.
+"""Tests for how the contributions table relates to the stored score.
 
 The two figures a reader adds up — the contributions total ``-log10(p_joint)``
-and the anchor adjustment ``-log10(M)`` — come to ``-log10(p_joint x M)``, while
-the stored score is ``max(0, -log10(P_match + epsilon))`` with
+and the anchor adjustment ``-log10(M)`` — come to ``-log10(p_joint x M)``,
+while the stored score is ``max(0, -log10(P_match + epsilon))`` with
 ``P_match = 1 - (1 - p_joint) ** M``. The sum therefore tracks the score only
-while ``p_joint x M`` is small, and the score is bounded at both ends. These
-tests pin that the page names whichever bound applies instead of claiming
-agreement.
+while ``p_joint x M`` is small, and the score is bounded at both ends.
+
+The page states the sum as the table's total and says nothing about the
+bounds: neither moves a classification, and a paragraph of arithmetic on
+every case cost more attention than it returned. What is still tested is that
+the total is right, that the column adds up to it, and that a difference no
+bound explains is recorded as a gap rather than passed over.
 """
 
 from __future__ import annotations
@@ -19,7 +23,9 @@ from llm_dup_dev.models.pair_features import (
     FeatureContribution,
     ProbabilityEstimate,
 )
+from llm_dup_dev.review_html.evidence.models import EvidencePageVM
 from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
+from llm_dup_dev.review_html.render import render_evidence_page
 
 from tests.test_review_html.test_evidence_build import _case, _features, _report
 
@@ -55,95 +61,106 @@ def _with(*, decades: float | None, n_anchor: int, stored: float):
 
 
 def _reconciliation(features, settings: EvidenceRunSettings | None = None):
-    case = _case(
-        _report("R1"), _report("R2"), features, run_settings=settings
-    )
+    case = _case(_report("R1"), _report("R2"), features, run_settings=settings)
     assert case.reconciliation is not None
     return case.reconciliation, case
+
+
+def _codes(case) -> list[str]:
+    return [g.code.value for g in case.gaps]
+
+
+def _html(case) -> str:
+    return " ".join(render_evidence_page(EvidencePageVM(title="t", cases=[case])).split())
 
 
 _EPSILON = EvidenceRunSettings(epsilon=1e-15)
 
 
-class TestTheNumbersAgree:
+class TestTheTotal:
     def test_an_anchor_of_two_adds_up_exactly(self):
-        """M = 1, so the adjustment is zero and the sum is the score."""
+        """M = 1, so the adjustment is zero and the total is the score."""
         r, case = _reconciliation(_with(decades=9.0, n_anchor=2, stored=9.0))
         assert r.anchor_adjustment == 0
         assert r.additive_total == 9.0
-        assert not r.ceiling_reached
-        assert not r.floor_reached
-        assert "agree to the precision shown" in r.note
-        assert "score_unreconciled" not in [g.code.value for g in case.gaps]
+        assert r.additive_total_text == "+9.0"
+        assert "score_unreconciled" not in _codes(case)
+
+    def test_the_adjustment_is_part_of_the_total(self):
+        # 11 reports -> M = C(11,2) = 55 -> adjustment -log10(55).
+        r, _ = _reconciliation(_with(decades=9.0, n_anchor=11, stored=7.3))
+        assert r.anchor_adjustment == -math.log10(55)
+        assert r.additive_total == 9.0 - math.log10(55)
+        assert r.additive_total_text == "+7.3"
+
+    def test_the_total_is_rendered_under_the_column(self):
+        _, case = _reconciliation(_with(decades=9.0, n_anchor=2, stored=9.0))
+        html = _html(case)
+        assert "<tfoot>" in html
+        assert "<td>Total</td><td>+9.0</td>" in html
+
+    def test_the_adjustment_is_its_own_row_when_it_moves_the_total(self):
+        """So the column the reader adds up reaches the figure beneath it."""
+        _, case = _reconciliation(_with(decades=9.0, n_anchor=11, stored=7.3))
+        html = _html(case)
+        assert "<td>Anchor population adjustment</td><td>-1.7</td>" in html
+
+    def test_no_adjustment_row_when_the_anchor_is_two(self):
+        _, case = _reconciliation(_with(decades=9.0, n_anchor=2, stored=9.0))
+        assert "Anchor population adjustment" not in _html(case)
 
 
-class TestTheUpperBound:
-    def test_the_ceiling_is_named_when_epsilon_is_known(self):
-        r, _ = _reconciliation(
+class TestTheProseIsGone:
+    """The bounds moved no classification, so the page stopped explaining them."""
+
+    def test_the_ceiling_is_not_described(self):
+        _, case = _reconciliation(
+            _with(decades=17.2, n_anchor=2, stored=15.0), _EPSILON
+        )
+        html = _html(case)
+        assert "capped at" not in html
+        assert "numerical stabiliser" not in html
+        assert "<td>Total</td><td>+17.2</td>" in html
+
+    def test_the_floor_is_not_described(self):
+        _, case = _reconciliation(
+            _with(decades=None, n_anchor=11, stored=0.0), _EPSILON
+        )
+        html = _html(case)
+        assert "lower bound" not in html
+        assert "agree to the precision shown" not in html
+
+    def test_the_stored_score_is_not_restated_here(self):
+        """It is in the assessment table; the contributions table totals itself."""
+        _, case = _reconciliation(
+            _with(decades=17.2, n_anchor=2, stored=15.0), _EPSILON
+        )
+        assert "stored matching score" not in _html(case)
+
+
+class TestTheBoundsStillDecideTheGap:
+    """The flags survive because they separate a bound from a disagreement."""
+
+    def test_the_ceiling_explains_the_difference(self):
+        r, case = _reconciliation(
             _with(decades=17.2, n_anchor=2, stored=15.0), _EPSILON
         )
         assert r.ceiling_reached
-        assert not r.floor_reached
-        assert "capped at 15.0" in r.note
+        assert "score_unreconciled" not in _codes(case)
 
-    def test_without_epsilon_the_cap_is_not_asserted(self):
+    def test_without_epsilon_the_cap_cannot_be_assumed(self):
         r, case = _reconciliation(_with(decades=17.2, n_anchor=2, stored=15.0))
         assert not r.ceiling_reached
-        assert "score_unreconciled" in [g.code.value for g in case.gaps]
+        assert "score_unreconciled" in _codes(case)
 
-
-class TestTheLowerBound:
-    """The case the page used to claim agreement on: contributions 0, score 0."""
-
-    @staticmethod
-    def _floor_features():
-        # 11 reports -> M = C(11,2) = 55, so the adjustment is -log10(55).
-        # With no contributions p_joint is 1, P_match saturates at 1 and the
-        # score is max(0, -log10(1 + eps)) = 0.
-        return _with(decades=None, n_anchor=11, stored=0.0)
-
-    def test_the_floor_is_reported_not_agreement(self):
-        r, _ = _reconciliation(self._floor_features(), _EPSILON)
+    def test_the_floor_explains_the_difference(self):
+        r, case = _reconciliation(_with(decades=None, n_anchor=11, stored=0.0))
         assert r.floor_reached
-        assert not r.ceiling_reached
-        assert "agree to the precision shown" not in r.note
-        assert "lower bound of 0.0" in r.note
-
-    def test_the_additive_figure_is_stated(self):
-        """A reader who adds 0.0 and -1.7 must see that figure named."""
-        r, _ = _reconciliation(self._floor_features(), _EPSILON)
-        assert r.additive_total == -math.log10(55)
         assert r.additive_total_text == "-1.7"
-        assert "come to -1.7" in r.note
+        assert "score_unreconciled" not in _codes(case)
 
-    def test_the_floor_needs_no_run_settings(self):
-        """Unlike the ceiling, zero is not a function of epsilon."""
-        r, case = _reconciliation(self._floor_features())
-        assert r.floor_reached
-        assert "lower bound of 0.0" in r.note
-        assert "score_unreconciled" not in [g.code.value for g in case.gaps]
-
-    def test_the_note_says_what_a_zero_score_means(self):
-        r, _ = _reconciliation(self._floor_features(), _EPSILON)
-        assert "matching evidence is absent" in r.note
-
-    def test_a_negative_sum_with_a_real_score_is_not_the_floor(self):
-        """Only a score *at* zero is explained by the floor."""
+    def test_a_negative_total_with_a_real_score_is_not_the_floor(self):
+        """Only a score *at* zero is explained by the lower bound."""
         r, case = _reconciliation(_with(decades=None, n_anchor=11, stored=5.0))
         assert not r.floor_reached
-        assert "lower bound" not in r.note
-        assert "score_unreconciled" in [g.code.value for g in case.gaps]
-
-
-class TestTheScaleIsShown:
-    """Both bounds, so the reader can place the score on a known range."""
-
-    def test_the_range_is_rendered_when_epsilon_is_known(self):
-        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
-        from llm_dup_dev.review_html.render import render_evidence_page
-
-        _, case = _reconciliation(
-            _with(decades=9.0, n_anchor=2, stored=9.0), _EPSILON
-        )
-        html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
-        assert "scale 0.0–15.0" in " ".join(html.split())
+        assert "score_unreconciled" in _codes(case)

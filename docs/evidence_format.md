@@ -98,26 +98,34 @@ entry merely existing: an export may carry a row per pair *considered*, in
 which case a present entry can mean "not flagged". A key holding something
 other than `true` or `false` is reported as a gap rather than coerced.
 
-Then four numbered sections:
+Then three numbered sections, named for the two questions vigiTwin answers
+rather than for the material each happens to hold:
 
 1. **Report comparison** — patient characteristics, drugs, adverse events,
    narratives. The report values, coloured by the rule above. The page carries
-   a three-line legend: the colour key, the two warnings that stop a
-   misreading (colour is not severity, and a green term is a set member rather
-   than a scored term), and the one glyph key a reader cannot infer — a blank
-   cell is an absence of reported information. The ordering rules and the rest
-   of the rationale live in this document rather than on every page.
-2. **Context and matching evidence** — the reporting context, the anchor
-   population, the shared drug and AE terms spelled out, the per-feature
-   contributions in decades, and the reconciliation row (below). Each
+   a two-line legend: the colour key, and the one glyph key a reader cannot
+   infer — a blank cell is an absence of reported information. The caveats
+   that colour is not severity and that a green term is a set member rather
+   than a scored term are stated here, in this document, and not on every page
+   of a supplement; so are the ordering rules and the rest of the rationale.
+   Nothing on a page depends on hovering: every tooltip repeats evidence one
+   of the tables also names, and no print rule hides content, so a printed
+   copy loses nothing. That is a property the renderer tests hold to, rather
+   than a claim the page makes about itself.
+2. **Independence assessment** — the reporting context, which opens the
+   section because it states the population the rarity is judged against; the
+   anchor population; the shared drug and AE terms spelled out; and the
+   per-feature contributions in decades, totalled (below). Each
    contribution row names the value that earned it, not the kind of value: the
    matched date rather than "Clinical date", `Sex (male)` rather than "Sex",
    and the set members rather than "shared drug set". Where the two reports
    hold different values for a feature the run still scored as matched — an
    age within tolerance — both are shown, because neither is "the" matched
    value.
-3. **Inconsistencies** — retained findings with their domain, severity and the
-   element each names, then *Superseded findings* for the suppressed ones.
+3. **Relationship assessment** — the inconsistencies, then the verdict. The
+   retained findings with their domain, severity and the element each names,
+   then *Superseded findings* for the suppressed ones, then the two-stage
+   decision table and the prose account.
    Retained rows are tinted red, with the same two row classes the drug and
    adverse-event tables use; a superseded row is not, because it contributed
    nothing and a red row would say the assessment weighed it.
@@ -134,7 +142,6 @@ Then four numbered sections:
    what the run actually used, so a run with custom weights is described with
    its own numbers and a run that saved no classification shows severity
    alone rather than a default that may not have applied.
-4. **vigiTwin assessment** — the two-stage decision, and the prose account.
 
 ### Row ordering
 
@@ -227,43 +234,41 @@ run that file usually holds edited text.
 
 ## Run settings, and why the contributions do not sum to the score
 
-The per-feature contributions in section 2 do not always sum to the stored
-matching score, and a supplement whose own table visibly fails to add up is
-worse than one that explains itself. What the page shows is
+The contributions table in section 2 ends in a **Total**: the per-feature
+decades plus the anchor adjustment, which is shown as a row of its own
+whenever it is non-zero so the column adds up to the figure beneath it.
 
     contributions total = -log10(p_joint)      (the per-feature decades)
     anchor adjustment   = -log10(M),  M = C(N_anchor, 2)
+    Total               = -log10(p_joint x M)
 
-so the two figures add to `-log10(p_joint x M)`. What the pipeline stores is
+That total is **not** the stored matching score, which is
 
     P_match = 1 - (1 - p_joint) ** M
     L_match = max(0, -log10(P_match + epsilon))
 
-Those agree only while `p_joint x M` is small, which is the ordinary case and
-the reason the additive presentation is worth keeping. The score is **bounded
-at both ends**, and the page names whichever bound applies:
+The two agree while `p_joint x M` is small, which is the ordinary case. They
+part company at the score's two bounds — the ceiling at `-log10(epsilon)`
+(15.0 at the default 1e-15) and the floor at zero, reached as `p_joint x M`
+approaches one and a chance match stops being unlikely at all.
 
-1. **The ceiling.** `+ epsilon` means no run can emit a score above
-   `-log10(epsilon)` — 15.0 at the default 1e-15. A pair with 17.2 decades of
-   contributions reports 15.0, and the page says the score is capped rather
-   than letting the table look wrong. Nameable only when a run manifest
-   supplies `epsilon`.
-2. **The floor.** `max(0, ...)` means no score falls below zero. This is where
-   the additive figure goes *negative*: as `p_joint x M` approaches one, a
-   chance match stops being unlikely, `P_match` saturates towards one, and
-   `-log10` of it approaches zero from above. A pair with no shared features at
-   all in an anchor of 11 reports shows contributions `+0.0`, adjustment
-   `-1.7` and a stored score of `0.0` — and the page says the score is held at
-   its lower bound, and that `0.0` means the matching evidence is *absent*
-   rather than not computed. Unlike the ceiling this needs no run settings:
-   zero is not a function of epsilon.
+**The page does not explain either bound.** It did until 1.1.6, in a
+paragraph on every case. Neither bound moves a classification: the zone
+boundaries that decide independence and the same-case tolerance all sit far
+below the ceiling, and a score at the floor is an absence of matching
+evidence either way. The explanation cost a reader more attention than it
+returned, so what survives is the Total — the figure a reader would reach by
+adding the column — with the stored score stated once, in the assessment
+table, where it is the thing being decided on.
 
-Every evidence page therefore carries a **reconciliation row**: contributions
-total, anchor adjustment, stored score, and — when `epsilon` is known — the
-scale the score sits on, `0.0–15.0`. Showing both ends of that scale is what
-turns an apparent arithmetic failure into a stated property of the
-computation. `ReconciliationVM.ceiling_reached` and `.floor_reached` record
-which bound was invoked, and `.additive_total` is the figure a reader adds up.
+The distinction still matters internally. `ReconciliationVM.ceiling_reached`
+and `.floor_reached` record which bound was invoked, and they are what
+separates a bound from a genuine disagreement: where the Total and the stored
+score differ and *no* bound explains it — because the run recorded no
+`epsilon` to establish the ceiling — the case carries a `score_unreconciled`
+gap, printed under *Limitations of this review*. That is the one case where
+the page still says something about the arithmetic, and it says it as a
+limitation rather than as a reassurance.
 
 `epsilon` and the `L_match` zone boundaries are **not** in a saved run's
 features file. They live on `PipelineConfig` and `DecisionThresholds`, and are

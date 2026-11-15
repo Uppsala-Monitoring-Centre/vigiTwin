@@ -106,11 +106,7 @@
     <span class="value-mismatch">Red: retained inconsistency</span>
     Neutral: everything else — unscored agreements, differences not recorded
     as inconsistencies, and blank cells, which mean the information was not
-    reported. Colour shows what the assessment used, not how severe it was,
-    and a green drug or adverse event term is a member of a shared pattern
-    rather than a term with its own score. A coloured value's tooltip only
-    repeats evidence that the tables below also name, so nothing on this page
-    depends on hovering and a printed copy loses nothing.
+    reported.
   </p>
 
   <table class="characteristics">
@@ -135,7 +131,6 @@
       {% endfor %}
     </tbody>
   </table>
-  {% if case.context_note %}<p class="note">{{ case.context_note }}</p>{% endif %}
 
   {% if case.drugs %}
   <h4>Drugs</h4>
@@ -206,7 +201,8 @@
   {% endif %}
   {% endif %}
 
-  <h3>2. Context and matching evidence</h3>
+  <h3>2. Independence assessment</h3>
+  {% if case.context_note %}<p class="context">{{ case.context_note }}</p>{% endif %}
   {% if case.anchor_note %}<p>{{ case.anchor_note }}</p>{% endif %}
 
   {% if case.shared_sets %}
@@ -239,11 +235,7 @@
       {% endfor %}
     </tbody>
   </table>
-  <p class="note">
-    Counts are the number of reports containing <em>every</em> term in the
-    respective set — the co-occurrence of the whole set, not the frequencies of
-    the individual terms — and include the two reports under review.
-  </p>
+  <p class="note">Counts include the two reports under review.</p>
   {% endif %}
 
   {% if case.matching_features %}
@@ -258,20 +250,22 @@
       {% for row in case.matching_features %}
       <tr><td>{{ cell(row.label) }}</td><td>{{ row.contribution_text }}</td></tr>
       {% endfor %}
+      {#
+        The anchor adjustment is shown as a row of its own whenever it moves
+        the total, so the column still adds up to the figure beneath it.
+      #}
+      {% if case.reconciliation and case.reconciliation.anchor_adjustment %}
+      <tr><td>Anchor population adjustment</td><td>{{ case.reconciliation.anchor_adjustment_text }}</td></tr>
+      {% endif %}
     </tbody>
+    {% if case.reconciliation %}
+    <tfoot>
+      <tr><td>Total</td><td>{{ case.reconciliation.additive_total_text }}</td></tr>
+    </tfoot>
+    {% endif %}
   </table>
   {% else %}
   <p>No additional matching features contributed to the score.</p>
-  {% endif %}
-
-  {% if case.reconciliation %}
-  {% set r = case.reconciliation %}
-  <p class="reconciliation">
-    Contributions total {{ r.contributions_total_text }}; anchor adjustment
-    {{ r.anchor_adjustment_text }}; stored matching score
-    {{ r.stored_score_text }}{% if r.score_ceiling is not none %} (scale
-    0.0–{{ '%.1f' | format(r.score_ceiling) }}){% endif %}. {{ r.note }}
-  </p>
   {% endif %}
 
   {% if case.explicit_link_note %}<p class="note">{{ case.explicit_link_note }}</p>{% endif %}
@@ -279,12 +273,13 @@
   {% if case.narrative_note %}<p class="note">{{ case.narrative_note }}</p>{% endif %}
 
 {#
-  Inconsistencies get their own section, ahead of the assessment. They are an
-  input to the same-case decision, not a report of it, and a reader following
-  the reasoning needs to see what was found before reading what was concluded
-  from it.
+  The relationship question in one section: what was found, then what was
+  concluded from it. The inconsistencies come first because they are an input
+  to the same-case decision and not a report of it, and a reader following the
+  reasoning needs to see the findings before the verdict.
 #}
-  <h3>3. Inconsistencies</h3>
+  <h3>3. Relationship assessment</h3>
+  <h4>Inconsistencies</h4>
   {% if case.retained_discrepancies %}
   <table class="findings">
     <thead>
@@ -355,7 +350,7 @@
   </p>
   {% endif %}
 
-  <h3>4. vigiTwin assessment</h3>
+  <h4>vigiTwin assessment</h4>
   {% if case.assessment_rows %}
   <table class="decision">
     <thead>
