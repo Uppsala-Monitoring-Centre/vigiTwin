@@ -89,15 +89,36 @@ outcome, the vigiTwin classification, and the SCLE state. These are four
 separate verdicts and the page keeps them separate; none is ever inferred from
 another.
 
+The screening tile has three states, and the third is not the second. It reads
+**Flagged** or **Not flagged** only when the pair's screening entry carries an
+explicit boolean verdict, and **Not evaluated** otherwise. The verdict is read
+from a named key — `IsSuspectedDuplicate`, `screening_retrieved`, `retrieved`
+or `flagged`, or whatever `screening_verdict_key` names — and never from an
+entry merely existing: an export may carry a row per pair *considered*, in
+which case a present entry can mean "not flagged". A key holding something
+other than `true` or `false` is reported as a gap rather than coerced.
+
 Then four numbered sections:
 
 1. **Report comparison** — patient characteristics, drugs, adverse events,
    narratives. The report values, coloured by the rule above.
 2. **Context and matching evidence** — the reporting context, the anchor
    population, the shared drug and AE terms spelled out, the per-feature
-   contributions in decades, and the reconciliation row (below).
+   contributions in decades, and the reconciliation row (below). Each
+   contribution row names the value that earned it, not the kind of value: the
+   matched date rather than "Clinical date", `Sex (male)` rather than "Sex",
+   and the set members rather than "shared drug set". Where the two reports
+   hold different values for a feature the run still scored as matched — an
+   age within tolerance — both are shown, because neither is "the" matched
+   value.
 3. **Inconsistencies** — retained findings with their domain, severity and the
    element each names, then *Superseded findings* for the suppressed ones.
+   Severity carries the weight the run applied to it, as `Moderate (+1.0)`,
+   and the retained weights are what sum to the inconsistency penalty. The
+   weight comes from the stored `InconsistencyPenalty.terms`, which records
+   what the run actually used, so a run with custom weights is described with
+   its own numbers and a run that saved no classification shows severity
+   alone rather than a default that may not have applied.
 4. **vigiTwin assessment** — the two-stage decision, and the prose account.
 
 ### Row ordering
@@ -325,8 +346,8 @@ example from this set), `reports` and `pairs` (required), then either
 `pair_results` **or** both `features` and `classifications` — the same
 precedence `load_saved_run` applies, stated once in the manifest instead of
 discovered at load time. Optional: `pair_frequencies`, `screening`,
-`annotations`, `narrative_demographics`, `run_manifest`,
-`allow_noncanonical_pairs`.
+`screening_verdict_key`, `annotations`, `narrative_demographics`,
+`run_manifest`, `allow_noncanonical_pairs`.
 
 **Example:** `dataset` and `pair_id` (required), `example_id` (also the output
 filename), `title`, `lede`, `kicker`, `scle_assessment`, `case_interpretation`,
@@ -383,8 +404,11 @@ there was nothing to show.
 
 | Code | Means |
 |---|---|
-| `drug_set_terms_missing` | A drug-set inconsistency carries no `terms`, so the offending substances cannot be highlighted individually. Written by releases before 1.1.0. |
-| `clinical_date_value_missing` | A clinical-date contribution carries no `matched_value`, so the matched date cannot be attributed to a specific field. Likewise pre-1.1.0. |
+| `drug_set_terms_missing` | A drug-set inconsistency carries no `terms`, and none could be read from its description either, so the offending substances cannot be highlighted individually. |
+| `drug_set_terms_recovered` | The substances were read from the finding's own stored description, because the run predates `terms`. The highlighting is the run's finding, not a recomputed comparison. |
+| `clinical_date_value_missing` | A clinical-date contribution carries no `matched_value`, and none could be read from its description either. |
+| `clinical_date_value_recovered` | The matched date was read from the contribution's own stored description, because the run predates `matched_value`. The date is highlighted wherever it appears; the run did not record which date *field* it came from, so a report carrying it twice shows both. |
+| `screening_verdict_unreadable` | A screening entry's verdict key held something other than `true` or `false`, or a named `screening_verdict_key` was absent. The tile reads "Not evaluated". |
 | `unmapped_inconsistency` | An inconsistency whose `feature` this format does not know how to attach to a report element. It is still listed in section 3. |
 | `unknown_entity_label` | A clinical-date finding whose `entity_label` does not parse into one of the four known forms. |
 | `run_settings_missing` | No run manifest was supplied, so thresholds and the score ceiling are not quoted. |
@@ -392,8 +416,28 @@ there was nothing to show.
 | `no_features` / `no_classification` | The pair's assessment was not saved. It renders as a report comparison with everything neutral — not with colours invented from a comparison this format does not perform. |
 | `score_unreconciled` | Contributions and stored score disagree by more than the tolerance, with no epsilon available to explain it. |
 
-Older features files load and render with the first two gaps as page
-footnotes. Both are absences of recorded detail, not errors.
+### Runs saved before the structured fields
+
+`Inconsistency.terms` / `.kind` and `FeatureContribution.matched_value` were
+added after runs had already been saved. A run without them is not short of
+the information, only of the field: the drug-set check wrote the offending
+substances into its own `description`, and each clinical-date contribution
+wrote its matched date into its own. Both are read from there, so an older run
+highlights its drugs and its dates like any other, and the recovery is
+footnoted as such (`drug_set_terms_recovered`, `clinical_date_value_recovered`).
+
+Two things this deliberately does *not* do. It does not recompute the finding
+from the two reports — key drugs on one report absent from the other would be
+a comparison performed by the renderer, which the colour rule forbids, and it
+can disagree with what the run actually flagged, since the drug-set check
+applies a combination-product rule and may have changed since. And it does not
+guess: a description that is not exactly the shape its producer writes yields
+nothing, and the page says so with the `_missing` gap instead.
+
+What an older run genuinely cannot supply is *which date field* a matched date
+came from. The date is recorded per value, not per field, so a report carrying
+the same date as both a drug start and an AE onset shows both as matched. The
+recovered-date footnote says this.
 
 ---
 

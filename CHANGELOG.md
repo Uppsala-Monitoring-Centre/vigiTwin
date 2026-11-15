@@ -21,6 +21,94 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-11-15
+
+Refinements from the first secure-side run of the evidence format. Nothing in
+the assessment logic changed; what changed is how much of a stored run the
+review can show.
+
+### Fixed — a curated collection always said "Not evaluated" for screening
+
+`build_collection` passed `screening_retrieved=None` unconditionally, so the
+screening tile read "Not evaluated" on every curated review even when the
+manifest named a screening artifact that covered the pair. Nothing anywhere
+derived the verdict from the loaded entry: the CLI's evidence path did not pass
+the entry at all, and `evidence_case_from_result` did not look at it.
+
+The verdict is now read from the entry, by all three paths, with
+`screening_verdict` in the new `review_html.evidence.screening` module. Because
+a `ScreeningDetails` entry is untyped at the feature level, it is read from a
+**named boolean** — `IsSuspectedDuplicate`, `screening_retrieved`, `retrieved`
+or `flagged`, or whatever `screening_verdict_key` names, on the manifest's
+dataset or as `--screening-verdict-key` — and never from an entry merely
+existing. An export may carry a row per pair *considered*, verdict included, in
+which case a present entry can mean "not flagged"; treating presence as the
+verdict would read that export backwards. A key holding something other than
+`true` or `false` is reported as a gap rather than coerced, and a pair with no
+readable verdict reads "Not evaluated", never "Not flagged".
+
+### Added — older runs now highlight their drugs and their dates
+
+`Inconsistency.terms` / `.kind` and `FeatureContribution.matched_value` arrived
+in 1.1.0, after runs had already been saved, and a run without them showed a
+drug-set finding with no substance highlighted and matched clinical dates with
+nothing green. Those runs are not short of the information, only of the field:
+the drug-set check writes the offending substances into its own `description`
+and each clinical-date contribution writes its matched date into its own, and
+both have done so since well before 1.0.0.
+
+Both are now recovered from there (`review_html.evidence.legacy`), so an older
+run highlights its dates wherever they appear, names the matched date in the
+contributions table, and leads its drug-set finding with the substance — the
+same output a current run produces. Each recovery is footnoted as recovered
+(`drug_set_terms_recovered`, `clinical_date_value_recovered`), and a
+description that is not exactly its producer's format yields nothing and keeps
+today's `_missing` gap rather than a guess.
+
+Recomputing the finding from the two reports was considered and rejected: it is
+a comparison performed by the renderer, which this format's colour rule
+forbids, and it can disagree with what the run actually flagged. Recovering the
+producer's own words cannot. What an older run still cannot supply is which
+date *field* a match came from — dates are recorded per value — so a report
+carrying one date in two fields shows both, and the footnote says so.
+
+### Added — every matching contribution names the value that earned it
+
+A contribution row said "Clinical date" or "Sex"; it now reads the matched date
+itself, and `Sex (male)`, `Age (54 years)`, `Weight (80 kg)`. The demographic
+value is taken from the characteristics table, so the row quotes exactly the
+string the reader sees above it, units included, and works on every run
+including ones saved before any of these fields existed. Where the two reports
+hold different values for a feature the run still scored as matched — an age
+within tolerance — both are shown, because neither is "the" matched value.
+
+### Added — inconsistency rows carry their weight
+
+Severity now reads `Moderate (+1.0)`: what the finding added to the
+inconsistency penalty. The weight comes from the stored
+`InconsistencyPenalty.terms`, which records the weight the run *actually
+applied*, so a run with custom weights is described with its own numbers and
+one that saved no classification shows severity alone rather than a default
+that may not have applied. A superseded finding reads `+0.0`, which is what it
+contributed. The retained findings' weights are what sum to the penalty.
+
+### Confirmed
+
+Drug and adverse-event findings both lead with the term — `decreased appetite
+listed on report B without a matching HLT on report A`, and `aspirin — key drug
+on report A absent from report B`. This was already true of any finding
+carrying structured `terms`; with the recovery above it is now true of older
+runs too, which previously fell back to the audit-trail description and its
+embedded Python list.
+
+### Public surface
+
+Additive: `screening_verdict` and `ScreeningVerdict` are exported from
+`llm_dup_dev.review_html`; `evidence_case_from_result` and the collection
+manifest's dataset block gain `screening_verdict_key`; `DiscrepancyVM` gains
+`weight` and `weight_text`; `ReferenceInfo` gains `screening_note`; three gap
+codes are added. No schema changed and no existing name moved.
+
 ## [1.1.1] - 2026-11-15
 
 ### Changed — `bundles` is now `pair_frequencies` across the review interfaces

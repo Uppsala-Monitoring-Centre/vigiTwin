@@ -129,7 +129,7 @@ Each of these packages declares `__all__`; **the contract is exactly its
 | `llm_dup_dev.eval` | `evaluate`, `evaluate_batch`, `EvalSummary`, `ConfusionMatrix`, sweeps, text/markdown formatting |
 | `llm_dup_dev.study_eval` | the four workflow steps (`run_analysis`, `generate_reviewer_workbooks`, `build_arbitration`, `finalize`), reference/prediction set models and loaders, sampling, estimation |
 | `llm_dup_dev.characterization` | reference-set "Table 1" builders, models, and writers |
-| `llm_dup_dev.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models; for the evidence format, `ReviewFormat`, `build_evidence_case`, `build_assessment_summary`, `build_collection`, `load_curated_manifest`, `load_evidence_run_settings`, `write_evidence_html`, `write_evidence_batch_html`, `render_evidence_page`, `PairSelection`, `MissingPairPolicy`, and the models `EvidenceCaseVM`, `EvidencePageVM`, `EvidenceRole`, `EvidenceRunSettings`, `CuratedExampleManifest`, `AssessmentSummary`, `ReferenceInfo`, `ExamplePresentation`, `SCLEAssessment`, `SCLEState` |
+| `llm_dup_dev.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models; for the evidence format, `ReviewFormat`, `build_evidence_case`, `build_assessment_summary`, `build_collection`, `load_curated_manifest`, `load_evidence_run_settings`, `write_evidence_html`, `write_evidence_batch_html`, `render_evidence_page`, `PairSelection`, `MissingPairPolicy`, `screening_verdict`, and the models `EvidenceCaseVM`, `EvidencePageVM`, `EvidenceRole`, `EvidenceRunSettings`, `CuratedExampleManifest`, `AssessmentSummary`, `ReferenceInfo`, `ExamplePresentation`, `SCLEAssessment`, `SCLEState`, `ScreeningVerdict` |
 | `llm_dup_dev.dataset_manifest` | `build_dataset_manifest`, `write_dataset_manifest`, models |
 | `llm_dup_dev.run_manifest` | `build_run_manifest`, `write_run_manifest`, models |
 
@@ -1434,12 +1434,13 @@ python -m llm_dup_dev.review_html \
 
 From Python, `render_saved_run(review_format="evidence", ...)`; or build cases
 directly with `build_evidence_case` when you are not going through a saved
-run. Three arguments are evidence-only and ignored by the detailed format:
+run. Four arguments are evidence-only and ignored by the detailed format:
 
 | Argument | Effect |
 |---|---|
 | `run_settings=` / `--run-manifest` | Supplies the run's own `epsilon` and `L_match` thresholds. Without it the review names evidence zones but quotes no numbers, rather than assuming today's defaults applied to that run. |
 | `set_label=` / `--set-label` | The reference set's name, for the reference-label tile. |
+| `screening_verdict_key=` / `--screening-verdict-key` | The key a screening entry stores its own flagged/not-flagged verdict under, when it is not one of the recognised names (`IsSuspectedDuplicate`, `screening_retrieved`, `retrieved`, `flagged`). Without a readable verdict the screening tile reads "Not evaluated" — never "Not flagged". |
 | `select=` / `--pair-ids` | Renders only these pairs, in the order given. Works for both formats. `select=None` is byte-identical to before. |
 
 A curated collection spanning several reference sets is driven by a manifest

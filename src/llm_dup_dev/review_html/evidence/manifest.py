@@ -128,6 +128,10 @@ class ExampleDataset(BaseModel):
     #: the run used. Without it the reviews name evidence zones but quote no
     #: thresholds, and cannot state the score ceiling.
     run_manifest: Path | None = None
+    #: The key the screening artifact stores its own verdict under, when it
+    #: is not one of the names :mod:`.screening` already knows. Per dataset,
+    #: because a collection may draw on exports from different producers.
+    screening_verdict_key: str | None = None
     #: Per dataset, never global: a collection spanning several reference sets
     #: must not relax identity validation everywhere because one old set
     #: needs it.
@@ -284,6 +288,10 @@ class LoadedExampleManifest(BaseModel):
             if value is not None:
                 mapping[key] = self._resolve(value)
         return mapping
+
+    def screening_verdict_key(self, dataset_id: str) -> str | None:
+        """The screening verdict key this dataset names, if any."""
+        return self.manifest.datasets[dataset_id].screening_verdict_key
 
     def run_manifest_path(self, dataset_id: str) -> Path | None:
         value = self.manifest.datasets[dataset_id].run_manifest

@@ -25,6 +25,7 @@ from llm_dup_dev.review_html.render import (
 )
 from llm_dup_dev.models.report import AdverseEvent, Drug
 from llm_dup_dev.models.pair_features import Inconsistency, InconsistencyCounts
+from llm_dup_dev.models.classification import InconsistencyPenalty, PenaltyTerm
 from llm_dup_dev.models.enums import InconsistencySeverity
 
 from tests.test_review_html.test_evidence_build import (
@@ -420,3 +421,59 @@ class TestAbsentValueRendering:
         age = next(r for r in case.characteristics if r.label == "Age")
         assert age.left.missing is True
         assert age.left.text == ""
+
+
+class TestFindingWeightsAreRendered:
+    """The severity column carries what the finding added to the penalty."""
+
+    @staticmethod
+    def _features_with_finding(*, suppressed: bool = False):
+        return _features(
+            matching_drugs=["topiramate"],
+            inconsistencies=[
+                Inconsistency(
+                    feature="patient_age",
+                    severity=InconsistencySeverity.MODERATE,
+                    difference=7.0,
+                    units="years",
+                    suppressed=suppressed,
+                    suppressed_by="llm_ae_clinical_picture" if suppressed else "",
+                )
+            ],
+            inconsistency_counts=InconsistencyCounts(moderate=1),
+        )
+
+    @staticmethod
+    def _classification_with_weight(weight: float):
+        return _classification(
+            penalty=InconsistencyPenalty(
+                w_tot=weight,
+                threshold=4.0,
+                terms=[
+                    PenaltyTerm(
+                        severity=InconsistencySeverity.MODERATE,
+                        count=1,
+                        weight=weight,
+                    )
+                ],
+            )
+        )
+
+    def test_a_retained_finding_shows_severity_and_weight(self):
+        html = _html(
+            features=self._features_with_finding(),
+            classification=self._classification_with_weight(1.0),
+        )
+        assert "Moderate (+1.0)" in html
+
+    def test_a_superseded_finding_shows_zero(self):
+        html = _html(
+            features=self._features_with_finding(suppressed=True),
+            classification=self._classification_with_weight(1.0),
+        )
+        assert "Moderate (+0.0)" in html
+
+    def test_severity_stands_alone_when_the_weight_is_unknown(self):
+        html = _html(features=self._features_with_finding())
+        assert "Moderate" in html
+        assert "Moderate (+" not in html

@@ -34,6 +34,13 @@ datasets:
     pair_results: synthetic_run/pair_results.json
     pair_frequencies: synthetic_run/pair_frequencies.json
     run_manifest: synthetic_run/run_manifest.json
+    # The screening algorithm's own per-pair basis. Its flagged/not-flagged
+    # verdict is read from a named boolean in each entry — one of
+    # IsSuspectedDuplicate, screening_retrieved, retrieved or flagged — and
+    # never from an entry merely existing, since an export may carry a row per
+    # pair considered. Name the key here when it is something else:
+    #     screening_verdict_key: vigiMatchHit
+    screening: synthetic_run/screening.json
 
 examples:
   - example_id: S1

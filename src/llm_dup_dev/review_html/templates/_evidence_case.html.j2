@@ -305,7 +305,7 @@
       {% for d in case.retained_discrepancies %}
       <tr>
         <td>{{ d.feature_label }}</td>
-        <td>{{ d.severity | capitalize }}</td>
+        <td>{{ d.severity | capitalize }}{% if d.weight_text %} ({{ d.weight_text }}){% endif %}</td>
         <td>{{ d.text }}</td>
       </tr>
       {% endfor %}
@@ -314,7 +314,9 @@
   <p class="note">
     These are the findings vigiTwin retained and weighed. Severity is the
     level that was counted: a finding whose severity was reduced is listed at
-    its final level, with the reason given.
+    its final level, with the reason given. The figure beside it is the weight
+    this run applied to that level, and the retained findings' weights are
+    what sum to the inconsistency penalty.
   </p>
   {% elif case.assessment_rows %}
   <p>vigiTwin recorded no inconsistencies for this pair.</p>
@@ -334,7 +336,7 @@
       {% for d in case.suppressed_discrepancies %}
       <tr>
         <td>{{ d.feature_label }}</td>
-        <td>{{ d.severity | capitalize }}</td>
+        <td>{{ d.severity | capitalize }}{% if d.weight_text %} ({{ d.weight_text }}){% endif %}</td>
         <td>{{ d.text }}</td>
       </tr>
       {% endfor %}
@@ -342,9 +344,9 @@
   </table>
   <p class="note">
     These findings were recorded but superseded by a more decisive one, so
-    they contributed nothing to the inconsistency penalty and are not
-    highlighted in the tables above. They are shown because the assessor did
-    make them.
+    they contributed nothing to the inconsistency penalty — hence the weight
+    of +0.0 — and are not highlighted in the tables above. They are shown
+    because the assessor did make them.
   </p>
   {% endif %}
 

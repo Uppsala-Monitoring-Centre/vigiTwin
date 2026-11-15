@@ -252,3 +252,51 @@ class TestOutputDirDefault:
             "--output-dir", str(out),
         ])
         assert (out / "index.html").exists()
+
+
+class TestScreeningVerdictOnTheCLI:
+    """The evidence path must pass each pair's screening entry, not drop it."""
+
+    @staticmethod
+    def _with_screening(artifacts, entries, extra=()):
+        (artifacts / "screening.json").write_text(
+            json.dumps({"algorithm": "vigiMatch", "entries": entries})
+        )
+        main(
+            [
+                "--reports", str(artifacts / "reports.json"),
+                "--pairs", str(artifacts / "pairs.json"),
+                "--features", str(artifacts / "features.json"),
+                "--classifications", str(artifacts / "classifications.json"),
+                "--screening", str(artifacts / "screening.json"),
+                "--format", "evidence",
+                "--output-dir", str(artifacts / "out"),
+                *extra,
+            ]
+        )
+        return artifacts / "out"
+
+    def test_a_flagged_pair_and_a_rejected_one(self, artifacts):
+        out = self._with_screening(
+            artifacts,
+            {
+                "R001__R002": {"IsSuspectedDuplicate": True},
+                "R001__R003": {"IsSuspectedDuplicate": False},
+            },
+        )
+        assert "Flagged" in (out / "R001__R002.html").read_text()
+        assert "Not flagged" in (out / "R001__R003.html").read_text()
+
+    def test_a_pair_the_artifact_does_not_cover(self, artifacts):
+        out = self._with_screening(
+            artifacts, {"R001__R002": {"IsSuspectedDuplicate": True}}
+        )
+        assert "Not evaluated" in (out / "R001__R003.html").read_text()
+
+    def test_the_verdict_key_can_be_named(self, artifacts):
+        out = self._with_screening(
+            artifacts,
+            {"R001__R002": {"vigiMatchHit": True}},
+            extra=("--screening-verdict-key", "vigiMatchHit"),
+        )
+        assert "Flagged" in (out / "R001__R002.html").read_text()

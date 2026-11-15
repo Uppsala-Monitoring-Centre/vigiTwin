@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from llm_dup_dev.models.classification import (
     ClassificationResult,
     InconsistencyPenalty,
+    PenaltyTerm,
 )
 from llm_dup_dev.models.enums import (
     AnchorType,
@@ -363,10 +364,9 @@ class TestClinicalDateAttribution:
         assert second.start_date.text == "2002-05-02"
         assert second.start_date.role is EvidenceRole.NEUTRAL
 
-    def test_missing_matched_value_records_a_gap_and_colours_nothing(self):
-        """A run saved before the value was stored is reported, not guessed."""
-        r1, r2, _ = self._two_period_pair()
-        features = _features(
+    def _legacy_date_features(self, description: str):
+        """A clinical-date contribution with no ``matched_value``."""
+        return _features(
             matching_drugs=["topiramate"],
             probability=ProbabilityEstimate(
                 p_joint=1e-3,
@@ -376,12 +376,46 @@ class TestClinicalDateAttribution:
                         feature="clinical_date",
                         p_f=0.002,
                         method="domain_size",
-                        description="clinical_date 2002-01-04 (day): D_f=540",
+                        description=description,
                     )
                 ],
             ),
         )
-        case = _case(r1, r2, features)
+
+    def test_matched_value_is_recovered_from_the_description(self):
+        """A run saved before the field existed still highlights its dates.
+
+        The date is read from the description the run itself wrote, so the
+        highlighting is the run's own finding. The period whose dates did not
+        match stays neutral, exactly as for a run with the structured field.
+        """
+        r1, r2, _ = self._two_period_pair()
+        case = _case(
+            r1,
+            r2,
+            self._legacy_date_features("clinical_date 2002-01-04 (day): D_f=540"),
+        )
+        assert "clinical_date_value_recovered" in [
+            g.code.value for g in case.gaps
+        ]
+        assert "clinical_date_value_missing" not in [
+            g.code.value for g in case.gaps
+        ]
+        row = _drug_row(case, "topiramate")
+        first = row.left_entries[0]
+        assert first.start_date is not None
+        assert first.start_date.role is EvidenceRole.MATCHING
+        second = row.left_entries[1]
+        assert second.start_date is not None
+        assert second.start_date.text == "2002-05-02"
+        assert second.start_date.role is EvidenceRole.NEUTRAL
+
+    def test_an_unparseable_description_colours_nothing(self):
+        """No value and no recoverable one is reported, never guessed."""
+        r1, r2, _ = self._two_period_pair()
+        case = _case(
+            r1, r2, self._legacy_date_features("a clinical date matched")
+        )
         assert "clinical_date_value_missing" in [
             g.code.value for g in case.gaps
         ]
@@ -389,6 +423,18 @@ class TestClinicalDateAttribution:
         for entry in row.left_entries:
             if entry.start_date is not None:
                 assert entry.start_date.role is EvidenceRole.NEUTRAL
+
+    def test_the_recovered_date_labels_its_matching_feature_row(self):
+        """The row names the date, not the generic feature name."""
+        r1, r2, _ = self._two_period_pair()
+        case = _case(
+            r1,
+            r2,
+            self._legacy_date_features("clinical_date 2002-01-04 (day): D_f=540"),
+        )
+        labels = [row.label.text for row in case.matching_features]
+        assert "2002-01-04" in labels
+        assert "Clinical date" not in labels
 
 
 class TestInconsistenciesAreRed:
@@ -422,10 +468,11 @@ class TestInconsistenciesAreRed:
         assert _drug_row(case, "aspirin").name.role is EvidenceRole.INCONSISTENT
         assert _drug_row(case, "warfarin").name.role is not EvidenceRole.INCONSISTENT
 
-    def test_drug_set_without_terms_records_a_gap(self):
+    def _legacy_drug_set_case(self, description: str):
+        """A drug-set finding with no structured ``terms`` or ``kind``."""
         r1 = _report("R1", drugs=[Drug(substance="aspirin", sources=["s"])])
         r2 = _report("R2", drugs=[])
-        case = _case(
+        return _case(
             r1,
             r2,
             _features(
@@ -433,13 +480,33 @@ class TestInconsistenciesAreRed:
                     Inconsistency(
                         feature="drug_set",
                         severity=InconsistencySeverity.MODERATE,
-                        description="Key drug(s) in report 1 not found in "
-                        "report 2: ['aspirin']",
+                        description=description,
                     )
                 ],
                 inconsistency_counts=InconsistencyCounts(moderate=1),
             ),
         )
+
+    def test_drug_set_terms_are_recovered_from_the_description(self):
+        """The substance is highlighted, and the recovery is footnoted."""
+        case = self._legacy_drug_set_case(
+            "Key drug(s) in report 1 not found in report 2: ['aspirin']"
+        )
+        assert "drug_set_terms_recovered" in [g.code.value for g in case.gaps]
+        assert "drug_set_terms_missing" not in [g.code.value for g in case.gaps]
+        assert _drug_row(case, "aspirin").name.role is EvidenceRole.INCONSISTENT
+
+    def test_a_recovered_drug_set_finding_leads_with_the_term(self):
+        """Same sentence as a run that stored the terms, same direction."""
+        case = self._legacy_drug_set_case(
+            "Key drug(s) in report 1 not found in report 2: ['aspirin']"
+        )
+        text = [d.text for d in case.retained_discrepancies][0]
+        assert text.startswith("aspirin")
+        assert "report A absent from report B" in text
+
+    def test_drug_set_without_terms_or_a_parseable_description(self):
+        case = self._legacy_drug_set_case("the drug sets differ")
         assert "drug_set_terms_missing" in [g.code.value for g in case.gaps]
         assert _drug_row(case, "aspirin").name.role is EvidenceRole.NEUTRAL
 
@@ -1270,3 +1337,158 @@ class TestAdverseEventOrderingBand:
         )
         case = _case(r1, _report("R2"), _features())
         assert [r.term.text for r in case.adverse_events] == ["aaa", "zzz"]
+
+
+class TestMatchingFeatureRowsNameTheMatchedValue:
+    """A row says *what* matched, not only which kind of thing matched."""
+
+    @staticmethod
+    def _demographic_features(*features: str):
+        return _features(
+            probability=ProbabilityEstimate(
+                p_joint=1e-3,
+                p_match=1e-3,
+                feature_contributions=[
+                    FeatureContribution(
+                        feature=feature,
+                        p_f=0.01,
+                        method="domain_size",
+                        domain_size=100.0,
+                    )
+                    for feature in features
+                ],
+            ),
+        )
+
+    def _labels(self, r1, r2, *features: str):
+        case = _case(r1, r2, self._demographic_features(*features))
+        return [row.label.text for row in case.matching_features]
+
+    def test_an_agreed_demographic_names_its_value(self):
+        labels = self._labels(
+            _report("R1", sex="male"), _report("R2", sex="male"), "patient_sex"
+        )
+        assert labels == ["Sex (male)"]
+
+    def test_the_value_is_quoted_as_the_table_shows_it(self):
+        """Units included, so the row and the table above it read the same."""
+        labels = self._labels(
+            _report("R1", age=54), _report("R2", age=54), "patient_age"
+        )
+        assert labels == ["Age (54 years)"]
+
+    def test_a_tolerance_match_shows_both_values(self):
+        """Neither value is "the" matched one, so neither is claimed to be."""
+        labels = self._labels(
+            _report("R1", age=54), _report("R2", age=55), "patient_age"
+        )
+        assert labels == ["Age (54 years / 55 years)"]
+
+    def test_a_feature_with_no_recorded_value_keeps_its_plain_label(self):
+        """Height has no characteristics row in these fixtures."""
+        labels = self._labels(
+            _report("R1"), _report("R2"), "patient_height"
+        )
+        assert labels == ["Height"]
+
+    def test_the_drug_and_ae_sets_still_name_their_members(self):
+        features = _features(
+            matching_drugs=["pregabalin", "topiramate"],
+            matching_AEs=["somnolence"],
+            probability=ProbabilityEstimate(
+                p_joint=1e-6,
+                p_match=1e-6,
+                feature_contributions=[
+                    FeatureContribution(
+                        feature="drug_set", p_f=1e-4, method="empirical"
+                    ),
+                    FeatureContribution(
+                        feature="ae_set", p_f=1e-2, method="empirical"
+                    ),
+                ],
+            ),
+        )
+        case = _case(_report("R1"), _report("R2"), features)
+        labels = [r.label.text for r in case.matching_features]
+        assert "pregabalin; topiramate" in labels
+        assert "somnolence" in labels
+
+
+class TestFindingsCarryTheirWeight:
+    """What each finding added to the penalty, from the run's own weights."""
+
+    @staticmethod
+    def _penalty(*terms, **kw):
+        return InconsistencyPenalty(
+            w_tot=kw.pop("w_tot", 1.0),
+            threshold=kw.pop("threshold", 4.0),
+            terms=list(terms),
+        )
+
+    def _case_with(self, penalty, *, suppressed=False):
+        return _case(
+            _report("R1", age=54),
+            _report("R2", age=61),
+            _features(
+                inconsistencies=[
+                    Inconsistency(
+                        feature="patient_age",
+                        severity=InconsistencySeverity.MODERATE,
+                        difference=7.0,
+                        units="years",
+                        suppressed=suppressed,
+                        suppressed_by="llm_ae_clinical_picture" if suppressed else "",
+                    )
+                ],
+                inconsistency_counts=InconsistencyCounts(moderate=1),
+            ),
+            classification=_classification(penalty=penalty) if penalty else None,
+        )
+
+    def test_a_retained_finding_carries_its_severity_weight(self):
+        case = self._case_with(
+            self._penalty(
+                PenaltyTerm(
+                    severity=InconsistencySeverity.MODERATE, count=1, weight=1.0
+                )
+            )
+        )
+        row = case.retained_discrepancies[0]
+        assert row.weight == 1.0
+        assert row.weight_text == "+1.0"
+
+    def test_the_run_s_own_weight_is_used_not_the_default(self):
+        """A run with custom weights is described with its numbers."""
+        case = self._case_with(
+            self._penalty(
+                PenaltyTerm(
+                    severity=InconsistencySeverity.MODERATE, count=1, weight=2.5
+                )
+            )
+        )
+        assert case.retained_discrepancies[0].weight_text == "+2.5"
+
+    def test_a_suppressed_finding_carries_zero(self):
+        case = self._case_with(
+            self._penalty(
+                PenaltyTerm(
+                    severity=InconsistencySeverity.MODERATE, count=1, weight=1.0
+                )
+            ),
+            suppressed=True,
+        )
+        row = case.suppressed_discrepancies[0]
+        assert row.weight == 0.0
+        assert row.weight_text == "+0.0"
+
+    def test_no_weight_is_shown_when_the_penalty_does_not_carry_it(self):
+        case = self._case_with(self._penalty())
+        row = case.retained_discrepancies[0]
+        assert row.weight is None
+        assert row.weight_text == ""
+
+    def test_no_weight_is_shown_without_a_classification(self):
+        case = self._case_with(None)
+        row = case.retained_discrepancies[0]
+        assert row.weight is None
+        assert row.weight_text == ""

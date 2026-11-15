@@ -17,6 +17,7 @@ from pathlib import Path
 from ..formats import evidence_case_from_result, reference_from_annotation
 from ..selection import MissingPairPolicy, PairSelection
 from .build import ExamplePresentation, ReferenceInfo, SCLEAssessment
+from .screening import screening_verdict
 from .manifest import CuratedExample, LoadedExampleManifest, SummaryMode
 from .models import EvidenceCaseVM, EvidencePageVM
 from .settings import EvidenceRunSettings, load_evidence_run_settings
@@ -50,6 +51,7 @@ def _reference(
     set_label: str | None,
     screening_algorithm: str | None,
     screening_retrieved: bool | None,
+    screening_note: str,
     positive_class: str,
 ) -> ReferenceInfo:
     """Reference metadata, taken from the artifacts and the SCLE entry only.
@@ -63,6 +65,7 @@ def _reference(
         annotation,
         set_label=set_label,
         screening_retrieved=screening_retrieved,
+        screening_note=screening_note,
         screening_algorithm=screening_algorithm or "vigiMatch",
         positive_class=positive_class,
     )
@@ -76,6 +79,7 @@ def _reference(
         reference_label=base.reference_label,
         set_label=base.set_label,
         screening_retrieved=base.screening_retrieved,
+        screening_note=base.screening_note,
         screening_algorithm=base.screening_algorithm,
         scle=scle,
         positive_class=base.positive_class,
@@ -122,12 +126,18 @@ def build_collection(
 
         dataset = manifest.datasets[dataset_id]
         set_label = dataset.label or dataset_id
+        verdict_key = loaded.screening_verdict_key(dataset_id)
         for index, example in entries:
             item = loaded_by_pair.get(example.pair_id)
             if item is None:
                 # Only reachable under MissingPairPolicy.SKIP; the default
                 # policy already raised inside load_saved_run.
                 continue
+            # Read per pair from its own screening entry. Before this, the
+            # collection path passed no verdict at all, so a curated review
+            # said "Not evaluated" even when the manifest named a screening
+            # artifact that covered the pair.
+            verdict = screening_verdict(item.screening, key=verdict_key)
             cases_by_key[(dataset_id, example.pair_id)] = (
                 evidence_case_from_result(
                     item,
@@ -137,7 +147,8 @@ def build_collection(
                         item.annotation,
                         set_label=set_label,
                         screening_algorithm=item.screening_algorithm,
-                        screening_retrieved=None,
+                        screening_retrieved=verdict.retrieved,
+                        screening_note=verdict.note,
                         positive_class=manifest.positive_class,
                     ),
                     run_settings=run_settings,

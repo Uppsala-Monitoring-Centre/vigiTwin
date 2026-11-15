@@ -422,6 +422,15 @@ class DiscrepancyVM(BaseModel):
     #: Non-empty when a clinical-date finding was downgraded; each entry is
     #: the producing module's own reason string.
     downgrades: list[str] = Field(default_factory=list)
+    #: What this row added to the inconsistency penalty: the weight the run
+    #: applied to its severity, or ``0.0`` for a suppressed row, which
+    #: contributed nothing. ``None`` when the run's weights are not known —
+    #: no classification was saved, or its penalty does not carry this
+    #: severity — and the page then shows the severity alone rather than
+    #: quoting a default weight the run may not have used.
+    weight: float | None = None
+    #: ``weight`` rendered, e.g. ``"+1.0"``; empty when it is unknown.
+    weight_text: str = ""
 
 
 class AssessmentRowVM(BaseModel):
@@ -499,7 +508,10 @@ class EvidenceGapCode(str, Enum):
     """
 
     DRUG_SET_TERMS_MISSING = "drug_set_terms_missing"
+    DRUG_SET_TERMS_RECOVERED = "drug_set_terms_recovered"
     CLINICAL_DATE_VALUE_MISSING = "clinical_date_value_missing"
+    CLINICAL_DATE_VALUE_RECOVERED = "clinical_date_value_recovered"
+    SCREENING_VERDICT_UNREADABLE = "screening_verdict_unreadable"
     UNMAPPED_INCONSISTENCY = "unmapped_inconsistency"
     UNKNOWN_ENTITY_LABEL = "unknown_entity_label"
     RUN_SETTINGS_MISSING = "run_settings_missing"

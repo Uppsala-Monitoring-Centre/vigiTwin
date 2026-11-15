@@ -20,7 +20,10 @@ from dataclasses import dataclass, field as dc_field
 from enum import Enum
 
 from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
-from llm_dup_dev.models.classification import ClassificationResult
+from llm_dup_dev.models.classification import (
+    ClassificationResult,
+    InconsistencyPenalty,
+)
 from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
 from llm_dup_dev.models.explicit_link import ExplicitLinkVerdict
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
@@ -56,6 +59,12 @@ from ..attribution_maps import (
 )
 from ..grouping import grouped_adverse_events, grouped_drugs
 from ..normalize import normalize_ae_key, normalize_drug_key
+from .legacy import (
+    recovered_clinical_date_gap,
+    recovered_drug_set_gap,
+    resolved_clinical_date,
+    resolved_drug_set_terms,
+)
 from .models import (
     AEEvidenceRow,
     AssessmentRowVM,
@@ -573,9 +582,10 @@ def _attach_clinical_date_matches(
     matched is marked and the period whose dates did not is left neutral.
 
     A contribution written before ``matched_value`` existed carries the date
-    only inside its description. Rather than parse that string, this records a
-    gap: the page then says per-date highlighting is unavailable for the run,
-    which is honest, where a silent absence of green would not be.
+    only inside its description, and is recovered from there (see
+    :mod:`.legacy`) so those matches are highlighted too. The recovery is
+    footnoted, and a contribution whose description does not yield a date is
+    footnoted as unattributed rather than silently left un-highlighted.
     """
     date_contributions = [
         fc
@@ -585,7 +595,11 @@ def _attach_clinical_date_matches(
     if not date_contributions:
         return
 
-    unattributed = [fc for fc in date_contributions if fc.matched_value is None]
+    resolved = [(fc, resolved_clinical_date(fc)) for fc in date_contributions]
+    n_recovered = sum(1 for _, found in resolved if found is not None and found[2])
+    unattributed = [fc for fc, found in resolved if found is None]
+    if n_recovered:
+        gaps.append(recovered_clinical_date_gap(n_recovered))
     if unattributed:
         gaps.append(
             EvidenceGap(
@@ -593,24 +607,25 @@ def _attach_clinical_date_matches(
                 message=(
                     f"{len(unattributed)} matched clinical "
                     f"date{'s' if len(unattributed) != 1 else ''} could not be "
-                    "attributed to a specific date field, because this run was "
-                    "saved before the matched value was recorded alongside its "
-                    "contribution. The dates still count towards the matching "
+                    "attributed to a specific date, because this run recorded "
+                    "neither the matched value nor a description it could be "
+                    "read from. The dates still count towards the matching "
                     "score shown below; they are simply not highlighted in the "
                     "tables."
                 ),
             )
         )
 
-    for fc in date_contributions:
-        if fc.matched_value is None:
+    for fc, found in resolved:
+        if found is None:
             continue
+        matched_value, value_resolution, _ = found
         decades = _contribution_decades(fc)
         note = "matched clinical date" + (
             f" (+{decades:.1f})" if decades is not None else ""
         )
         for cell in _date_cells(drugs, aes):
-            if _truncate(cell.text, fc.value_resolution) == fc.matched_value:
+            if _truncate(cell.text, value_resolution) == matched_value:
                 _mark(
                     cell,
                     EvidenceRole.MATCHING,
@@ -768,25 +783,30 @@ def _attach_drug_set(
 
     The names come from ``terms``; ``kind`` says which report they are key
     drugs of. A run saved before those fields were populated carries the
-    substances only inside the description, which this does not parse — it
-    records a gap instead, and the finding still appears in the assessment
-    section.
+    substances only inside the description, and they are recovered from there
+    (see :mod:`.legacy`) so the highlighting still happens; the recovery is
+    footnoted. Only a finding that yields no substances from either source is
+    left un-highlighted, and it still appears in the assessment section.
     """
-    if not inc.terms:
+    found = resolved_drug_set_terms(inc)
+    if found is None:
         gaps.append(
             EvidenceGap(
                 code=EvidenceGapCode.DRUG_SET_TERMS_MISSING,
                 message=(
                     "A drug-set inconsistency is reported in the assessment "
-                    "section without per-substance highlighting: this run was "
-                    "saved before the offending substances were recorded as "
-                    "structured terms."
+                    "section without per-substance highlighting: this run "
+                    "recorded neither the offending substances as structured "
+                    "terms nor a description they could be read from."
                 ),
             )
         )
         return
+    terms, _kind, recovered = found
+    if recovered:
+        gaps.append(recovered_drug_set_gap(1))
 
-    wanted = {normalize_drug_key(t) for t in inc.terms}
+    wanted = {normalize_drug_key(t) for t in terms}
     attribution = _inconsistency_attribution(inc)
     for row in drugs:
         if normalize_drug_key(row.name.text) in wanted:
@@ -1154,27 +1174,68 @@ _MATCHING_FEATURE_LABEL = {
 }
 
 
+def _demographic_match_values(
+    characteristics: list[CharacteristicRow],
+) -> dict[str, str]:
+    """Matched demographic values, keyed by contribution feature name.
+
+    Read off the characteristics table rather than out of the reports, so a
+    matching-features row quotes exactly the string the reader sees in the
+    table above it, formatting and units included.
+
+    Where the two reports hold *different* values for a feature the assessment
+    nonetheless scored as matched — an age within tolerance, say — both are
+    shown. Picking one as "the" matched value would be a choice this module
+    has no basis to make, and the pair of values is the more informative
+    answer anyway.
+    """
+    by_label = {row.label: row for row in characteristics}
+    values: dict[str, str] = {}
+    for feature, label in FEATURE_TO_DEMO_LABEL.items():
+        row = by_label.get(label)
+        if row is None:
+            continue
+        left = "" if row.left.missing else row.left.text.strip()
+        right = "" if row.right.missing else row.right.text.strip()
+        if left and right:
+            values[feature] = left if left == right else f"{left} / {right}"
+        elif left or right:
+            values[feature] = left or right
+    return values
+
+
 def _matching_feature_label(
-    fc: FeatureContribution, features: PairFeatures
+    fc: FeatureContribution,
+    features: PairFeatures,
+    demographic_values: dict[str, str] | None = None,
 ) -> str:
     """A reader-facing label for one contribution.
 
-    The drug and adverse-event sets are named by their members rather than as
-    "shared drug set": a reader looking at a contribution of +6.7 wants to know
-    which drugs earned it, and the set name alone sends them hunting for the
-    list elsewhere on the page.
+    Every row names the value that earned the contribution, not just the kind
+    of value: the drug and adverse-event sets by their members, a clinical date
+    by the date itself, and a demographic feature by the matched value in
+    parentheses. A reader looking at a contribution of +6.7 wants to know which
+    drugs earned it, and "Sex" alone does not say whether the shared value was
+    the common one or the rare one.
     """
-    if fc.feature == "clinical_date" and fc.matched_value:
-        return fc.matched_value
+    if fc.feature == "clinical_date":
+        found = resolved_clinical_date(fc)
+        if found is not None:
+            return found[0]
     if fc.feature == "drug_set":
         return "; ".join(features.matching_drugs) or "Shared drug set"
     if fc.feature == "ae_set":
         return "; ".join(features.matching_AEs) or "Shared adverse event set"
-    return _MATCHING_FEATURE_LABEL.get(fc.feature, _readable_feature(fc.feature))
+    label = _MATCHING_FEATURE_LABEL.get(fc.feature, _readable_feature(fc.feature))
+    value = (fc.matched_value or "").strip() or (demographic_values or {}).get(
+        fc.feature, ""
+    )
+    return f"{label} ({value})" if value else label
 
 
 def _build_matching_features(
     features: PairFeatures,
+    demographic_values: dict[str, str] | None = None,
 ) -> list[MatchingFeatureRow]:
     """Every contribution to the matching score, strongest first.
 
@@ -1194,7 +1255,7 @@ def _build_matching_features(
         rows.append(
             MatchingFeatureRow(
                 label=EvidenceCell(
-                    text=_matching_feature_label(fc, features),
+                    text=_matching_feature_label(fc, features, demographic_values),
                     kind=kind,
                     role=EvidenceRole.MATCHING,
                 ),
@@ -1335,7 +1396,9 @@ def _drug_set_text(
 
     Built from ``terms`` and ``kind`` rather than from the stored description,
     which embeds a Python list repr — fine for an audit trail, not for a
-    reader.
+    reader. Where a run recorded neither, the substances are recovered from
+    that description (see :mod:`.legacy`) and the sentence reads the same, so
+    the term leads whatever the run's vintage.
 
     The substance leads, because that is what a reader is looking for when
     scanning a list of findings; the direction follows it.
@@ -1345,20 +1408,22 @@ def _drug_set_text(
     it and only one calls it key, which is a different finding and not the one
     the check makes.
     """
-    if not inc.terms:
+    found = resolved_drug_set_terms(inc)
+    if found is None:
         return inc.description or "A key drug is reported in only one report."
+    terms, kind, _recovered = found
 
     # The stored terms are lowercased substance names. Where the drug table
     # shows a report's own spelling, use that here too, so a reader matching
     # the finding against the table sees the same word in both places.
     lookup = reported_names or {}
     names = "; ".join(
-        lookup.get(normalize_drug_key(term), term) for term in inc.terms
+        lookup.get(normalize_drug_key(term), term) for term in terms
     )
-    plural = "key drugs" if len(inc.terms) > 1 else "key drug"
-    if inc.kind == DRUG_SET_KIND_MISSING_IN_R2:
+    plural = "key drugs" if len(terms) > 1 else "key drug"
+    if kind == DRUG_SET_KIND_MISSING_IN_R2:
         source, other = "A", "B"
-    elif inc.kind == DRUG_SET_KIND_MISSING_IN_R1:
+    elif kind == DRUG_SET_KIND_MISSING_IN_R1:
         source, other = "B", "A"
     else:
         return f"{names} — reported as a {plural} in only one report."
@@ -1453,8 +1518,26 @@ def _discrepancy_column(feature: str) -> str:
     return _readable_feature(feature)
 
 
+def _severity_weights(
+    penalty: InconsistencyPenalty | None,
+) -> dict[str, float]:
+    """Severity name -> the weight this run applied to it.
+
+    Read from the stored penalty, which records the weight *actually used*
+    rather than the configured default, so a run with custom weights is
+    described with its own numbers. Empty when no classification was saved,
+    in which case no weight is shown at all: the defaults are not a safe
+    substitute for what a given run did.
+    """
+    if penalty is None:
+        return {}
+    return {term.severity.value: term.weight for term in penalty.terms}
+
+
 def _build_discrepancies(
-    features: PairFeatures, reported_names: dict[str, str] | None = None
+    features: PairFeatures,
+    reported_names: dict[str, str] | None = None,
+    penalty: InconsistencyPenalty | None = None,
 ) -> list[DiscrepancyVM]:
     """Every finding the assessment recorded, retained ones first.
 
@@ -1463,11 +1546,27 @@ def _build_discrepancies(
     operative would be wrong; omitting it entirely would hide an assessment the
     assessor actually made.
 
+    Each row carries what it added to the penalty, taken from the run's own
+    stored weights. A suppressed row carries ``0.0``, which is what it
+    contributed; a downgraded clinical-date finding carries the weight of its
+    *final* severity, which is the one that was counted.
+
     Ordered by severity descending, then by text, so the order is
     deterministic and the most serious finding is read first.
     """
+    weights = _severity_weights(penalty)
+
+    def weighed(severity: str, *, suppressed: bool) -> tuple[float | None, str]:
+        if suppressed:
+            return 0.0, "+0.0"
+        weight = weights.get(severity)
+        return weight, "" if weight is None else f"+{weight:.1f}"
+
     items: list[DiscrepancyVM] = []
     for inc in features.inconsistencies:
+        weight, weight_text = weighed(
+            inc.severity.value, suppressed=inc.suppressed
+        )
         items.append(
             DiscrepancyVM(
                 feature_label=_discrepancy_column(inc.feature),
@@ -1476,9 +1575,12 @@ def _build_discrepancies(
                 retained=not inc.suppressed,
                 suppressed=inc.suppressed,
                 suppressed_by=inc.suppressed_by,
+                weight=weight,
+                weight_text=weight_text,
             )
         )
     for finding in features.clinical_date_findings:
+        weight, weight_text = weighed(finding.severity.value, suppressed=False)
         items.append(
             DiscrepancyVM(
                 feature_label="Clinical dates",
@@ -1486,6 +1588,8 @@ def _build_discrepancies(
                 text=_date_finding_text(finding),
                 retained=True,
                 downgrades=list(finding.downgrades),
+                weight=weight,
+                weight_text=weight_text,
             )
         )
     return sorted(
@@ -1559,6 +1663,10 @@ class ReferenceInfo:
     #: screening verdict was supplied — never "not flagged".
     screening_retrieved: bool | None = None
     screening_algorithm: str = "vigiMatch"
+    #: Why no screening verdict could be read, when one was looked for and
+    #: rejected. Rendered as a gap, so a malformed verdict is visible rather
+    #: than indistinguishable from an absent one. See :mod:`.screening`.
+    screening_note: str = ""
     scle: SCLEAssessment = dc_field(default_factory=SCLEAssessment)
     #: Name of the positive-class rule used to compare the reference label
     #: against the vigiTwin label.
@@ -1944,6 +2052,13 @@ def build_evidence_case(
     reference = reference or ReferenceInfo()
     presentation = presentation or ExamplePresentation()
     gaps: list[EvidenceGap] = []
+    if reference is not None and reference.screening_note:
+        gaps.append(
+            EvidenceGap(
+                code=EvidenceGapCode.SCREENING_VERDICT_UNREADABLE,
+                message=reference.screening_note,
+            )
+        )
 
     characteristics = _build_characteristic_rows(
         report_1,
@@ -1985,13 +2100,16 @@ def build_evidence_case(
                     ),
                 )
             )
-        matching_features = _build_matching_features(features)
+        matching_features = _build_matching_features(
+            features, _demographic_match_values(characteristics)
+        )
         reconciliation = _build_reconciliation(
             features, matching_features, run_settings, gaps
         )
         discrepancies = _build_discrepancies(
             features,
             {row.sort_key: row.name.text for row in drugs},
+            penalty=classification.penalty if classification else None,
         )
         anchor_note = _anchor_note(features)
         context_note = _context_note(report_1, report_2, features)

@@ -368,11 +368,13 @@ from .evidence import (  # noqa: E402  (same cycle: evidence reaches back here)
     ReferenceInfo,
     SCLEAssessment,
     SCLEState,
+    ScreeningVerdict,
     build_assessment_summary,
     build_collection,
     build_evidence_case,
     load_curated_manifest,
     load_evidence_run_settings,
+    screening_verdict,
 )
 from .formats import ReviewFormat  # noqa: E402
 from .render import (  # noqa: E402
@@ -408,10 +410,12 @@ __all__ = [
     "SavedRunSkip",
     "SavedRunSummary",
     "ScreeningVM",
+    "ScreeningVerdict",
     "SkipReason",
     "build_assessment_summary",
     "build_collection",
     "build_evidence_case",
+    "screening_verdict",
     "load_curated_manifest",
     "load_evidence_run_settings",
     "load_saved_run",

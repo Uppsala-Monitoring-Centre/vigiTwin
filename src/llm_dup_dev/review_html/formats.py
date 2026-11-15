@@ -26,6 +26,7 @@ from .evidence.build import (
     build_evidence_case,
 )
 from .evidence.models import EvidenceCaseVM
+from .evidence.screening import screening_verdict
 from .evidence.settings import EvidenceRunSettings
 
 if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime only
@@ -57,6 +58,7 @@ def reference_from_annotation(
     set_label: str | None = None,
     screening_retrieved: bool | None = None,
     screening_algorithm: str = "vigiMatch",
+    screening_note: str = "",
     positive_class: str = "primary",
 ) -> ReferenceInfo:
     """Read a reference label out of a saved run's annotation entry.
@@ -75,6 +77,7 @@ def reference_from_annotation(
         set_label=set_label,
         screening_retrieved=screening_retrieved,
         screening_algorithm=screening_algorithm,
+        screening_note=screening_note,
         positive_class=positive_class,
     )
 
@@ -86,13 +89,22 @@ def evidence_case_from_result(
     reference: ReferenceInfo | None = None,
     run_settings: EvidenceRunSettings | None = None,
     set_label: str | None = None,
+    screening_verdict_key: str | None = None,
 ) -> EvidenceCaseVM:
-    """Build an evidence case from one loaded saved-run item."""
+    """Build an evidence case from one loaded saved-run item.
+
+    When no ``reference`` is supplied, one is assembled from the item: the
+    reference label from its annotation and the screening outcome from its
+    screening entry, read with :func:`.screening.screening_verdict`.
+    """
     result = item.result
     if reference is None:
+        verdict = screening_verdict(item.screening, key=screening_verdict_key)
         reference = reference_from_annotation(
             item.annotation,
             set_label=set_label,
+            screening_retrieved=verdict.retrieved,
+            screening_note=verdict.note,
             screening_algorithm=item.screening_algorithm or "vigiMatch",
         )
     return build_evidence_case(

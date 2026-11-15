@@ -63,6 +63,7 @@ from llm_dup_dev.pipeline.export import read_classifications, read_pair_features
 
 from .compare import build_pair_view_model
 from .evidence.build import build_evidence_case
+from .evidence.screening import screening_verdict
 from .evidence.settings import EvidenceRunSettings, load_evidence_run_settings
 from .formats import ReviewFormat, reference_from_annotation
 from .models import PairViewModel
@@ -121,6 +122,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "Path to frozen pair frequencies JSON (dict keyed by pair_id). "
             "When provided, each pair report includes a Frequency Statistics "
             "section. Optional."
+        ),
+    )
+    parser.add_argument(
+        "--screening-verdict-key",
+        default=None,
+        help=(
+            "The key the screening entries store their own flagged/not-flagged "
+            "verdict under, when it is not one of the recognised names "
+            "(IsSuspectedDuplicate, screening_retrieved, retrieved, flagged). "
+            "Evidence format only. Optional."
         ),
     )
     parser.add_argument(
@@ -302,6 +313,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             classifications=classifications,
             pair_frequencies=pair_frequencies,
             narrative_demographics=narrative_demographics,
+            screening_entries=screening_entries,
             screening_algorithm=screening_algorithm,
         )
         return
@@ -374,6 +386,7 @@ def _run_evidence(
     classifications: dict[str, ClassificationResult],
     pair_frequencies: dict[str, FrozenPairBundle],
     narrative_demographics: dict[str, NarrativeDemographics],
+    screening_entries: dict[str, dict],
     screening_algorithm: str | None,
 ) -> None:
     """Render the evidence format for the pairs already selected and loaded.
@@ -403,6 +416,10 @@ def _run_evidence(
             ]
             errors.append(f"Skipping {pair.pair_id}: missing report(s) {missing}")
             continue
+        verdict = screening_verdict(
+            screening_entries.get(pair.pair_id),
+            key=args.screening_verdict_key,
+        )
         cases.append(
             build_evidence_case(
                 report_1=report_1,
@@ -420,6 +437,8 @@ def _run_evidence(
                 reference=reference_from_annotation(
                     None,
                     set_label=args.set_label,
+                    screening_retrieved=verdict.retrieved,
+                    screening_note=verdict.note,
                     screening_algorithm=screening_algorithm or "vigiMatch",
                 ),
                 run_settings=run_settings,
