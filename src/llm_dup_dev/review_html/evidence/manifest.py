@@ -120,7 +120,7 @@ class ExampleDataset(BaseModel):
     pair_results: Path | None = None
     features: Path | None = None
     classifications: Path | None = None
-    bundles: Path | None = None
+    pair_frequencies: Path | None = None
     screening: Path | None = None
     annotations: Path | None = None
     narrative_demographics: Path | None = None
@@ -275,7 +275,7 @@ class LoadedExampleManifest(BaseModel):
             "pair_results_path": dataset.pair_results,
             "features_path": dataset.features,
             "classifications_path": dataset.classifications,
-            "bundles_path": dataset.bundles,
+            "pair_frequencies_path": dataset.pair_frequencies,
             "screening_path": dataset.screening,
             "annotations_path": dataset.annotations,
             "narrative_demographics_path": dataset.narrative_demographics,

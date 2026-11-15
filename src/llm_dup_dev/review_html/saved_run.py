@@ -221,11 +221,11 @@ def _check_artifact_keys_canonical(
         )
 
 
-def _load_bundles(path: str | Path | None) -> dict[str, FrozenPairBundle]:
+def _load_pair_frequencies(path: str | Path | None) -> dict[str, FrozenPairBundle]:
     """Load ``{pair_id: FrozenPairBundle}``; ``{}`` when no path is given.
 
-    Accepts a list of bundles (the secure runner's shape) or a mapping keyed by
-    ``pair_id`` (the review CLI's shape).
+    Accepts a list of records (the secure runner's shape) or a mapping keyed
+    by ``pair_id`` (the review CLI's shape).
     """
     if path is None:
         return {}
@@ -233,7 +233,7 @@ def _load_bundles(path: str | Path | None) -> dict[str, FrozenPairBundle]:
         _load_json(path),
         id_attr="pair_id",
         model_cls=FrozenPairBundle,
-        artifact="frozen bundles",
+        artifact="frozen pair frequencies",
         path=path,
     )
 
@@ -339,7 +339,7 @@ def load_saved_run(
     features_path: str | Path | None = None,
     classifications_path: str | Path | None = None,
     annotations_path: str | Path | None = None,
-    bundles_path: str | Path | None = None,
+    pair_frequencies_path: str | Path | None = None,
     narrative_demographics_path: str | Path | None = None,
     screening_path: str | Path | None = None,
     external_url_builder: Callable[[str, str], str | None] | None = None,
@@ -369,12 +369,13 @@ def load_saved_run(
     features_path, classifications_path : str or Path, optional
         The split source, used only when ``pair_results_path`` is ``None``. Both
         must be provided together.
-    annotations_path, bundles_path, narrative_demographics_path : str or Path, optional
-        Optional per-pair annotations, per-pair frozen frequency bundles (list
-        or mapping shaped), and a per-report narrative-demographics bundle
-        (wrapper or plain shaped). The demographics bundle is only consulted for
-        the ``split`` source; a ``pair_results`` run already carries its
-        demographics.
+    annotations_path, pair_frequencies_path : str or Path, optional
+        Optional per-pair annotations and the per-pair frozen frequency
+        statistics (``pair_frequencies.json``, list or mapping shaped).
+    narrative_demographics_path : str or Path, optional
+        A per-report narrative-demographics bundle (wrapper or plain shaped).
+        Only consulted for the ``split`` source; a ``pair_results`` run already
+        carries its demographics.
     screening_path : str or Path, optional
         A :class:`~llm_dup_dev.data.offline.ScreeningDetails` artifact (wrapper
         or bare pair-keyed shape) describing the basis for the *screening*
@@ -468,7 +469,7 @@ def load_saved_run(
     # invalid whether or not a selection happens to avoid its bad keys.
     n_available = len(pairs)
     pairs = apply_selection(pairs, selection, key=lambda pair: pair.pair_id)
-    bundles = _load_bundles(bundles_path)
+    pair_frequencies = _load_pair_frequencies(pair_frequencies_path)
     annotations = _load_annotations(annotations_path)
     screening = _load_screening(screening_path)
 
@@ -488,9 +489,11 @@ def load_saved_run(
                 artifact="classifications",
                 path=classifications_path,
             )
-        if bundles:
+        if pair_frequencies:
             _check_artifact_keys_canonical(
-                bundles, artifact="bundles", path=bundles_path
+                pair_frequencies,
+                artifact="pair_frequencies",
+                path=pair_frequencies_path,
             )
         if screening.entries:
             _check_artifact_keys_canonical(
@@ -574,7 +577,7 @@ def load_saved_run(
                 report_2=report_2,
                 external_url=external_url,
                 external_url_label=external_url_label,
-                frozen_bundle=bundles.get(pid),
+                frozen_bundle=pair_frequencies.get(pid),
                 include_debug=include_debug,
                 annotation=annotations.get(pid),
                 screening=screening.entries.get(pid),

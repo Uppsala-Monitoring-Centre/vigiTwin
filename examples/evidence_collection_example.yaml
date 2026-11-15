@@ -32,7 +32,7 @@ datasets:
     reports: synthetic_run/reports.json
     pairs: synthetic_run/pairs.json
     pair_results: synthetic_run/pair_results.json
-    bundles: synthetic_run/bundles.json
+    pair_frequencies: synthetic_run/pair_frequencies.json
     run_manifest: synthetic_run/run_manifest.json
 
 examples:

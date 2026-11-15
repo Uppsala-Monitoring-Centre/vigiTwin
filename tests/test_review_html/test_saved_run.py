@@ -277,7 +277,7 @@ class TestInputShapes:
                 reports_path=path, pairs_path=pairs, pair_results_path=pr_path
             )
 
-    def test_bundles_accepted_as_list_and_mapping(
+    def test_pair_frequencies_accepted_as_list_and_mapping(
         self, tmp_path, report_a, report_b
     ):
         reports = _write_reports(tmp_path, report_a, report_b)
@@ -285,37 +285,37 @@ class TestInputShapes:
         pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
         bundle = _bundle()
 
-        list_path = tmp_path / "bundles_list.json"
+        list_path = tmp_path / "pair_frequencies_list.json"
         list_path.write_text(json.dumps([bundle.model_dump(mode="json")]))
-        map_path = tmp_path / "bundles_map.json"
+        map_path = tmp_path / "pair_frequencies_map.json"
         map_path.write_text(
             json.dumps({PAIR_ID: bundle.model_dump(mode="json")})
         )
 
-        for bundles_path in (list_path, map_path):
+        for frequencies_path in (list_path, map_path):
             items, _ = load_saved_run(
                 reports_path=reports,
                 pairs_path=pairs,
                 pair_results_path=pr_path,
-                bundles_path=bundles_path,
+                pair_frequencies_path=frequencies_path,
             )
             assert items[0].frozen_bundle is not None
             assert items[0].frozen_bundle.pair_id == PAIR_ID
 
-    def test_bundles_duplicate_id_raises(self, tmp_path, report_a, report_b):
+    def test_pair_frequencies_duplicate_id_raises(self, tmp_path, report_a, report_b):
         reports = _write_reports(tmp_path, report_a, report_b)
         pairs = _write_pairs(tmp_path, _pair())
         pr_path = _write_pair_results(tmp_path, _make_pair_result(PAIR_ID))
         dup = _bundle().model_dump(mode="json")
-        bundles_path = tmp_path / "bundles.json"
-        bundles_path.write_text(json.dumps([dup, dup]))
+        frequencies_path = tmp_path / "pair_frequencies.json"
+        frequencies_path.write_text(json.dumps([dup, dup]))
 
         with pytest.raises(ValueError, match="duplicate pair_id"):
             load_saved_run(
                 reports_path=reports,
                 pairs_path=pairs,
                 pair_results_path=pr_path,
-                bundles_path=bundles_path,
+                pair_frequencies_path=frequencies_path,
             )
 
     @pytest.mark.parametrize("wrapper", [True, False])

@@ -299,7 +299,7 @@ datasets:
     reports: synthetic_run/reports.json
     pairs: synthetic_run/pairs.json
     pair_results: synthetic_run/pair_results.json
-    bundles: synthetic_run/bundles.json
+    pair_frequencies: synthetic_run/pair_frequencies.json
     run_manifest: synthetic_run/run_manifest.json
 
 examples:
@@ -324,8 +324,9 @@ examples:
 example from this set), `reports` and `pairs` (required), then either
 `pair_results` **or** both `features` and `classifications` — the same
 precedence `load_saved_run` applies, stated once in the manifest instead of
-discovered at load time. Optional: `bundles`, `screening`, `annotations`,
-`narrative_demographics`, `run_manifest`, `allow_noncanonical_pairs`.
+discovered at load time. Optional: `pair_frequencies`, `screening`,
+`annotations`, `narrative_demographics`, `run_manifest`,
+`allow_noncanonical_pairs`.
 
 **Example:** `dataset` and `pair_id` (required), `example_id` (also the output
 filename), `title`, `lede`, `kicker`, `scle_assessment`, `case_interpretation`,
@@ -387,7 +388,7 @@ there was nothing to show.
 | `unmapped_inconsistency` | An inconsistency whose `feature` this format does not know how to attach to a report element. It is still listed in section 3. |
 | `unknown_entity_label` | A clinical-date finding whose `entity_label` does not parse into one of the four known forms. |
 | `run_settings_missing` | No run manifest was supplied, so thresholds and the score ceiling are not quoted. |
-| `frequency_stats_missing` | No frozen bundle, so the frequency table is absent. |
+| `frequency_stats_missing` | No frozen pair frequencies, so the frequency table is absent. |
 | `no_features` / `no_classification` | The pair's assessment was not saved. It renders as a report comparison with everything neutral — not with colours invented from a comparison this format does not perform. |
 | `score_unreconciled` | Contributions and stored score disagree by more than the tolerance, with no epsilon available to explain it. |
 
@@ -446,7 +447,7 @@ framing) and `EvidenceRunSettings`.
 .venv/bin/python -m llm_dup_dev.review_html \
     --reports reports.json --pairs pairs.json \
     --features features.json --classifications classifications.json \
-    --bundles bundles.json --run-manifest run_manifest.json \
+    --pair-frequencies pair_frequencies.json --run-manifest run_manifest.json \
     --format evidence --set-label "Synthetic set" \
     --output-dir outputs/evidence/
 ```

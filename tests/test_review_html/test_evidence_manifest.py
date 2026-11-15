@@ -156,6 +156,26 @@ class TestPathResolution:
         paths = loaded.dataset_paths("synthetic_set")
         assert paths["reports_path"] == run_dir / "synthetic_run/reports.json"
 
+    def test_pair_frequencies_maps_to_the_loader_kwarg(self, run_dir):
+        """The manifest field is named for the artifact, the kwarg for the API."""
+        (run_dir / "synthetic_run" / "pair_frequencies.json").write_text("{}")
+        body = _manifest_body()
+        body["datasets"]["synthetic_set"]["pair_frequencies"] = (
+            "synthetic_run/pair_frequencies.json"
+        )
+        loaded = load_curated_manifest(_write_manifest(run_dir, body))
+        paths = loaded.dataset_paths("synthetic_set")
+        assert paths["pair_frequencies_path"] == (
+            run_dir / "synthetic_run/pair_frequencies.json"
+        )
+
+    def test_the_former_bundles_key_is_rejected(self, run_dir):
+        """Renamed in 1.1.1 with no alias, so a stale manifest fails loudly."""
+        body = _manifest_body()
+        body["datasets"]["synthetic_set"]["bundles"] = "synthetic_run/b.json"
+        with pytest.raises(ValueError, match="bundles"):
+            load_curated_manifest(_write_manifest(run_dir, body))
+
     def test_every_missing_artifact_is_named_at_once(self, run_dir):
         body = _manifest_body()
         body["datasets"]["synthetic_set"]["reports"] = "nope/reports.json"

@@ -16,7 +16,7 @@ Optionally include features, classifications, and frozen frequency statistics::
         --pairs pairs.json \\
         --features features.json \\
         --classifications classifications.json \\
-        --bundles bundles.json \\
+        --pair-frequencies pair_frequencies.json \\
         --screening screening.json \\
         --output-dir outputs/review_html/
 
@@ -27,7 +27,7 @@ Expected JSON formats
 - ``pairs.json``: ``[ { "pair_id": "...", "report_1_id": "...", "report_2_id": "..." }, ... ]``
 - ``features.json`` (optional): ``{ "<pair_id>": { ...PairFeatures fields... }, ... }``
 - ``classifications.json`` (optional): ``{ "<pair_id>": { ...ClassificationResult fields... }, ... }``
-- ``bundles.json`` (optional): ``{ "<pair_id>": { ...FrozenPairBundle fields... }, ... }``
+- ``pair_frequencies.json`` (optional): ``{ "<pair_id>": { ...FrozenPairBundle fields... }, ... }``
 - ``narrative_demographics.json`` (optional): a ``FrozenNarrativeDemographics``
   artifact, ``{ "extractions": { "<report_id>": { ...NarrativeDemographics
   fields... }, ... } }``
@@ -114,11 +114,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Path to classifications JSON (dict keyed by pair_id). Optional.",
     )
     parser.add_argument(
-        "--bundles",
+        "--pair-frequencies",
         type=Path,
         default=None,
         help=(
-            "Path to frozen pair bundles JSON (dict keyed by pair_id). "
+            "Path to frozen pair frequencies JSON (dict keyed by pair_id). "
             "When provided, each pair report includes a Frequency Statistics "
             "section. Optional."
         ),
@@ -250,21 +250,22 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.classifications:
         classifications = read_classifications(args.classifications)
 
-    # Load optional frozen pair bundles
-    bundles: dict[str, FrozenPairBundle] = {}
-    if args.bundles:
-        raw_bundles = _load_json(args.bundles)
-        if not isinstance(raw_bundles, dict):
+    # Load optional frozen pair frequencies
+    pair_frequencies: dict[str, FrozenPairBundle] = {}
+    if args.pair_frequencies:
+        raw_pair_frequencies = _load_json(args.pair_frequencies)
+        if not isinstance(raw_pair_frequencies, dict):
             raise ValueError(
-                f"{args.bundles}: expected a JSON object keyed by pair_id, "
-                f"got a {type(raw_bundles).__name__}."
+                f"{args.pair_frequencies}: expected a JSON object keyed by "
+                f"pair_id, got a {type(raw_pair_frequencies).__name__}."
             )
-        bundles = {
+        pair_frequencies = {
             pid: FrozenPairBundle.model_validate(bdata)
-            for pid, bdata in raw_bundles.items()
+            for pid, bdata in raw_pair_frequencies.items()
         }
 
-    # Load optional narrative demographics extractions. Unlike the bundles
+    # Load optional narrative demographics extractions. Unlike the pair
+    # frequencies
     # above this is a wrapper model keyed by report_id, so it has its own
     # loader rather than a bare dict of models.
     narrative_demographics: dict[str, NarrativeDemographics] = {}
@@ -299,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             reports=reports,
             features=features,
             classifications=classifications,
-            bundles=bundles,
+            pair_frequencies=pair_frequencies,
             narrative_demographics=narrative_demographics,
             screening_algorithm=screening_algorithm,
         )
@@ -328,7 +329,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             pair_id=pair.pair_id,
             features=features.get(pair.pair_id),
             classification=classifications.get(pair.pair_id),
-            frozen_bundle=bundles.get(pair.pair_id),
+            frozen_bundle=pair_frequencies.get(pair.pair_id),
             narrative_demographics_1=narrative_demographics.get(
                 pair.report_1_id
             ),
@@ -371,7 +372,7 @@ def _run_evidence(
     reports: dict[str, Report],
     features: dict[str, PairFeatures],
     classifications: dict[str, ClassificationResult],
-    bundles: dict[str, FrozenPairBundle],
+    pair_frequencies: dict[str, FrozenPairBundle],
     narrative_demographics: dict[str, NarrativeDemographics],
     screening_algorithm: str | None,
 ) -> None:
@@ -409,7 +410,7 @@ def _run_evidence(
                 pair_id=pair.pair_id,
                 features=features.get(pair.pair_id),
                 classification=classifications.get(pair.pair_id),
-                frozen_bundle=bundles.get(pair.pair_id),
+                frozen_bundle=pair_frequencies.get(pair.pair_id),
                 narrative_demographics_1=narrative_demographics.get(
                     pair.report_1_id
                 ),

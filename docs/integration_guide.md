@@ -566,19 +566,19 @@ If a deployment instead drops the `llm_client` entirely — for example, an envi
 
 ##### Wiring without an LLM client
 
-Some deployments must run inference without any LLM. With `ae_clinical_picture_mode = "rule_based"` and `llm_client = None`, the AE clinical-picture path is fully deterministic — but the **source-context evidence** and **narrative-demographics merge** still need their per-report LLM extractions, which must therefore be produced **once at frozen-dataset creation time** and serialized as sidecars next to `validation_reports.json`. Without those sidecars the source-context evidence silently disables (see *Freezing narrative source/case extractions* above) and `PipelineRunner.run_batch` logs a `WARNING` on first use.
+Some deployments must run inference without any LLM. With `ae_clinical_picture_mode = "rule_based"` and `llm_client = None`, the AE clinical-picture path is fully deterministic — but the **source-context evidence** and **narrative-demographics merge** still need their per-report LLM extractions, which must therefore be produced **once at frozen-dataset creation time** and serialized as sidecars next to `reports.json`. Without those sidecars the source-context evidence silently disables (see *Freezing narrative source/case extractions* above) and `PipelineRunner.run_batch` logs a `WARNING` on first use.
 
 Two helper scripts ship with the dev repo for this purpose:
 
 ```sh
 # At frozen-dataset creation time (online, with an LLM client):
 python scripts/extract_frozen_source_case.py \
-    --reports validation_reports.json \
+    --reports reports.json \
     --llm-factory my_secure_pkg.llm:make_client \
     --out source_case.json
 
 python scripts/extract_frozen_narrative_demographics.py \
-    --reports validation_reports.json \
+    --reports reports.json \
     --llm-factory my_secure_pkg.llm:make_client \
     --out narrative_demographics.json
 ```
@@ -1354,6 +1354,7 @@ python -m llm_dup_dev.review_html \
 | `pairs.json` | `[ { "pair_id": "...", "report_1_id": "...", "report_2_id": "..." }, ... ]` |
 | `features.json` | `{ "<pair_id>": { ...PairFeatures fields... }, ... }` (optional) |
 | `classifications.json` | `{ "<pair_id>": { ...ClassificationResult fields... }, ... }` (optional) |
+| `pair_frequencies.json` | `{ "<pair_id>": { ...FrozenPairBundle fields... }, ... }` (optional, `--pair-frequencies`; the per-pair frozen frequency statistics the offline provider reads) |
 | `screening.json` | `{ "algorithm": "...", "entries": { "<pair_id>": { "<feature>": <value>, ... }, ... } }`, or the bare `{ "<pair_id>": { ... }, ... }` (optional, `--screening`) |
 
 Use `Report.model_dump()`, `PairFeatures.model_dump()`, and `ClassificationResult.model_dump()` to produce these from the pipeline outputs.
@@ -1426,7 +1427,8 @@ Same artifacts, same loader, different output. On the CLI:
 python -m llm_dup_dev.review_html \
     --reports reports.json --pairs pairs.json \
     --features features.json --classifications classifications.json \
-    --bundles bundles.json --run-manifest run_manifest.json \
+    --pair-frequencies pair_frequencies.json \
+    --run-manifest run_manifest.json \
     --format evidence --set-label "FDA Gold"
 ```
 

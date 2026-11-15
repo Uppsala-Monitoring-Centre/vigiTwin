@@ -21,6 +21,61 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-15
+
+### Changed — `bundles` is now `pair_frequencies` across the review interfaces
+
+The artifact the secure side writes is `pair_frequencies.json`. The review
+interfaces called it `bundles`, after the model inside it, so every invocation
+read `--bundles pair_frequencies.json`. The names now say what the file is:
+
+| Was | Is |
+|---|---|
+| `--bundles` | `--pair-frequencies` |
+| `load_saved_run(bundles_path=...)` | `load_saved_run(pair_frequencies_path=...)` |
+| `render_saved_run(bundles_path=...)` | `render_saved_run(pair_frequencies_path=...)` |
+| curated manifest `bundles:` | `pair_frequencies:` |
+| `bundles.json` in docs and examples | `pair_frequencies.json` |
+
+**No aliases.** A stale `--bundles` is an argparse error, a stale
+`bundles_path=` a `TypeError`, and a stale `bundles:` in a collection manifest
+a validation error naming the key — the manifest models are `extra="forbid"`,
+which is what makes the last one loud rather than silently ignored. All three
+fail at the call, not by rendering something subtly wrong.
+
+**What did not change.** `FrozenPairBundle`, its JSON structure, and
+`FrozenStatsProvider` are untouched: they are the established offline
+evaluation infrastructure, consumed on the secure side, and the model is still
+accurately named after what it holds. Nor did the per-pair parameter change —
+`render_pair(frozen_bundle=...)`, `PairRenderItem.frozen_bundle`,
+`EvaluatedPairItem.frozen_bundle` and `build_evidence_case(frozen_bundle=...)`
+all name one `FrozenPairBundle`, not the artifact. The rename is confined to
+the names that denote the *file*: its CLI flag, its loader parameter, and its
+manifest field.
+
+No assessment logic, rendering output or schema moved. `schemas/` is
+byte-identical and no page renders differently.
+
+**On the version number.** A renamed public name is a breaking change, and
+`agents.md` § Versioning calls for a major bump. This ships as a **minor**
+deliberately: `--bundles` and `bundles_path` have no consumer — the secure side
+does not call them, and the evidence format that introduced the manifest field
+has not been published to GitHub or consumed anywhere. A 2.0.0 spent on a
+naming fix would also displace the breaking work already earmarked for it (the
+package rename, the regulator pilot). Recorded here rather than left to be
+inferred, because the next person to read the bump rules should see that this
+entry knows it is an exception.
+
+### Documentation
+
+- `docs/integration_guide.md` and `docs/evidence_format.md` now use the current
+  secure-side artifact convention throughout — `reports.json`, `pairs.json`,
+  `pair_frequencies.json`, `narrative_demographics.json` — dropping the
+  `validation_` prefix left over from the method-validation phase.
+- The integration guide's JSON-format table gains the `pair_frequencies.json`
+  row it was missing, so the artifact is documented where the others are rather
+  than only in the CLI's own `--help`.
+
 ## [1.1.0] - 2026-11-15
 
 ### Added — an `evidence` review format beside the existing `detailed` one
