@@ -95,7 +95,9 @@
     as inconsistencies, and blank cells, which mean the information was not
     reported. Colour shows what the assessment used, not how severe it was,
     and a green drug or adverse event term is a member of a shared pattern
-    rather than a term with its own score.
+    rather than a term with its own score. A coloured value's tooltip only
+    repeats evidence that the tables below also name, so nothing on this page
+    depends on hovering and a printed copy loses nothing.
   </p>
 
   <table class="characteristics">
@@ -254,8 +256,8 @@
   <p class="reconciliation">
     Contributions total {{ r.contributions_total_text }}; anchor adjustment
     {{ r.anchor_adjustment_text }}; stored matching score
-    {{ r.stored_score_text }}{% if r.score_ceiling is not none %} (ceiling
-    {{ '%.1f' | format(r.score_ceiling) }}){% endif %}. {{ r.note }}
+    {{ r.stored_score_text }}{% if r.score_ceiling is not none %} (scale
+    0.0–{{ '%.1f' | format(r.score_ceiling) }}){% endif %}. {{ r.note }}
   </p>
   {% endif %}
 
@@ -289,13 +291,25 @@
       {% endfor %}
     </tbody>
   </table>
+  {% if case.findings_weighed %}
   <p class="note">
     These are the findings vigiTwin retained and weighed. Severity is the
     level that was counted: a finding whose severity was reduced is listed at
     its final level, with the reason given. The figure beside it is the weight
     this run applied to that level, and the retained findings' weights are
-    what sum to the inconsistency penalty.
+    what sum to the inconsistency penalty that decided the same-case question.
   </p>
+  {% else %}
+  <p class="note">
+    These are the inconsistencies vigiTwin identified, each shown at the
+    severity that was counted — a finding whose severity was reduced is listed
+    at its final level, with the reason given — and with the weight this run
+    assigns that level. For this pair they were <em>not</em> weighed against a
+    same-case tolerance: that comparison is only reached once independence is
+    rejected, so the findings below are recorded evidence and bore on no
+    decision here.
+  </p>
+  {% endif %}
   {% elif case.assessment_rows %}
   <p>vigiTwin recorded no inconsistencies for this pair.</p>
   {% endif %}

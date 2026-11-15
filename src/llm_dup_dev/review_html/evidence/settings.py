@@ -27,10 +27,13 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel
+
+from .models import ProvenanceVM
 
 #: Keys read out of a run manifest, by manifest section.
 _PIPELINE_KEYS = ("epsilon",)
@@ -57,9 +60,49 @@ class EvidenceRunSettings(BaseModel):
     lmatch_limited: float | None = None
     lpatient_compelling: float | None = None
     explicit_link_enabled: bool | None = None
+
+    #: Run provenance, for the page footer. Read from the manifest's own
+    #: identity fields rather than reconstructed: ``dev_package_version`` is
+    #: the version that produced the *run*, which is not necessarily the one
+    #: rendering the review.
+    run_id: str | None = None
+    created_at: str | None = None
+    dev_package_version: str | None = None
+    dev_git_commit: str | None = None
+
     #: Human-readable provenance, e.g. a manifest path, or "" when supplied
     #: directly by a caller.
     source: str = ""
+
+    @property
+    def configuration_text(self) -> str:
+        """The decision settings this run used, rendered for a footer.
+
+        Only what the manifest actually recorded: a run that kept none of it
+        yields an empty string, and the footer then omits the clause rather
+        than implying the defaults applied.
+        """
+        parts: list[str] = []
+        zones = [
+            self.lmatch_compelling,
+            self.lmatch_intermediate,
+            self.lmatch_limited,
+        ]
+        if all(z is not None for z in zones):
+            # One decimal, as every score on the page is shown, so a reader
+            # is not comparing "3" against "3.0".
+            joined = " / ".join(f"{z:.1f}" for z in zones if z is not None)
+            parts.append(f"L_match thresholds {joined}")
+        if self.lpatient_compelling is not None:
+            parts.append(f"L_patient {self.lpatient_compelling:.1f}")
+        if self.epsilon is not None:
+            parts.append(f"epsilon {self.epsilon:g}")
+        if self.explicit_link_enabled is not None:
+            parts.append(
+                "explicit links "
+                + ("enabled" if self.explicit_link_enabled else "disabled")
+            )
+        return "; ".join(parts)
 
     @property
     def score_ceiling(self) -> float | None:
@@ -132,9 +175,57 @@ def load_evidence_run_settings(path: str | Path) -> EvidenceRunSettings:
             if key in thresholds:
                 values[key] = thresholds[key]
 
+    for key in ("run_id", "created_at", "dev_git_commit"):
+        if raw.get(key) is not None:
+            values[key] = str(raw[key])
+    dev_package = raw.get("dev_package")
+    if isinstance(dev_package, dict) and dev_package.get("version") is not None:
+        values["dev_package_version"] = str(dev_package["version"])
+
     return EvidenceRunSettings.model_validate(
         {**values, "source": str(manifest_path)}
     )
 
 
-__all__ = ["EvidenceRunSettings", "load_evidence_run_settings"]
+def page_provenance(
+    settings: Iterable[EvidenceRunSettings | None],
+) -> ProvenanceVM:
+    """Footer provenance for a page built from these runs.
+
+    The rendering version is always stated. A run's own identity is stated
+    only when every case that has one agrees: a collection spanning two runs
+    reports neither, and says so, rather than attributing the page to
+    whichever happened to be first.
+    """
+    present = [s for s in settings if s is not None]
+    if not present:
+        return ProvenanceVM()
+
+    def one(attr: str) -> str | None:
+        """The single distinct value of ``attr``, or ``None`` if they differ."""
+        values = {
+            value
+            for value in (getattr(s, attr) for s in present)
+            if value not in (None, "")
+        }
+        return values.pop() if len(values) == 1 else None
+
+    run_ids = {s.run_id for s in present if s.run_id}
+    configurations = {s.configuration_text for s in present}
+    if len(run_ids) > 1 or len(configurations) > 1:
+        return ProvenanceVM(several_runs=True)
+
+    return ProvenanceVM(
+        dev_git_commit=one("dev_git_commit"),
+        run_id=one("run_id"),
+        run_created_at=one("created_at"),
+        configuration=next(iter(configurations)) if configurations else "",
+        source=one("source") or "",
+    )
+
+
+__all__ = [
+    "EvidenceRunSettings",
+    "load_evidence_run_settings",
+    "page_provenance",
+]

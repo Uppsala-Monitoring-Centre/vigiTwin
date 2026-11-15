@@ -25,6 +25,9 @@ original assessment.
 from __future__ import annotations
 
 from enum import Enum
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as distribution_version
 
 from pydantic import BaseModel, Field
 
@@ -377,23 +380,41 @@ class MatchingFeatureRow(BaseModel):
 class ReconciliationVM(BaseModel):
     """How the individual contributions relate to the stored matching score.
 
-    These do not simply add up, and the difference is not a rounding error:
-    the score is ``max(0, -log10(p_match + epsilon))``, so once the
-    contributions imply a chance-match probability far below ``epsilon`` the
-    score is held at ``-log10(epsilon)``. Showing the three numbers together,
-    with the ceiling named when it is known, is what stops a reader
-    concluding the table is inconsistent with its own score.
+    These do not simply add up, and the difference is not a rounding error.
+    The stored score is ``max(0, -log10(P_match + epsilon))`` where
+    ``P_match = 1 - (1 - p_joint)^M``, and the two numbers shown — the
+    contributions total ``-log10(p_joint)`` and the anchor adjustment
+    ``-log10(M)`` — add to ``-log10(p_joint x M)``, which tracks that
+    expression only while ``p_joint x M`` is small. The score is therefore
+    **bounded at both ends**:
+
+    * at the top by ``epsilon``, so a chance-match probability far below it
+      yields ``-log10(epsilon)`` however much evidence the contributions imply;
+    * at the bottom by zero, reached as ``p_joint x M`` approaches one — where
+      a chance match is no longer unlikely at all, ``P_match`` saturates
+      towards one and the additive figure, which can go negative, stops
+      describing anything.
+
+    Showing the numbers together with whichever bound applies is what stops a
+    reader concluding the table contradicts its own score.
     """
 
     contributions_total: float
     contributions_total_text: str
     anchor_adjustment: float | None = None
     anchor_adjustment_text: str = ""
+    #: ``contributions_total + anchor_adjustment``: what the two shown numbers
+    #: come to, which is the figure a reader adds up. Not the stored score.
+    additive_total: float = 0.0
+    additive_total_text: str = ""
     stored_score: float
     stored_score_text: str
     #: ``-log10(epsilon)`` when the run's epsilon is known, else ``None``.
     score_ceiling: float | None = None
     ceiling_reached: bool = False
+    #: The score sits at its lower bound of zero while the additive figure is
+    #: negative — the floor, the mirror of ``ceiling_reached``.
+    floor_reached: bool = False
     note: str = ""
 
 
@@ -592,6 +613,13 @@ class EvidenceCaseVM(BaseModel):
     drugs: list[DrugEvidenceRow] = Field(default_factory=list)
     adverse_events: list[AEEvidenceRow] = Field(default_factory=list)
 
+    #: Whether the inconsistency penalty was actually compared against a
+    #: same-case tolerance. ``False`` when the question was never reached —
+    #: independence was not rejected, or the relationship was pinned on source
+    #: context — in which case the findings carry weights but none of those
+    #: weights bore on the classification, and section 3 says so.
+    findings_weighed: bool = False
+
     shared_sets: list[SharedSetVM] = Field(default_factory=list)
     anchor_note: str = ""
     freq_rows: list[FreqRowVM] = Field(default_factory=list)
@@ -616,6 +644,73 @@ class EvidenceCaseVM(BaseModel):
         return [d for d in self.discrepancies if not d.retained]
 
 
+@lru_cache(maxsize=1)
+def _installed_version() -> str | None:
+    """The installed distribution's version, or ``None`` when not installed.
+
+    Read from installed metadata, the same source
+    ``run_manifest.build_run_manifest`` records as ``dev_package.version``, so
+    a page and a manifest written by one run cannot disagree about which
+    version produced them.
+    """
+    try:
+        return distribution_version("llm-dup-dev")
+    except PackageNotFoundError:  # pragma: no cover - source checkout only
+        return None
+
+
+class ProvenanceVM(BaseModel):
+    """What produced this review, for the footer.
+
+    The renderer's own version is always available. Everything about the *run*
+    comes from its run manifest, so those fields are filled only when one was
+    supplied, and a collection spanning several runs reports none of them and
+    says so instead of picking one.
+    """
+
+    #: Version of the package that rendered the page. Filled from installed
+    #: metadata by default; ``None`` only in a source checkout.
+    dev_version: str | None = Field(default_factory=_installed_version)
+    #: Commit of the dev package that produced the *run*, per its manifest.
+    dev_git_commit: str | None = None
+    run_id: str | None = None
+    run_created_at: str | None = None
+    #: The decision settings the run used, already rendered, e.g.
+    #: ``"L_match thresholds 3.0 / 2.0 / 1.0; epsilon 1e-15"``.
+    configuration: str = ""
+    #: Where the run settings were read from, normally a manifest path.
+    source: str = ""
+    #: True when the cases came from runs with differing provenance, so no
+    #: single run can be named.
+    several_runs: bool = False
+
+    @property
+    def lines(self) -> list[str]:
+        """Footer lines, in order, omitting whatever is unknown."""
+        out: list[str] = []
+        if self.dev_version:
+            out.append(f"vigiTwin {self.dev_version}")
+        if self.several_runs:
+            out.append("several pipeline runs; see each case")
+            return out
+        # One clause for the run, not two: the id names it and the date
+        # places it, and a footer does not need seconds.
+        day = (self.run_created_at or "")[:10]
+        if self.run_id and day:
+            out.append(f"run {self.run_id} of {day}")
+        elif self.run_id:
+            out.append(f"run {self.run_id}")
+        elif day:
+            out.append(f"run of {day}")
+        if self.dev_git_commit:
+            out.append(f"pipeline commit {self.dev_git_commit[:12]}")
+        if self.configuration:
+            out.append(self.configuration)
+        if self.source:
+            out.append(f"settings from {self.source}")
+        return out
+
+
 class EvidencePageVM(BaseModel):
     """One HTML document holding one or more cases."""
 
@@ -623,6 +718,9 @@ class EvidencePageVM(BaseModel):
     intro: str = ""
     note: str = ""
     generated_at: str = ""
+    #: Always present, so the footer can state the rendering version even for
+    #: a hand-built page; the run fields fill in when a manifest was supplied.
+    provenance: ProvenanceVM = Field(default_factory=ProvenanceVM)
     cases: list[EvidenceCaseVM] = Field(default_factory=list)
 
     @property

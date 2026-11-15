@@ -365,6 +365,7 @@ from .evidence import (  # noqa: E402  (same cycle: evidence reaches back here)
     EvidenceRole,
     EvidenceRunSettings,
     ExamplePresentation,
+    ProvenanceVM,
     ReferenceInfo,
     SCLEAssessment,
     SCLEState,
@@ -374,6 +375,7 @@ from .evidence import (  # noqa: E402  (same cycle: evidence reaches back here)
     build_evidence_case,
     load_curated_manifest,
     load_evidence_run_settings,
+    page_provenance,
     screening_verdict,
 )
 from .formats import ReviewFormat  # noqa: E402
@@ -403,6 +405,7 @@ __all__ = [
     "ExamplePresentation",
     "MissingPairPolicy",
     "PairSelection",
+    "ProvenanceVM",
     "ReferenceInfo",
     "ReviewFormat",
     "SCLEAssessment",
@@ -415,6 +418,7 @@ __all__ = [
     "build_assessment_summary",
     "build_collection",
     "build_evidence_case",
+    "page_provenance",
     "screening_verdict",
     "load_curated_manifest",
     "load_evidence_run_settings",

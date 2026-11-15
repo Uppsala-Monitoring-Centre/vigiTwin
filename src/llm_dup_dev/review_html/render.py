@@ -24,6 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover
         EvidenceIndexItem,
         EvidenceIndexVM,
         EvidencePageVM,
+        ProvenanceVM,
     )
 
 # ---------------------------------------------------------------------------
@@ -246,8 +247,13 @@ def write_evidence_html(
     title: str | None = None,
     intro: str = "",
     note: str = "",
+    provenance: "ProvenanceVM | None" = None,
 ) -> Path:
-    """Render and write one case as its own evidence document."""
+    """Render and write one case as its own evidence document.
+
+    ``provenance`` names the run behind the cases, for the footer. Omitted, the
+    footer still states the rendering version, which needs no run manifest.
+    """
     from .evidence.models import EvidencePageVM
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -256,6 +262,7 @@ def write_evidence_html(
         intro=intro,
         note=note,
         generated_at=_utc_now(),
+        **({} if provenance is None else {"provenance": provenance}),
         cases=[case],
     )
     path = output_dir / evidence_filename(case)
@@ -271,6 +278,7 @@ def write_evidence_batch_html(
     index_title: str = "Evidence review",
     collection_intro: str = "",
     collection_note: str = "",
+    provenance: "ProvenanceVM | None" = None,
 ) -> Path:
     """Write one evidence document per case, plus an optional index.
 
@@ -287,6 +295,7 @@ def write_evidence_batch_html(
             output_dir,
             intro=collection_intro,
             note=collection_note,
+            provenance=provenance,
         )
         label = next(
             (
@@ -329,6 +338,7 @@ def write_evidence_document(
     title: str,
     intro: str = "",
     note: str = "",
+    provenance: "ProvenanceVM | None" = None,
 ) -> Path:
     """Write every case into one document.
 
@@ -344,6 +354,7 @@ def write_evidence_document(
         intro=intro,
         note=note,
         generated_at=_utc_now(),
+        **({} if provenance is None else {"provenance": provenance}),
         cases=list(cases),
     )
     path.write_text(render_evidence_page(page), encoding="utf-8")

@@ -1144,20 +1144,28 @@ def _build_shared_sets(features: PairFeatures) -> list[SharedSetVM]:
     return sets
 
 
+#: The anchor's name and the verb that agrees with it. The two-set anchor is
+#: plural, so it takes "together define" — "the shared drug and adverse event
+#: sets defines" was the reading before the verb was carried alongside.
 _ANCHOR_SET_NAME = {
-    AnchorType.DRUGS: "shared drug set",
-    AnchorType.AES: "shared adverse event set",
-    AnchorType.DRUGS_AES: "shared drug and adverse event sets",
+    AnchorType.DRUGS: ("shared drug set", "defines"),
+    AnchorType.AES: ("shared adverse event set", "defines"),
+    AnchorType.DRUGS_AES: (
+        "shared drug and adverse event sets",
+        "together define",
+    ),
 }
 
 
 def _anchor_note(features: PairFeatures) -> str:
     """One sentence naming the anchor, its size and its context."""
     anchor = features.anchor
-    name = _ANCHOR_SET_NAME.get(anchor.type, "shared clinical pattern")
+    name, verb = _ANCHOR_SET_NAME.get(
+        anchor.type, ("shared clinical pattern", "defines")
+    )
     reports = "report" if anchor.N_anchor == 1 else "reports"
     return (
-        f"The {name} defines an anchor population of "
+        f"The {name} {verb} an anchor population of "
         f"{_format_count(anchor.N_anchor)} {reports} in "
         f"{context_phrase(features.reporting_context.level)}. The matching "
         "score measures how surprising the observed matches would be within "
@@ -1296,27 +1304,51 @@ def _build_reconciliation(
 ) -> ReconciliationVM:
     """Relate the listed contributions to the stored matching score.
 
-    The three numbers do not simply add up, and a reader who tries to add them
+    The numbers do not simply add up, and a reader who tries to add them
     deserves an explanation rather than the impression that the table
-    contradicts its own score. Two things intervene: the anchor-multiplicity
-    adjustment, and the ceiling. The score is
-    ``max(0, -log10(p_match + epsilon))``, so once the contributions imply a
-    chance-match probability well below ``epsilon`` the score stops rising and
-    sits at ``-log10(epsilon)``.
+    contradicts its own score. The stored score is
 
-    The ceiling can only be named when the run's epsilon is known. Where it is
-    not and the numbers disagree, this records a gap saying so rather than
-    asserting a ceiling it cannot verify.
+        L_match = max(0, -log10(P_match + epsilon)),
+        P_match  = 1 - (1 - p_joint) ** M,
+
+    while the two figures shown add to ``-log10(p_joint x M)``. That sum
+    tracks the stored score only while ``p_joint x M`` is small, and the score
+    is bounded at **both** ends:
+
+    * **Ceiling.** ``+ epsilon`` holds the score at ``-log10(epsilon)`` once
+      the contributions imply a chance-match probability far below it. Named
+      only when the run's epsilon is known.
+    * **Floor.** ``max(0, ...)`` holds the score at zero once the additive
+      figure turns negative. This is not merely a clamp: as ``p_joint x M``
+      approaches one, ``P_match`` saturates towards one — a chance match is
+      not unlikely at all — and the additive figure stops describing anything.
+      It needs no run settings to state, because neither bound's arithmetic
+      depends on epsilon here.
+
+    Where the numbers disagree and no bound explains it, this records a gap
+    rather than asserting a ceiling it cannot verify.
     """
     total = sum(r.contribution for r in matching_features)
     adjustment = _anchor_adjustment(features.anchor.N_anchor)
     stored = features.L_match
     ceiling = run_settings.score_ceiling if run_settings is not None else None
 
-    expected = max(0.0, total + (adjustment or 0.0))
-    unexplained = abs(expected - stored) > _RECONCILE_TOLERANCE
+    additive = total + (adjustment or 0.0)
     at_ceiling = (
         ceiling is not None and abs(stored - ceiling) <= _RECONCILE_TOLERANCE
+    )
+    # The floor explains the difference only when the score is *at* zero and
+    # the additive figure is below it. A negative additive figure with a
+    # non-zero score is a genuine disagreement, not a bound.
+    at_floor = (
+        not at_ceiling
+        and stored <= _RECONCILE_TOLERANCE
+        and additive < -_RECONCILE_TOLERANCE
+    )
+    unexplained = (
+        not at_ceiling
+        and not at_floor
+        and abs(additive - stored) > _RECONCILE_TOLERANCE
     )
 
     if at_ceiling and ceiling is not None:
@@ -1326,6 +1358,17 @@ def _build_reconciliation(
             "this run used, so it reads as that ceiling rather than the larger "
             "total. The individual contributions are the evidence; the score is "
             "a bounded summary of it."
+        )
+    elif at_floor:
+        note = (
+            f"The two figures come to {additive:+.1f}, and the score is held "
+            "at its lower bound of 0.0. The anchor population offers more "
+            "pairwise opportunities than the shared features are rare, so a "
+            "match like this one would not be surprising within it: the "
+            "chance-match probability reaches its maximum and the score, "
+            "which cannot fall below zero, reads as no evidence rather than "
+            "as negative evidence. A score of 0.0 here means the matching "
+            "evidence is absent, not that it was not computed."
         )
     elif unexplained and ceiling is None:
         note = (
@@ -1369,10 +1412,13 @@ def _build_reconciliation(
             # adjustment is -log10(1) = -0.0, which would print as "-0.0".
             else ("0.0" if adjustment == 0 else f"{adjustment:+.1f}")
         ),
+        additive_total=additive,
+        additive_total_text=f"{additive:+.1f}",
         stored_score=stored,
         stored_score_text=f"{stored:.1f}",
         score_ceiling=ceiling,
         ceiling_reached=at_ceiling,
+        floor_reached=at_floor,
         note=note,
     )
 
@@ -2170,6 +2216,7 @@ def build_evidence_case(
         context_note=context_note,
         drugs=drugs,
         adverse_events=aes,
+        findings_weighed=_findings_were_weighed(classification),
         shared_sets=shared_sets,
         anchor_note=anchor_note,
         freq_rows=freq_rows,
@@ -2182,6 +2229,21 @@ def build_evidence_case(
         discrepancies=discrepancies,
         gaps=_dedupe_gaps(gaps),
     )
+
+
+def _findings_were_weighed(classification: ClassificationResult | None) -> bool:
+    """Whether the inconsistency penalty was compared against a tolerance.
+
+    ``InconsistencyPenalty.threshold`` is the bar the penalty was tested
+    against, and is ``None`` in exactly the cases where no test happened:
+    independence was not rejected, so the relationship question was never
+    reached, or the relationship was pinned on source context regardless of
+    the penalty. The findings still carry the weights the run assigns their
+    severities; what did not happen is the weighing.
+    """
+    if classification is None or classification.penalty is None:
+        return False
+    return classification.penalty.threshold is not None
 
 
 def _context_note(r1: Report, r2: Report, features: PairFeatures) -> str:

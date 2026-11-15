@@ -52,6 +52,7 @@ from .models import (
     EvidencePageVM,
     EvidenceRole,
     EvidenceSource,
+    ProvenanceVM,
     TileState,
     ValueKind,
 )
@@ -60,7 +61,11 @@ from .screening import (
     ScreeningVerdict,
     screening_verdict,
 )
-from .settings import EvidenceRunSettings, load_evidence_run_settings
+from .settings import (
+    EvidenceRunSettings,
+    load_evidence_run_settings,
+    page_provenance,
+)
 from .summary import AssessmentSummary, SummarySlot, build_assessment_summary
 
 __all__ = [
@@ -81,6 +86,7 @@ __all__ = [
     "ExampleDataset",
     "ExamplePresentation",
     "LoadedExampleManifest",
+    "ProvenanceVM",
     "ReferenceInfo",
     "ReviewStatus",
     "SCLEAssessment",
@@ -97,6 +103,7 @@ __all__ = [
     "export_summary_drafts",
     "load_curated_manifest",
     "load_evidence_run_settings",
+    "page_provenance",
     "screening_verdict",
     "write_curated_manifest",
     "write_summary_drafts",

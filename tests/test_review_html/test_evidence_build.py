@@ -1492,3 +1492,63 @@ class TestFindingsCarryTheirWeight:
         row = case.retained_discrepancies[0]
         assert row.weight is None
         assert row.weight_text == ""
+
+
+class TestTheAnchorNoteReadsAsEnglish:
+    """The two-set anchor is plural and takes a plural verb."""
+
+    @staticmethod
+    def _note(anchor_type: AnchorType) -> str:
+        features = _features(
+            anchor=AnchorPopulation(
+                N_drugs=10,
+                N_AEs=10,
+                N_drugs_AEs=5,
+                type=anchor_type,
+                N_anchor=5,
+            )
+        )
+        return _case(_report("R1"), _report("R2"), features).anchor_note
+
+    def test_two_sets_together_define(self):
+        note = self._note(AnchorType.DRUGS_AES)
+        assert note.startswith(
+            "The shared drug and adverse event sets together define"
+        )
+        assert "sets defines" not in note
+
+    def test_one_set_defines(self):
+        assert self._note(AnchorType.DRUGS).startswith(
+            "The shared drug set defines"
+        )
+
+    def test_the_ae_set_defines(self):
+        assert self._note(AnchorType.AES).startswith(
+            "The shared adverse event set defines"
+        )
+
+
+class TestFindingsWeighedFlag:
+    """Whether the penalty was compared, which section 3's note turns on."""
+
+    @staticmethod
+    def _case_with(penalty):
+        return _case(
+            _report("R1"),
+            _report("R2"),
+            _features(),
+            classification=(
+                None if penalty is None else _classification(penalty=penalty)
+            ),
+        )
+
+    def test_a_threshold_means_the_comparison_happened(self):
+        case = self._case_with(InconsistencyPenalty(w_tot=1.0, threshold=4.0))
+        assert case.findings_weighed
+
+    def test_no_threshold_means_it_did_not(self):
+        case = self._case_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
+        assert not case.findings_weighed
+
+    def test_no_classification_means_it_did_not(self):
+        assert not self._case_with(None).findings_weighed

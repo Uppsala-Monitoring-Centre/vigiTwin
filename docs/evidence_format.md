@@ -121,6 +121,13 @@ Then four numbered sections:
    Retained rows are tinted red, with the same two row classes the drug and
    adverse-event tables use; a superseded row is not, because it contributed
    nothing and a red row would say the assessment weighed it.
+   The note beneath the table follows the decision: findings are described as
+   "retained and weighed" only where the penalty was actually compared against
+   a same-case tolerance (`InconsistencyPenalty.threshold is not None`, carried
+   on the case as `findings_weighed`). Where independence was not rejected, or
+   the relationship was pinned on source context, the note says the findings
+   were *not* weighed and bore on no decision — they are still recorded
+   evidence, and they still carry weights, but nothing compared them.
    Severity carries the weight the run applied to it, as `Moderate (+1.0)`,
    and the retained weights are what sum to the inconsistency penalty. The
    weight comes from the stored `InconsistencyPenalty.terms`, which records
@@ -218,22 +225,45 @@ run that file usually holds edited text.
 
 ---
 
-## Run settings, and why the contributions may exceed the score
+## Run settings, and why the contributions do not sum to the score
 
 The per-feature contributions in section 2 do not always sum to the stored
 matching score, and a supplement whose own table visibly fails to add up is
-worse than one that explains itself. Two things separate the two numbers:
+worse than one that explains itself. What the page shows is
 
-1. **The anchor adjustment.** An anchor population of *N* reports carries a
-   multiplicity adjustment of `-log10(C(N, 2))`. At *N* = 2 this is zero.
-2. **The score ceiling.** `L_match = -log10(p_match + epsilon)`, so no run can
-   emit a score above `-log10(epsilon)` — 15.0 at the default epsilon of
-   1e-15. A pair with 17.2 decades of contributions reports 15.0.
+    contributions total = -log10(p_joint)      (the per-feature decades)
+    anchor adjustment   = -log10(M),  M = C(N_anchor, 2)
+
+so the two figures add to `-log10(p_joint x M)`. What the pipeline stores is
+
+    P_match = 1 - (1 - p_joint) ** M
+    L_match = max(0, -log10(P_match + epsilon))
+
+Those agree only while `p_joint x M` is small, which is the ordinary case and
+the reason the additive presentation is worth keeping. The score is **bounded
+at both ends**, and the page names whichever bound applies:
+
+1. **The ceiling.** `+ epsilon` means no run can emit a score above
+   `-log10(epsilon)` — 15.0 at the default 1e-15. A pair with 17.2 decades of
+   contributions reports 15.0, and the page says the score is capped rather
+   than letting the table look wrong. Nameable only when a run manifest
+   supplies `epsilon`.
+2. **The floor.** `max(0, ...)` means no score falls below zero. This is where
+   the additive figure goes *negative*: as `p_joint x M` approaches one, a
+   chance match stops being unlikely, `P_match` saturates towards one, and
+   `-log10` of it approaches zero from above. A pair with no shared features at
+   all in an anchor of 11 reports shows contributions `+0.0`, adjustment
+   `-1.7` and a stored score of `0.0` — and the page says the score is held at
+   its lower bound, and that `0.0` means the matching evidence is *absent*
+   rather than not computed. Unlike the ceiling this needs no run settings:
+   zero is not a function of epsilon.
 
 Every evidence page therefore carries a **reconciliation row**: contributions
-total, anchor adjustment, stored score. When a run manifest supplies `epsilon`
-the page also names the ceiling, which is what turns an apparent arithmetic
-failure into a stated property of the computation.
+total, anchor adjustment, stored score, and — when `epsilon` is known — the
+scale the score sits on, `0.0–15.0`. Showing both ends of that scale is what
+turns an apparent arithmetic failure into a stated property of the
+computation. `ReconciliationVM.ceiling_reached` and `.floor_reached` record
+which bound was invoked, and `.additive_total` is the figure a reader adds up.
 
 `epsilon` and the `L_match` zone boundaries are **not** in a saved run's
 features file. They live on `PipelineConfig` and `DecisionThresholds`, and are
@@ -455,6 +485,26 @@ What an older run genuinely cannot supply is *which date field* a matched date
 came from. The date is recorded per value, not per field, so a report carrying
 the same date as both a drug start and an AE onset shows both as matched. The
 recovered-date footnote says this.
+
+---
+
+## The footer
+
+Every page ends with what produced it. The rendering version always appears,
+read from installed distribution metadata — the same source
+`build_run_manifest` uses for `dev_package.version`, so a page and a manifest
+from one run cannot disagree. The rest comes from the run manifest when one was
+supplied: the run id and date, the dev commit that produced the run, and the
+decision settings it used (`EvidenceRunSettings.configuration_text` — the
+`L_match` thresholds, `L_patient`, `epsilon` and whether explicit links were
+enabled, each only if recorded).
+
+A collection may span several runs. Where the cases disagree about the run or
+its configuration, the footer says "several pipeline runs; see each case"
+rather than attributing the page to whichever came first;
+`page_provenance` makes that determination and `ProvenanceVM.several_runs`
+records it. The footer also keeps the statement that this is an internal
+review and not a publication-safe document.
 
 ---
 

@@ -122,6 +122,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         index_title=page.title,
         collection_intro=page.intro,
         collection_note=page.note,
+        provenance=page.provenance,
     )
     print(
         f"Wrote {len(page.cases)} evidence review(s) to {out}"
@@ -135,6 +136,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             title=page.title,
             intro=page.intro,
             note=page.note,
+            provenance=page.provenance,
         )
         print(f"Wrote combined document to {path}")
 

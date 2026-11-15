@@ -21,6 +21,87 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-11-15
+
+Four refinements from a final read of a generated collection. Structure,
+design and the colour rule are unchanged.
+
+### Fixed — the reconciliation claimed agreement where the score hit its floor
+
+The stored score is `max(0, -log10(P_match + epsilon))` with
+`P_match = 1 - (1 - p_joint) ** M`, while the two figures the page shows add to
+`-log10(p_joint x M)`. The reconciliation clamped its own expectation with
+`max(0.0, ...)` before comparing, so a pair whose figures came to a negative
+number and whose score was zero was reported as agreeing — the page printed
+"contributions total +0.0; anchor adjustment -1.7; stored matching score 0.0.
+The contributions, the anchor adjustment and the score agree to the precision
+shown", which is visibly not so.
+
+The floor is now explained as the ceiling already was. When the additive figure
+is negative and the score sits at zero, the page states the figure, says the
+score is held at its lower bound, and says what that means: as `p_joint x M`
+approaches one a chance match stops being unlikely, `P_match` saturates towards
+one, and a score of `0.0` reports *absent* matching evidence rather than a
+computation that did not run. Unlike the ceiling this needs no run manifest —
+zero is not a function of epsilon. A negative sum with a non-zero score is
+still a genuine disagreement and still raises `score_unreconciled`.
+
+The row now also shows the scale, `0.0–15.0`, where epsilon is known, so both
+bounds are visible rather than only the upper one. `ReconciliationVM` gains
+`additive_total`, `additive_total_text` and `floor_reached`.
+
+### Fixed — "retained and weighed" where nothing was weighed
+
+Section 3's note was unconditional, so an `Unrelated` pair — independence not
+rejected, so the relationship question never reached — was told its findings
+had been "retained and weighed" and that their weights "sum to the
+inconsistency penalty". The note is now conditional on
+`InconsistencyPenalty.threshold is not None`, carried on the case as
+`findings_weighed`. Where no comparison happened it says the findings were not
+weighed against a same-case tolerance, that the comparison is only reached once
+independence is rejected, and that they bore on no decision for this pair. The
+weights are still shown: the run assigns them, and what did not happen is the
+weighing, not the assignment.
+
+### Fixed — "The shared drug and adverse event sets defines"
+
+The two-set anchor's name is plural and took a singular verb. It now reads "the
+shared drug and adverse event sets **together define** an anchor population of
+…"; the one-set anchors are unchanged. The anchor name table carries the verb
+beside the name so the two cannot drift apart again.
+
+### Added — the footer states what produced the page
+
+The rendering version always, read from installed distribution metadata — the
+same source `build_run_manifest` uses for `dev_package.version`. From the run
+manifest when one was supplied: the run id and date, the dev commit behind the
+run, and the decision settings it used (`L_match` thresholds, `L_patient`,
+`epsilon`, whether explicit links were enabled), each only if recorded. A
+collection spanning several runs says "several pipeline runs; see each case"
+rather than attributing the page to whichever came first.
+
+`EvidenceRunSettings` gains `run_id`, `created_at`, `dev_package_version`,
+`dev_git_commit` and `configuration_text`; `page_provenance` and `ProvenanceVM`
+are new and exported; the three evidence writers take an optional
+`provenance=`.
+
+### Changed — nothing on the page depends on a tooltip
+
+The legend now says so, which is true and was worth stating for a printed copy:
+every coloured value's tooltip repeats evidence that the tables also name — a
+green demographic appears in the contributions table with its value, a green
+date likewise, a shared-set member in the set list, and every red cell in
+section 3. No print rule hides content, and a test asserts both.
+
+### Public surface
+
+Additive: `ProvenanceVM` and `page_provenance` exported from
+`llm_dup_dev.review_html`; `EvidencePageVM.provenance`;
+`EvidenceCaseVM.findings_weighed`; three `ReconciliationVM` fields; five
+`EvidenceRunSettings` fields; `provenance=` on `write_evidence_html`,
+`write_evidence_batch_html` and `write_evidence_document`. No schema changed
+and no existing name moved.
+
 ## [1.1.3] - 2026-11-15
 
 A compaction pass on the rendered page, from reading the first secure-side

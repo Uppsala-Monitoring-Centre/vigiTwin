@@ -574,3 +574,76 @@ class TestLimitationsListsAbsencesOnly:
         html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
         assert "Limitations of this review" in html
         assert "A date could not be attributed." in html
+
+
+class TestTheInconsistencyNoteFollowsTheDecision:
+    """"Retained and weighed" is only true where the weighing happened."""
+
+    @staticmethod
+    def _features_with_finding():
+        return _features(
+            matching_drugs=["topiramate"],
+            inconsistencies=[
+                Inconsistency(
+                    feature="patient_age",
+                    severity=InconsistencySeverity.MODERATE,
+                    difference=7.0,
+                    units="years",
+                )
+            ],
+            inconsistency_counts=InconsistencyCounts(moderate=1),
+        )
+
+    def _html_with(self, penalty):
+        return " ".join(
+            _html(
+                features=self._features_with_finding(),
+                classification=_classification(penalty=penalty),
+            ).split()
+        )
+
+    def test_a_compared_penalty_says_retained_and_weighed(self):
+        html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=4.0))
+        assert "retained and weighed" in html
+        assert "decided the same-case question" in html
+
+    def test_an_uncompared_penalty_says_the_weighing_never_happened(self):
+        """Independence not rejected: the findings bore on no decision."""
+        html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
+        assert "retained and weighed" not in html
+        assert "weighed against a same-case tolerance" in html
+        assert "bore on no decision here" in html
+
+    def test_the_weight_is_still_shown_when_nothing_was_weighed(self):
+        """The run assigns the severity a weight either way; it just went unused."""
+        html = " ".join(
+            _html(
+                features=self._features_with_finding(),
+                classification=_classification(
+                    penalty=InconsistencyPenalty(
+                        w_tot=1.0,
+                        threshold=None,
+                        terms=[
+                            PenaltyTerm(
+                                severity=InconsistencySeverity.MODERATE,
+                                count=1,
+                                weight=1.0,
+                            )
+                        ],
+                    )
+                ),
+            ).split()
+        )
+        assert "Moderate (+1.0)" in html
+
+
+class TestTooltipsAreNotLoadBearing:
+    def test_the_legend_says_so(self):
+        text = " ".join(_html().split())
+        assert "nothing on this page depends on hovering" in text
+
+    def test_no_print_rule_hides_content(self):
+        """A print stylesheet that hides a section would defeat the claim."""
+        html = _html()
+        start = html.index("@media print")
+        assert "display:none" not in html[start : start + 1200]

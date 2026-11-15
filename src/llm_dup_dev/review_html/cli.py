@@ -64,7 +64,11 @@ from llm_dup_dev.pipeline.export import read_classifications, read_pair_features
 from .compare import build_pair_view_model
 from .evidence.build import build_evidence_case
 from .evidence.screening import screening_verdict
-from .evidence.settings import EvidenceRunSettings, load_evidence_run_settings
+from .evidence.settings import (
+    EvidenceRunSettings,
+    load_evidence_run_settings,
+    page_provenance,
+)
 from .formats import ReviewFormat, reference_from_annotation
 from .models import PairViewModel
 from .render import (
@@ -452,7 +456,10 @@ def _run_evidence(
         sys.exit(1)
 
     out = write_evidence_batch_html(
-        cases, args.output_dir, write_index=not args.no_index
+        cases,
+        args.output_dir,
+        write_index=not args.no_index,
+        provenance=page_provenance([run_settings]),
     )
     print(
         f"Wrote {len(cases)} evidence review(s) to {out}"

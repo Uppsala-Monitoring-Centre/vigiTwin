@@ -20,7 +20,11 @@ from .build import ExamplePresentation, ReferenceInfo, SCLEAssessment
 from .screening import screening_verdict
 from .manifest import CuratedExample, LoadedExampleManifest, SummaryMode
 from .models import EvidenceCaseVM, EvidencePageVM
-from .settings import EvidenceRunSettings, load_evidence_run_settings
+from .settings import (
+    EvidenceRunSettings,
+    load_evidence_run_settings,
+    page_provenance,
+)
 
 
 def _presentation(example: CuratedExample, index: int) -> ExamplePresentation:
@@ -100,6 +104,9 @@ def build_collection(
 
     manifest = loaded.manifest
     cases_by_key: dict[tuple[str, str], EvidenceCaseVM] = {}
+    # One entry per dataset rendered, so the footer can name the run when the
+    # collection draws on a single one and say so when it does not.
+    settings_used: list[EvidenceRunSettings | None] = []
 
     by_dataset: dict[str, list[tuple[int, CuratedExample]]] = {}
     for index, example in enumerate(manifest.examples):
@@ -110,6 +117,7 @@ def build_collection(
         run_manifest = loaded.run_manifest_path(dataset_id)
         if run_manifest is not None:
             run_settings = load_evidence_run_settings(run_manifest)
+        settings_used.append(run_settings)
 
         selection = PairSelection(
             pair_ids=tuple(example.pair_id for _, example in entries),
@@ -164,6 +172,7 @@ def build_collection(
         title=manifest.title or "Evidence review",
         intro=manifest.intro or "",
         note=manifest.note or "",
+        provenance=page_provenance(settings_used),
         cases=ordered,
     )
 
