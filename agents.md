@@ -229,6 +229,46 @@ run in CI (`.github/workflows/ci.yml`):
   that file carries the "what changed for consumers" narrative that
   neither the SHA nor the version number expresses on its own.
 
+### Tags, GitHub Releases and DOIs
+Three separate things, deliberately decoupled — conflating them is how a
+provisional commit acquires a permanent citation:
+
+| | What it is | Cost |
+|---|---|---|
+| `version` in `pyproject.toml` | the consumer contract | spent the moment any artifact records it |
+| a git tag | an immutable name for a commit | free; in practice irrevocable once public |
+| a GitHub **Release** | what Zenodo watches | mints a permanent version DOI, listed forever on the concept record |
+
+- **`origin` is where work happens; `github` is a mirror of validated
+  functionality, not a mirror of `main`.** Development, PRs and review all
+  run on Azure DevOps. A version reaches
+  <https://github.com/Uppsala-Monitoring-Centre/vigiTwin> only after it has
+  been exercised against the secure companion repo — so the public history is
+  a sequence of validated states, not a replay of every merge.
+- **Tag every version that reaches GitHub.** A tag costs nothing and buys
+  three things: `git describe` resolves on any public commit, the README's
+  install-from-tag instruction has a tag to point at for every public
+  version, and the contract state of each public commit is addressable by
+  name instead of by reading `pyproject.toml` at that SHA. The failure mode to
+  avoid is a public commit with user-visible changes and no name to cite it
+  by. Tag `v<version>`, on the commit that is pushed.
+- **Cut a Release only for citable milestones**: a version referenced in a
+  manuscript, or one whose changes external users should be actively
+  retrieving. Everything between those gets a tag and no Release. Zenodo
+  mints a DOI from a Release, never from a tag push, so this is the one step
+  that cannot be taken back or quietly corrected.
+- **A Release and `CITATION.cff` move in the same change.** Bump `version:`
+  and `date-released:` there before cutting the Release, or the archived
+  record misstates what it archives. The `doi:` field holds the *concept*
+  DOI (all versions); each Release gets its own version DOI underneath it.
+  The README's install example pins a tag too, so move it in the same
+  change — an install line pointing at a superseded version is the one piece
+  of drift a reader follows by default.
+- **A study cycle gets its own tag**, named for the study rather than the
+  version (`study-2026-performance-evaluation`), pointing at the version tag
+  that was used. It names the analysis, not the contract — see § Versioning
+  on why a study cycle is not a release.
+
 ## What This Repo Is NOT
 - No UI layer — HTML snippets are embedded in a larger calling system
 - No real data or sensitive information — all credentials are in environment variables or the secure companion repo
