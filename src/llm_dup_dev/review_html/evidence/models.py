@@ -24,6 +24,7 @@ original assessment.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import Enum
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
@@ -597,6 +598,20 @@ class EvidenceCaseVM(BaseModel):
 
     pair_id: str
     example_id: str
+    #: What a reader cites this case as, and what the heading shows: the
+    #: curator's ``example_id`` where a manifest gave one, otherwise a
+    #: readable positional form. Distinct from ``example_id``, which is a
+    #: slug — the filename stem and the section anchor — and may not be
+    #: presentable. Empty where nothing supplied a framing, in which case the
+    #: heading shows no label rather than an internal identifier.
+    example_label: str = ""
+    #: Where this case sits in the collection it belongs to, and how many
+    #: cases that collection holds. Carried on the case rather than taken
+    #: from the template's loop position, because the batch path writes each
+    #: case into its own file: a standalone ``S3.html`` must still say
+    #: "3 of 12" and not "1 of 1". ``None`` where the case stands alone.
+    position: int | None = None
+    position_total: int | None = None
     kicker: str = ""
     title: str = ""
     lede: str = ""
@@ -634,6 +649,19 @@ class EvidenceCaseVM(BaseModel):
     discrepancies: list[DiscrepancyVM] = Field(default_factory=list)
 
     gaps: list[EvidenceGap] = Field(default_factory=list)
+
+    @property
+    def position_text(self) -> str:
+        """``"3 of 12"``, or empty where there is no collection to place.
+
+        A lone case is not "1 of 1": the phrase only informs a reader who has
+        more cases to get through.
+        """
+        if self.position is None or not self.position_total:
+            return ""
+        if self.position_total < 2:
+            return ""
+        return f"{self.position} of {self.position_total}"
 
     @property
     def retained_discrepancies(self) -> list[DiscrepancyVM]:
@@ -737,6 +765,9 @@ class EvidenceIndexItem(BaseModel):
     """One row of the evidence index."""
 
     example_id: str
+    #: The case's own label, so the index and the case agree about what to
+    #: call it. Falls back to ``example_id`` in the template.
+    example_label: str = ""
     pair_id: str
     filename: str
     title: str = ""
@@ -751,6 +782,25 @@ class EvidenceIndexVM(BaseModel):
     title: str
     generated_at: str = ""
     items: list[EvidenceIndexItem] = Field(default_factory=list)
+
+
+def number_cases(cases: Sequence[EvidenceCaseVM]) -> list[EvidenceCaseVM]:
+    """Place each case in the collection the page renders, 1..N of N.
+
+    Returns copies; the caller's cases are untouched. A case that already
+    carries a position keeps it, which makes this idempotent and lets a
+    curated collection's own numbering survive being written out one file per
+    case.
+    """
+    total = len(cases)
+    return [
+        case
+        if case.position is not None
+        else case.model_copy(
+            update={"position": ordinal, "position_total": total}
+        )
+        for ordinal, case in enumerate(cases, start=1)
+    ]
 
 
 __all__ = [
@@ -782,5 +832,6 @@ __all__ = [
     "TileState",
     "ValueKind",
     "missing_cell",
+    "number_cases",
     "stronger_role",
 ]

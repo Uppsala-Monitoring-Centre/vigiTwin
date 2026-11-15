@@ -19,7 +19,7 @@ from ..selection import MissingPairPolicy, PairSelection
 from .build import ExamplePresentation, ReferenceInfo, SCLEAssessment
 from .screening import screening_verdict
 from .manifest import CuratedExample, LoadedExampleManifest, SummaryMode
-from .models import EvidenceCaseVM, EvidencePageVM
+from .models import EvidenceCaseVM, EvidencePageVM, number_cases
 from .settings import (
     EvidenceRunSettings,
     load_evidence_run_settings,
@@ -34,10 +34,16 @@ def _presentation(example: CuratedExample, index: int) -> ExamplePresentation:
     missing one falls back to a positional ``example-N`` rather than to the
     pair id — a supplement refers to its examples by position, and a pair id
     is an internal identifier a reader has no use for.
+
+    The *label* is the same identity in presentable form. A curator's id is
+    already presentable and is used as given, so a manuscript citing "S3"
+    and the section headed "S3" cannot drift apart. Only the invented
+    fallback is rewritten, from the slug ``example-3`` to ``Example 3``.
     """
     mode = example.resolved_summary_mode()
     return ExamplePresentation(
         example_id=example.example_id or f"example-{index + 1}",
+        example_label=example.example_id or f"Example {index + 1}",
         kicker=example.kicker or "",
         title=example.title or "",
         lede=example.lede or "",
@@ -168,6 +174,10 @@ def build_collection(
         for e in manifest.examples
         if (e.dataset, e.pair_id) in cases_by_key
     ]
+    # Numbered over what actually renders, not over the manifest: under
+    # MissingPairPolicy.SKIP a dropped example would otherwise leave a reader
+    # hunting for an "Example 4 of 12" that is not in the document.
+    ordered = number_cases(ordered)
     return EvidencePageVM(
         title=manifest.title or "Evidence review",
         intro=manifest.intro or "",

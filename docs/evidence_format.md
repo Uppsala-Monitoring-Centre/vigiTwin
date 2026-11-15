@@ -388,8 +388,9 @@ discovered at load time. Optional: `pair_frequencies`, `screening`,
 `run_manifest`, `allow_noncanonical_pairs`.
 
 **Example:** `dataset` and `pair_id` (required), `example_id` (also the output
-filename), `title`, `lede`, `kicker`, `scle_assessment`, `case_interpretation`,
-`summary_mode`, `review_status`, `notes`.
+filename, the section anchor and the label), `title`, `lede`, `kicker`,
+`scle_assessment`, `case_interpretation`, `summary_mode`, `review_status`,
+`notes`.
 
 **`scle_assessment`:** `state` is one of `not_entered`, `not_assessed`,
 `assessed`, `inconclusive` — four states, because three different absences
@@ -409,6 +410,41 @@ These mirror `study_eval.aggregate`'s prespecified rules, which are a
 footnotes the rule whenever it is not the primary one. Comparison happens in
 the binary space the reference label actually lives in; `abstain` on either
 side yields no verdict at all rather than a disagreement.
+
+### How an example is identified
+
+Two identifiers with different jobs, and the difference matters because one
+of them ends up in a manuscript.
+
+**`example_id` is the label, and it is citable.** It is the filename stem,
+the HTML section anchor, and — since 1.1.5 — the heading the page shows. One
+string doing all three is deliberate: a reference to "S3" in surrounding text
+reaches `#S3`, which is headed `S3`, in the file `S3.html`. It changes only
+when a curator changes it, so reordering a collection, inserting an example
+or dropping one leaves every existing cross-reference pointing where it did.
+
+Because it is an anchor, it is validated on load: it must start with a letter
+and hold only letters, digits, `.`, `-` or `_`. `S 1` is rejected, rather
+than rendering `id="S 1"` — a section no link can reach, in a document whose
+purpose is being linked to. Ids that differ only in characters a filename
+cannot carry (`S.1` and `S_1`) are rejected too, since one file would
+overwrite the other.
+
+Where an example gives no `example_id`, the collection invents `example-3`
+for the anchor and shows `Example 3` as the label.
+
+**The position is navigational, and it is not citable.** Each case also
+carries where it sits in its collection, rendered as `3 of 12` beside the
+kicker. It is counted over the cases that actually render, so an example
+skipped under `MissingPairPolicy.SKIP` does not leave a reader hunting for a
+section that is not there. It is deliberately kept visually apart from the
+label: a position is a property of this document's current order, and citing
+one would break the moment the order changed.
+
+The position is carried on the case rather than derived from its place in
+the rendered list, because the batch path writes one file per case — a
+standalone `S3.html` must still say `3 of 12`, not `1 of 1`. A case rendered
+on its own, outside any collection, shows no position at all.
 
 ### What the manifest may not say
 

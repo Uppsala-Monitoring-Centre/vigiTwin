@@ -203,12 +203,32 @@ class TestValidation:
             load_curated_manifest(_write_manifest(run_dir, body))
 
     def test_filename_collision_is_rejected(self, run_dir):
-        """Two ids reducing to one filename would overwrite each other."""
+        """Two ids reducing to one filename would overwrite each other.
+
+        Both ids here are well-formed anchors, so the shape check passes and
+        the collision check is what catches them — ``.`` is the one allowed
+        character that ``_safe_filename`` rewrites.
+        """
         body = _manifest_body()
-        body["examples"][0]["example_id"] = "S 1"
-        body["examples"][1]["example_id"] = "S/1"
+        body["examples"][0]["example_id"] = "S.1"
+        body["examples"][1]["example_id"] = "S_1"
         with pytest.raises(ValueError, match="collide"):
             load_curated_manifest(_write_manifest(run_dir, body))
+
+    @pytest.mark.parametrize("bad", ["S 1", "S/1", "1S", "", "-S1", "S#1"])
+    def test_an_id_that_cannot_be_an_anchor_is_rejected(self, run_dir, bad):
+        """The id is an HTML anchor and a URL fragment, not just a name."""
+        body = _manifest_body()
+        body["examples"][0]["example_id"] = bad
+        with pytest.raises(ValueError, match="section anchor"):
+            load_curated_manifest(_write_manifest(run_dir, body))
+
+    @pytest.mark.parametrize("good", ["S1", "S-1", "S_1", "S1.a", "Example12"])
+    def test_well_formed_ids_are_accepted(self, run_dir, good):
+        body = _manifest_body()
+        body["examples"][0]["example_id"] = good
+        manifest = load_curated_manifest(_write_manifest(run_dir, body))
+        assert manifest.manifest.examples[0].example_id == good
 
     def test_repeated_pair_is_rejected(self, run_dir):
         body = _manifest_body()

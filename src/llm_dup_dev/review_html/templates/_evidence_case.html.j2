@@ -53,8 +53,21 @@
 {%- endmacro %}
 
 <section class="case" id="{{ case.example_id }}">
-  {% if case.kicker %}<div class="kicker">{{ case.kicker }}</div>{% endif %}
-  {% if case.title %}<h2>{{ case.title }}</h2>{% endif %}
+  {#
+    The label is the anchor in presentable form, so a reader who follows a
+    reference to "S3" lands on a section that says S3. The position beside it
+    is navigational only and is never a citation: it moves when the
+    collection is reordered, which the label does not.
+  #}
+  {% if case.kicker or case.position_text %}<div class="kicker">
+    {{- case.kicker }}{% if case.kicker and case.position_text %} &middot; {% endif %}
+    {%- if case.position_text %}<span class="position">{{ case.position_text }}</span>{% endif -%}
+  </div>{% endif %}
+  {% if case.example_label or case.title %}<h2>
+    {%- if case.example_label %}<span class="example-label">{{ case.example_label }}</span>{% endif -%}
+    {%- if case.example_label and case.title %} &middot; {% endif -%}
+    {{- case.title -}}
+  </h2>{% endif %}
   {% if case.lede %}<p class="lede">{{ case.lede }}</p>{% endif %}
 
   <div class="outcomes">

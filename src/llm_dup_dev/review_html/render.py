@@ -285,9 +285,18 @@ def write_evidence_batch_html(
     Case order is preserved: a curated collection's order is a deliberate
     choice by whoever assembled it. The index links only the files written.
     """
-    from .evidence.models import EvidenceIndexItem, EvidenceIndexVM
+    from .evidence.models import (
+        EvidenceIndexItem,
+        EvidenceIndexVM,
+        number_cases,
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    # Each case is written into its own file, so its place in the set has to
+    # travel with it; a page that holds one case cannot work it out from the
+    # page. Cases that arrive already numbered — a curated collection's —
+    # keep their numbers.
+    cases = number_cases(cases)
     items: list[EvidenceIndexItem] = []
     for case in cases:
         write_evidence_html(
@@ -308,6 +317,7 @@ def write_evidence_batch_html(
         items.append(
             EvidenceIndexItem(
                 example_id=case.example_id,
+                example_label=case.example_label,
                 pair_id=case.pair_id,
                 filename=evidence_filename(case),
                 title=case.title,
@@ -346,7 +356,7 @@ def write_evidence_document(
     a later phase builds the supplementary document on top of this, with the
     publication transforms applied to the cases before they arrive here.
     """
-    from .evidence.models import EvidencePageVM
+    from .evidence.models import EvidencePageVM, number_cases
 
     path.parent.mkdir(parents=True, exist_ok=True)
     page = EvidencePageVM(
@@ -355,7 +365,7 @@ def write_evidence_document(
         note=note,
         generated_at=_utc_now(),
         **({} if provenance is None else {"provenance": provenance}),
-        cases=list(cases),
+        cases=number_cases(cases),
     )
     path.write_text(render_evidence_page(page), encoding="utf-8")
     return path

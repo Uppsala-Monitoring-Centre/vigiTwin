@@ -1724,6 +1724,12 @@ class ExamplePresentation:
     """Curated, human-authored framing for one example."""
 
     example_id: str = ""
+    #: What the heading calls this example and what surrounding text cites it
+    #: as. Defaults to ``example_id``, which is the right label whenever a
+    #: curator chose one; a collection sets it explicitly where it had to
+    #: invent an id, so the page shows "Example 3" rather than the slug
+    #: ``example-3``.
+    example_label: str = ""
     kicker: str = ""
     title: str = ""
     lede: str = ""
@@ -2206,6 +2212,10 @@ def build_evidence_case(
     return EvidenceCaseVM(
         pair_id=pair_id,
         example_id=presentation.example_id or pair_id,
+        # Not ``or pair_id``: an unframed single-pair review has nothing to
+        # cite, and a pair id in the heading would be an internal identifier
+        # dressed up as a label.
+        example_label=presentation.example_label or presentation.example_id,
         kicker=presentation.kicker,
         title=presentation.title,
         lede=presentation.lede,

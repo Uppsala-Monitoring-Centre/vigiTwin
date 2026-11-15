@@ -23,12 +23,13 @@ coercions (an unquoted country code ``NO`` becoming ``False``, say).
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
 from enum import Enum
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from llm_dup_dev.study_eval.scle.form import ReferenceLabelIssue
 
@@ -156,6 +157,15 @@ class ExampleDataset(BaseModel):
         return self
 
 
+#: An example id has three jobs at once — the filename stem, the HTML section
+#: anchor, and the label the page shows and surrounding text cites — so it has
+#: to be valid in all three. A leading letter keeps it usable in a CSS
+#: selector; the rest is what survives a URL fragment and a filename
+#: unchanged, with ``.`` allowed because an id like ``S1.a`` is a reasonable
+#: thing for a curator to want.
+_EXAMPLE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9._-]*$")
+
+
 class CuratedExample(BaseModel):
     """One pair, with the framing a curator chose for it."""
 
@@ -177,6 +187,27 @@ class CuratedExample(BaseModel):
     review_status: ReviewStatus = ReviewStatus.DRAFT
     #: Curator's working notes. Never rendered.
     notes: str | None = None
+
+    @field_validator("example_id")
+    @classmethod
+    def _id_is_usable_as_an_anchor(cls, value: str | None) -> str | None:
+        """Reject an id that cannot be what it is used as.
+
+        ``example_id`` becomes an HTML ``id`` attribute and a URL fragment,
+        so a space or a slash in it yields a section no reference can reach —
+        silently, in a document whose whole purpose is being cited. Caught
+        here rather than at render time, where the output looks fine until
+        someone clicks the link.
+        """
+        if value is None:
+            return None
+        if not _EXAMPLE_ID_RE.match(value):
+            raise ValueError(
+                f"example_id {value!r} cannot be used as a section anchor: it "
+                f"must start with a letter and hold only letters, digits, "
+                f"'.', '-' or '_'."
+            )
+        return value
 
     def resolved_summary_mode(self) -> SummaryMode:
         """An interpretation replaces the generated summary unless told not to."""

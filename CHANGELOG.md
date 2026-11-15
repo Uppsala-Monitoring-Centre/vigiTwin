@@ -21,6 +21,57 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-11-15
+
+Examples in a collection are now labelled and placed. Nothing about the
+assessment, the colour rule or the stored evidence changed.
+
+### Added — a case says what it is called
+
+`example_id` already did three jobs — filename stem, HTML section anchor, and
+the link text in the index — but never appeared on the case itself. A reader
+following a reference to "S3", or clicking `S3` in the index, landed on a
+section headed only by its title, with nothing on it saying `S3`.
+
+The heading now carries the label: `S3 · Similar exposures, different
+outcomes`. A curator's `example_id` is used exactly as given, so the id in
+the manifest, the anchor, the filename and the visible label are one string
+and cannot drift apart. Where an example gives no id, the collection shows
+`Example 3` rather than the invented anchor slug `example-3`.
+`EvidenceCaseVM` and `ExamplePresentation` gain `example_label`;
+`EvidenceIndexItem` gains it too, so the index and the case agree.
+
+### Added — a case says where it sits
+
+Each case carries `position` and `position_total`, rendered as `3 of 12`
+beside the kicker, with `position_text` empty for a case that stands alone
+(a lone case is not "1 of 1"). Counted over the cases that actually render,
+so an example skipped under `MissingPairPolicy.SKIP` does not leave a reader
+hunting for a section that is not in the document.
+
+Deliberately kept apart from the label, and deliberately carried on the case
+rather than derived from template loop position. A position describes this
+document's current order and is not citable — insert one example and every
+later number moves, silently invalidating any text that cited one. And the
+batch path writes one case per file, where loop position would make every
+case "1 of 1" instead of telling a reader which of twelve they are holding.
+
+### Fixed — an example id that could not be an anchor was accepted
+
+`example_id` was checked for uniqueness and for filename collisions, but
+never for shape. `S 1` passed both and rendered `id="S 1"`: a section no
+link can reach, in a document whose whole purpose is being cross-referenced,
+failing silently at the point someone clicks the index. It is now validated
+on load — a leading letter, then letters, digits, `.`, `-` or `_` — with an
+error that says what it is used as.
+
+This tightens what a `CuratedExampleManifest` accepts, which is why it is
+worth stating plainly: the only inputs it now rejects are those that were
+already producing a broken document, so no manifest that worked stops
+working. Taken as additive rather than breaking on that basis. `.` stays
+legal, which keeps the filename-collision check reachable (`S.1` and `S_1`
+still collide).
+
 ## [1.1.4] - 2026-11-15
 
 Four refinements from a final read of a generated collection. Structure,

@@ -27,7 +27,7 @@
     <tbody>
       {% for item in vm.items %}
       <tr>
-        <td><a href="{{ item.filename }}">{{ item.example_id }}</a>
+        <td><a href="{{ item.filename }}">{{ item.example_label or item.example_id }}</a>
           {% if item.kicker %}<small class="subtle">{{ item.kicker }}</small>{% endif %}
         </td>
         <td>{{ item.title or item.pair_id }}</td>
