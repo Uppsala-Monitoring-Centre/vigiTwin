@@ -90,6 +90,7 @@ If specifications conflict with legacy code, **the specification takes precedenc
 │   ├── integration_guide.md                # Running the pipeline; public surface
 │   ├── repository_roles.md                 # Repo separation and security controls
 │   ├── study_eval.md                       # Performance-evaluation package
+│   ├── evidence_format.md                  # The reader-facing `evidence` review
 │   ├── reference_set_characteristics.md    # "Table 1" for reference sets
 │   └── migration_notes_*.md                # One per breaking contract change
 │
@@ -111,6 +112,7 @@ If specifications conflict with legacy code, **the specification takes precedenc
     │   └── scle/                      #   two-reviewer SCLE + arbitration workbooks
     ├── characterization/              # Descriptive "Table 1" for reference sets
     ├── review_html/                   # Side-by-side HTML review renderer
+    │   └── evidence/                  #   reader-facing evidence review
     │
     ├── dataset_manifest/              # Per-validation-set manifest
     └── run_manifest/                  # Per-run manifest (version + git provenance)
@@ -172,7 +174,7 @@ run in CI (`.github/workflows/ci.yml`):
 .venv/bin/mypy                  # blocking in CI — must stay at zero
 ```
 
-- **All three block.** 1825 tests, all on synthetic data, no network or
+- **All three block.** 2031 tests, all on synthetic data, no network or
   database; zero ruff findings; zero mypy errors. A PR that reddens any of them
   does not merge.
 - **Zero is the baseline, so a finding is a regression.** Through 1.0.0 ruff and

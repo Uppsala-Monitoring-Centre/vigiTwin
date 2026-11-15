@@ -1,0 +1,95 @@
+"""The evidence review format: what vigiTwin concluded, and on what basis.
+
+A second review format beside the existing detailed one. Where the detailed
+review colours a value by comparing it with its counterpart, this one colours
+a value only when the stored assessment named it — green for matching
+evidence or the anchor pattern, red for a retained inconsistency, neutral for
+everything else, including agreements that were never scored.
+
+Entry points::
+
+    from llm_dup_dev.review_html.evidence import build_evidence_case
+    from llm_dup_dev.review_html.evidence import build_assessment_summary
+
+CLI::
+
+    python -m llm_dup_dev.review_html --format evidence ...      # a saved run
+    python -m llm_dup_dev.review_html.evidence --manifest ...    # a collection
+"""
+
+from __future__ import annotations
+
+from .build import (
+    ExamplePresentation,
+    ReferenceInfo,
+    SCLEAssessment,
+    SCLEState,
+    build_evidence_case,
+)
+from .collection import (
+    build_collection,
+    export_summary_drafts,
+    write_summary_drafts,
+)
+from .manifest import (
+    CuratedExample,
+    CuratedExampleManifest,
+    ExampleDataset,
+    LoadedExampleManifest,
+    ReviewStatus,
+    SCLEAssessmentEntry,
+    SummaryMode,
+    load_curated_manifest,
+    write_curated_manifest,
+)
+from .models import (
+    Attribution,
+    AttributionKind,
+    EvidenceCaseVM,
+    EvidenceCell,
+    EvidenceGap,
+    EvidenceGapCode,
+    EvidencePageVM,
+    EvidenceRole,
+    EvidenceSource,
+    TileState,
+    ValueKind,
+)
+from .settings import EvidenceRunSettings, load_evidence_run_settings
+from .summary import AssessmentSummary, SummarySlot, build_assessment_summary
+
+__all__ = [
+    "AssessmentSummary",
+    "Attribution",
+    "AttributionKind",
+    "CuratedExample",
+    "CuratedExampleManifest",
+    "EvidenceCaseVM",
+    "EvidenceCell",
+    "EvidenceGap",
+    "EvidenceGapCode",
+    "EvidencePageVM",
+    "EvidenceRole",
+    "EvidenceRunSettings",
+    "EvidenceSource",
+    "ExampleDataset",
+    "ExamplePresentation",
+    "LoadedExampleManifest",
+    "ReferenceInfo",
+    "ReviewStatus",
+    "SCLEAssessment",
+    "SCLEAssessmentEntry",
+    "SCLEState",
+    "SummaryMode",
+    "SummarySlot",
+    "TileState",
+    "ValueKind",
+    "build_assessment_summary",
+    "build_collection",
+    "build_evidence_case",
+    "export_summary_drafts",
+    "load_curated_manifest",
+    "load_evidence_run_settings",
+    "write_curated_manifest",
+    "write_summary_drafts",
+]

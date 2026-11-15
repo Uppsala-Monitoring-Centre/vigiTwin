@@ -70,6 +70,21 @@ class FeatureContribution(BaseModel):
     domain_size: float | None = None
     description: str = ""
 
+    # The matched value this contribution is for, and its date resolution
+    # ("day" / "month" / "year"). Populated for date-valued features — today
+    # ``clinical_date`` — where the feature name alone does not say *which*
+    # date matched, and a reviewer-facing display has to attribute the match
+    # to a specific date field. ``None`` for features whose name already
+    # identifies the element (the demographics), and on contributions written
+    # before these fields existed.
+    #
+    # It carries the value as the pipeline compared it, truncated to the
+    # matched resolution, which is what makes it a join key rather than a
+    # label: a display layer may substitute the shown value and still know
+    # which cell the match belongs to.
+    matched_value: str | None = None
+    value_resolution: str | None = None
+
 
 class ProbabilityEstimate(BaseModel):
     """Result of the collision probability computation.
@@ -124,7 +139,12 @@ class Inconsistency(BaseModel):
     description: str | None = None
 
     # Extended provenance / metadata (defaulted so existing call sites
-    # need no change). Populated by the AE clinical-picture component.
+    # need no change). Populated by the AE clinical-picture component and,
+    # for ``feature == "drug_set"``, by the drug-set check: ``terms`` holds
+    # the offending substance names and ``kind`` the direction
+    # (``"missing_in_r1"`` / ``"missing_in_r2"``). What each producer puts in
+    # these fields is producer-specific; ``feature`` and ``source`` say which
+    # producer wrote the row.
     source: str = "rule"
     kind: str | None = None
     rationale: str = ""

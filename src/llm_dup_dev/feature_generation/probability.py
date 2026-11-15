@@ -72,6 +72,10 @@ class FeatureProbability:
     method: str  # "empirical" or "domain_size"
     domain_size: float | None = None
     description: str = ""
+    # Matched value and its date resolution, for date-valued features only.
+    # See ``models.pair_features.FeatureContribution``.
+    matched_value: str | None = None
+    value_resolution: str | None = None
 
 
 @dataclass
@@ -101,6 +105,8 @@ class ProbabilityResult:
                     method=fp.method,
                     domain_size=fp.domain_size,
                     description=fp.description,
+                    matched_value=fp.matched_value,
+                    value_resolution=fp.value_resolution,
                 )
                 for fp in self.feature_probabilities
             ],
@@ -477,6 +483,8 @@ def compute_probability(
                     f"clinical_date {cd.matched_value} "
                     f"({cd.resolution}): D_f={domain_size}"
                 ),
+                matched_value=cd.matched_value,
+                value_resolution=cd.resolution,
             )
         )
 

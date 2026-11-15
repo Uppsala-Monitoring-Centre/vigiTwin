@@ -863,3 +863,126 @@ class TestCombinationProductOverride:
         result = detect_inconsistencies(r1, r2, thresholds)
         drug_incs = [i for i in result if i.feature == "drug_set"]
         assert len(drug_incs) == 0
+
+
+class TestDrugSetStructuredAttribution:
+    """``terms`` and ``kind`` name the offending substances and the direction.
+
+    The review layer colours a drug row from these fields. Before they were
+    populated the only record of *which* substance was missing lived inside
+    the free-text ``description``, so a display had to parse prose to know
+    what to highlight.
+
+    ``terms`` holds lowercased substance names, matching what
+    ``_key_substance_names`` compares; a consumer normalises both sides before
+    joining rather than relying on the reported spelling.
+    """
+
+    def test_terms_and_kind_for_one_direction(self, thresholds):
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="Aspirin", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="B", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="B", sources=["s"], role=DrugRole.CONCOMITANT)],
+        )
+        drug_incs = [
+            i
+            for i in detect_inconsistencies(r1, r2, thresholds)
+            if i.feature == "drug_set"
+        ]
+        assert len(drug_incs) == 1
+        assert drug_incs[0].terms == ["aspirin"]
+        assert drug_incs[0].kind == "missing_in_r2"
+
+    def test_both_directions_carry_their_own_terms(self, thresholds):
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="Aspirin", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="Warfarin", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        by_kind = {
+            i.kind: i
+            for i in detect_inconsistencies(r1, r2, thresholds)
+            if i.feature == "drug_set"
+        }
+        assert by_kind["missing_in_r2"].terms == ["aspirin"]
+        assert by_kind["missing_in_r1"].terms == ["warfarin"]
+
+    def test_terms_are_sorted_and_complete(self, thresholds):
+        """Several missing key drugs still produce one row listing them all."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(substance="Zolpidem", sources=["s"], role=DrugRole.SUSPECTED),
+                Drug(substance="Aspirin", sources=["s"], role=DrugRole.INTERACTING),
+            ],
+        )
+        r2 = Report(report_id="2", drugs=[])
+        drug_incs = [
+            i
+            for i in detect_inconsistencies(r1, r2, thresholds)
+            if i.feature == "drug_set"
+        ]
+        assert len(drug_incs) == 1
+        assert drug_incs[0].terms == ["aspirin", "zolpidem"]
+
+    def test_feature_name_is_unchanged(self, thresholds):
+        """Direction lives in ``kind``, never in ``feature``.
+
+        Consumers filter on ``feature == "drug_set"``; encoding the direction
+        there would silently stop those filters matching.
+        """
+        r1 = Report(
+            report_id="1",
+            drugs=[Drug(substance="A", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[Drug(substance="B", sources=["s"], role=DrugRole.SUSPECTED)],
+        )
+        drug_incs = [
+            i
+            for i in detect_inconsistencies(r1, r2, thresholds)
+            if i.feature == "drug_set"
+        ]
+        assert len(drug_incs) == 2
+        assert {i.feature for i in drug_incs} == {"drug_set"}
+
+    def test_combination_product_reports_only_the_unreported_ingredient(
+        self, thresholds
+    ):
+        """A genuinely unreported ingredient is named; covered ones are not."""
+        r1 = Report(
+            report_id="1",
+            drugs=[
+                Drug(
+                    substance="valsartan;amlodipine",
+                    sources=["s"],
+                    role=DrugRole.SUSPECTED,
+                ),
+                Drug(substance="Metformin", sources=["s"], role=DrugRole.SUSPECTED),
+            ],
+        )
+        r2 = Report(
+            report_id="2",
+            drugs=[
+                Drug(substance="valsartan", sources=["s"], role=DrugRole.CONCOMITANT),
+                Drug(substance="amlodipine", sources=["s"], role=DrugRole.CONCOMITANT),
+            ],
+        )
+        drug_incs = [
+            i
+            for i in detect_inconsistencies(r1, r2, thresholds)
+            if i.feature == "drug_set"
+        ]
+        assert len(drug_incs) == 1
+        assert drug_incs[0].terms == ["metformin"]
+        assert drug_incs[0].kind == "missing_in_r2"

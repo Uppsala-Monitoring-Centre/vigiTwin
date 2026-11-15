@@ -70,7 +70,15 @@ from llm_dup_dev.pipeline.export import (
 )
 from llm_dup_dev.pipeline.runner import PairResult
 
-from . import ResultRenderInput, render_results_html
+from . import ResultRenderInput
+from .evidence.settings import EvidenceRunSettings
+from .formats import ReviewFormat, render_items
+from .selection import (
+    MissingPairPolicy,
+    PairSelection,
+    apply_selection,
+    coerce_selection,
+)
 
 
 class SkipReason(str, Enum):
@@ -118,7 +126,11 @@ class SavedRunSummary:
         ``"split"`` if reconstructed from ``features.json`` +
         ``classifications.json``.
     n_pairs : int
-        Number of pairs considered (the length of the pairs artifact).
+        Number of pairs considered — the length of the pairs artifact, or of
+        the selection when one was given.
+    n_available : int
+        Number of pairs in the artifact before selection. Equal to ``n_pairs``
+        when no selection was made.
     n_loaded : int
         Number of ``ResultRenderInput`` objects successfully built.
     skipped : list[SavedRunSkip]
@@ -135,6 +147,9 @@ class SavedRunSummary:
     source: str
     n_pairs: int
     n_loaded: int
+    #: Pairs present in the artifact before any selection. Equal to
+    #: ``n_pairs`` when nothing was selected.
+    n_available: int = 0
     skipped: list[SavedRunSkip] = field(default_factory=list)
     output_dir: Path | None = None
     n_rendered: int | None = None
@@ -332,6 +347,7 @@ def load_saved_run(
     include_debug: bool = True,
     strict: bool = True,
     allow_noncanonical_pairs: bool = False,
+    select: PairSelection | Iterable[str] | None = None,
 ) -> tuple[list[ResultRenderInput], SavedRunSummary]:
     """Load a saved run into ``ResultRenderInput`` objects from explicit paths.
 
@@ -379,6 +395,21 @@ def load_saved_run(
         (each skipped pair is recorded in ``SavedRunSummary.skipped``). A failing
         ``external_url_builder`` is *not* governed by ``strict`` — it is always
         tolerated by rendering the pair without a link.
+    select : PairSelection or iterable of str, optional
+        Render only these pair ids, in the order given. ``None`` (the default)
+        renders every pair in the artifact, exactly as before. A bare iterable
+        of ids is accepted and promoted to a default :class:`PairSelection`.
+
+        Selection is applied to the pairs artifact *before* any per-pair work,
+        so unselected pairs cost nothing beyond the one read of the set-level
+        files. An id matching no pair raises ``ValueError`` naming every
+        unmatched id at once, whatever ``strict`` is set to: an id that matches
+        nothing is a mistake in the request, not a defect in the data.
+
+        A *selected* pair that cannot be loaded is governed by the selection's
+        ``on_missing`` policy rather than by ``strict``, and raises by default.
+        Dropping a pair someone named would leave a curated collection quietly
+        short of a deliberately chosen example.
     allow_noncanonical_pairs : bool
         Escape hatch for rendering a run saved **before** pair ids were
         canonicalised (see :mod:`llm_dup_dev.models.pair_identity`). It relaxes
@@ -431,6 +462,12 @@ def load_saved_run(
 
     reports = load_reports(reports_path)
     pairs = _load_pairs(pairs_path, allow_noncanonical=allow_noncanonical_pairs)
+    selection = coerce_selection(select)
+    # Narrow before any per-pair work. The artifact-level canonical-key checks
+    # below still run over the whole artifact: a non-canonical artifact is
+    # invalid whether or not a selection happens to avoid its bad keys.
+    n_available = len(pairs)
+    pairs = apply_selection(pairs, selection, key=lambda pair: pair.pair_id)
     bundles = _load_bundles(bundles_path)
     annotations = _load_annotations(annotations_path)
     screening = _load_screening(screening_path)
@@ -464,7 +501,17 @@ def load_saved_run(
     skipped: list[SavedRunSkip] = []
 
     def skip(pair_id: str, reason: SkipReason, detail: str) -> None:
-        if strict:
+        if selection is not None:
+            # Every remaining pair was named by the caller, so the selection's
+            # own policy applies rather than ``strict``.
+            if selection.on_missing is MissingPairPolicy.ERROR:
+                raise RuntimeError(
+                    f"{reason.value}: {pair_id} — {detail}. This pair was "
+                    f"explicitly selected; pass PairSelection(..., "
+                    f"on_missing=MissingPairPolicy.SKIP) to render the rest "
+                    f"without it."
+                )
+        elif strict:
             raise RuntimeError(f"{reason.value}: {pair_id} — {detail}")
         skipped.append(SavedRunSkip(pair_id=pair_id, reason=reason, detail=detail))
         print(f"WARNING: skipping {pair_id} ({reason.value}): {detail}",
@@ -538,6 +585,7 @@ def load_saved_run(
     summary = SavedRunSummary(
         source=source,
         n_pairs=len(pairs),
+        n_available=n_available,
         n_loaded=len(items),
         skipped=skipped,
     )
@@ -548,6 +596,9 @@ def render_saved_run(
     *,
     output_dir: str | Path,
     write_index: bool = True,
+    review_format: ReviewFormat | str = ReviewFormat.DETAILED,
+    run_settings: EvidenceRunSettings | None = None,
+    set_label: str | None = None,
     **load_kwargs,
 ) -> SavedRunSummary:
     """Load a saved run and render it to HTML in one call.
@@ -562,6 +613,19 @@ def render_saved_run(
         Directory to write HTML into (created if absent).
     write_index : bool
         Whether to generate an ``index.html`` linking to all pairs.
+    review_format : ReviewFormat or str
+        ``"detailed"`` (the default) renders the existing pair review;
+        ``"evidence"`` renders the reader-facing evidence review. The default
+        keeps every existing caller's output identical.
+    run_settings : EvidenceRunSettings, optional
+        Evidence format only. The decision thresholds and numerical settings
+        the run used, normally read from its run manifest with
+        :func:`~llm_dup_dev.review_html.evidence.settings.load_evidence_run_settings`.
+        Without them the review names evidence zones but quotes no thresholds,
+        rather than assuming the current defaults applied to that run.
+    set_label : str, optional
+        Evidence format only. The reference set's name, used to label the
+        reference-label tile (e.g. ``"FDA Gold"``).
     **load_kwargs
         The keyword arguments of :func:`load_saved_run`.
 
@@ -570,8 +634,13 @@ def render_saved_run(
     SavedRunSummary
     """
     items, summary = load_saved_run(**load_kwargs)
-    out = render_results_html(
-        items, output_dir=Path(output_dir), write_index=write_index
+    out = render_items(
+        items,
+        Path(output_dir),
+        review_format=ReviewFormat(review_format),
+        write_index=write_index,
+        run_settings=run_settings,
+        set_label=set_label,
     )
     summary.output_dir = out
     summary.n_rendered = len(items)

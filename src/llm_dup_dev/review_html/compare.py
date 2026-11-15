@@ -22,7 +22,6 @@ causing the field to be omitted from the demographics table.
 from __future__ import annotations
 
 import math
-from collections import OrderedDict
 
 from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 from llm_dup_dev.feature_generation.matching import (
@@ -55,6 +54,8 @@ from llm_dup_dev.models.report import (
     SourcedValue,
 )
 
+from .attribution_maps import FEATURE_TO_DEMO_LABEL, SEVERITY_ORDER
+from .grouping import grouped_adverse_events, grouped_drugs
 from .models import (
     AEClinicalPictureCountsVM,
     AEClinicalPictureRuleDetailsVM,
@@ -91,8 +92,6 @@ from .normalize import (
     format_measurement_values,
     format_partial_date,
     format_sourced_values,
-    normalize_ae_key,
-    normalize_drug_key,
 )
 
 # ---------------------------------------------------------------------------
@@ -409,25 +408,8 @@ def _build_drug_rows(r1: Report, r2: Report) -> list[DrugRow]:
     Groups drugs by normalised substance name. Each row shows all
     instances from both reports for that substance.
     """
-    # Group drugs by normalised key, preserving insertion order
-    left_groups: OrderedDict[str, list[Drug]] = OrderedDict()
-    for d in r1.drugs:
-        left_groups.setdefault(normalize_drug_key(d.substance), []).append(d)
-
-    right_groups: OrderedDict[str, list[Drug]] = OrderedDict()
-    for d in r2.drugs:
-        right_groups.setdefault(normalize_drug_key(d.substance), []).append(d)
-
-    # Union of keys in a stable order (left first, then right-only)
-    all_keys: list[str] = list(left_groups.keys())
-    for k in right_groups:
-        if k not in left_groups:
-            all_keys.append(k)
-
     rows: list[DrugRow] = []
-    for key in sorted(all_keys):
-        left_drugs = left_groups.get(key, [])
-        right_drugs = right_groups.get(key, [])
+    for _key, left_drugs, right_drugs in grouped_drugs(r1.drugs, r2.drugs):
 
         # Pick the best display name (prefer left, then right)
         display_name = (
@@ -512,24 +494,10 @@ def _build_ae_rows(r1: Report, r2: Report) -> list[AERow]:
     Row background is yellow (PARTIAL_MATCH) when the AE is present in both
     reports but their start dates conflict; green (MATCH) otherwise.
     """
-    # Group raw AdverseEvent objects by normalised PT key
-    left_raw: OrderedDict[str, list[AdverseEvent]] = OrderedDict()
-    for ae in r1.adverse_events:
-        left_raw.setdefault(normalize_ae_key(ae.pt_name), []).append(ae)
-
-    right_raw: OrderedDict[str, list[AdverseEvent]] = OrderedDict()
-    for ae in r2.adverse_events:
-        right_raw.setdefault(normalize_ae_key(ae.pt_name), []).append(ae)
-
-    all_keys: list[str] = list(left_raw.keys())
-    for k in right_raw:
-        if k not in left_raw:
-            all_keys.append(k)
-
     rows: list[AERow] = []
-    for key in sorted(all_keys):
-        left_aes = left_raw.get(key, [])
-        right_aes = right_raw.get(key, [])
+    for _key, left_aes, right_aes in grouped_adverse_events(
+        r1.adverse_events, r2.adverse_events
+    ):
 
         display_name = (
             left_aes[0].pt_name if left_aes else right_aes[0].pt_name
@@ -595,13 +563,8 @@ def _annotate_demographic_contributions(
 
 
 # Ordering for picking the most severe inconsistency when several map to
-# the same demographic row.
-_SEVERITY_ORDER: dict[str, int] = {
-    "minor": 0,
-    "moderate": 1,
-    "strong": 2,
-    "decisive": 3,
-}
+# the same demographic row. Shared with the evidence format.
+_SEVERITY_ORDER = SEVERITY_ORDER
 
 
 def _apply_demographic_severity(
@@ -1573,21 +1536,10 @@ def _anchor_penalty(n_anchor: int | None) -> float | None:
 
 
 # Map probability/inconsistency feature names to demographic FieldComparison
-# labels.  Both long (``"patient_weight"``) and short (``"weight"``) forms
-# are accepted for robustness. Used by ``_annotate_demographic_contributions``
-# in this module and by ``review_html.index`` formatters.
-_FEATURE_TO_DEMO_LABEL: dict[str, str] = {
-    "patient_sex": "Sex",
-    "patient_age": "Age",
-    "patient_country": "Country",
-    "patient_height": "Height",
-    "patient_weight": "Weight",
-    # Short forms (used in some inconsistency feature names)
-    "sex": "Sex",
-    "age": "Age",
-    "height": "Height",
-    "weight": "Weight",
-}
+# labels. The vocabulary itself lives in ``attribution_maps`` so that both
+# review formats join evidence on exactly the same names; this module-level
+# alias keeps the existing import in ``review_html.index`` working.
+_FEATURE_TO_DEMO_LABEL = FEATURE_TO_DEMO_LABEL
 
 
 # Re-exports for backwards compatibility — render.py and the test

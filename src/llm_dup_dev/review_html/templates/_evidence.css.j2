@@ -1,0 +1,148 @@
+{# Stylesheet for the evidence review. Kept in its own partial so the page and
+   a future multi-case supplement share one source of truth, and so the print
+   rules below are not diluted by the detailed format's screen styling. #}
+:root{
+  --ink:#172b39; --muted:#50606c; --line:#d4dee3; --accent:#17576a;
+  --pale:#eaf3f5; --paper:#fff;
+  /* Evidence palette. Green: matching evidence or anchor pattern.
+     Red: a retained inconsistency. Everything else is neutral. */
+  --match:#17604c; --mismatch:#a12632;
+  --match-bg:#e9f5ed; --mismatch-bg:#fbecef;
+}
+*{box-sizing:border-box}
+body{
+  font-family:Arial,Helvetica,sans-serif;color:var(--ink);background:#edf1f3;
+  margin:0;font-size:15px;line-height:1.5;
+}
+main{
+  max-width:980px;margin:30px auto;background:var(--paper);padding:42px 54px;
+  box-shadow:0 2px 18px #0001;
+}
+h1{font-size:30px;line-height:1.15;letter-spacing:-.5px;margin:7px 0 15px}
+h2{font-size:24px;line-height:1.2;margin:0 0 12px}
+h3{
+  font-size:17px;margin:24px 0 8px;color:var(--accent);
+  border-bottom:1px solid var(--line);padding-bottom:5px;
+}
+h4{font-size:14px;margin:18px 0 6px;color:var(--accent)}
+.kicker{
+  font-size:11px;text-transform:uppercase;letter-spacing:1.5px;
+  font-weight:bold;color:var(--accent);
+}
+.intro{color:var(--muted);max-width:760px}
+.case{margin-top:32px;border-top:3px solid var(--accent);padding-top:18px}
+.lede{font-size:16px;margin:8px 0 15px}
+
+/* Header tiles. Four sources of classification, kept visually apart. */
+.outcomes{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;
+  margin:14px 0 16px;
+}
+.outcome{border:1px solid var(--line);padding:10px 12px;background:#f7f9fa}
+.outcome span{display:block;font-size:11px;color:var(--muted);font-weight:bold}
+.outcome strong{font-size:16px;display:block;line-height:1.25;margin-top:3px}
+.outcome strong.tile-absent{color:var(--muted);font-weight:normal;font-size:14px}
+
+/* Tables */
+table{
+  border-collapse:collapse;width:100%;font-size:13px;line-height:1.4;
+  margin:8px 0 12px;table-layout:fixed;
+}
+th,td{
+  text-align:left;vertical-align:top;padding:7px 9px;
+  border-bottom:1px solid var(--line);overflow-wrap:anywhere;
+}
+th{background:var(--pale);color:var(--ink);font-size:12px}
+.characteristics th:first-child{width:24%}
+.drugs th:nth-child(1),.drugs th:nth-child(2){width:40%}
+.drugs th:nth-child(3){width:20%}
+.aes th:nth-child(1),.aes th:nth-child(2){width:40%}
+.aes th:nth-child(3){width:20%}
+.findings th:nth-child(1){width:20%}
+.findings th:nth-child(2){width:14%}
+.freq th:first-child{width:34%}
+.decision td:first-child,.decision th:first-child{width:28%}
+.decision td:first-child{font-weight:bold}
+.onsets th:first-child{width:40%}
+
+/* Evidence colouring. These three classes are the whole visual vocabulary;
+   they are set from EvidenceRole, never from a value comparison. */
+.value-match{color:var(--match);font-weight:600}
+.value-mismatch{color:var(--mismatch);font-weight:600}
+.value-neutral{color:var(--ink)}
+.absent{color:#687681;font-style:italic}
+tr.row-match td,tr.ae-match td{background:var(--match-bg)}
+tr.row-mismatch td,tr.ae-mismatch td{background:var(--mismatch-bg)}
+tr.row-neutral td,tr.ae-neutral td{background:transparent}
+
+/* One reported drug record, read top-down in order of what the assessment
+   makes of it: dates, then role, then the detail it does not consider. */
+.entry{margin-top:4px}
+.entry+.entry{border-top:1px dotted #c9d5da;padding-top:4px}
+.entity-name{font-weight:600;margin-bottom:2px}
+.entry-dates{font-size:12px}
+.entry-role{font-size:12px}
+/* Strength and formulation are reported information, shown faintly because
+   vigiTwin does not consider them — neither as matching evidence nor as a
+   possible inconsistency. */
+.entry-detail{font-size:11px;color:var(--muted)}
+.subtle{display:block;margin:2px 0 3px;font-size:11px;color:var(--muted)}
+.note{font-size:12px;color:var(--muted)}
+.comparison-key{font-size:12px;color:var(--muted);margin:8px 0 14px}
+.comparison-key span{margin-right:12px}
+.callout{
+  border-left:3px solid var(--accent);padding:8px 14px;background:#f3f8f9;
+  margin:14px 0;
+}
+.callout p{margin:5px 0}
+.label{font-weight:bold;color:var(--accent)}
+.set-list{font-size:13px;line-height:1.5;margin:8px 0 12px}
+.set-list dt{font-weight:bold;margin-top:7px}
+.set-list dd{margin:2px 0 0}
+.evidence-snippets{font-size:11px;color:var(--muted);margin-top:3px}
+.gaps{
+  margin:18px 0 0;padding:10px 14px;border:1px solid var(--line);
+  background:#fcfdfd;font-size:12px;color:var(--muted);
+}
+.gaps ul{margin:5px 0 0;padding-left:18px}
+.reconciliation{font-size:12px;color:var(--muted);margin:6px 0 12px}
+.verdict-agree{color:var(--match);font-weight:600}
+.verdict-disagree{color:var(--mismatch);font-weight:600}
+footer{
+  margin-top:34px;padding-top:12px;border-top:1px solid var(--line);
+  font-size:11px;color:var(--muted);
+}
+a{color:var(--accent)}
+
+@media(max-width:650px){
+  main{padding:20px;margin:0}
+  .outcomes{grid-template-columns:1fr}
+  table{font-size:12px}
+  th,td{padding:5px}
+  h1{font-size:25px}
+}
+
+/* Print. Sized for A4 and for a reviewer who will read this on paper:
+   headings stay with their tables, table headings repeat across pages, long
+   terms wrap rather than overflow, and narratives are never clipped. */
+@page{size:A4;margin:16mm}
+@media print{
+  body{background:#fff;font-size:10pt;line-height:1.4}
+  main{margin:0;padding:0;max-width:none;box-shadow:none}
+  h1{font-size:23pt}
+  h2{font-size:18pt}
+  h3{break-after:avoid;font-size:12pt}
+  h4{break-after:avoid}
+  table{font-size:9pt}
+  th{font-size:8.5pt}
+  th,td{padding:5px 6px}
+  thead{display:table-header-group}
+  tr{break-inside:avoid}
+  .case+.case{break-before:page}
+  .case{margin-top:20px}
+  .outcomes,.callout,.gaps{break-inside:avoid}
+  /* Long narratives and interpretations must not be cut off mid-sentence. */
+  .callout p,.narrative-text{overflow:visible;break-inside:auto}
+  a{text-decoration:none;color:inherit}
+  *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+}

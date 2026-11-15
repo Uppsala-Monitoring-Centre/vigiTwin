@@ -108,11 +108,12 @@ Rationale for the split: [`docs/repository_roles.md`](docs/repository_roles.md).
 
 ```
 docs/        Method specification, pipeline overview, integration guide,
-             data contracts, and per-change migration notes
+             data contracts, the evidence review format, and per-change
+             migration notes
 schemas/     JSON Schema for every artifact the pipeline emits
 examples/    A valid example document for each schema
 src/         The package (see docs/integration_guide.md § Public surface)
-tests/       ~1800 tests, all on synthetic data
+tests/       ~2000 tests, all on synthetic data
 ```
 
 ## Versioning and provenance

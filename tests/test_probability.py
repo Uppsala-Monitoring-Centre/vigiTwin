@@ -1808,3 +1808,102 @@ class TestLPatientSerialization:
         schema = PairFeatures.model_json_schema()
         assert "L_patient" in schema["properties"]
         assert "L_patient" in schema["required"]
+
+
+class TestMatchedValueOnContributions:
+    """``matched_value`` identifies *which* date a contribution is for.
+
+    ``feature`` is ``"clinical_date"`` for every matched date, so the feature
+    name alone cannot attribute a contribution to a particular date field. The
+    value used to live only inside the free-text ``description``; it is now a
+    field, so a display can join on it instead of parsing that string.
+    """
+
+    @pytest.fixture
+    def anchor(self):
+        return AnchorPopulation(
+            N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+            type=AnchorType.DRUGS_AES, N_anchor=50,
+        )
+
+    @pytest.fixture
+    def stats_(self):
+        return FrequencyStats(
+            N_total=100_000, N_drugs=100, N_AEs=100, N_drugs_AEs=50,
+        )
+
+    def test_clinical_date_carries_value_and_resolution(self, anchor, stats_):
+        match = MatchResult(
+            matching_drugs=["aspirin"],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="1994-03-30", resolution="day"),
+                ClinicalDateMatch(matched_value="1994-05", resolution="month"),
+            ],
+        )
+        estimate = compute_probability(
+            match, anchor, stats_, DomainSizeConfig()
+        ).estimate
+        dates = [
+            fc for fc in estimate.feature_contributions
+            if fc.feature == "clinical_date"
+        ]
+        assert [(fc.matched_value, fc.value_resolution) for fc in dates] == [
+            ("1994-03-30", "day"),
+            ("1994-05", "month"),
+        ]
+
+    def test_value_matches_the_description_it_replaces(self, anchor, stats_):
+        """The field and the legacy description agree, so neither is a lie."""
+        match = MatchResult(
+            matching_drugs=["aspirin"],
+            matching_AEs=[],
+            demographic_matches=[],
+            matched_clinical_dates=[
+                ClinicalDateMatch(matched_value="2002-01-04", resolution="day"),
+            ],
+        )
+        estimate = compute_probability(
+            match, anchor, stats_, DomainSizeConfig()
+        ).estimate
+        (fc,) = [
+            c for c in estimate.feature_contributions
+            if c.feature == "clinical_date"
+        ]
+        assert fc.matched_value == "2002-01-04"
+        assert fc.matched_value in fc.description
+
+    def test_demographic_contributions_leave_value_unset(self, anchor, stats_):
+        """A demographic feature names its own element, so no value is stored.
+
+        Leaving it ``None`` keeps the field meaning one thing: present iff the
+        feature name is insufficient to locate the match.
+        """
+        match = MatchResult(
+            matching_drugs=["aspirin"],
+            matching_AEs=[],
+            demographic_matches=[
+                DemographicMatch(
+                    feature="patient_sex", matched=True, matched_value="male"
+                ),
+            ],
+            matched_clinical_dates=[],
+        )
+        estimate = compute_probability(
+            match, anchor, stats_, DomainSizeConfig()
+        ).estimate
+        (fc,) = [
+            c for c in estimate.feature_contributions
+            if c.feature == "patient_sex"
+        ]
+        assert fc.matched_value is None
+        assert fc.value_resolution is None
+
+    def test_fields_default_to_none_on_older_contributions(self):
+        """A contribution written before the fields existed still validates."""
+        fc = FeatureContribution.model_validate(
+            {"feature": "clinical_date", "p_f": 0.01, "method": "domain_size"}
+        )
+        assert fc.matched_value is None
+        assert fc.value_resolution is None

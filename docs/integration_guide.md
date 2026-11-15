@@ -129,7 +129,7 @@ Each of these packages declares `__all__`; **the contract is exactly its
 | `llm_dup_dev.eval` | `evaluate`, `evaluate_batch`, `EvalSummary`, `ConfusionMatrix`, sweeps, text/markdown formatting |
 | `llm_dup_dev.study_eval` | the four workflow steps (`run_analysis`, `generate_reviewer_workbooks`, `build_arbitration`, `finalize`), reference/prediction set models and loaders, sampling, estimation |
 | `llm_dup_dev.characterization` | reference-set "Table 1" builders, models, and writers |
-| `llm_dup_dev.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models |
+| `llm_dup_dev.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models; for the evidence format, `ReviewFormat`, `build_evidence_case`, `build_assessment_summary`, `build_collection`, `load_curated_manifest`, `load_evidence_run_settings`, `write_evidence_html`, `write_evidence_batch_html`, `render_evidence_page`, `PairSelection`, `MissingPairPolicy`, and the models `EvidenceCaseVM`, `EvidencePageVM`, `EvidenceRole`, `EvidenceRunSettings`, `CuratedExampleManifest`, `AssessmentSummary`, `ReferenceInfo`, `ExamplePresentation`, `SCLEAssessment`, `SCLEState` |
 | `llm_dup_dev.dataset_manifest` | `build_dataset_manifest`, `write_dataset_manifest`, models |
 | `llm_dup_dev.run_manifest` | `build_run_manifest`, `write_run_manifest`, models |
 
@@ -1218,6 +1218,19 @@ Existing validation sets predating this contract have no `dataset_manifest.yaml`
 
 The `review_html` module produces standalone HTML files for human inspection of suspected duplicate pairs. It is a dev-side implementation — the secure repo only needs thin wrapper code to load `Report` objects and call the renderer. No database access occurs inside the renderer.
 
+There are **two formats**, and the rest of this section documents the first.
+
+| Format | For | Colouring |
+|---|---|---|
+| `detailed` (default) | Method development: annotation, debugging, precision testing. Raw JSON panels, internal feature identifiers, screening features verbatim. | By whether the two displayed values differ. |
+| `evidence` | Communicating vigiTwin's reasoning to a reader who did not build it. | By the stored assessment — green for scored matching evidence or the anchor pattern, red for a retained inconsistency, neutral for everything else. |
+
+The evidence format has its own reference, [`docs/evidence_format.md`](evidence_format.md),
+covering the colour rule and its consequences, row ordering, the deterministic
+assessment summary, pair selection, the curated collection manifest, and the
+gap codes. Everything below describes the `detailed` format, whose behaviour
+and output are unchanged by the second one's existence.
+
 ### When to use it
 
 | Workflow | Description |
@@ -1405,6 +1418,51 @@ Pass it as `--screening screening.json` on the CLI, `screening_path=` to
 `ResultRenderInput` and the `render_*_html` functions, or `screening=` to
 `study_eval.scle.packets.generate_packets` for SCLE reviewer packets.
 
+### Generating the evidence format instead
+
+Same artifacts, same loader, different output. On the CLI:
+
+```bash
+python -m llm_dup_dev.review_html \
+    --reports reports.json --pairs pairs.json \
+    --features features.json --classifications classifications.json \
+    --bundles bundles.json --run-manifest run_manifest.json \
+    --format evidence --set-label "FDA Gold"
+```
+
+From Python, `render_saved_run(review_format="evidence", ...)`; or build cases
+directly with `build_evidence_case` when you are not going through a saved
+run. Three arguments are evidence-only and ignored by the detailed format:
+
+| Argument | Effect |
+|---|---|
+| `run_settings=` / `--run-manifest` | Supplies the run's own `epsilon` and `L_match` thresholds. Without it the review names evidence zones but quotes no numbers, rather than assuming today's defaults applied to that run. |
+| `set_label=` / `--set-label` | The reference set's name, for the reference-label tile. |
+| `select=` / `--pair-ids` | Renders only these pairs, in the order given. Works for both formats. `select=None` is byte-identical to before. |
+
+A curated collection spanning several reference sets is driven by a manifest
+rather than a command line:
+
+```bash
+python -m llm_dup_dev.review_html.evidence \
+    --manifest collection.yaml --output-dir outputs/supplement/
+```
+
+The evidence format writes into its own directory, `outputs/evidence_review/`
+by default rather than the detailed format's `outputs/review_html/` — both
+write an `index.html` and name a pair's page the same way, so one directory
+cannot hold both. Each file is named after its example id, which falls back to
+the pair id outside a curated collection.
+`render_pair`, `write_pair_html`, `write_batch_html` and the filename rule are
+untouched, so `study_eval.scle.packets` — which reimplements that rule — is
+unaffected.
+
+> An evidence review is an **internal** review. It may carry original report
+> identifiers, country names and narrative text, and its footer says so.
+> Omitting the debug panels does not make a page anonymised. The
+> confidentiality transformations and the publication export are a later
+> phase.
+
 ---
 
 ## Reference files
@@ -1417,6 +1475,7 @@ Pass it as `--screening screening.json` on the CLI, `screening_path=` to
 | `docs/pipeline_overview.md` | High-level pipeline description |
 | `docs/data_contracts.md` | Data layer design and contracts |
 | `docs/repository_roles.md` | Security controls between repos |
+| `docs/evidence_format.md` | The `evidence` review format: colour semantics, ordering, the curated manifest |
 | `src/llm_dup_dev/review_html/__init__.py` | `render_pair_html` / `render_batch_html` API docstrings |
 
 ---

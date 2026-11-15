@@ -62,8 +62,18 @@ from llm_dup_dev.models.report_pair import (
 from llm_dup_dev.pipeline.export import read_classifications, read_pair_features
 
 from .compare import build_pair_view_model
+from .evidence.build import build_evidence_case
+from .evidence.settings import EvidenceRunSettings, load_evidence_run_settings
+from .formats import ReviewFormat, reference_from_annotation
 from .models import PairViewModel
-from .render import DEFAULT_OUTPUT_DIR, write_batch_html, write_pair_html
+from .render import (
+    DEFAULT_EVIDENCE_OUTPUT_DIR,
+    DEFAULT_OUTPUT_DIR,
+    write_batch_html,
+    write_evidence_batch_html,
+    write_pair_html,
+)
+from .selection import PairSelection, apply_selection
 
 
 def _load_json(path: Path) -> dict | list:
@@ -136,10 +146,57 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--format",
+        choices=[f.value for f in ReviewFormat],
+        default=ReviewFormat.DETAILED.value,
+        help=(
+            "Which review to generate. 'detailed' (default) is the existing "
+            "pair review, built for annotation and debugging. 'evidence' is "
+            "the reader-facing review of vigiTwin's reasoning, with values "
+            "coloured by the stored assessment rather than by comparing them."
+        ),
+    )
+    parser.add_argument(
+        "--pair-ids",
+        nargs="+",
+        default=None,
+        metavar="PAIR_ID",
+        help=(
+            "Render only these pairs, in the order given, instead of every "
+            "pair in the artifact. Ids are canonical "
+            "({report_id1}__{report_id2}, ids ascending). An id matching no "
+            "pair is an error."
+        ),
+    )
+    parser.add_argument(
+        "--run-manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Evidence format only. The run's manifest, read for the decision "
+            "thresholds and the numerical stabiliser it used. Without it the "
+            "review names evidence zones but quotes no thresholds, rather "
+            "than assuming today's defaults applied to that run."
+        ),
+    )
+    parser.add_argument(
+        "--set-label",
+        default=None,
+        help=(
+            "Evidence format only. The reference set's name, used to label "
+            "the reference-label tile (e.g. 'FDA Gold')."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR}).",
+        default=None,
+        help=(
+            f"Output directory. Defaults to {DEFAULT_OUTPUT_DIR} for the "
+            f"detailed format and {DEFAULT_EVIDENCE_OUTPUT_DIR} for the "
+            "evidence format: the two write files of the same name, so one "
+            "directory cannot hold both."
+        ),
     )
     parser.add_argument(
         "--no-index",
@@ -176,6 +233,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     pairs: list[ReportPair] = [
         ReportPair.model_validate(p, context=pair_context) for p in raw_pairs
     ]
+    if args.pair_ids:
+        pairs = apply_selection(
+            pairs,
+            PairSelection(pair_ids=tuple(args.pair_ids)),
+            key=lambda pair: pair.pair_id,
+        )
 
     # Load optional features / classifications. The readers live in
     # pipeline.export alongside the writers that produce these files.
@@ -218,6 +281,29 @@ def main(argv: Sequence[str] | None = None) -> None:
         screening_details = load_screening_details(args.screening)
         screening_entries = screening_details.entries
         screening_algorithm = screening_details.algorithm
+
+    review_format = ReviewFormat(args.format)
+    if args.output_dir is None:
+        # Per-format default. An evidence run and a detailed run of the same
+        # pairs produce files of the same name, index.html included, so
+        # sharing a directory would have each quietly overwrite the other.
+        args.output_dir = (
+            DEFAULT_EVIDENCE_OUTPUT_DIR
+            if review_format is ReviewFormat.EVIDENCE
+            else DEFAULT_OUTPUT_DIR
+        )
+    if review_format is ReviewFormat.EVIDENCE:
+        _run_evidence(
+            args,
+            pairs=pairs,
+            reports=reports,
+            features=features,
+            classifications=classifications,
+            bundles=bundles,
+            narrative_demographics=narrative_demographics,
+            screening_algorithm=screening_algorithm,
+        )
+        return
 
     # Build view models
     view_models: list[PairViewModel] = []
@@ -276,3 +362,79 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"Wrote {len(view_models)} pair(s) to {out}"
             + (" (with index.html)" if not args.no_index else "")
         )
+
+
+def _run_evidence(
+    args: argparse.Namespace,
+    *,
+    pairs: Sequence[ReportPair],
+    reports: dict[str, Report],
+    features: dict[str, PairFeatures],
+    classifications: dict[str, ClassificationResult],
+    bundles: dict[str, FrozenPairBundle],
+    narrative_demographics: dict[str, NarrativeDemographics],
+    screening_algorithm: str | None,
+) -> None:
+    """Render the evidence format for the pairs already selected and loaded.
+
+    Shares the CLI's artifact loading rather than duplicating it; only the
+    per-pair build and the writer differ. A pair missing its features still
+    renders, with the page saying it carries no stored evidence — this format
+    never invents highlighting from a comparison it does not perform.
+    """
+    run_settings: EvidenceRunSettings | None = None
+    if args.run_manifest:
+        run_settings = load_evidence_run_settings(args.run_manifest)
+
+    cases = []
+    errors: list[str] = []
+    for pair in pairs:
+        report_1 = reports.get(pair.report_1_id)
+        report_2 = reports.get(pair.report_2_id)
+        if report_1 is None or report_2 is None:
+            missing = [
+                rid
+                for rid, report in (
+                    (pair.report_1_id, report_1),
+                    (pair.report_2_id, report_2),
+                )
+                if report is None
+            ]
+            errors.append(f"Skipping {pair.pair_id}: missing report(s) {missing}")
+            continue
+        cases.append(
+            build_evidence_case(
+                report_1=report_1,
+                report_2=report_2,
+                pair_id=pair.pair_id,
+                features=features.get(pair.pair_id),
+                classification=classifications.get(pair.pair_id),
+                frozen_bundle=bundles.get(pair.pair_id),
+                narrative_demographics_1=narrative_demographics.get(
+                    pair.report_1_id
+                ),
+                narrative_demographics_2=narrative_demographics.get(
+                    pair.report_2_id
+                ),
+                reference=reference_from_annotation(
+                    None,
+                    set_label=args.set_label,
+                    screening_algorithm=screening_algorithm or "vigiMatch",
+                ),
+                run_settings=run_settings,
+            )
+        )
+
+    for message in errors:
+        print(f"WARNING: {message}", file=sys.stderr)
+    if not cases:
+        print("No pairs to render.", file=sys.stderr)
+        sys.exit(1)
+
+    out = write_evidence_batch_html(
+        cases, args.output_dir, write_index=not args.no_index
+    )
+    print(
+        f"Wrote {len(cases)} evidence review(s) to {out}"
+        + (" (with index.html)" if not args.no_index else "")
+    )

@@ -1,0 +1,373 @@
+{#
+  One report pair as one <section class="case">.
+
+  This partial is the unit a later phase concatenates into a single
+  supplementary document: rendering N cases into one page is already what
+  evidence_page.html.j2 does, so assembling a supplement needs no new template.
+
+  The template contains no evidence logic. Every colour is a precomputed
+  css_class on a cell or a row, and every ordering decision was made in the
+  builder, so there is exactly one place where "what does the assessment say
+  about this value" is answered.
+#}
+{% macro cell(c) -%}
+{%- if c is none -%}<span class="absent">{{ "—" }}</span>
+{%- elif c.missing -%}{%- if c.text %}<span class="absent">{{ c.text }}</span>{% endif -%}
+{%- else -%}<span class="{{ c.css_class }}"{% if c.title %} title="{{ c.title }}"{% endif %}>{{ c.text }}</span>
+{%- endif -%}
+{%- endmacro %}
+
+{#
+  One reported drug record. Ordered by how much the assessment makes of it:
+  the clinical dates first, since those are what can carry matching evidence
+  or a date inconsistency; then the role, which decides whether the substance
+  counts as a key drug; then dose and formulation last and de-emphasised,
+  because vigiTwin does not consider them at all.
+#}
+{% macro entry(e) -%}
+<div class="entry">
+  {%- if e.start_date or e.end_date %}
+  <div class="entry-dates">{{ cell(e.start_date) }} to {{ cell(e.end_date) }}</div>
+  {%- endif %}
+  {%- if e.drug_role %}
+  <div class="entry-role">{{ cell(e.drug_role) }}</div>
+  {%- endif %}
+  {%- if e.form or e.strength %}
+  <div class="entry-detail">
+    {%- if e.strength %}{{ cell(e.strength) }}{% endif -%}
+    {%- if e.form %}{% if e.strength %} · {% endif %}{{ cell(e.form) }}{% endif -%}
+  </div>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{# A report's whole column for one drug row: its own spelling of the
+   substance, then every record it carries for that substance. #}
+{% macro drug_side(name, entries) -%}
+{%- if name is none -%}
+{#- Blank: the presence column already says which report carries the drug. -#}
+{%- else -%}
+<div class="entity-name">{{ cell(name) }}</div>
+{% for e in entries %}{{ entry(e) }}{% endfor %}
+{%- endif -%}
+{%- endmacro %}
+
+<section class="case" id="{{ case.example_id }}">
+  {% if case.kicker %}<div class="kicker">{{ case.kicker }}</div>{% endif %}
+  {% if case.title %}<h2>{{ case.title }}</h2>{% endif %}
+  {% if case.lede %}<p class="lede">{{ case.lede }}</p>{% endif %}
+
+  <div class="outcomes">
+    {% for tile in case.outcomes %}
+    <div class="outcome">
+      <span>{{ tile.label }}</span>
+      <strong class="{{ tile.css_class }}">{{ tile.value }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if case.reference_verdict %}
+  {% set v = case.reference_verdict %}
+  <p class="note">
+    {% if v.agrees_with_vigitwin is true %}
+    <span class="verdict-agree">vigiTwin agrees with the reference label.</span>
+    {% elif v.agrees_with_vigitwin is false %}
+    <span class="verdict-disagree">vigiTwin disagrees with the reference label.</span>
+    {% endif %}
+    {{ v.comparison_note }}
+  </p>
+  {% endif %}
+
+  {% for block in case.narrative_blocks %}
+  <div class="callout">
+    <p class="label">{{ block.heading }}</p>
+    {% for paragraph in block.paragraphs %}
+    <p class="narrative-text">{{ paragraph }}</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+
+  <h3>1. Report comparison</h3>
+  <p class="comparison-key">
+    <span class="value-match">Green: matching evidence or anchor pattern</span>
+    <span class="value-mismatch">Red: retained inconsistency</span>
+    Neutral: all other reported information, including agreements that were not
+    scored, differences vigiTwin did not record as inconsistencies, and missing
+    values. Red marks a retained inconsistency even where independence was not
+    rejected and no same-case decision was reached. Colours do not indicate
+    severity. A green drug or adverse event term is a member of a shared
+    pattern that contributed evidence, not a term with its own score. A blank
+    cell means the information was not reported; in the drug and adverse event
+    tables an empty column means that report did not list the entity at all,
+    as the presence column states.
+  </p>
+
+  <table class="characteristics">
+    <thead>
+      <tr><th scope="col">Characteristic</th><th scope="col">Report A</th><th scope="col">Report B</th></tr>
+    </thead>
+    <tbody>
+      {% for row in case.characteristics %}
+      <tr>
+        <td>{{ row.label }}</td>
+        <td>{{ cell(row.left) }}
+          {% if row.left_evidence %}
+          <div class="evidence-snippets">{% for s in row.left_evidence %}“{{ s }}” {% endfor %}</div>
+          {% endif %}
+        </td>
+        <td>{{ cell(row.right) }}
+          {% if row.right_evidence %}
+          <div class="evidence-snippets">{% for s in row.right_evidence %}“{{ s }}” {% endfor %}</div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if case.context_note %}<p class="note">{{ case.context_note }}</p>{% endif %}
+
+  {% if case.drugs %}
+  <h4>Drugs</h4>
+  <table class="drugs">
+    <thead>
+      <tr>
+        <th scope="col">Report A</th>
+        <th scope="col">Report B</th>
+        <th scope="col">Presence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in case.drugs %}
+      <tr class="{{ row.row_css_class }}">
+        <td>{{ drug_side(row.left_name, row.left_entries) }}</td>
+        <td>{{ drug_side(row.right_name, row.right_entries) }}</td>
+        <td><span class="{{ row.presence.css_class }}">{{ row.presence.label }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    Rows are ordered by presence — both reports, then report A only, then
+    report B only — and within the one-sided groups by whether the drug was
+    reported in a key role. Repeated records of one substance are shown
+    separately, each with its own treatment period. A dash inside a treatment
+    period denotes an unreported boundary. Clinical dates are highlighted
+    where vigiTwin
+    scored them as matching evidence; roles are shown neutrally unless vigiTwin
+    recorded them as inconsistent, and strengths and formulations are shown in
+    grey because vigiTwin does not consider them.
+  </p>
+  {% endif %}
+
+  {% if case.adverse_events %}
+  <h4>Adverse events</h4>
+  <table class="aes">
+    <thead>
+      <tr>
+        <th scope="col">Report A</th>
+        <th scope="col">Report B</th>
+        <th scope="col">Presence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in case.adverse_events %}
+      <tr class="{{ row.row_css_class }}">
+        <td>{% if row.left_term %}{{ cell(row.left_term) }}{% endif %}</td>
+        <td>{% if row.right_term %}{{ cell(row.right_term) }}{% endif %}</td>
+        <td><span class="{{ row.presence.css_class }}">{{ row.presence.label }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    MedDRA preferred terms as each report coded them, ordered by presence —
+    both reports, then report A only, then report B only. Within the
+    one-sided groups the retained inconsistencies sit at the outer edges, so
+    the terms vigiTwin did not treat as inconsistent form a single band in
+    the middle rather than appearing twice.
+  </p>
+  {% set onset_rows = case.adverse_events | selectattr('has_onsets') | list %}
+  {% if onset_rows %}
+  <table class="onsets">
+    <thead>
+      <tr>
+        <th scope="col">Reported adverse event onset</th>
+        <th scope="col">Report A</th>
+        <th scope="col">Report B</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in onset_rows %}
+      <tr>
+        <td>{{ row.term.text }}</td>
+        <td>{% if row.left_onsets %}{% for c in row.left_onsets %}{{ cell(c) }} {% endfor %}{% else %}<span class="absent">—</span>{% endif %}</td>
+        <td>{% if row.right_onsets %}{% for c in row.right_onsets %}{{ cell(c) }} {% endfor %}{% else %}<span class="absent">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    Event-level onset dates, shown separately so the table above does not
+    discard them.
+  </p>
+  {% endif %}
+  {% endif %}
+
+  <h3>2. Context and matching evidence</h3>
+  {% if case.anchor_note %}<p>{{ case.anchor_note }}</p>{% endif %}
+
+  {% if case.shared_sets %}
+  <dl class="set-list">
+    {% for s in case.shared_sets %}
+    <dt>{{ s.label }} ({{ s.count }} {{ 'term' if s.count == 1 else 'terms' }}){% if s.is_anchor %} — defines the anchor{% endif %}</dt>
+    <dd>{% for m in s.members %}{{ cell(m) }}{% if not loop.last %}; {% endif %}{% endfor %}</dd>
+    {% endfor %}
+  </dl>
+  {% endif %}
+
+  {% if case.freq_rows %}
+  <table class="freq">
+    <thead>
+      <tr>
+        <th scope="col">Scope</th>
+        <th scope="col">Shared drug set</th>
+        <th scope="col">Shared AE set</th>
+        <th scope="col">Both sets</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in case.freq_rows %}
+      <tr>
+        <td>{{ row.scope_label }}</td>
+        <td>{{ row.n_drugs }}</td>
+        <td>{{ row.n_aes }}</td>
+        <td>{{ row.n_both }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    Counts are the number of reports containing <em>every</em> term in the
+    respective set — the co-occurrence of the whole set, not the frequencies of
+    the individual terms — and include the two reports under review.
+  </p>
+  {% endif %}
+
+  {% if case.matching_features %}
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Additional matching feature</th>
+        <th scope="col">Contribution to matching score (log scale)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in case.matching_features %}
+      <tr><td>{{ cell(row.label) }}</td><td>{{ row.contribution_text }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No additional matching features contributed to the score.</p>
+  {% endif %}
+
+  {% if case.reconciliation %}
+  {% set r = case.reconciliation %}
+  <p class="reconciliation">
+    Contributions total {{ r.contributions_total_text }}; anchor adjustment
+    {{ r.anchor_adjustment_text }}; stored matching score
+    {{ r.stored_score_text }}{% if r.score_ceiling is not none %} (ceiling
+    {{ '%.1f' | format(r.score_ceiling) }}){% endif %}. {{ r.note }}
+  </p>
+  {% endif %}
+
+  {% if case.explicit_link_note %}<p class="note">{{ case.explicit_link_note }}</p>{% endif %}
+  {% if case.source_case_note %}<p class="note">{{ case.source_case_note }}</p>{% endif %}
+  {% if case.narrative_note %}<p class="note">{{ case.narrative_note }}</p>{% endif %}
+
+{#
+  Inconsistencies get their own section, ahead of the assessment. They are an
+  input to the same-case decision, not a report of it, and a reader following
+  the reasoning needs to see what was found before reading what was concluded
+  from it.
+#}
+  <h3>3. Inconsistencies</h3>
+  {% if case.retained_discrepancies %}
+  <table class="findings">
+    <thead>
+      <tr>
+        <th scope="col">Feature</th>
+        <th scope="col">Severity</th>
+        <th scope="col">Finding</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in case.retained_discrepancies %}
+      <tr>
+        <td>{{ d.feature_label }}</td>
+        <td>{{ d.severity | capitalize }}</td>
+        <td>{{ d.text }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    These are the findings vigiTwin retained and weighed. Severity is the
+    level that was counted: a finding whose severity was reduced is listed at
+    its final level, with the reason given.
+  </p>
+  {% elif case.assessment_rows %}
+  <p>vigiTwin recorded no inconsistencies for this pair.</p>
+  {% endif %}
+
+  {% if case.suppressed_discrepancies %}
+  <h4>Superseded findings</h4>
+  <table class="findings">
+    <thead>
+      <tr>
+        <th scope="col">Feature</th>
+        <th scope="col">Severity</th>
+        <th scope="col">Finding</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in case.suppressed_discrepancies %}
+      <tr>
+        <td>{{ d.feature_label }}</td>
+        <td>{{ d.severity | capitalize }}</td>
+        <td>{{ d.text }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="note">
+    These findings were recorded but superseded by a more decisive one, so
+    they contributed nothing to the inconsistency penalty and are not
+    highlighted in the tables above. They are shown because the assessor did
+    make them.
+  </p>
+  {% endif %}
+
+  <h3>4. vigiTwin assessment</h3>
+  {% if case.assessment_rows %}
+  <table class="decision">
+    <thead>
+      <tr><th scope="col">Assessment</th><th scope="col">Result</th></tr>
+    </thead>
+    <tbody>
+      {% for row in case.assessment_rows %}
+      <tr><td>{{ row.label }}</td><td>{{ row.text }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if case.gaps %}
+  <div class="gaps">
+    <strong>Limitations of this review</strong>
+    <ul>
+      {% for gap in case.gaps %}<li>{{ gap.message }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>

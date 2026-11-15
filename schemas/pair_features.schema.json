@@ -292,6 +292,30 @@
           "default": "",
           "title": "Description",
           "type": "string"
+        },
+        "matched_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matched Value"
+        },
+        "value_resolution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value Resolution"
         }
       },
       "required": [

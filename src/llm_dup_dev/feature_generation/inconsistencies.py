@@ -370,6 +370,17 @@ def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
     therefore not inconsistent, while a genuinely unreported ingredient
     still is.
 
+    Each emitted inconsistency carries the offending substance names in
+    ``terms`` and the direction in ``kind`` (``"missing_in_r2"`` means the
+    terms are key drugs of report 1 that report 2 does not carry). ``feature``
+    stays ``"drug_set"``: consumers filter on it, so it is not a place to
+    encode direction. The names in ``terms`` are **lowercased**
+    substance names (as ``_key_substance_names`` produces them), not the
+    reported spelling, so a consumer joining them onto a drug table applies
+    its own normalisation to both sides rather than comparing them raw. The
+    point is that a display layer never has to recover them from
+    ``description``.
+
     Returns 0, 1, or 2 moderate inconsistencies.
     """
     key_1 = _key_substance_names(r1)
@@ -395,6 +406,8 @@ def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
                         f"Key drug(s) in report 1 not found in report 2: "
                         f"{sorted(missing_in_r2)}"
                     ),
+                    terms=sorted(missing_in_r2),
+                    kind="missing_in_r2",
                 )
             )
 
@@ -414,6 +427,8 @@ def _check_drug_set(r1: Report, r2: Report) -> list[Inconsistency]:
                         f"Key drug(s) in report 2 not found in report 1: "
                         f"{sorted(missing_in_r1)}"
                     ),
+                    terms=sorted(missing_in_r1),
+                    kind="missing_in_r1",
                 )
             )
 

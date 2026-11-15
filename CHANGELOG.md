@@ -21,6 +21,85 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-15
+
+### Added — an `evidence` review format beside the existing `detailed` one
+
+The existing pair review is built for annotation and debugging: dense, with
+raw JSON panels and internal feature identifiers, and coloured by comparing
+the two reports' displayed values. The new **evidence** format is for
+communicating vigiTwin's reasoning to an external reader.
+
+**Colour follows the assessment, not the diff.** The evidence builder performs
+no comparison of its own. Green means the stored assessment scored a value as
+matching evidence or named it in the anchor pattern; red means a *retained*
+inconsistency named it; neutral is everything else — including agreements that
+were never scored, and differences vigiTwin did not record as inconsistencies.
+So a drug present in only one report is neutral unless a finding names it, two
+identical report dates are neutral (report date is excluded from the
+probability computation), and a retained inconsistency stays red on a pair
+classified `Unrelated`, where no same-case decision was reached.
+
+- `review_html.evidence` — `build_evidence_case`, the view models, a curated
+  example manifest, and a collection builder.
+- `build_assessment_summary` — a deterministic, readable account of one pair's
+  assessment. No LLM, no I/O, same inputs always the same text. It quotes a
+  threshold only when a run manifest supplies it, names the decision pathway
+  actually recorded rather than assuming rarity, says explicitly when no
+  inconsistency-penalty comparison was made, and never presents a chance-match
+  probability as a probability of duplication.
+- **Pair selection**: `load_saved_run(select=...)` takes a `PairSelection` or a
+  bare iterable of pair ids, applied before any per-pair work. `select=None`
+  behaves exactly as before. An id matching no pair raises regardless of
+  `strict`; a *selected* pair that cannot be loaded follows the selection's own
+  `on_missing` policy and raises by default, because silently dropping a pair
+  someone named leaves a curated collection quietly short of an example.
+- **CLI**: `--format {detailed,evidence}` (default `detailed`), `--pair-ids`,
+  `--run-manifest`, `--set-label`; `--output-dir` now defaults per format —
+  `outputs/review_html/` for detailed, unchanged, and
+  `outputs/evidence_review/` for evidence, because both formats write an
+  `index.html` and name a pair's page the same way; and
+  `python -m llm_dup_dev.review_html.evidence --manifest ...` for a curated
+  collection, with `--export-drafts` for editable summary drafts.
+- `FeatureContribution.matched_value` / `.value_resolution` — the matched value
+  for date-valued features, so a display can attribute a clinical-date match to
+  a specific date field instead of parsing it out of `description`.
+- Drug-set inconsistencies now populate the existing `terms` and `kind` fields
+  with the offending substances and the direction.
+- `docs/evidence_format.md` — the format's own reference: the colour rule and
+  its consequences, suppression against downgrading, row ordering, the
+  assessment summary, the score reconciliation, pair selection, the curated
+  manifest, and every gap code. `docs/integration_guide.md` § Public surface
+  now lists the new names, which is what makes them contract.
+
+**The detailed format is unchanged, byte for byte.** `render_pair`,
+`write_pair_html`, `write_batch_html` and `_safe_filename` keep their
+signatures and their output, verified by diffing a rendered page against the
+previous release; `study_eval.scle.packets`, which reimplements that filename
+rule, is untouched. The two formats write into separate directories.
+
+**Older features files still load and render**, with two documented gaps shown
+as page footnotes rather than silently omitted: no per-substance drug-set
+highlighting, and no per-date clinical-date highlighting. Both are absences of
+recorded detail, not errors.
+
+**Run settings are optional and never assumed.** `epsilon` lives on
+`PipelineConfig` and the `L_match` zone boundaries on `DecisionThresholds`;
+neither is in a saved run's features file, only in a `RunManifest`. Supplied
+one, the review quotes the run's own numbers and can state the score ceiling —
+which is what explains a pair whose contributions total more than its stored
+score. Without one it names the evidence zone and quotes no threshold, rather
+than describing a run with defaults that may never have applied to it.
+
+**This is an internal review, not a publication-safe one.** It may carry
+original identifiers, country names and narratives, and says so in its footer.
+Displayed values are confined to a single `EvidenceCell.text` field, with
+attribution carrying only assessment-level facts, so a later publication phase
+can rewrite every displayed value without disturbing a colour — pinned by a
+test that shifts every date by a shared offset and asserts the evidence tree is
+unchanged.
+
+
 ## [1.0.2] - 2026-11-14
 
 ### Fixed — `dev_git_commit` could name the caller's repository

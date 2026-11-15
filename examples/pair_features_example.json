@@ -29,21 +29,36 @@
         "p_f": 0.0012,
         "method": "empirical",
         "domain_size": null,
-        "description": "AE set: 120/100000"
+        "description": "AE set: 120/100000",
+        "matched_value": null,
+        "value_resolution": null
       },
       {
         "feature": "patient_sex",
         "p_f": 0.5,
         "method": "domain_size",
         "domain_size": 2.0,
-        "description": "patient_sex: D_f=2"
+        "description": "patient_sex: D_f=2",
+        "matched_value": null,
+        "value_resolution": null
       },
       {
         "feature": "patient_age",
         "p_f": 0.0099,
         "method": "domain_size",
         "domain_size": 101.0,
-        "description": "patient_age: D_f=101"
+        "description": "patient_age: D_f=101",
+        "matched_value": null,
+        "value_resolution": null
+      },
+      {
+        "feature": "clinical_date",
+        "p_f": 0.0019,
+        "method": "domain_size",
+        "domain_size": 540.0,
+        "description": "clinical_date 2021-03-14 (day): D_f=540.0",
+        "matched_value": "2021-03-14",
+        "value_resolution": "day"
       }
     ]
   },
@@ -60,6 +75,22 @@
       "kind": null,
       "rationale": "",
       "terms": [],
+      "cluster_label": "",
+      "suppressed": false,
+      "suppressed_by": ""
+    },
+    {
+      "feature": "drug_set",
+      "severity": "moderate",
+      "difference": null,
+      "units": null,
+      "description": "Key drug(s) in report 1 not found in report 2: ['warfarin']",
+      "source": "rule",
+      "kind": "missing_in_r2",
+      "rationale": "",
+      "terms": [
+        "warfarin"
+      ],
       "cluster_label": "",
       "suppressed": false,
       "suppressed_by": ""

@@ -11,7 +11,20 @@ from pathlib import Path
 
 import jinja2
 
+from typing import TYPE_CHECKING, Sequence
+
 from .models import BatchIndexItem, ComparisonStatus, PairViewModel
+
+if TYPE_CHECKING:  # pragma: no cover
+    # Imported lazily in the evidence functions below. At module level this
+    # would be a cycle: the evidence package reaches back to this module and
+    # to ``saved_run``, which in turn imports from ``review_html`` itself.
+    from .evidence.models import (
+        EvidenceCaseVM,
+        EvidenceIndexItem,
+        EvidenceIndexVM,
+        EvidencePageVM,
+    )
 
 # ---------------------------------------------------------------------------
 # Jinja2 environment
@@ -184,3 +197,154 @@ def write_batch_html(
         index_path.write_text(render_index(index_items), encoding="utf-8")
 
     return output_dir
+
+
+# ---------------------------------------------------------------------------
+# Evidence format
+#
+# Added alongside the detailed format rather than threaded into it. The
+# functions above keep their signatures and their output byte for byte, so
+# ``study_eval.scle.packets`` — which reimplements the detailed format's
+# filename rule and builds on ``write_batch_html`` — is unaffected. The
+# evidence format writes into its own output directory, which is also what a
+# curated collection wants.
+# ---------------------------------------------------------------------------
+
+DEFAULT_EVIDENCE_OUTPUT_DIR = Path("outputs/evidence_review")
+
+
+def render_evidence_page(vm: "EvidencePageVM") -> str:
+    """Render one evidence document, holding one or more cases."""
+    env = _get_jinja_env()
+    return env.get_template("evidence_page.html.j2").render(vm=vm)
+
+
+def render_evidence_index(vm: "EvidenceIndexVM") -> str:
+    """Render the index over a set of generated evidence reviews."""
+    env = _get_jinja_env()
+    return env.get_template("evidence_index.html.j2").render(vm=vm)
+
+
+def _utc_now() -> str:
+    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def evidence_filename(case: "EvidenceCaseVM") -> str:
+    """The HTML filename for one case, from its example id.
+
+    Uses the example id rather than the pair id so a curated collection's
+    files are named S1, S2, … as the collection refers to them. The id falls
+    back to the pair id when no example id was supplied.
+    """
+    return f"{_safe_filename(case.example_id)}.html"
+
+
+def write_evidence_html(
+    case: "EvidenceCaseVM",
+    output_dir: Path = DEFAULT_EVIDENCE_OUTPUT_DIR,
+    *,
+    title: str | None = None,
+    intro: str = "",
+    note: str = "",
+) -> Path:
+    """Render and write one case as its own evidence document."""
+    from .evidence.models import EvidencePageVM
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    page = EvidencePageVM(
+        title=title or (case.title or f"Report pair {case.pair_id}"),
+        intro=intro,
+        note=note,
+        generated_at=_utc_now(),
+        cases=[case],
+    )
+    path = output_dir / evidence_filename(case)
+    path.write_text(render_evidence_page(page), encoding="utf-8")
+    return path
+
+
+def write_evidence_batch_html(
+    cases: Sequence["EvidenceCaseVM"],
+    output_dir: Path = DEFAULT_EVIDENCE_OUTPUT_DIR,
+    *,
+    write_index: bool = True,
+    index_title: str = "Evidence review",
+    collection_intro: str = "",
+    collection_note: str = "",
+) -> Path:
+    """Write one evidence document per case, plus an optional index.
+
+    Case order is preserved: a curated collection's order is a deliberate
+    choice by whoever assembled it. The index links only the files written.
+    """
+    from .evidence.models import EvidenceIndexItem, EvidenceIndexVM
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    items: list[EvidenceIndexItem] = []
+    for case in cases:
+        write_evidence_html(
+            case,
+            output_dir,
+            intro=collection_intro,
+            note=collection_note,
+        )
+        label = next(
+            (
+                tile.value
+                for tile in case.outcomes
+                if tile.label == "vigiTwin classification"
+            ),
+            None,
+        )
+        items.append(
+            EvidenceIndexItem(
+                example_id=case.example_id,
+                pair_id=case.pair_id,
+                filename=evidence_filename(case),
+                title=case.title,
+                kicker=case.kicker,
+                final_label=label,
+                reference_label=(
+                    case.reference_verdict.display
+                    if case.reference_verdict is not None
+                    else None
+                ),
+            )
+        )
+
+    if write_index and items:
+        index = EvidenceIndexVM(
+            title=index_title, generated_at=_utc_now(), items=items
+        )
+        (output_dir / "index.html").write_text(
+            render_evidence_index(index), encoding="utf-8"
+        )
+    return output_dir
+
+
+def write_evidence_document(
+    cases: Sequence["EvidenceCaseVM"],
+    path: Path,
+    *,
+    title: str,
+    intro: str = "",
+    note: str = "",
+) -> Path:
+    """Write every case into one document.
+
+    Present now because the template already supports it and it costs nothing;
+    a later phase builds the supplementary document on top of this, with the
+    publication transforms applied to the cases before they arrive here.
+    """
+    from .evidence.models import EvidencePageVM
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    page = EvidencePageVM(
+        title=title,
+        intro=intro,
+        note=note,
+        generated_at=_utc_now(),
+        cases=list(cases),
+    )
+    path.write_text(render_evidence_page(page), encoding="utf-8")
+    return path

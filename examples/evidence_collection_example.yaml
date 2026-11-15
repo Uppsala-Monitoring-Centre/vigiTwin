@@ -1,0 +1,61 @@
+# A curated collection of evidence reviews.
+#
+# Synthetic throughout: the report ids, pair ids and interpretations below are
+# invented for documentation and tests. A real collection for a manuscript
+# carries original identifiers and clinical interpretations, so it is kept
+# outside this public repository.
+#
+# Nothing here restates what the artifacts already hold. Reference labels,
+# screening outcomes and vigiTwin classifications are read from the saved run;
+# adding them here is rejected rather than silently ignored.
+
+schema_version: "1.0"
+
+title: Illustrative report pairs from the performance evaluation of vigiTwin
+intro: >
+  Two examples illustrating how contextual matching evidence and retained
+  inconsistencies inform the two-stage adjudication. The reference
+  classification, the screening result, the vigiTwin classification and the
+  case-level interpretation are kept distinct throughout.
+note: >
+  Draft for author review. This is an internal evidence review: it may contain
+  original report identifiers, country names and narrative text, and is not
+  approved for publication.
+
+# Names the rule used when comparing a binary reference label against
+# vigiTwin's four-label output. "primary" counts only Duplicates as positive.
+positive_class: primary
+
+datasets:
+  synthetic_set:
+    label: Synthetic set
+    reports: synthetic_run/reports.json
+    pairs: synthetic_run/pairs.json
+    pair_results: synthetic_run/pair_results.json
+    bundles: synthetic_run/bundles.json
+    run_manifest: synthetic_run/run_manifest.json
+
+examples:
+  - example_id: S1
+    dataset: synthetic_set
+    pair_id: R001__R002
+    title: Duplicates with extensive shared information
+    lede: Extensive matching evidence despite differences in coding.
+    scle_assessment:
+      state: not_entered
+    case_interpretation: >
+      Human-authored interpretation goes here. It is never generated and never
+      overwritten: use --export-drafts to get the deterministic summary as a
+      starting point, edit it, and paste the result back into this field.
+    review_status: draft
+
+  - example_id: S2
+    dataset: synthetic_set
+    pair_id: R001__R003
+    title: Similar exposures, different clinical outcomes
+    lede: A shared drug without further patient-specific matching evidence.
+    scle_assessment:
+      state: assessed
+      issue: possibly_incorrect
+      note: Reviewed against the source reports.
+    review_status: draft
