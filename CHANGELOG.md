@@ -21,6 +21,32 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-11-15
+
+Two readability fixes on the rendered page. No logic, no colour rule, no
+model changed.
+
+### Changed — the decision table is headed "vigiTwin classification"
+
+It was "vigiTwin assessment", while the outcome tile at the top of the case
+and the table's own last row both say *classification*. One name for one
+thing.
+
+### Changed — the inconsistency table's note is gone where nothing was weighed
+
+The note under the inconsistencies explained, at length, that the findings
+had not been weighed against a same-case tolerance because that comparison is
+only reached once independence is rejected. The decision table a few lines
+below already says exactly that, on its *Same case* row — for both ways a
+penalty goes unweighed, whether independence was not rejected or the
+relationship was pinned on source context — so the page said it twice.
+
+Only the weighed note remains. The findings are still shown, still tinted,
+and still carry their weights. `findings_weighed` stays, because what it
+prevents is the live risk: the "retained and weighed" note appearing on a
+pair where nothing was weighed, which would claim the findings decided
+something.
+
 ## [1.1.6] - 2026-11-15
 
 A second pass over the rendered page, from reading a generated collection.

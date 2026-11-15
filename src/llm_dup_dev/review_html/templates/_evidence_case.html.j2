@@ -299,6 +299,12 @@
       {% endfor %}
     </tbody>
   </table>
+  {#
+    Only the weighed case carries a note. Where nothing was weighed, the
+    assessment table below already says so — on the Same case row, which
+    states that the question is reached only once independence is rejected —
+    and saying it twice on one page was the redundancy this removed.
+  #}
   {% if case.findings_weighed %}
   <p class="note">
     These are the findings vigiTwin retained and weighed. Severity is the
@@ -306,16 +312,6 @@
     its final level, with the reason given. The figure beside it is the weight
     this run applied to that level, and the retained findings' weights are
     what sum to the inconsistency penalty that decided the same-case question.
-  </p>
-  {% else %}
-  <p class="note">
-    These are the inconsistencies vigiTwin identified, each shown at the
-    severity that was counted — a finding whose severity was reduced is listed
-    at its final level, with the reason given — and with the weight this run
-    assigns that level. For this pair they were <em>not</em> weighed against a
-    same-case tolerance: that comparison is only reached once independence is
-    rejected, so the findings below are recorded evidence and bore on no
-    decision here.
   </p>
   {% endif %}
   {% elif case.assessment_rows %}
@@ -350,7 +346,7 @@
   </p>
   {% endif %}
 
-  <h4>vigiTwin assessment</h4>
+  <h4>vigiTwin classification</h4>
   {% if case.assessment_rows %}
   <table class="decision">
     <thead>

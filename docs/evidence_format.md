@@ -125,17 +125,23 @@ rather than for the material each happens to hold:
 3. **Relationship assessment** — the inconsistencies, then the verdict. The
    retained findings with their domain, severity and the element each names,
    then *Superseded findings* for the suppressed ones, then the two-stage
-   decision table and the prose account.
+   decision table under *vigiTwin classification*, matching the outcome tile
+   and the table's own last row.
    Retained rows are tinted red, with the same two row classes the drug and
    adverse-event tables use; a superseded row is not, because it contributed
    nothing and a red row would say the assessment weighed it.
-   The note beneath the table follows the decision: findings are described as
-   "retained and weighed" only where the penalty was actually compared against
-   a same-case tolerance (`InconsistencyPenalty.threshold is not None`, carried
-   on the case as `findings_weighed`). Where independence was not rejected, or
-   the relationship was pinned on source context, the note says the findings
-   were *not* weighed and bore on no decision — they are still recorded
-   evidence, and they still carry weights, but nothing compared them.
+   The note beneath the table appears only where the weighing actually
+   happened — where the penalty was compared against a same-case tolerance
+   (`InconsistencyPenalty.threshold is not None`, carried on the case as
+   `findings_weighed`). Where it did not, there is no note: the decision
+   table a few lines below already says why on its *Same case* row, either
+   that the question is reached only once independence has been rejected or
+   that the reports were assessed on source context alone with no
+   inconsistency-penalty comparison. The findings are still shown, still
+   tinted, and still carry their weights; what no longer happens is the page
+   saying twice that nothing weighed them. What must never appear is the
+   "retained and weighed" note on a pair where nothing was weighed, which is
+   what `findings_weighed` prevents.
    Severity carries the weight the run applied to it, as `Moderate (+1.0)`,
    and the retained weights are what sum to the inconsistency penalty. The
    weight comes from the stored `InconsistencyPenalty.terms`, which records

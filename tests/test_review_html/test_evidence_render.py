@@ -26,7 +26,11 @@ from llm_dup_dev.review_html.render import (
 from llm_dup_dev.models.report import AdverseEvent, Drug
 from llm_dup_dev.models.pair_features import Inconsistency, InconsistencyCounts
 from llm_dup_dev.models.classification import InconsistencyPenalty, PenaltyTerm
-from llm_dup_dev.models.enums import InconsistencySeverity
+from llm_dup_dev.models.enums import (
+    IndependenceAssessment,
+    IndependenceReason,
+    InconsistencySeverity,
+)
 
 from tests.test_review_html.test_evidence_build import (
     _classification,
@@ -118,13 +122,12 @@ class TestSections:
     def test_the_findings_come_before_the_verdict(self):
         """Within the relationship section, evidence then conclusion.
 
-        Matched on the headings themselves: "vigiTwin assessment summary" is
-        the narrative callout at the top of the case and would otherwise be
-        what a bare substring search finds.
+        The heading matches the outcome tile and the decision table's own
+        last row, which both say "classification".
         """
         html = _html()
         assert html.index("<h4>Inconsistencies</h4>") < html.index(
-            "<h4>vigiTwin assessment</h4>"
+            "<h4>vigiTwin classification</h4>"
         )
 
     def test_four_outcome_tiles(self):
@@ -625,12 +628,35 @@ class TestTheInconsistencyNoteFollowsTheDecision:
         assert "retained and weighed" in html
         assert "decided the same-case question" in html
 
-    def test_an_uncompared_penalty_says_the_weighing_never_happened(self):
-        """Independence not rejected: the findings bore on no decision."""
+    def test_an_uncompared_penalty_carries_no_note(self):
+        """The decision table says it once; the table above does not repeat it.
+
+        What must not happen is the *weighed* note appearing where nothing
+        was weighed — that would claim the findings decided something.
+        """
         html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
         assert "retained and weighed" not in html
-        assert "weighed against a same-case tolerance" in html
-        assert "bore on no decision here" in html
+        assert "weighed against a same-case tolerance" not in html
+
+    def test_the_decision_table_says_it_for_a_pinned_relationship(self):
+        """Removed from one place because it is stated in another."""
+        html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
+        assert "no inconsistency-penalty comparison" in html
+
+    def test_the_decision_table_says_it_for_an_independent_pair(self):
+        """The other way a penalty goes unweighed, covered the same way."""
+        html = " ".join(
+            _html(
+                features=self._features_with_finding(),
+                classification=_classification(
+                    independence_assessment=IndependenceAssessment.INDEPENDENT,
+                    relationship_assessment=None,
+                    independence_reason=IndependenceReason.RARITY_INSUFFICIENT,
+                    penalty=InconsistencyPenalty(w_tot=1.0),
+                ),
+            ).split()
+        )
+        assert "only reached once independence has been rejected" in html
 
     def test_the_weight_is_still_shown_when_nothing_was_weighed(self):
         """The run assigns the severity a weight either way; it just went unused."""
