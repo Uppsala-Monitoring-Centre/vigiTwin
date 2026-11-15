@@ -92,7 +92,7 @@ command that runs against the *same* `ReferenceSet` files `analyze` reads:
 
 ```
 python -m llm_dup_dev.characterization --reference-set precision.json \
-    --reports validation_reports.json --output-dir results/characteristics
+    --reports reports.json --output-dir results/characteristics
 ```
 
 It is deliberately **not** a `study_eval` subcommand or a parameter on

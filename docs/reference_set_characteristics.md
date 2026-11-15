@@ -52,14 +52,14 @@ report rather than one per set.
 ```
 python -m llm_dup_dev.characterization \
     --reference-set precision.json --reference-set fda_gold.json \
-    --reports validation_reports.json \
+    --reports reports.json \
     --output-dir results/characteristics
 ```
 
 `--reference-set` reads the same `study_reference_set.schema.json` documents
 `study_eval analyze` reads, so no separate export is needed. `--reports` accepts
 **either frozen shape** — a JSON array of `Report` objects
-(`validation_reports.json`, what the secure-side runner writes) or an object
+(`reports.json`, what the secure-side runner writes) or an object
 keyed by `report_id` (what `review_html` writes); see
 `llm_dup_dev.data.offline.load_reports`. Other flags: `--top-n` (default 10),
 `--dataset-id`, `--format` (repeatable; `json` and `md` by default, `csv` on
@@ -85,9 +85,9 @@ from llm_dup_dev.study_eval import load_report_pairs, reference_set_from_report_
 
 FROZEN = pathlib.Path("validation_sets/vs_2026Q1")
 
-reports = load_reports(FROZEN / "validation_reports.json")
+reports = load_reports(FROZEN / "reports.json")
 reference_set = reference_set_from_report_pairs(
-    load_report_pairs(FROZEN / "validation_pairs.json"),
+    load_report_pairs(FROZEN / "pairs.json"),
     set_id="frozen_vs_2026Q1",
     provenance="vs_2026Q1",
 )
@@ -184,7 +184,7 @@ from llm_dup_dev.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
 )
 
-bundle = load_frozen_narrative_demographics(FROZEN / "validation_narrative_demographics.json")
+bundle = load_frozen_narrative_demographics(FROZEN / "narrative_demographics.json")
 merged = {
     rid: merge_narrative_demographics(r, bundle.extractions[rid])
     if rid in bundle.extractions else r

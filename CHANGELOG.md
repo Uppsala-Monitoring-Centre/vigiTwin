@@ -68,10 +68,16 @@ entry knows it is an exception.
 
 ### Documentation
 
-- `docs/integration_guide.md` and `docs/evidence_format.md` now use the current
-  secure-side artifact convention throughout — `reports.json`, `pairs.json`,
-  `pair_frequencies.json`, `narrative_demographics.json` — dropping the
-  `validation_` prefix left over from the method-validation phase.
+- Every doc now uses the current secure-side artifact convention —
+  `reports.json`, `pairs.json`, `pair_frequencies.json`,
+  `narrative_demographics.json` — dropping the `validation_` prefix left over
+  from the method-validation phase. Besides `docs/integration_guide.md` and
+  `docs/evidence_format.md`, this corrects `docs/study_eval.md` and
+  `docs/reference_set_characteristics.md`. Directory and identifier names are
+  not artifact filenames and keep the vocabulary the repo still uses elsewhere
+  (`validation_sets/`, `vs_2026Q1`, the per-validation-set
+  `dataset_manifest`), as does the historical record in
+  `docs/migration_notes_canonical_pair_identity.md`.
 - The integration guide's JSON-format table gains the `pair_frequencies.json`
   row it was missing, so the artifact is documented where the others are rather
   than only in the CLI's own `--help`.
