@@ -251,19 +251,24 @@ provisional commit acquires a permanent citation:
   version, and the contract state of each public commit is addressable by
   name instead of by reading `pyproject.toml` at that SHA. The failure mode to
   avoid is a public commit with user-visible changes and no name to cite it
-  by. Tag `v<version>`, on the commit that is pushed.
+  by. Tag `v<version>`, annotated, on the commit that is pushed, and move the
+  README's pinned install example to the new tag in the same change — an
+  install line pointing at a superseded version is the one piece of drift a
+  reader follows by default.
 - **Cut a Release only for citable milestones**: a version referenced in a
   manuscript, or one whose changes external users should be actively
   retrieving. Everything between those gets a tag and no Release. Zenodo
   mints a DOI from a Release, never from a tag push, so this is the one step
   that cannot be taken back or quietly corrected.
-- **A Release and `CITATION.cff` move in the same change.** Bump `version:`
-  and `date-released:` there before cutting the Release, or the archived
-  record misstates what it archives. The `doi:` field holds the *concept*
-  DOI (all versions); each Release gets its own version DOI underneath it.
-  The README's install example pins a tag too, so move it in the same
-  change — an install line pointing at a superseded version is the one piece
-  of drift a reader follows by default.
+- **A Release and `CITATION.cff` move in the same change, and only then.**
+  `CITATION.cff` describes the last *archived* release, not the newest tag,
+  so bump `version:` and `date-released:` there when cutting a Release — and
+  leave them alone when a version is merely tagged, or the file claims an
+  archive that does not exist. The `doi:` field holds the *concept* DOI (all
+  versions); each Release gets its own version DOI underneath it. Say in the
+  tag message which case applies, as the `v1.0.1` and `v1.0.2` messages do:
+  it is the only place a reader of a bare tag can learn whether it was
+  archived.
 - **A study cycle gets its own tag**, named for the study rather than the
   version (`study-2026-performance-evaluation`), pointing at the version tag
   that was used. It names the analysis, not the contract — see § Versioning

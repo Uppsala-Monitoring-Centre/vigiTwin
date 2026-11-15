@@ -53,7 +53,7 @@ Shorter tour: [`docs/pipeline_overview.md`](docs/pipeline_overview.md).
 ## Install
 
 ```bash
-pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.0.0
+pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.0.2
 ```
 
 Python 3.11 or 3.12. The package is pure Python with four dependencies
@@ -127,9 +127,9 @@ Versioning for the bump rules.
 
 ## Citation
 
-Every release is archived on Zenodo. Citation metadata — including author ORCID
-and the DOI — is in [`CITATION.cff`](CITATION.cff), which GitHub reads to
-populate the *Cite this repository* sidebar.
+Every GitHub Release is archived on Zenodo. Citation metadata — including
+author ORCID and the DOI — is in [`CITATION.cff`](CITATION.cff), which GitHub
+reads to populate the *Cite this repository* sidebar.
 
 Cite the **concept DOI** when you mean the software in general; it always
 resolves to the latest release:
