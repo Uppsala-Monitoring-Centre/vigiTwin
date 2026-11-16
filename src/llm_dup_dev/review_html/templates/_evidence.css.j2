@@ -124,7 +124,26 @@ tr.row-neutral td,tr.ae-neutral td{background:transparent}
 }
 .chain dt{font-weight:bold;color:var(--muted)}
 .chain dd{margin:0}
-.chain-item{display:block}
+/* One chip per piece of evidence, so the panel reads as countable items
+   rather than as a sentence. Two colours only, never shaded by magnitude:
+   colour says which way a piece told, and the figure inside says how much.
+   Shading by size would make a pale chip and a small number the same
+   statement twice, and would put the page's one severity claim in a place
+   a reader cannot measure. */
+.chip{
+  display:inline-block;margin:0 5px 3px 0;padding:2px 7px;border-radius:3px;
+  font-size:12px;line-height:1.35;
+}
+.chip b{font-weight:bold;margin-left:2px}
+.chip-for{background:var(--match-bg);color:var(--match);border:1px solid #cfe6d8}
+.chip-against{
+  background:var(--mismatch-bg);color:var(--mismatch);border:1px solid #f0cdd4;
+}
+/* A value inside a chip is already the chip's colour; the cell's own class
+   would restate it at a different weight. */
+.chip .value-match,.chip .value-mismatch,.chip .value-neutral{
+  color:inherit;font-weight:inherit;
+}
 /* The clause under a decision figure: why that number decided what it did.
    Set apart so the figure stays scannable and the reasoning stays available
    without a second table. */

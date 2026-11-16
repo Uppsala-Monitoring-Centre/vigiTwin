@@ -1368,21 +1368,21 @@ class TestMatchingFeatureRowsNameTheMatchedValue:
         labels = self._labels(
             _report("R1", sex="male"), _report("R2", sex="male"), "patient_sex"
         )
-        assert labels == ["Sex (male)"]
+        assert labels == ["Male"]
 
     def test_the_value_is_quoted_as_the_table_shows_it(self):
         """Units included, so the row and the table above it read the same."""
         labels = self._labels(
             _report("R1", age=54), _report("R2", age=54), "patient_age"
         )
-        assert labels == ["Age (54 years)"]
+        assert labels == ["54 years"]
 
     def test_a_tolerance_match_shows_both_values(self):
         """Neither value is "the" matched one, so neither is claimed to be."""
         labels = self._labels(
             _report("R1", age=54), _report("R2", age=55), "patient_age"
         )
-        assert labels == ["Age (54 years / 55 years)"]
+        assert labels == ["54 years / 55 years"]
 
     def test_a_feature_with_no_recorded_value_keeps_its_plain_label(self):
         """Height has no characteristics row in these fixtures."""

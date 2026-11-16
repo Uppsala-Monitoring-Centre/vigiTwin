@@ -40,15 +40,23 @@ from tests.test_review_html.test_evidence_build import (
 
 
 def _case(**kwargs):
-    r1 = _report(
-        "R001",
-        drugs=[Drug(substance="topiramate", sources=["s"])],
-        aes=[AdverseEvent(pt_name="cleft lip", sources=["s"])],
+    """One rendered case. Both reports are overridable, for the tests that
+    need particular reported values rather than a matching pair."""
+    r1 = kwargs.pop(
+        "report_1",
+        _report(
+            "R001",
+            drugs=[Drug(substance="topiramate", sources=["s"])],
+            aes=[AdverseEvent(pt_name="cleft lip", sources=["s"])],
+        ),
     )
-    r2 = _report(
-        "R002",
-        drugs=[Drug(substance="topiramate", sources=["s"])],
-        aes=[AdverseEvent(pt_name="cleft lip", sources=["s"])],
+    r2 = kwargs.pop(
+        "report_2",
+        _report(
+            "R002",
+            drugs=[Drug(substance="topiramate", sources=["s"])],
+            aes=[AdverseEvent(pt_name="cleft lip", sources=["s"])],
+        ),
     )
     return build_evidence_case(
         report_1=r1,

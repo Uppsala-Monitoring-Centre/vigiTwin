@@ -167,3 +167,20 @@ class TestTheBoundsStillDecideTheGap:
         r, case = _reconciliation(_with(decades=None, n_anchor=11, stored=5.0))
         assert not r.floor_reached
         assert "score_unreconciled" in _codes(case)
+
+    def test_a_known_epsilon_does_not_excuse_a_disagreement(self):
+        """Knowing epsilon rules a ceiling in or out; it explains nothing else.
+
+        This used to pass silently, which mattered little while the page
+        printed the stored score. The page now prints the total and never the
+        stored score, so an unexplained difference has to be recorded or no
+        reader can see it.
+        """
+        r, case = _reconciliation(
+            _with(decades=3.0, n_anchor=2, stored=9.0), _EPSILON
+        )
+        assert not r.ceiling_reached
+        assert not r.floor_reached
+        assert "score_unreconciled" in _codes(case)
+        assert "totals +3.0" in _html(case)
+        assert "stored a matching score of 9.0" in _html(case)

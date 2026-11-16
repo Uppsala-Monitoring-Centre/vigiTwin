@@ -97,7 +97,7 @@ class TestTheAnchorAdjustment:
         # column. Both red; neither is the other's copy.
         assert html.count("-1.7") == 2
         assert (
-            '<span class="value-mismatch" title="the number of report pairs'
+            '<span class="chip chip-against" title="the number of report pairs'
         ) in html
         assert (
             "<td>Anchor population adjustment</td>"

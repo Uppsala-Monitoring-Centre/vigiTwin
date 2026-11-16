@@ -400,8 +400,24 @@ def independence_clause(
     features: PairFeatures,
     classification: ClassificationResult,
     run_settings: EvidenceRunSettings | None,
+    *,
+    score: float | None = None,
 ) -> str:
-    """Why independence was or was not rejected, by the recorded reason."""
+    """Why independence was or was not rejected, by the recorded reason.
+
+    ``score`` overrides the stored ``L_match`` with the figure the page
+    actually shows — the contributions and the anchor adjustment as they add
+    up. The two differ only where the stored score sits at a bound: at the
+    ceiling the sum is the larger number, at the floor the stored score is
+    held at zero while the sum has gone negative. Quoting the sum is the
+    page's choice everywhere, so the clause quotes it too rather than naming
+    a second, smaller or larger figure beside the column it came from.
+
+    This cannot contradict the decision. At the ceiling both figures sit far
+    above any independence threshold; at the floor both sit at or below zero.
+    Away from a bound they agree to within a rounding tolerance, or the
+    builder records a gap saying they do not.
+    """
     reason = classification.independence_reason
     rejected = (
         classification.independence_assessment
@@ -419,7 +435,8 @@ def independence_clause(
             "not on the matching score"
         )
 
-    score = format_score(features.L_match)
+    shown = features.L_match if score is None else score
+    score_text = format_score(shown)
     threshold = (
         run_settings.independence_threshold(reason.value if reason else None)
         if run_settings is not None
@@ -427,24 +444,24 @@ def independence_clause(
     )
     if not rejected:
         clause = (
-            f"The matching score of {score} did not support rejection of "
-            "independence"
+            f"The matching score of {score_text} did not support rejection "
+            "of independence"
         )
         if threshold is not None:
-            decimals = _separating_decimals(features.L_match, threshold)
+            decimals = _separating_decimals(shown, threshold)
             clause += (
                 f", which required more than {_penalty(threshold, decimals)}"
             )
         return clause
 
-    clause = f"The matching score of {score} supports non-independence"
+    clause = f"The matching score of {score_text} supports non-independence"
     if threshold is not None:
         # The zone is named without a number of its own. It is not what
         # independence required — it selects the same-case tolerance, which
         # the next sentence states — and attaching the zone's boundary here
         # said this pair had to clear 3.0 when it had to clear 1.0.
         zone = _ZONE_NAME.get(reason) if reason else None
-        decimals = _separating_decimals(features.L_match, threshold)
+        decimals = _separating_decimals(shown, threshold)
         clause += (
             f", exceeding the independence threshold of "
             f"{_penalty(threshold, decimals)}"
@@ -524,6 +541,7 @@ def build_assessment_summary(
     classification: ClassificationResult | None = None,
     *,
     run_settings: EvidenceRunSettings | None = None,
+    score: float | None = None,
 ) -> AssessmentSummary:
     """Render one pair's assessment as a short readable account.
 
@@ -578,7 +596,9 @@ def build_assessment_summary(
         )
 
     phrases = _discrepancy_phrases(features)
-    independence = independence_clause(features, classification, run_settings)
+    independence = independence_clause(
+        features, classification, run_settings, score=score
+    )
     same_case = same_case_clause(classification)
     rejected = (
         classification.independence_assessment

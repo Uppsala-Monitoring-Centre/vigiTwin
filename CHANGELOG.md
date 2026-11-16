@@ -61,6 +61,11 @@ The matching score, the penalty and the same-case tolerance had appeared
 **only inside prose sentences** until now; this is the first place a reader
 can read them as figures.
 
+Each piece of evidence is a chip carrying its own figure, so both sides of
+the assessment read in the same units: `Female +0.3` against `Age: 31 years
+vs 30 years +0.4`. Chips take one green and one red and are **never shaded by
+magnitude** — colour says which way a piece told, the figure says how much.
+
 New public model `CaseSummaryVM`, and `EvidenceCaseVM.summary_panel` holding
 one (`None` where the stored artifacts support no row). The panel keeps no
 copy of the contributions or the findings — it renders the same objects
@@ -68,8 +73,54 @@ sections 2 and 3 render, so the two cannot drift and one publication rewrite
 of a value reaches both.
 
 No `Classification` row: the outcome tile states that a dozen lines above.
-The context row names the *level* — `Global` / `Country` / `Country-year` —
-and never the country or the year, which this format prints nowhere.
+
+### Changed — the page states the total, not the bounded stored score
+
+A set of contributions implying 17.2 now reads as **17.2** in the panel, in
+the contributions column and in the clause beside it, rather than as the 15.0
+the stored `L_match` was held at. 1.1.6 stopped the page explaining the
+ceiling and the floor on the grounds that neither moves a classification;
+this finishes that: a bound nobody explains should not quietly change the
+number a reader is shown either.
+
+The two cannot straddle a decision boundary — at the ceiling both sit far
+above any independence threshold, at the floor the stored score is zero and
+the total is negative — so the quoted figure always agrees with the verdict
+beside it. Where the two **genuinely** disagree the page quotes the stored
+score instead, because a total that provably does not describe the decision
+would let a case print "the matching score of -3.2 … exceeding the
+independence threshold of 1.0". `ReconciliationVM.reconciled` is new and
+carries that choice.
+
+`independence_clause` and `build_assessment_summary` take a new optional
+`score`, so the generated prose quotes the same figure the panel does.
+
+### Fixed — a score disagreement is no longer silent when epsilon is known
+
+`score_unreconciled` fired only when the run had recorded no `epsilon`. A run
+that *had* recorded one, whose contributions still failed to account for the
+stored score, produced no gap at all. That mattered little while the page
+printed the stored score; it matters now that the page prints the total. The
+gap fires whenever no bound explains the difference, and names both figures.
+
+### Changed — values, rather than descriptions of values
+
+Three places where the page described a value instead of showing it:
+
+- A contribution is named by its value alone — `Female`, `54 years` — not
+  `Sex (female)`. A clinical date never carried its kind, and the column is
+  headed "Additional matching feature". Where a run recorded no value, the
+  kind is shown by itself as before.
+- A finding about a pair of values shows them: `31 years vs 30 years`, not
+  "Difference of 1 years." `DiscrepancyVM` gains `left` and `right`, holding
+  the *same cells* the characteristics table holds, so a finding cannot come
+  to quote a value the table above it no longer shows. A finding with no
+  single pair behind it keeps its prose.
+- The context row names the population — `SE 2003` — not the level,
+  `Country-year`. The country is shown as the run recorded it, usually an ISO
+  code; expanding a code into a country name is a mapping this package has no
+  business owning. `CaseSummaryVM.context` is a cell, so the publication
+  phase masks or substitutes it like any other reported value.
 
 Also public: `format_score` (promoted from `summary._score`, so the panel's
 figure and the clause beside it cannot be formatted two ways) and

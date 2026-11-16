@@ -453,6 +453,11 @@ class ReconciliationVM(BaseModel):
     #: The score sits at its lower bound of zero while the additive figure is
     #: negative — the floor, the mirror of ``ceiling_reached``.
     floor_reached: bool = False
+    #: Whether the figures shown account for the score the run stored, either
+    #: by agreeing with it or by sitting at a bound that explains the
+    #: difference. False means the two genuinely disagree, which decides
+    #: which of them the page is willing to quote.
+    reconciled: bool = True
 
     @property
     def anchor_adjustment_css_class(self) -> str:
@@ -487,11 +492,23 @@ class DiscrepancyVM(BaseModel):
     #: final severity; for a suppressed one it is the severity the row still
     #: carries, which contributed nothing.
     severity: str
+    #: The finding in prose, as the assessment described it. Shown where the
+    #: two values below are not available — a drug-set or adverse-event
+    #: finding has no single pair of values to put side by side.
     text: str
+    #: The two values the finding is about, where it is about a pair of
+    #: them. These are the *same cell objects* the characteristics table
+    #: holds, so one publication rewrite reaches both and the finding cannot
+    #: come to quote a value the table above it no longer shows. "Difference
+    #: of 1 years." says what changed; "34 years vs 35 years" says what the
+    #: reports actually said, which is what a reader is checking.
+    left: EvidenceCell | None = None
+    right: EvidenceCell | None = None
     #: False only for a suppressed finding, which stayed in the record but
     #: contributed nothing to the penalty.
     retained: bool = True
     suppressed: bool = False
+
     suppressed_by: str = ""
     #: Non-empty when a clinical-date finding was downgraded; each entry is
     #: the producing module's own reason string.
@@ -663,10 +680,11 @@ class CaseSummaryVM(BaseModel):
     would otherwise state no threshold anywhere on the page.
     """
 
-    #: The *level* the rarity was judged at — ``Global`` / ``Country`` /
-    #: ``Country-year``. Never the country or the year themselves, which this
-    #: format does not print anywhere.
-    context_label: str = ""
+    #: The population the rarity was judged against, named: the country and
+    #: year a country-year run used, the country alone, or ``Global``. A cell
+    #: rather than a string because a country is a report value, and the
+    #: later publication phase masks or substitutes it like any other.
+    context: EvidenceCell | None = None
     #: The anchor-defining sets, as the same :class:`SharedSetVM` objects the
     #: section below holds — so one publication rewrite of a member's ``text``
     #: reaches both, and the set boundary survives: a drugs-and-AEs anchor
@@ -690,7 +708,7 @@ class CaseSummaryVM(BaseModel):
         """True when no row has a value, in which case no panel is rendered."""
         return not any(
             (
-                self.context_label,
+                self.context,
                 self.anchor_sets,
                 self.anchor_n_text,
                 self.anchor_adjustment,

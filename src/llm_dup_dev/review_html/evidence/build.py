@@ -1068,11 +1068,12 @@ _SCOPE_LABEL = {
 def context_phrase(level: ReportingContextLevel) -> str:
     """A reader-facing name for a reporting context.
 
-    Names the *level*, never the country or the year. The level is what makes
-    a count interpretable; the identity of the country is reporting metadata
-    that an internal review shows in its own row and a publication export
-    masks. Keeping it out of the prose means neither version needs different
-    sentences.
+    Names the *level*, never the country or the year. This is about the
+    **prose**: the level is what makes a count interpretable, and keeping the
+    identity out of the sentences means a publication export needs no
+    different ones. The identity itself is reporting metadata, and the panel
+    shows it in a cell of its own — ``SE 2003`` — which that export masks or
+    substitutes like any other reported value.
     """
     return _CONTEXT_PHRASE.get(level, "the selected context")
 
@@ -1221,12 +1222,19 @@ def _matching_feature_label(
 ) -> str:
     """A reader-facing label for one contribution.
 
-    Every row names the value that earned the contribution, not just the kind
-    of value: the drug and adverse-event sets by their members, a clinical date
-    by the date itself, and a demographic feature by the matched value in
-    parentheses. A reader looking at a contribution of +6.7 wants to know which
-    drugs earned it, and "Sex" alone does not say whether the shared value was
-    the common one or the rare one.
+    Every row names the value that earned the contribution, not the kind of
+    value: the drug and adverse-event sets by their members, a clinical date
+    by the date itself, a demographic feature by the matched value. A reader
+    looking at a contribution of +6.7 wants to know which drugs earned it,
+    and "Sex" alone does not say whether the shared value was the common one
+    or the rare one.
+
+    The value stands on its own — ``Female``, ``34 years``, ``2002-01-04`` —
+    rather than as ``Sex (female)``. A date never carried its kind, and the
+    demographic values do not need theirs either: the column is headed
+    "Additional matching feature", and a value that cannot be recognised
+    without a label is a value worth showing differently. Where no value was
+    recorded the kind is all there is, and it is shown alone.
     """
     if fc.feature == "clinical_date":
         found = resolved_clinical_date(fc)
@@ -1240,7 +1248,9 @@ def _matching_feature_label(
     value = (fc.matched_value or "").strip() or (demographic_values or {}).get(
         fc.feature, ""
     )
-    return f"{label} ({value})" if value else label
+    if not value:
+        return label
+    return value[0].upper() + value[1:]
 
 
 def _build_matching_features(
@@ -1359,15 +1369,29 @@ def _build_reconciliation(
         and abs(additive - stored) > _RECONCILE_TOLERANCE
     )
 
-    if unexplained and ceiling is None:
+    if unexplained:
+        # The page states the additive figure and never the stored score, so
+        # a disagreement between them is otherwise invisible to a reader. It
+        # has to be recorded whether or not epsilon is known: not knowing it
+        # leaves a ceiling unverifiable, but knowing it and still failing to
+        # reconcile is the more serious of the two and used to pass silently.
         gaps.append(
             EvidenceGap(
                 code=EvidenceGapCode.SCORE_UNRECONCILED,
                 message=(
-                    "The listed contributions do not account for the stored "
-                    "matching score, and this run's numerical stabiliser was "
-                    "not recorded, so the score ceiling cannot be stated. "
-                    "Supply the run manifest to resolve this."
+                    "The matching evidence listed here totals "
+                    f"{additive:+.1f}, while the run stored a matching score "
+                    f"of {stored:.1f}. This page shows the total, and neither "
+                    "bound of the score accounts for the difference."
+                    if ceiling is not None
+                    else (
+                        "The matching evidence listed here totals "
+                        f"{additive:+.1f}, while the run stored a matching "
+                        f"score of {stored:.1f}. This page shows the total. "
+                        "The run's numerical stabiliser was not recorded, so "
+                        "whether the stored score sits at its ceiling cannot "
+                        "be stated; supply the run manifest to resolve this."
+                    )
                 ),
             )
         )
@@ -1390,6 +1414,7 @@ def _build_reconciliation(
         score_ceiling=ceiling,
         ceiling_reached=at_ceiling,
         floor_reached=at_floor,
+        reconciled=not unexplained,
     )
 
 
@@ -1523,6 +1548,25 @@ _DISCREPANCY_COLUMN_LABEL: dict[str, str] = {
 }
 
 
+def _demographic_cells(
+    characteristics: list[CharacteristicRow],
+) -> dict[str, tuple[EvidenceCell, EvidenceCell]]:
+    """The two cells behind each demographic feature, keyed by feature name.
+
+    The cells themselves, not their text: a finding that quotes them is then
+    quoting the very objects the characteristics table renders, so the two
+    cannot drift and one publication rewrite serves both.
+    """
+    by_label = {row.label: row for row in characteristics}
+    cells: dict[str, tuple[EvidenceCell, EvidenceCell]] = {}
+    for feature, label in FEATURE_TO_DEMO_LABEL.items():
+        row = by_label.get(label)
+        if row is None or row.left.missing or row.right.missing:
+            continue
+        cells[feature] = (row.left, row.right)
+    return cells
+
+
 def _discrepancy_column(feature: str) -> str:
     """The value for the findings table's own column, in the reader's terms."""
     if feature in _DISCREPANCY_COLUMN_LABEL:
@@ -1554,6 +1598,7 @@ def _build_discrepancies(
     features: PairFeatures,
     reported_names: dict[str, str] | None = None,
     penalty: InconsistencyPenalty | None = None,
+    demographic_cells: dict[str, tuple[EvidenceCell, EvidenceCell]] | None = None,
 ) -> list[DiscrepancyVM]:
     """Every finding the assessment recorded, retained ones first.
 
@@ -1578,16 +1623,20 @@ def _build_discrepancies(
         weight = weights.get(severity)
         return weight, "" if weight is None else f"+{weight:.1f}"
 
+    sides = demographic_cells or {}
     items: list[DiscrepancyVM] = []
     for inc in features.inconsistencies:
         weight, weight_text = weighed(
             inc.severity.value, suppressed=inc.suppressed
         )
+        pair = sides.get(inc.feature)
         items.append(
             DiscrepancyVM(
                 feature_label=_discrepancy_column(inc.feature),
                 severity=inc.severity.value,
                 text=_inconsistency_text(inc, reported_names),
+                left=pair[0] if pair else None,
+                right=pair[1] if pair else None,
                 retained=not inc.suppressed,
                 suppressed=inc.suppressed,
                 suppressed_by=inc.suppressed_by,
@@ -1866,13 +1915,42 @@ def _build_outcome_tiles(
 # Assessment section
 # ---------------------------------------------------------------------------
 
-#: The *level* rarity was judged at, for the panel's Context row. The country
-#: and the year themselves are never printed: this format states which
-#: population the comparison ran against, not which population it was.
-_CONTEXT_LEVEL_LABEL = {
+#: What a context names when the artifact recorded no country to name it by.
+_CONTEXT_LEVEL_FALLBACK = {
     ReportingContextLevel.COUNTRY_YEAR: "Country-year",
     ReportingContextLevel.COUNTRY: "Country",
 }
+
+
+def _context_cell(features: PairFeatures) -> EvidenceCell:
+    """The population the rarity was judged against, named.
+
+    ``SE 2003`` rather than ``Country-year``: the level alone says how the
+    population was chosen but not which population it is, and a reader
+    comparing two cases wants the second. The country is whatever the run
+    recorded — an ISO code in most artifacts — and is shown verbatim rather
+    than expanded, because inventing a country name from a code is a mapping
+    this module has no business owning.
+
+    A cell, not a string: a country is a report value, so the later
+    publication phase masks or substitutes it here exactly as it does in the
+    characteristics table. Neutral, because country agreement defines the
+    comparison population and is never counted as matching evidence.
+    """
+    context = features.reporting_context
+    level = context.level
+    country = (context.country or "").strip()
+    if level is ReportingContextLevel.GLOBAL or not country:
+        text = (
+            "Global"
+            if level is ReportingContextLevel.GLOBAL
+            else _CONTEXT_LEVEL_FALLBACK.get(level, "Global")
+        )
+    elif level is ReportingContextLevel.COUNTRY_YEAR and context.year:
+        text = f"{country} {context.year}"
+    else:
+        text = country
+    return EvidenceCell(text=text, kind=ValueKind.COUNTRY)
 
 
 def _penalty_arithmetic(penalty: InconsistencyPenalty) -> str:
@@ -1898,6 +1976,31 @@ def _as_clause(sentence: str | None) -> str:
         return ""
     text = sentence[0].lower() + sentence[1:]
     return text.rstrip(".")
+
+
+def shown_score(
+    features: PairFeatures, reconciliation: ReconciliationVM | None
+) -> float:
+    """The matching score as this page states it: the sum it also shows.
+
+    The stored ``L_match`` is bounded — held at ``-log10(epsilon)`` above and
+    at zero below — and the page does not describe those bounds, because
+    neither moves a classification. Printing the bounded figure beside a
+    column that adds to a different one would leave a reader to reconcile
+    two numbers for no gain, so the page states the sum throughout and the
+    clause beside it quotes the same number.
+
+    Except where the two genuinely disagree. The sum is worth quoting because
+    it describes the same decision the stored score does; once it provably
+    does not, quoting it would let the page say a thing like "the matching
+    score of -3.2 ... exceeding the independence threshold of 1.0". So an
+    unreconciled case falls back to the figure the decision was actually made
+    on, and the gap recorded alongside it names the total the contributions
+    came to. A bound is not a disagreement: those still show the sum.
+    """
+    if reconciliation is None or not reconciliation.reconciled:
+        return features.L_match
+    return reconciliation.additive_total
 
 
 def _build_summary_panel(
@@ -1940,22 +2043,23 @@ def _build_summary_panel(
         )
 
     penalty = classification.penalty if classification is not None else None
+    score = shown_score(features, reconciliation)
     return CaseSummaryVM(
-        context_label=_CONTEXT_LEVEL_LABEL.get(
-            features.reporting_context.level, "Global"
-        ),
+        context=_context_cell(features),
         anchor_sets=[s for s in shared_sets if s.is_anchor],
         anchor_n_text=(
             f"{features.anchor.N_anchor:,} "
             f"{'report' if features.anchor.N_anchor == 1 else 'reports'}"
         ),
         anchor_adjustment=adjustment,
-        score_text=format_score(features.L_match),
+        score_text=format_score(score),
         independence_note=(
             ""
             if classification is None
             else _as_clause(
-                independence_clause(features, classification, run_settings)
+                independence_clause(
+                    features, classification, run_settings, score=score
+                )
             )
         ),
         penalty_text=("" if penalty is None else _penalty_arithmetic(penalty)),
@@ -1977,6 +2081,8 @@ def _build_assessment_rows(
     features: PairFeatures,
     classification: ClassificationResult,
     run_settings: EvidenceRunSettings | None,
+    *,
+    score: float | None = None,
 ) -> list[AssessmentRowVM]:
     """The two decisions and the final label, each stated separately.
 
@@ -1985,7 +2091,9 @@ def _build_assessment_rows(
     Where no same-case comparison was made, the row says so rather than being
     omitted — an absent row reads as an oversight.
     """
-    independence = independence_clause(features, classification, run_settings)
+    independence = independence_clause(
+        features, classification, run_settings, score=score
+    )
     same_case = same_case_clause(classification)
     relationship = classification.relationship_assessment
 
@@ -2109,6 +2217,7 @@ def _build_narrative_blocks(
     presentation: ExamplePresentation,
     run_settings: EvidenceRunSettings | None,
     gaps: list[EvidenceGap],
+    score: float | None = None,
 ) -> list[EvidenceTextVM]:
     """The prose blocks: a human's reading, the generated summary, or both.
 
@@ -2122,7 +2231,7 @@ def _build_narrative_blocks(
     to it, so regeneration cannot overwrite it.
     """
     summary = build_assessment_summary(
-        features, classification, run_settings=run_settings
+        features, classification, run_settings=run_settings, score=score
     )
     gaps.extend(summary.gaps)
 
@@ -2234,6 +2343,7 @@ def build_evidence_case(
             features,
             {row.sort_key: row.name.text for row in drugs},
             penalty=classification.penalty if classification else None,
+            demographic_cells=_demographic_cells(characteristics),
         )
         summary_panel = _build_summary_panel(
             features, classification, run_settings, shared_sets, reconciliation
@@ -2245,7 +2355,10 @@ def build_evidence_case(
 
         if classification is not None:
             assessment_rows = _build_assessment_rows(
-                features, classification, run_settings
+                features,
+                classification,
+                run_settings,
+                score=shown_score(features, reconciliation),
             )
         else:
             gaps.append(
@@ -2258,7 +2371,12 @@ def build_evidence_case(
                 )
             )
         narrative_blocks = _build_narrative_blocks(
-            features, classification, presentation, run_settings, gaps
+            features,
+            classification,
+            presentation,
+            run_settings,
+            gaps,
+            score=shown_score(features, reconciliation),
         )
     else:
         gaps.append(

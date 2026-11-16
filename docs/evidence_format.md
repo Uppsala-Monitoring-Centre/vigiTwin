@@ -115,10 +115,26 @@ another.
 Then the **at-a-glance panel**: the assessment as figures, in the order the
 assessment itself proceeds — reporting context, anchor and anchor population,
 the additional matching features with their contributions, the matching
-score, the retained inconsistencies, and the inconsistency penalty. It sits
-directly above the written summary so the same assessment is available in
-figures and in prose, adjacent, and a reader meets the conclusion before the
-evidence rather than assembling it from three sections of tables.
+score, the retained inconsistencies with their weights, and the inconsistency
+penalty. It sits directly above the written summary so the same assessment is
+available in figures and in prose, adjacent, and a reader meets the
+conclusion before the evidence rather than assembling it from three sections
+of tables.
+
+Each piece of evidence is a **chip**, so the panel reads as countable items
+rather than as a sentence, and both sides carry a figure in the same units —
+`Female +0.3` against `Age: 31 years vs 30 years +0.4`. Chips take one green
+and one red and are never shaded by magnitude: colour says which way a piece
+told, the figure inside says how much. Shading by size would make a pale chip
+and a small number the same statement twice, and would put the page's one
+quantitative claim somewhere a reader cannot measure.
+
+The context row names the **population**, not the level — `SE 2003` rather
+than `Country-year`. The level says how the population was chosen; a reader
+comparing two cases wants which one it was. The country is shown exactly as
+the run recorded it, usually an ISO code, because expanding a code into a
+country name is a mapping this package has no business owning. It is a cell,
+like any reported value, so the publication phase masks or substitutes it.
 
 It carries no `Classification` row: the outcome tile says that a dozen lines
 above, and a third statement of one label on one screen is noise. What it does
@@ -163,14 +179,23 @@ rather than for the material each happens to hold:
    anchor population; the shared drug and AE terms spelled out; and the
    per-feature contributions in decades, totalled (below). Each
    contribution row names the value that earned it, not the kind of value: the
-   matched date rather than "Clinical date", `Sex (male)` rather than "Sex",
-   and the set members rather than "shared drug set". Where the two reports
+   matched date rather than "Clinical date", `Female` rather than "Sex", and
+   the set members rather than "shared drug set". The value stands alone — a
+   date never carried its kind, and the demographic values do not need theirs
+   either. Where a run recorded no value, the kind is all there is and it is
+   shown by itself. Where the two reports
    hold different values for a feature the run still scored as matched — an
    age within tolerance — both are shown, because neither is "the" matched
    value.
 3. **Relationship assessment** — the inconsistencies, which are the evidence
    the relationship question turns on. The retained findings with their
-   domain, severity and the element each names, then *Superseded findings*
+   domain, severity and the element each names — and, where the finding is
+   about a pair of values, those values rather than the difference between
+   them: `31 years vs 30 years`, not "Difference of 1 years." The two are the
+   very cells the characteristics table renders, so a finding cannot come to
+   quote a value the table above it no longer shows. A finding with no single
+   pair behind it, such as a drug-set or adverse-event-picture finding, keeps
+   the prose the assessment recorded. then *Superseded findings*
    for the suppressed ones. The verdict itself is in the panel at the top of
    the case, with both questions answered together; neither numbered section
    closes with its own conclusion, because the sections are the evidence and
@@ -308,23 +333,34 @@ part company at the score's two bounds — the ceiling at `-log10(epsilon)`
 (15.0 at the default 1e-15) and the floor at zero, reached as `p_joint x M`
 approaches one and a chance match stops being unlikely at all.
 
-**The page does not explain either bound.** It did until 1.1.6, in a
-paragraph on every case. Neither bound moves a classification: the zone
-boundaries that decide independence and the same-case tolerance all sit far
-below the ceiling, and a score at the floor is an absence of matching
-evidence either way. The explanation cost a reader more attention than it
-returned, so what survives is the Total — the figure a reader would reach by
-adding the column — with the stored score stated once, in the assessment
-table, where it is the thing being decided on.
+**The page does not explain either bound, and does not print the bounded
+figure.** It explained them until 1.1.6, in a paragraph on every case.
+Neither bound moves a classification: the zone boundaries that decide
+independence and the same-case tolerance all sit far below the ceiling, and a
+score at the floor is an absence of matching evidence either way. So from
+1.1.8 the page states the **total** throughout — in the contributions
+column, in the panel's *Matching score* row, and in the clause beside it. A
+set of contributions implying 17.2 reads as 17.2, not as the 15.0 the stored
+score was held at.
 
-The distinction still matters internally. `ReconciliationVM.ceiling_reached`
-and `.floor_reached` record which bound was invoked, and they are what
-separates a bound from a genuine disagreement: where the Total and the stored
-score differ and *no* bound explains it — because the run recorded no
-`epsilon` to establish the ceiling — the case carries a `score_unreconciled`
-gap, printed under *Limitations of this review*. That is the one case where
-the page still says something about the arithmetic, and it says it as a
-limitation rather than as a reassurance.
+That is safe because the two cannot straddle a decision boundary. At the
+ceiling both figures sit far above any independence threshold; at the floor
+the stored score is zero and the total is negative, so both sit below one.
+Between the bounds they agree to within the rounding tolerance.
+
+**Except where they genuinely disagree**, and then the page quotes the stored
+score instead — the figure the decision was actually made on. A total that
+provably does not describe the decision would let a case say "the matching
+score of -3.2 … exceeding the independence threshold of 1.0", which is worse
+than quoting a number the column does not add to. `ReconciliationVM` carries
+`reconciled` for exactly this choice, alongside `ceiling_reached` and
+`floor_reached`, which record which bound was invoked.
+
+An unreconciled case always carries a `score_unreconciled` gap under
+*Limitations of this review*, naming both figures. Before 1.1.8 that gap was
+recorded only when the run had supplied no `epsilon`; a disagreement with a
+known `epsilon` passed silently, which mattered little while the page printed
+the stored score and matters a great deal now that it prints the total.
 
 `epsilon` and the `L_match` zone boundaries are **not** in a saved run's
 features file. They live on `PipelineConfig` and `DecisionThresholds`, and are
@@ -556,7 +592,7 @@ says which is which, and the template filters on it.
 | `run_settings_missing` | No run manifest was supplied, so thresholds and the score ceiling are not quoted. |
 | `frequency_stats_missing` | No frozen pair frequencies, so the frequency table is absent. |
 | `no_features` / `no_classification` | The pair's assessment was not saved. It renders as a report comparison with everything neutral — not with colours invented from a comparison this format does not perform. |
-| `score_unreconciled` | Contributions and stored score disagree by more than the tolerance, with no epsilon available to explain it. |
+| `score_unreconciled` | Contributions and stored score disagree by more than the tolerance, and no bound explains it. The page then quotes the stored score. |
 
 ### Runs saved before the structured fields
 
