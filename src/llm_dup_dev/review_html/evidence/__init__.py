@@ -45,6 +45,7 @@ from .manifest import (
 from .models import (
     Attribution,
     AttributionKind,
+    CaseSummaryVM,
     EvidenceCaseVM,
     EvidenceCell,
     EvidenceGap,
@@ -73,6 +74,7 @@ __all__ = [
     "AssessmentSummary",
     "Attribution",
     "AttributionKind",
+    "CaseSummaryVM",
     "CuratedExample",
     "CuratedExampleManifest",
     "EvidenceCaseVM",

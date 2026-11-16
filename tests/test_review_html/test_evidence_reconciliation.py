@@ -97,13 +97,16 @@ class TestTheTotal:
         _, case = _reconciliation(_with(decades=9.0, n_anchor=2, stored=9.0))
         html = _html(case)
         assert "<tfoot>" in html
-        assert "<td>Total</td><td>+9.0</td>" in html
+        assert '<td>Total</td><td class="value-match">+9.0</td>' in html
 
     def test_the_adjustment_is_its_own_row_when_it_moves_the_total(self):
         """So the column the reader adds up reaches the figure beneath it."""
         _, case = _reconciliation(_with(decades=9.0, n_anchor=11, stored=7.3))
         html = _html(case)
-        assert "<td>Anchor population adjustment</td><td>-1.7</td>" in html
+        assert (
+            "<td>Anchor population adjustment</td>"
+            '<td class="value-mismatch">-1.7</td>'
+        ) in html
 
     def test_no_adjustment_row_when_the_anchor_is_two(self):
         _, case = _reconciliation(_with(decades=9.0, n_anchor=2, stored=9.0))
@@ -120,7 +123,7 @@ class TestTheProseIsGone:
         html = _html(case)
         assert "capped at" not in html
         assert "numerical stabiliser" not in html
-        assert "<td>Total</td><td>+17.2</td>" in html
+        assert '<td>Total</td><td class="value-match">+17.2</td>' in html
 
     def test_the_floor_is_not_described(self):
         _, case = _reconciliation(
@@ -131,7 +134,7 @@ class TestTheProseIsGone:
         assert "agree to the precision shown" not in html
 
     def test_the_stored_score_is_not_restated_here(self):
-        """It is in the assessment table; the contributions table totals itself."""
+        """The panel prints the score; the contributions table totals itself."""
         _, case = _reconciliation(
             _with(decades=17.2, n_anchor=2, stored=15.0), _EPSILON
         )

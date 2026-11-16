@@ -111,6 +111,24 @@ tr.row-neutral td,tr.ae-neutral td{background:transparent}
 }
 .callout p{margin:5px 0}
 .label{font-weight:bold;color:var(--accent)}
+/* The at-a-glance panel. A bordered block rather than a table, because it
+   sits above the numbered sections and must not read as a fourth one; the
+   two-column grid matches the width of the decision column it replaced. */
+.chain{
+  border:1px solid var(--line);border-left:3px solid var(--accent);
+  padding:10px 14px 12px;background:#fbfdfd;margin:14px 0;
+}
+.chain dl{
+  display:grid;grid-template-columns:28% 1fr;gap:4px 14px;
+  font-size:13px;line-height:1.45;margin:6px 0 0;
+}
+.chain dt{font-weight:bold;color:var(--muted)}
+.chain dd{margin:0}
+.chain-item{display:block}
+/* The clause under a decision figure: why that number decided what it did.
+   Set apart so the figure stays scannable and the reasoning stays available
+   without a second table. */
+.chain-note{display:block;font-size:12px;color:var(--muted);margin-top:1px}
 .set-list{font-size:13px;line-height:1.5;margin:8px 0 12px}
 .set-list dt{font-weight:bold;margin-top:7px}
 .set-list dd{margin:2px 0 0}
@@ -132,6 +150,8 @@ a{color:var(--accent)}
 @media(max-width:650px){
   main{padding:20px;margin:0}
   .outcomes{grid-template-columns:1fr}
+  .chain dl{grid-template-columns:1fr;gap:1px 0}
+  .chain dt{margin-top:7px}
   table{font-size:12px}
   th,td{padding:5px}
   h1{font-size:25px}
@@ -155,7 +175,7 @@ a{color:var(--accent)}
   tr{break-inside:avoid}
   .case+.case{break-before:page}
   .case{margin-top:20px}
-  .outcomes,.callout,.gaps{break-inside:avoid}
+  .outcomes,.callout,.gaps,.chain{break-inside:avoid}
   /* Long narratives and interpretations must not be cut off mid-sentence. */
   .callout p,.narrative-text{overflow:visible;break-inside:auto}
   a{text-decoration:none;color:inherit}

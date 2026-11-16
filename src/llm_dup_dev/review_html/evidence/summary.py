@@ -80,8 +80,13 @@ def _join(items: list[str]) -> str:
     return ", ".join(items[:-1]) + " and " + items[-1]
 
 
-def _score(value: float) -> str:
-    """Format a matching score; an exact zero reads as ``0``, not ``0.0``."""
+def format_score(value: float) -> str:
+    """Format a matching score; an exact zero reads as ``0``, not ``0.0``.
+
+    Public because the at-a-glance panel prints the score as a figure beside
+    the clause this module writes about it. Both must render it identically,
+    which one shared formatter guarantees and two conventions would not.
+    """
     if value == 0:
         return "0"
     return f"{value:.1f}"
@@ -414,7 +419,7 @@ def independence_clause(
             "not on the matching score"
         )
 
-    score = _score(features.L_match)
+    score = format_score(features.L_match)
     threshold = (
         run_settings.independence_threshold(reason.value if reason else None)
         if run_settings is not None
@@ -631,6 +636,7 @@ __all__ = [
     "SummarySentence",
     "SummarySlot",
     "build_assessment_summary",
+    "format_score",
     "independence_clause",
     "same_case_clause",
 ]

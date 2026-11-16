@@ -91,6 +91,84 @@
   </p>
   {% endif %}
 
+  {#
+    The assessment in figures, directly above the same assessment in prose.
+    The two render the same slots — context, anchor, additional evidence, the
+    independence decision, the findings, the same-case decision — which is
+    what tagging the summary's sentences by slot was for.
+
+    The contributions and the findings are read straight off the case, not
+    copied onto the panel, so these rows and the tables in sections 2 and 3
+    are the same objects and cannot come to disagree.
+  #}
+  {% if case.summary_panel %}
+  {% set p = case.summary_panel %}
+  <div class="chain">
+    <p class="label">Assessment at a glance</p>
+    <dl>
+      {% if p.context_label %}
+      <dt>Context</dt><dd>{{ p.context_label }}</dd>
+      {% endif %}
+      {% if p.anchor_sets %}
+      <dt>Anchor</dt>
+      <dd>
+        {%- for s in p.anchor_sets -%}
+        {%- for m in s.members %}{{ cell(m) }}{% if not loop.last %}, {% endif %}{% endfor -%}
+        {%- if not loop.last %} + {% endif -%}
+        {%- endfor -%}
+      </dd>
+      {% endif %}
+      {% if p.anchor_n_text %}
+      <dt>Anchor N</dt>
+      <dd>{{ p.anchor_n_text }}{% if p.anchor_adjustment %} {{ cell(p.anchor_adjustment) }}{% endif %}</dd>
+      {% endif %}
+      <dt>Additional matching features</dt>
+      <dd>
+        {%- if case.matching_features -%}
+        {%- for row in case.matching_features %}
+        <span class="chain-item">{{ cell(row.label) }} <span class="{{ row.contribution_css_class }}">{{ row.contribution_text }}</span></span>
+        {%- endfor -%}
+        {%- else -%}
+        <span class="absent">None</span>
+        {%- endif -%}
+      </dd>
+      {% if p.score_text %}
+      <dt>Matching score</dt>
+      <dd>
+        {{ p.score_text }}
+        {%- if p.independence_note %}
+        <span class="chain-note">{{ p.independence_note }}</span>
+        {%- endif %}
+      </dd>
+      {% endif %}
+      <dt>Inconsistencies</dt>
+      <dd>
+        {%- if case.retained_discrepancies -%}
+        {#
+          Named by feature, as the findings table below names them in a column
+          of its own. Without it a row reads "Difference of 1 year." with
+          nothing saying what differed.
+        #}
+        {%- for d in case.retained_discrepancies %}
+        <span class="chain-item value-mismatch">{% if d.feature_label %}{{ d.feature_label }}: {% endif %}{{ d.text }}</span>
+        {%- endfor -%}
+        {%- else -%}
+        <span class="absent">None</span>
+        {%- endif -%}
+      </dd>
+      {% if p.penalty_text %}
+      <dt>Penalty</dt>
+      <dd>
+        {{ p.penalty_text }}
+        {%- if p.same_case_note %}
+        <span class="chain-note">{{ p.same_case_note }}</span>
+        {%- endif %}
+      </dd>
+      {% endif %}
+    </dl>
+  </div>
+  {% endif %}
+
   {% for block in case.narrative_blocks %}
   <div class="callout">
     <p class="label">{{ block.heading }}</p>
@@ -102,8 +180,8 @@
 
   <h3>1. Report comparison</h3>
   <p class="comparison-key">
-    <span class="value-match">Green: matching evidence or anchor pattern</span>
-    <span class="value-mismatch">Red: retained inconsistency</span>
+    <span class="value-match">Green: counted for the pair — matching evidence or anchor pattern</span>
+    <span class="value-mismatch">Red: counted against it — a retained inconsistency, or a term that lowered the score</span>
     Neutral: everything else — unscored agreements, differences not recorded
     as inconsistencies, and blank cells, which mean the information was not
     reported.
@@ -248,19 +326,19 @@
     </thead>
     <tbody>
       {% for row in case.matching_features %}
-      <tr><td>{{ cell(row.label) }}</td><td>{{ row.contribution_text }}</td></tr>
+      <tr><td>{{ cell(row.label) }}</td><td class="{{ row.contribution_css_class }}">{{ row.contribution_text }}</td></tr>
       {% endfor %}
       {#
         The anchor adjustment is shown as a row of its own whenever it moves
         the total, so the column still adds up to the figure beneath it.
       #}
       {% if case.reconciliation and case.reconciliation.anchor_adjustment %}
-      <tr><td>Anchor population adjustment</td><td>{{ case.reconciliation.anchor_adjustment_text }}</td></tr>
+      <tr><td>Anchor population adjustment</td><td class="{{ case.reconciliation.anchor_adjustment_css_class }}">{{ case.reconciliation.anchor_adjustment_text }}</td></tr>
       {% endif %}
     </tbody>
     {% if case.reconciliation %}
     <tfoot>
-      <tr><td>Total</td><td>{{ case.reconciliation.additive_total_text }}</td></tr>
+      <tr><td>Total</td><td class="{{ case.reconciliation.additive_total_css_class }}">{{ case.reconciliation.additive_total_text }}</td></tr>
     </tfoot>
     {% endif %}
   </table>
@@ -346,20 +424,13 @@
   </p>
   {% endif %}
 
-  <h4>vigiTwin classification</h4>
-  {% if case.assessment_rows %}
-  <table class="decision">
-    <thead>
-      <tr><th scope="col">Assessment</th><th scope="col">Result</th></tr>
-    </thead>
-    <tbody>
-      {% for row in case.assessment_rows %}
-      <tr><td>{{ row.label }}</td><td>{{ row.text }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-
+{#
+  The decision table that stood here is gone: the panel at the top of the case
+  states both verdicts, with the same clauses this table carried, before a
+  reader reaches the evidence rather than after. ``case.assessment_rows`` is
+  still built and still on the view model for consumers; it is simply no
+  longer the page's own way of saying this.
+#}
 {#
   Only the gaps that name something *absent* are printed. A provenance gap —
   a date or a substance read out of the run's own description — stays on

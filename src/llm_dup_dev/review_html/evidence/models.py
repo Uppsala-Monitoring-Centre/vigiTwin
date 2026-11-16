@@ -40,15 +40,26 @@ from pydantic import BaseModel, Field
 class EvidenceRole(str, Enum):
     """What the assessment says about an element — the only colour driver.
 
+    Green is what the assessment counted *for* the pair, red what it counted
+    *against*, neutral what it did not speak to.
+
     ``ANCHOR`` and ``MATCHING`` are both green: the first is a member of the
     pattern that *defined* the anchor population, the second contributed
     additional matching evidence. They are kept apart because the distinction
     is real and the summary states it — an anchor-defining set does not also
     contribute a term to the matching score — even though they render alike.
 
+    ``INCONSISTENT`` is red, and a retained inconsistency is the commonest but
+    not the only thing it covers: the anchor population adjustment,
+    ``-log10(C(N_anchor, 2))``, is a negative term that pushes the matching
+    score down towards independence, so it counts against the pair too. Red
+    says "this told against", not "this is a finding about a reported value".
+
     ``NEUTRAL`` covers everything the assessment did not act on: unscored
     agreements, differences it did not treat as inconsistencies, missing
-    values, withheld values, and suppressed findings.
+    values, withheld values, and suppressed findings — the last of these
+    because a suppressed finding contributed exactly zero and so told neither
+    way.
     """
 
     ANCHOR = "anchor"
@@ -72,9 +83,9 @@ class EvidenceRole(str, Enum):
 
 
 #: Role precedence when several attributions land on one element. Red wins
-#: over green: a retained inconsistency is a claim the assessment made
-#: *against* that value, whereas matching evidence is additive. Both
-#: attributions stay on the cell, so a tooltip can still show the match.
+#: over green: red is a claim the assessment made *against* the pair, whereas
+#: matching evidence is additive. Both attributions stay on the cell, so a
+#: tooltip can still show the match.
 _ROLE_PRECEDENCE: dict[EvidenceRole, int] = {
     EvidenceRole.NEUTRAL: 0,
     EvidenceRole.MATCHING: 1,
@@ -88,6 +99,21 @@ def stronger_role(current: EvidenceRole, candidate: EvidenceRole) -> EvidenceRol
     if _ROLE_PRECEDENCE[candidate] > _ROLE_PRECEDENCE[current]:
         return candidate
     return current
+
+
+def sign_css_class(value: float) -> str:
+    """The colour a signed figure in the score arithmetic takes.
+
+    The same rule the rest of the page follows, applied to a number rather
+    than to a reported value: a term that raised the matching score told for
+    the pair and is green, one that lowered it told against and is red, and a
+    term of exactly zero moved nothing and stays neutral.
+    """
+    if value > 0:
+        return EvidenceRole.MATCHING.css_class
+    if value < 0:
+        return EvidenceRole.INCONSISTENT.css_class
+    return EvidenceRole.NEUTRAL.css_class
 
 
 class ValueKind(str, Enum):
@@ -127,6 +153,10 @@ class AttributionKind(str, Enum):
     RETAINED_INCONSISTENCY = "retained_inconsistency"
     DOWNGRADED_RETAINED = "downgraded_retained"
     SUPPRESSED_FINDING = "suppressed_finding"
+    #: The multiplicity term ``-log10(C(N_anchor, 2))``. Not a finding about a
+    #: reported value, but a negative term in the same arithmetic, so it takes
+    #: the same red as one.
+    ANCHOR_MULTIPLICITY = "anchor_multiplicity"
 
 
 class EvidenceSource(str, Enum):
@@ -377,6 +407,11 @@ class MatchingFeatureRow(BaseModel):
     contribution: float
     contribution_text: str
 
+    @property
+    def contribution_css_class(self) -> str:
+        """The figure's own colour, so it agrees with the label beside it."""
+        return sign_css_class(self.contribution)
+
 
 class ReconciliationVM(BaseModel):
     """How the individual contributions relate to the stored matching score.
@@ -418,6 +453,22 @@ class ReconciliationVM(BaseModel):
     #: The score sits at its lower bound of zero while the additive figure is
     #: negative — the floor, the mirror of ``ceiling_reached``.
     floor_reached: bool = False
+
+    @property
+    def anchor_adjustment_css_class(self) -> str:
+        """Red whenever the adjustment moved the score, which is downwards.
+
+        ``C(N_anchor, 2) >= 1``, so the term is never positive; a lone
+        two-report anchor gives exactly zero and the row is not shown at all.
+        """
+        if self.anchor_adjustment is None:
+            return EvidenceRole.NEUTRAL.css_class
+        return sign_css_class(self.anchor_adjustment)
+
+    @property
+    def additive_total_css_class(self) -> str:
+        """The net of the column, coloured by which way it came out."""
+        return sign_css_class(self.additive_total)
 
 
 # ---------------------------------------------------------------------------
@@ -590,6 +641,65 @@ class EvidenceGap(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class CaseSummaryVM(BaseModel):
+    """The assessment chain in figures, for the panel above the narrative.
+
+    The same slots the generated paragraph fills in prose — context, anchor,
+    additional matching evidence, the independence decision, the findings, the
+    same-case decision — which is what :class:`~.summary.SummarySentence`
+    being tagged by slot was for: a table and a paragraph rendering the same
+    assessment and unable to drift apart.
+
+    It holds no copy of the contributions or the findings. The template reads
+    ``EvidenceCaseVM.matching_features`` and ``retained_discrepancies``
+    directly, so the panel and the tables below it are the same objects rather
+    than two derivations of one fact.
+
+    The two decision rows carry their clause as well as their figure. That is
+    not decoration: these clauses — the independence threshold and zone, the
+    penalty against its tolerance, and the reason no comparison happened where
+    none did — used to live in a decision table in section 3, and a case
+    presented with a human interpretation instead of the generated summary
+    would otherwise state no threshold anywhere on the page.
+    """
+
+    #: The *level* the rarity was judged at — ``Global`` / ``Country`` /
+    #: ``Country-year``. Never the country or the year themselves, which this
+    #: format does not print anywhere.
+    context_label: str = ""
+    #: The anchor-defining sets, as the same :class:`SharedSetVM` objects the
+    #: section below holds — so one publication rewrite of a member's ``text``
+    #: reaches both, and the set boundary survives: a drugs-and-AEs anchor
+    #: reads ``levonorgestrel + device expulsion``, not one flat list.
+    anchor_sets: list[SharedSetVM] = Field(default_factory=list)
+    anchor_n_text: str = ""
+    #: ``-log10(C(N_anchor, 2))``, as a cell so its red comes from a role like
+    #: every other coloured thing on the page. ``None`` when it is zero.
+    anchor_adjustment: EvidenceCell | None = None
+    score_text: str = ""
+    #: Why independence was or was not rejected, from the same clause builder
+    #: the narrative paragraph uses.
+    independence_note: str = ""
+    #: The penalty arithmetic: ``3 x 0.4 = 1.2``, then the comparison it was
+    #: put to, or ``(not weighed)`` where it was put to none.
+    penalty_text: str = ""
+    same_case_note: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        """True when no row has a value, in which case no panel is rendered."""
+        return not any(
+            (
+                self.context_label,
+                self.anchor_sets,
+                self.anchor_n_text,
+                self.anchor_adjustment,
+                self.score_text,
+                self.penalty_text,
+            )
+        )
+
+
 class EvidenceCaseVM(BaseModel):
     """One report pair, as one section of an evidence review.
 
@@ -619,6 +729,9 @@ class EvidenceCaseVM(BaseModel):
 
     outcomes: list[OutcomeTileVM] = Field(default_factory=list)
     reference_verdict: ReferenceVerdictVM | None = None
+    #: The at-a-glance panel, rendered between the verdict note and the
+    #: written summary. ``None`` when the stored artifacts support no row.
+    summary_panel: CaseSummaryVM | None = None
 
     #: The human reading, when one was supplied, and/or the deterministic
     #: summary. Rendered in list order.
@@ -809,6 +922,7 @@ __all__ = [
     "AssessmentRowVM",
     "Attribution",
     "AttributionKind",
+    "CaseSummaryVM",
     "CharacteristicRow",
     "DiscrepancyVM",
     "DrugEntryVM",
@@ -834,5 +948,6 @@ __all__ = [
     "ValueKind",
     "missing_cell",
     "number_cases",
+    "sign_css_class",
     "stronger_role",
 ]

@@ -24,14 +24,34 @@ one.
 
 **Colour follows the assessment, not the diff.** The evidence builder performs
 no comparison of its own: it never asks whether report A's value equals report
-B's. Every colour is a join from a stored record back onto the report element
-that record names.
+B's. Every colour is a join from a stored record back onto the element that
+record names.
 
 | Colour | Meaning | Source records |
 |---|---|---|
-| **Green** | The assessment counted this as matching evidence, or named it as part of the anchor pattern | `matching_drugs`, `matching_AEs`, `anchor`, `feature_contributions` |
-| **Red** | A **retained** inconsistency named this element | `inconsistencies` (not suppressed), `clinical_date_findings` |
+| **Green** | The assessment counted this **for** the pair | `matching_drugs`, `matching_AEs`, `anchor`, `feature_contributions` |
+| **Red** | The assessment counted this **against** the pair | `inconsistencies` (not suppressed), `clinical_date_findings`, the anchor population adjustment |
 | **Neutral** | Everything else | — |
+
+Red covers two things, and a retained inconsistency is only the commoner of
+them. The other is the **anchor population adjustment**, `-log10(C(N_anchor,
+2))` — the multiplicity correction. A larger anchor population means more
+report pairs that could have matched by chance, so the term pushes the
+matching score down, towards independence. It is not a finding about anything
+either report said, but it told against the pair, and showing it neutral said
+it was not part of the argument.
+
+The rule is a rule, so it holds wherever a figure appears: the same adjustment
+is red in the panel at the top of a case and in the section-2 contributions
+column, and the contributions themselves carry the sign colour too — a
+positive term green, the column's total by whichever way it came out. A total
+that comes out negative (the floor case) is red, correctly: at that point the
+evidence no longer makes a chance match unlikely at all.
+
+What the widening does *not* reach is anything that told neither way. A
+suppressed finding contributed exactly zero and stays neutral; so does a term
+of exactly zero, which is why a two-report anchor shows no adjustment row
+rather than a grey one.
 
 "Everything else" is the category that does the work, and it is deliberately
 large. It holds agreements that were never scored, differences vigiTwin did
@@ -54,6 +74,9 @@ would say something vigiTwin did not:
 - **A retained inconsistency stays red on an `Unrelated` pair**, where the
   relationship question was never reached. The finding was still recorded;
   what did not happen is the weighing of it.
+- **Red is not a severity.** The anchor adjustment is red and is not a
+  finding; a minor inconsistency is red and a decisive one is no redder. What
+  a red element weighed is in the figure beside it, never in the shade.
 - **Green on a drug or AE term is coarser than it looks.** The drug set
   contributes one figure, not one per substance, so green on a term means
   "member of a shared pattern that contributed", not "this term contributed
@@ -89,6 +112,29 @@ outcome, the vigiTwin classification, and the SCLE state. These are four
 separate verdicts and the page keeps them separate; none is ever inferred from
 another.
 
+Then the **at-a-glance panel**: the assessment as figures, in the order the
+assessment itself proceeds — reporting context, anchor and anchor population,
+the additional matching features with their contributions, the matching
+score, the retained inconsistencies, and the inconsistency penalty. It sits
+directly above the written summary so the same assessment is available in
+figures and in prose, adjacent, and a reader meets the conclusion before the
+evidence rather than assembling it from three sections of tables.
+
+It carries no `Classification` row: the outcome tile says that a dozen lines
+above, and a third statement of one label on one screen is noise. What it does
+carry, under the two decision figures, is the clause that explains them — the
+independence threshold and the zone, the penalty against its tolerance, or the
+reason no comparison was made. Those clauses used to sit in a decision table
+at the end of section 3. That table is gone; without the clauses travelling
+with the figures, a case presented with a human interpretation in place of the
+generated summary would state no threshold anywhere on the page.
+
+The panel holds no copy of the contributions or the findings. It renders the
+same objects sections 2 and 3 render, so the two cannot come to disagree, and
+one publication rewrite of a value reaches both. `EvidenceCaseVM.assessment_rows`
+is still built and still on the view model for consumers; it is simply no
+longer how the page says this.
+
 The screening tile has three states, and the third is not the second. It reads
 **Flagged** or **Not flagged** only when the pair's screening entry carries an
 explicit boolean verdict, and **Not evaluated** otherwise. The verdict is read
@@ -122,22 +168,26 @@ rather than for the material each happens to hold:
    hold different values for a feature the run still scored as matched — an
    age within tolerance — both are shown, because neither is "the" matched
    value.
-3. **Relationship assessment** — the inconsistencies, then the verdict. The
-   retained findings with their domain, severity and the element each names,
-   then *Superseded findings* for the suppressed ones, then the two-stage
-   decision table under *vigiTwin classification*, matching the outcome tile
-   and the table's own last row.
+3. **Relationship assessment** — the inconsistencies, which are the evidence
+   the relationship question turns on. The retained findings with their
+   domain, severity and the element each names, then *Superseded findings*
+   for the suppressed ones. The verdict itself is in the panel at the top of
+   the case, with both questions answered together; neither numbered section
+   closes with its own conclusion, because the sections are the evidence and
+   the panel is the finding.
    Retained rows are tinted red, with the same two row classes the drug and
    adverse-event tables use; a superseded row is not, because it contributed
    nothing and a red row would say the assessment weighed it.
-   The note beneath the table appears only where the weighing actually
+   The note beneath the findings appears only where the weighing actually
    happened — where the penalty was compared against a same-case tolerance
    (`InconsistencyPenalty.threshold is not None`, carried on the case as
-   `findings_weighed`). Where it did not, there is no note: the decision
-   table a few lines below already says why on its *Same case* row, either
-   that the question is reached only once independence has been rejected or
-   that the reports were assessed on source context alone with no
-   inconsistency-penalty comparison. The findings are still shown, still
+   `findings_weighed`). Where it did not, there is no note: the panel at the
+   top of the case already says why, marking the figure `(not weighed)` and
+   giving the reason beneath it — either that the question is reached only
+   once independence has been rejected, or that the reports were assessed on
+   source context alone with no inconsistency-penalty comparison. That
+   guarantee moved with the decision table and did not lapse with it: it is
+   now a test over the panel. The findings are still shown, still
    tinted, and still carry their weights; what no longer happens is the page
    saying twice that nothing weighed them. What must never appear is the
    "retained and weighed" note on a pair where nothing was weighed, which is

@@ -70,6 +70,7 @@ from .models import (
     AssessmentRowVM,
     Attribution,
     AttributionKind,
+    CaseSummaryVM,
     CharacteristicRow,
     DiscrepancyVM,
     DrugEntryVM,
@@ -95,6 +96,7 @@ from .models import (
 from .settings import EvidenceRunSettings
 from .summary import (
     build_assessment_summary,
+    format_score,
     independence_clause,
     same_case_clause,
 )
@@ -1864,6 +1866,107 @@ def _build_outcome_tiles(
 # Assessment section
 # ---------------------------------------------------------------------------
 
+#: The *level* rarity was judged at, for the panel's Context row. The country
+#: and the year themselves are never printed: this format states which
+#: population the comparison ran against, not which population it was.
+_CONTEXT_LEVEL_LABEL = {
+    ReportingContextLevel.COUNTRY_YEAR: "Country-year",
+    ReportingContextLevel.COUNTRY: "Country",
+}
+
+
+def _penalty_arithmetic(penalty: InconsistencyPenalty) -> str:
+    """The penalty as a sum a reader can check: ``3 x 0.4 = 1.2``.
+
+    Where the run made no comparison the figure is flagged as unweighed, in
+    the page's own word for it — ``findings_weighed`` governs the same fact a
+    few sections below. What the comparison *was*, where one happened, is left
+    to the clause beneath this row rather than said twice.
+    """
+    terms = " + ".join(
+        f"{term.count} \u00d7 {term.weight:.1f}" for term in penalty.terms
+    )
+    total = f"{terms} = {penalty.w_tot:.1f}" if terms else f"{penalty.w_tot:.1f}"
+    if penalty.threshold is None:
+        return f"{total} (not weighed)"
+    return total
+
+
+def _as_clause(sentence: str | None) -> str:
+    """A clause to sit under a figure: lower-cased, with no closing period."""
+    if not sentence:
+        return ""
+    text = sentence[0].lower() + sentence[1:]
+    return text.rstrip(".")
+
+
+def _build_summary_panel(
+    features: PairFeatures,
+    classification: ClassificationResult | None,
+    run_settings: EvidenceRunSettings | None,
+    shared_sets: list[SharedSetVM],
+    reconciliation: ReconciliationVM | None,
+) -> CaseSummaryVM:
+    """The assessment chain in figures, for the panel above the narrative.
+
+    Assembled from what the sections below already hold, not recomputed from
+    the artifacts: the anchor sets and the adjustment are the objects section
+    2 renders, and the two clauses come from the same builders that write the
+    narrative paragraph. A panel derived twice could disagree with the page it
+    sits on top of; this one cannot.
+    """
+    adjustment: EvidenceCell | None = None
+    if reconciliation is not None and reconciliation.anchor_adjustment:
+        adjustment = EvidenceCell(
+            text=reconciliation.anchor_adjustment_text,
+            kind=ValueKind.SCORE,
+            # Red: a larger anchor population makes a chance match likelier,
+            # so this term pushes the score down towards independence. It is
+            # not a finding about a reported value, but it told against the
+            # pair, which is what red means here.
+            role=EvidenceRole.INCONSISTENT,
+            attributions=[
+                Attribution(
+                    kind=AttributionKind.ANCHOR_MULTIPLICITY,
+                    source=EvidenceSource.ANCHOR,
+                    feature="anchor",
+                    contribution=reconciliation.anchor_adjustment,
+                    note=(
+                        "the number of report pairs the anchor population "
+                        "could yield, which the score is corrected for"
+                    ),
+                )
+            ],
+        )
+
+    penalty = classification.penalty if classification is not None else None
+    return CaseSummaryVM(
+        context_label=_CONTEXT_LEVEL_LABEL.get(
+            features.reporting_context.level, "Global"
+        ),
+        anchor_sets=[s for s in shared_sets if s.is_anchor],
+        anchor_n_text=(
+            f"{features.anchor.N_anchor:,} "
+            f"{'report' if features.anchor.N_anchor == 1 else 'reports'}"
+        ),
+        anchor_adjustment=adjustment,
+        score_text=format_score(features.L_match),
+        independence_note=(
+            ""
+            if classification is None
+            else _as_clause(
+                independence_clause(features, classification, run_settings)
+            )
+        ),
+        penalty_text=("" if penalty is None else _penalty_arithmetic(penalty)),
+        same_case_note=(
+            ""
+            if classification is None
+            else _as_clause(same_case_clause(classification))
+        ),
+    )
+
+
 _INDEPENDENCE_LABEL = {
     "Non-independent": "Non-independent",
     "Independent": "Independence not rejected",
@@ -2093,6 +2196,7 @@ def build_evidence_case(
     freq_rows: list[FreqRowVM] = []
     matching_features: list[MatchingFeatureRow] = []
     reconciliation: ReconciliationVM | None = None
+    summary_panel: CaseSummaryVM | None = None
     discrepancies: list[DiscrepancyVM] = []
     assessment_rows: list[AssessmentRowVM] = []
     anchor_note = ""
@@ -2130,6 +2234,9 @@ def build_evidence_case(
             features,
             {row.sort_key: row.name.text for row in drugs},
             penalty=classification.penalty if classification else None,
+        )
+        summary_panel = _build_summary_panel(
+            features, classification, run_settings, shared_sets, reconciliation
         )
         anchor_note = _anchor_note(features)
         context_note = _context_note(report_1, report_2, features)
@@ -2189,6 +2296,11 @@ def build_evidence_case(
         lede=presentation.lede,
         outcomes=_build_outcome_tiles(reference, final_label),
         reference_verdict=_build_reference_verdict(reference, final_label),
+        summary_panel=(
+            None
+            if summary_panel is None or summary_panel.is_empty
+            else summary_panel
+        ),
         narrative_blocks=narrative_blocks,
         characteristics=characteristics,
         context_note=context_note,

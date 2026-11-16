@@ -21,6 +21,78 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.1.8] - 2026-11-16
+
+Each evidence case now opens with the assessment in figures, and red on the
+page means something wider than it did.
+
+### Changed — red now means "counted against the pair"
+
+**Read this before comparing a page rendered here with one rendered by
+1.1.7 or earlier.** The rule was: green is matching evidence or the anchor
+pattern, red is a retained inconsistency, neutral is everything else. It is
+now: green is what the assessment counted *for* the pair, red is what it
+counted *against*, neutral is what it did not speak to.
+
+Nothing that was red stops being red — a retained inconsistency is still the
+commonest thing that counts against. What becomes red is the **anchor
+population adjustment**, `-log10(C(N_anchor, 2))`. A larger anchor population
+means more report pairs that could have matched by chance, so the term pushes
+the matching score down, towards independence. It is not a finding about
+anything either report said, but it told against the pair, and rendering it
+neutral said it was not part of the argument.
+
+Because a rule that holds in one place and not another is not a rule, the
+sign colour is applied wherever a figure in the score arithmetic appears: the
+contributions column, its total — red when the total comes out negative,
+which is the floor case — and the adjustment in both the new panel and
+section 2.
+
+The widening reaches nothing that told neither way. A suppressed finding
+contributed exactly zero and stays neutral; so does a term of exactly zero,
+which is why a two-report anchor still shows no adjustment row at all.
+
+### Added — the at-a-glance panel
+
+Seven rows above the written summary: reporting context, anchor and anchor
+population, the additional matching features with their contributions, the
+matching score, the retained inconsistencies, and the inconsistency penalty.
+The matching score, the penalty and the same-case tolerance had appeared
+**only inside prose sentences** until now; this is the first place a reader
+can read them as figures.
+
+New public model `CaseSummaryVM`, and `EvidenceCaseVM.summary_panel` holding
+one (`None` where the stored artifacts support no row). The panel keeps no
+copy of the contributions or the findings — it renders the same objects
+sections 2 and 3 render, so the two cannot drift and one publication rewrite
+of a value reaches both.
+
+No `Classification` row: the outcome tile states that a dozen lines above.
+The context row names the *level* — `Global` / `Country` / `Country-year` —
+and never the country or the year, which this format prints nowhere.
+
+Also public: `format_score` (promoted from `summary._score`, so the panel's
+figure and the clause beside it cannot be formatted two ways) and
+`sign_css_class`. New `AttributionKind.ANCHOR_MULTIPLICITY`, so the
+adjustment's red carries a recorded reason like every other colour.
+
+### Removed — the "vigiTwin classification" decision table in section 3
+
+Superseded by the panel, which states both verdicts before the evidence
+rather than after it. The three clauses that table carried — the independence
+threshold and zone, the penalty against its tolerance, and why no comparison
+happened where none did — did **not** go with it: they are rendered beneath
+the panel's two decision figures, from the same `independence_clause()` and
+`same_case_clause()` builders that wrote the table's rows. Without that, a
+case presented with a human interpretation instead of the generated summary
+would quote no threshold anywhere on the page, and 1.1.7's removal of the
+inconsistency note — justified at the time *by* this table — would have left
+the unweighed case unexplained.
+
+`EvidenceCaseVM.assessment_rows` is **retained and still populated**. It is no
+longer rendered, but it is a field on a model in the public surface, and
+removing it would be a breaking change for the sake of tidiness.
+
 ## [1.1.7] - 2026-11-15
 
 Two readability fixes on the rendered page. No logic, no colour rule, no

@@ -359,6 +359,7 @@ from .saved_run import (  # noqa: E402
 )
 from .evidence import (  # noqa: E402  (same cycle: evidence reaches back here)
     AssessmentSummary,
+    CaseSummaryVM,
     CuratedExampleManifest,
     EvidenceCaseVM,
     EvidencePageVM,
@@ -397,6 +398,7 @@ __all__ = [
     "PairResult",
     "PairViewModel",
     "ResultRenderInput",
+    "CaseSummaryVM",
     "CuratedExampleManifest",
     "EvidenceCaseVM",
     "EvidencePageVM",

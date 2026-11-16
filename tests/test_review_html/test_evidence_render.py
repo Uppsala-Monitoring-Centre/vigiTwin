@@ -97,8 +97,8 @@ class TestEvidenceColouring:
 
     def test_colour_key_is_shown(self):
         html = _html()
-        assert "Green: matching evidence or anchor pattern" in html
-        assert "Red: retained inconsistency" in html
+        assert "Green: counted for the pair" in html
+        assert "Red: counted against it" in html
 
 
 class TestSections:
@@ -119,16 +119,20 @@ class TestSections:
             "3. Relationship assessment"
         )
 
-    def test_the_findings_come_before_the_verdict(self):
-        """Within the relationship section, evidence then conclusion.
+    def test_the_verdicts_come_before_the_evidence(self):
+        """The panel states both verdicts above section 1, not after it.
 
-        The heading matches the outcome tile and the decision table's own
-        last row, which both say "classification".
+        A reader of a supplement meets the conclusion first and reads the
+        evidence to check it, rather than assembling the conclusion from
+        three sections of tables. The decision table that used to close
+        section 3 is gone; this is what replaced it.
         """
         html = _html()
-        assert html.index("<h4>Inconsistencies</h4>") < html.index(
-            "<h4>vigiTwin classification</h4>"
+        assert html.index("Assessment at a glance") < html.index(
+            "<h3>1. Report comparison</h3>"
         )
+        assert "<h4>vigiTwin classification</h4>" not in html
+        assert '<table class="decision">' not in html
 
     def test_four_outcome_tiles(self):
         html = _html(
@@ -531,8 +535,8 @@ class TestTheLegendStaysCompact:
 
     def test_the_colour_key_is_still_there(self):
         html = _html()
-        assert "Green: matching evidence or anchor pattern" in html
-        assert "Red: retained inconsistency" in html
+        assert "Green: counted for the pair" in html
+        assert "Red: counted against it" in html
 
     def test_the_blank_cell_key_is_kept(self):
         """The one glyph a reader cannot infer from the colours."""
@@ -629,7 +633,7 @@ class TestTheInconsistencyNoteFollowsTheDecision:
         assert "decided the same-case question" in html
 
     def test_an_uncompared_penalty_carries_no_note(self):
-        """The decision table says it once; the table above does not repeat it.
+        """The panel says it once; the findings table does not repeat it.
 
         What must not happen is the *weighed* note appearing where nothing
         was weighed — that would claim the findings decided something.
@@ -638,13 +642,22 @@ class TestTheInconsistencyNoteFollowsTheDecision:
         assert "retained and weighed" not in html
         assert "weighed against a same-case tolerance" not in html
 
-    def test_the_decision_table_says_it_for_a_pinned_relationship(self):
+    def test_the_panel_marks_an_unweighed_penalty_as_such(self):
+        """The figure itself says no comparison was made."""
+        html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
+        assert "1.0 (not weighed)" in html
+
+    def test_the_panel_says_it_for_a_pinned_relationship(self):
         """Removed from one place because it is stated in another."""
         html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
         assert "no inconsistency-penalty comparison" in html
 
-    def test_the_decision_table_says_it_for_an_independent_pair(self):
-        """The other way a penalty goes unweighed, covered the same way."""
+    def test_the_panel_says_it_for_an_independent_pair(self):
+        """The other way a penalty goes unweighed, covered the same way.
+
+        This is the guarantee the dropped decision table used to provide; it
+        now lives in the clause under the panel's Penalty row.
+        """
         html = " ".join(
             _html(
                 features=self._features_with_finding(),
@@ -656,7 +669,10 @@ class TestTheInconsistencyNoteFollowsTheDecision:
                 ),
             ).split()
         )
-        assert "only reached once independence has been rejected" in html
+        assert (
+            "the relationship question was not reached, because independence "
+            "was not rejected"
+        ) in html
 
     def test_the_weight_is_still_shown_when_nothing_was_weighed(self):
         """The run assigns the severity a weight either way; it just went unused."""
