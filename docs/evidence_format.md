@@ -566,7 +566,7 @@ examples:
 ### Fields
 
 **Collection:** `schema_version`, `title`, `intro`, `note`, `positive_class`,
-`reference_label_map`,
+`reference_label_map` (the default for datasets that declare none),
 `datasets`, `examples`.
 
 **Dataset** (`datasets.<dataset_id>`): `label` (the kicker shown on each
@@ -592,13 +592,41 @@ error says so. `inconclusive` takes `genuinely_ambiguous` or nothing at all,
 filling it in either way. The two "no assessment" states reject an issue
 outright, since there was no assessment to have an opinion.
 
-**`reference_label_map`** carries the annotation vocabulary of *this*
-reference set, mapped to the study's binary one:
+**`reference_label_map`** carries a reference set's annotation vocabulary,
+mapped to the study's binary one. It sits on the **dataset**, with the
+collection-level field as the default for datasets that declare none — so a
+single-set collection says it once at the top:
 
 ```yaml
 reference_label_map:
   Otherwise related: non_duplicate
+
+datasets:
+  precision_set:
+    reports: ...
 ```
+
+and a collection spanning two reference sets puts each vocabulary where it
+belongs:
+
+```yaml
+datasets:
+  precision_set:
+    reference_label_map:
+      Otherwise related: non_duplicate
+  recall_set:
+    reference_label_map:
+      Confirmed duplicate: duplicate
+```
+
+Per dataset for the same reason as `screening_verdict_key`: a reference label
+is read out of *that* dataset's `annotations` file, and a collection spanning
+two sets may be spanning two vocabularies. A dataset's mapping **replaces**
+the collection default rather than adding to it, so a set that declares a
+vocabulary gets exactly the one it declared. Merging would let a set inherit
+a term its own annotators meant differently — and a wrongly mapped label is
+shown as a human verdict, where an unmapped one is reported as a gap. Between
+a silent wrong answer and a loud missing one, this takes the loud one.
 
 Three terms are built in — `duplicate`, `non_duplicate`, `abstain` — because
 those are the vocabulary every estimand knows. A reference set may annotate in

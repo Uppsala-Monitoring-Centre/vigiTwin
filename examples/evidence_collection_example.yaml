@@ -26,10 +26,12 @@ note: >
 # vigiTwin's four-label output. "primary" counts only Duplicates as positive.
 positive_class: primary
 
-# This reference set's own annotation vocabulary, mapped to the study's binary
-# one. Three terms are built in (duplicate / non_duplicate / abstain); a set
-# annotating in its own words says here how the analysis read them. Keys fold
-# case, spaces, underscores and hyphens; targets must be one of the three.
+# The annotation vocabulary to assume for datasets that declare none. Three
+# terms are built in (duplicate / non_duplicate / abstain); a set annotating in
+# its own words says here how the analysis read them. Keys fold case, spaces,
+# underscores and hyphens; targets must be one of the three. A collection
+# spanning two reference sets puts each vocabulary on its own dataset instead,
+# which replaces this one rather than adding to it.
 reference_label_map:
   Otherwise related: non_duplicate
 

@@ -202,14 +202,24 @@ dropped**: three terms were built in, anything else became `None`, and the
 tile read "Not supplied" — indistinguishable from a pair nobody had annotated.
 That is how a whole set's annotations can go unread with nobody noticing.
 
-- `CuratedExampleManifest.reference_label_map` carries the set's own
-  vocabulary mapped to the study's binary one, e.g. `{Otherwise related:
-  non_duplicate}`. How a set's terms were read in an analysis is a study
-  decision that lives with the study; this package cannot infer it, and
-  guessing would be inventing a human verdict. Keys fold case, spaces,
-  underscores and hyphens. Targets must be `duplicate`, `non_duplicate` or
-  `abstain`, and a key may not redefine a built-in term — both rejected at
-  load, so a collection cannot quietly make `duplicate` mean its opposite.
+- `ExampleDataset.reference_label_map` carries a set's own vocabulary mapped
+  to the study's binary one, e.g. `{Otherwise related: non_duplicate}`. How a
+  set's terms were read in an analysis is a study decision that lives with the
+  study; this package cannot infer it, and guessing would be inventing a human
+  verdict. Keys fold case, spaces, underscores and hyphens. Targets must be
+  `duplicate`, `non_duplicate` or `abstain`, and a key may not redefine a
+  built-in term — both rejected at load, so a manifest cannot quietly make
+  `duplicate` mean its opposite.
+- It sits on the **dataset**, for the same reason `screening_verdict_key`
+  does: a reference label is read out of that dataset's `annotations` file,
+  and a collection spanning two reference sets may be spanning two
+  vocabularies. `CuratedExampleManifest.reference_label_map` is the default
+  for datasets that declare none, so a single-set collection still says it
+  once. A dataset's mapping **replaces** the default rather than merging with
+  it — a set that declares a vocabulary gets exactly the one it declared,
+  because a wrongly inherited term is shown as a human verdict where an
+  unmapped one is reported as a gap. Resolved with
+  `CuratedExampleManifest.reference_label_map_for(dataset_id)`.
 - An unmapped term is now **reported**: new gap `reference_label_unreadable`
   names it and points at the manifest field. New `ReferenceInfo.reference_note`
   carries it, mirroring `screening_note`.

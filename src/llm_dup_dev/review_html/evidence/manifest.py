@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from collections.abc import Mapping
 from enum import Enum
 from pathlib import Path
 
@@ -115,6 +116,56 @@ class SCLEAssessmentEntry(BaseModel):
         return self
 
 
+def _check_reference_label_map(mapping: Mapping[str, str], where: str) -> None:
+    """Reject a reference-label mapping that cannot mean what it says.
+
+    Three ways it can be wrong, each silent if unchecked: a target outside
+    the study's binary vocabulary (so the page would show a label no estimand
+    knows), a key that redefines a built-in term (so a manifest could quietly
+    make ``duplicate`` mean non-duplicate), and two keys that fold to the
+    same term (so which one applied would depend on dict order).
+    """
+    if not mapping:
+        return
+    bad = sorted(
+        f"{key!r} -> {value!r}"
+        for key, value in mapping.items()
+        if value not in REFERENCE_VOCABULARY
+    )
+    if bad:
+        raise ValueError(
+            f"{where} may only map to the study's reference vocabulary "
+            f"({', '.join(sorted(REFERENCE_VOCABULARY))}); got "
+            f"{'; '.join(bad)}."
+        )
+    seen: dict[str, str] = {}
+    for key in mapping:
+        term = normalise_reference_term(key)
+        if not term:
+            raise ValueError(
+                f"{where} has an empty key; a term with no letters cannot be "
+                "matched against an annotation."
+            )
+        if term in BUILTIN_REFERENCE_TERMS:
+            raise ValueError(
+                f"{where} may not redefine {key!r}: {term!r} is part of the "
+                "study's own vocabulary."
+            )
+        if term in seen:
+            raise ValueError(
+                f"{where} keys {seen[term]!r} and {key!r} are the same term "
+                "once case and punctuation are folded."
+            )
+        seen[term] = key
+
+
+def _fold_reference_label_map(mapping: Mapping[str, str]) -> dict[str, str]:
+    """A mapping keyed by folded term, ready to look an annotation up."""
+    return {
+        normalise_reference_term(key): value for key, value in mapping.items()
+    }
+
+
 class ExampleDataset(BaseModel):
     """One saved run, and where its artifacts are.
 
@@ -148,9 +199,25 @@ class ExampleDataset(BaseModel):
     #: must not relax identity validation everywhere because one old set
     #: needs it.
     allow_noncanonical_pairs: bool = False
+    #: This set's annotation vocabulary, mapped to the study's binary one —
+    #: ``{"Otherwise related": "non_duplicate"}``. Per dataset for the same
+    #: reason as ``screening_verdict_key``: a reference label is read out of
+    #: *this* dataset's ``annotations`` file, and a collection spanning two
+    #: reference sets may be spanning two vocabularies.
+    #:
+    #: Where set, it **replaces** the collection-level default rather than
+    #: adding to it, so what a dataset declares is what it uses. Merging
+    #: would let a set inherit a term it does not use and, worse, a term its
+    #: annotators meant differently — and a wrongly mapped label is shown as
+    #: a human verdict, where an unmapped one is reported as a gap. Between a
+    #: silent wrong answer and a loud missing one, this takes the loud one.
+    reference_label_map: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _check_artifacts(self) -> "ExampleDataset":
+        _check_reference_label_map(
+            self.reference_label_map, "a dataset's reference_label_map"
+        )
         has_split = self.features is not None and self.classifications is not None
         if self.pair_results is None and not has_split:
             raise ValueError(
@@ -241,13 +308,18 @@ class CuratedExampleManifest(BaseModel):
     #: Names the rule used to compare a reference label against vigiTwin's
     #: four-label output. A study choice, so it is stated rather than assumed.
     positive_class: str = "primary"
-    #: This reference set's own annotation vocabulary, mapped to the study's
-    #: binary one: ``{"Otherwise related": "non_duplicate"}``. A reference set
-    #: may annotate in terms no other set uses, and how those terms were read
-    #: in the analysis is a study decision that lives with the study — this
-    #: package cannot infer it, and guessing would be inventing a human
-    #: verdict. Keys are matched case-insensitively, with spaces, underscores
-    #: and hyphens treated alike.
+    #: The annotation vocabulary to assume for datasets that declare none,
+    #: mapped to the study's binary one: ``{"Otherwise related":
+    #: "non_duplicate"}``. A reference set may annotate in terms no other set
+    #: uses, and how those terms were read in the analysis is a study
+    #: decision that lives with the study — this package cannot infer it, and
+    #: guessing would be inventing a human verdict. Keys are matched
+    #: case-insensitively, with spaces, underscores and hyphens treated
+    #: alike.
+    #:
+    #: A single-set collection says it once here. A collection spanning two
+    #: reference sets puts each set's own vocabulary on its dataset, which
+    #: replaces this.
     reference_label_map: dict[str, str] = Field(default_factory=dict)
     datasets: dict[str, ExampleDataset]
     examples: list[CuratedExample]
@@ -259,7 +331,9 @@ class CuratedExampleManifest(BaseModel):
         if not self.examples:
             raise ValueError("a manifest needs at least one example.")
 
-        self._check_reference_label_map()
+        _check_reference_label_map(
+            self.reference_label_map, "reference_label_map"
+        )
 
         unknown = sorted(
             {e.dataset for e in self.examples if e.dataset not in self.datasets}
@@ -310,55 +384,16 @@ class CuratedExampleManifest(BaseModel):
         return self
 
 
-    def _check_reference_label_map(self) -> None:
-        """Reject a mapping that cannot mean what it says.
+    def reference_label_map_for(self, dataset: str) -> dict[str, str]:
+        """The vocabulary this dataset reads its annotations with, folded.
 
-        Three ways it can be wrong, each silent if unchecked: a target
-        outside the study's binary vocabulary (so the page would show a
-        label no estimand knows), a key that redefines a built-in term (so a
-        collection could quietly make ``duplicate`` mean non-duplicate), and
-        two keys that fold to the same term (so which one applies would
-        depend on dict order).
+        The dataset's own mapping where it has one, the collection default
+        otherwise. Not the two merged: see
+        :attr:`ExampleDataset.reference_label_map` for why a set that
+        declares a vocabulary gets exactly the one it declared.
         """
-        if not self.reference_label_map:
-            return
-        bad = sorted(
-            f"{key!r} -> {value!r}"
-            for key, value in self.reference_label_map.items()
-            if value not in REFERENCE_VOCABULARY
-        )
-        if bad:
-            raise ValueError(
-                "reference_label_map may only map to the study's reference "
-                f"vocabulary ({', '.join(sorted(REFERENCE_VOCABULARY))}); "
-                f"got {'; '.join(bad)}."
-            )
-        seen: dict[str, str] = {}
-        for key in self.reference_label_map:
-            term = normalise_reference_term(key)
-            if not term:
-                raise ValueError(
-                    "reference_label_map has an empty key; a term with no "
-                    "letters cannot be matched against an annotation."
-                )
-            if term in BUILTIN_REFERENCE_TERMS:
-                raise ValueError(
-                    f"reference_label_map may not redefine {key!r}: "
-                    f"{term!r} is part of the study's own vocabulary."
-                )
-            if term in seen:
-                raise ValueError(
-                    f"reference_label_map keys {seen[term]!r} and {key!r} "
-                    "are the same term once case and punctuation are folded."
-                )
-            seen[term] = key
-
-    def resolved_reference_label_map(self) -> dict[str, str]:
-        """The mapping keyed by folded term, ready to look an annotation up."""
-        return {
-            normalise_reference_term(key): value
-            for key, value in self.reference_label_map.items()
-        }
+        own = self.datasets[dataset].reference_label_map
+        return _fold_reference_label_map(own or self.reference_label_map)
 
 
 class LoadedExampleManifest(BaseModel):

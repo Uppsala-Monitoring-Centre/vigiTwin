@@ -21,15 +21,19 @@ from llm_dup_dev.review_html.evidence.manifest import CuratedExampleManifest
 from llm_dup_dev.review_html.formats import reference_from_annotation
 
 
+def _dataset(**extra) -> dict:
+    base = {
+        "reports": "reports.json",
+        "pairs": "pairs.json",
+        "pair_results": "results.json",
+    }
+    base.update(extra)
+    return base
+
+
 def _manifest(**overrides) -> CuratedExampleManifest:
     base = dict(
-        datasets={
-            "d": {
-                "reports": "reports.json",
-                "pairs": "pairs.json",
-                "pair_results": "results.json",
-            }
-        },
+        datasets={"d": _dataset()},
         examples=[{"dataset": "d", "pair_id": "R001__R002"}],
     )
     base.update(overrides)
@@ -138,7 +142,7 @@ class TestTheManifestValidatesTheMapping:
         manifest = _manifest(
             reference_label_map={"Otherwise related": "non_duplicate"}
         )
-        assert manifest.resolved_reference_label_map() == {
+        assert manifest.reference_label_map_for("d") == {
             "otherwise_related": "non_duplicate"
         }
 
@@ -169,4 +173,81 @@ class TestTheManifestValidatesTheMapping:
 
     def test_no_mapping_is_the_default(self):
         assert _manifest().reference_label_map == {}
-        assert _manifest().resolved_reference_label_map() == {}
+        assert _manifest().reference_label_map_for("d") == {}
+
+    def test_a_dataset_mapping_is_validated_the_same_way(self):
+        with pytest.raises(ValidationError, match="reference vocabulary"):
+            _manifest(
+                datasets={
+                    "d": _dataset(
+                        reference_label_map={"Otherwise related": "Non-duplicates"}
+                    )
+                }
+            )
+
+    def test_a_dataset_may_not_redefine_a_built_in_term_either(self):
+        with pytest.raises(ValidationError, match="may not redefine"):
+            _manifest(
+                datasets={
+                    "d": _dataset(
+                        reference_label_map={"Duplicate": "non_duplicate"}
+                    )
+                }
+            )
+
+
+class TestWhichVocabularyADatasetReadsWith:
+    """A reference label is read out of *this* dataset's annotations file.
+
+    A collection spanning two reference sets may be spanning two
+    vocabularies, which is why the mapping sits on the dataset — the same
+    reason ``screening_verdict_key`` does. The collection-level field is the
+    default for datasets that declare none, so a single-set collection still
+    says it once.
+    """
+
+    def _two_sets(self, **collection):
+        return _manifest(
+            datasets={
+                "precision": _dataset(
+                    reference_label_map={"Otherwise related": "non_duplicate"}
+                ),
+                "recall": _dataset(),
+            },
+            examples=[
+                {"dataset": "precision", "pair_id": "R001__R002"},
+                {"dataset": "recall", "pair_id": "R003__R004"},
+            ],
+            **collection,
+        )
+
+    def test_a_dataset_uses_its_own(self):
+        manifest = self._two_sets()
+        assert manifest.reference_label_map_for("precision") == {
+            "otherwise_related": "non_duplicate"
+        }
+
+    def test_a_dataset_without_one_falls_back_to_the_collection(self):
+        manifest = self._two_sets(
+            reference_label_map={"Possibly duplicate": "abstain"}
+        )
+        assert manifest.reference_label_map_for("recall") == {
+            "possibly_duplicate": "abstain"
+        }
+
+    def test_a_dataset_mapping_replaces_rather_than_merges(self):
+        """A set that declares a vocabulary gets exactly the one it declared.
+
+        Merging would let it inherit a term its own annotators meant
+        differently — and a wrongly mapped label is shown as a human verdict,
+        where an unmapped one is reported as a gap.
+        """
+        manifest = self._two_sets(
+            reference_label_map={"Possibly duplicate": "abstain"}
+        )
+        resolved = manifest.reference_label_map_for("precision")
+        assert resolved == {"otherwise_related": "non_duplicate"}
+        assert "possibly_duplicate" not in resolved
+
+    def test_neither_level_set_reads_nothing_extra(self):
+        assert self._two_sets().reference_label_map_for("recall") == {}

@@ -113,9 +113,6 @@ def build_collection(
     from ..saved_run import load_saved_run
 
     manifest = loaded.manifest
-    # Folded once for the whole collection: the vocabulary belongs to the
-    # reference set, not to an example.
-    label_map = manifest.resolved_reference_label_map()
     cases_by_key: dict[tuple[str, str], EvidenceCaseVM] = {}
     # One entry per dataset rendered, so the footer can name the run when the
     # collection draws on a single one and say so when it does not.
@@ -126,6 +123,10 @@ def build_collection(
         by_dataset.setdefault(example.dataset, []).append((index, example))
 
     for dataset_id, entries in by_dataset.items():
+        # Per dataset: a reference label is read out of this dataset's own
+        # annotations file, and a collection spanning two reference sets may
+        # be spanning two vocabularies.
+        label_map = manifest.reference_label_map_for(dataset_id)
         run_settings: EvidenceRunSettings | None = None
         run_manifest = loaded.run_manifest_path(dataset_id)
         if run_manifest is not None:
