@@ -153,7 +153,7 @@ class TestSections:
         assert "FDA Gold label" in html
         assert "vigiMatch screening" in html
         assert "vigiTwin classification" in html
-        assert "SCLE assessment of reference label" in html
+        assert "SCLE of reference label" in html
 
     def test_frequency_headings_name_the_sets(self):
         from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
@@ -251,6 +251,22 @@ class TestNarrativeBlocks:
         )
         assert "Case-level interpretation" in html
         assert "vigiTwin assessment summary" in html
+
+    def test_vigitwins_own_account_comes_first(self):
+        """It belongs with the panel above it, which says the same in figures.
+
+        A human reading is a response to that assessment, so it follows it
+        rather than standing between it and the panel it restates.
+        """
+        html = _html(
+            presentation=ExamplePresentation(
+                case_interpretation="A reviewer reading.",
+                summary_mode="both",
+            )
+        )
+        assert html.index("Assessment at a glance") < html.index(
+            "vigiTwin assessment summary"
+        ) < html.index("Case-level interpretation")
 
     def test_human_text_is_escaped_not_injected(self):
         html = _html(

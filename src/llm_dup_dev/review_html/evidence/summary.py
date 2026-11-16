@@ -480,9 +480,21 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
     ways: independence was not rejected so the question never arose, or the
     relationship was pinned by source context regardless of the penalty.
     Saying "below the threshold" in either case would invent a comparison.
+
+    The threshold is named with the zone it belongs to. There is no single
+    same-case threshold: the tolerance varies with how strongly independence
+    was rejected, and "the same-case threshold of 4.0" read as though 4.0
+    were the bar for every pair. A reader comparing two cases would then
+    find two different "the" thresholds and no reason for either.
     """
     penalty = classification.penalty
     relationship = classification.relationship_assessment
+    # Empty for a pair whose independence was decided on direct evidence
+    # rather than on rarity: there is no zone to name, and the tolerance was
+    # whatever that route uses.
+    reason = classification.independence_reason
+    zone = _ZONE_NAME.get(reason) if reason else None
+    for_zone = f" for the {zone} range" if zone else ""
 
     if penalty is None:
         return None
@@ -506,8 +518,8 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
         return (
             f"the total inconsistency penalty of "
             f"{_penalty(penalty.w_tot, decimals)} reached the same-case "
-            f"tolerance of {_penalty(penalty.threshold, decimals)}, leaving "
-            "the question unresolved"
+            f"tolerance of {_penalty(penalty.threshold, decimals)}"
+            f"{for_zone}, leaving the question unresolved"
         )
 
     comparison = "below" if penalty.satisfied else "at or above"
@@ -515,7 +527,7 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
     return (
         f"the total inconsistency penalty of "
         f"{_penalty(penalty.w_tot, decimals)} is {comparison} the same-case "
-        f"threshold of {_penalty(penalty.threshold, decimals)}"
+        f"threshold of {_penalty(penalty.threshold, decimals)}{for_zone}"
     )
 
 

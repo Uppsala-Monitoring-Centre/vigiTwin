@@ -123,11 +123,34 @@ of tables.
 
 Each piece of evidence is a **chip**, so the panel reads as countable items
 rather than as a sentence, and both sides carry a figure in the same units —
-`Female +0.3` against `Age: 31 years vs 30 years +0.4`. Chips take one green
-and one red and are never shaded by magnitude: colour says which way a piece
-told, the figure inside says how much. Shading by size would make a pale chip
-and a small number the same statement twice, and would put the page's one
+`Female +0.3` against `31 vs 30 years 0.4`. Chips take one green and one red
+and are never shaded by magnitude: colour says which way a piece told, the
+figure inside says how much. Shading by size would make a pale chip and a
+small number the same statement twice, and would put the page's one
 quantitative claim somewhere a reader cannot measure.
+
+A chip carries **the values and the weight, and nothing said about them**.
+What feature a finding is about, what severity it was counted at and how the
+assessment described it are three columns of the findings table in section 3;
+repeating any of them here spent a line of the page on words the reader is
+about to be given anyway. So `Adverse events: infection listed on report A
+without a matching HLT on report B.` is `infection`, a drug-set finding is its
+substances, a clinical-date finding is its two dates, and a repeated unit is
+said once — `31 vs 30 years`, not `31 years vs 30 years`. A unit is factored
+out only where both sides are bare figures once it is removed, so two country
+names that happen to end alike are never spliced together.
+
+A finding's weight is **unsigned** in a chip — `0.4`, not `+0.4`. Every
+retained finding counts against the pair, which is what its colour says, and a
+`+` beside a red figure reads as a contradiction. A contribution keeps its
+sign, because the sign there is information: the anchor adjustment is the one
+negative term in that column. The findings table keeps the signed form too,
+where the weight sits among other figures.
+
+The penalty row states **the total**, not the arithmetic behind it. `3 × 0.4 =
+1.2` stood there until the chips above began carrying each finding's own
+weight; with the terms listed a row above, a multiplication restating them was
+the same sum twice.
 
 The context row names the **population**, not the level — `SE 2003` rather
 than `Country-year`. The level says how the population was chosen; a reader
@@ -139,8 +162,15 @@ like any reported value, so the publication phase masks or substitutes it.
 It carries no `Classification` row: the outcome tile says that a dozen lines
 above, and a third statement of one label on one screen is noise. What it does
 carry, under the two decision figures, is the clause that explains them — the
-independence threshold and the zone, the penalty against its tolerance, or the
-reason no comparison was made. Those clauses used to sit in a decision table
+independence threshold and the zone, the penalty against its tolerance *named
+with the zone that tolerance belongs to*, or the reason no comparison was
+made. There is no single same-case threshold: the tolerance varies with how
+strongly independence was rejected, so `below the same-case threshold of 4.0`
+would leave a reader comparing two cases to find two different "the"
+thresholds with no stated reason for either. The clause reads `below the
+same-case threshold of 4.0 for the compelling range`. A pair whose
+independence was decided on direct evidence rather than on rarity has no zone,
+and none is named. Those clauses used to sit in a decision table
 at the end of section 3. That table is gone; without the clauses travelling
 with the figures, a case presented with a human interpretation in place of the
 generated summary would state no threshold anywhere on the page.
@@ -174,10 +204,29 @@ rather than for the material each happens to hold:
    of the tables also names, and no print rule hides content, so a printed
    copy loses nothing. That is a property the renderer tests hold to, rather
    than a claim the page makes about itself.
-2. **Independence assessment** — the reporting context, which opens the
-   section because it states the population the rarity is judged against; the
-   anchor population; the shared drug and AE terms spelled out; and the
-   per-feature contributions in decades, totalled (below). Each
+2. **Independence assessment** — the context table, the shared drug and AE
+   terms spelled out, and the per-feature contributions in decades, totalled
+   (below).
+   Two paragraphs used to open this section: one naming the reporting context
+   and why it applied, one naming the anchor and its size. Both described the
+   table directly beneath them, so a reader's work was to match a sentence
+   against a row. The **table says it itself**: the scope rows are named for
+   the population they are — `Canada, 2022` rather than `Country-year`, since
+   the level says how the population was chosen and not which one it was — the
+   row the rarity was judged in is shaded, and the count that became the
+   anchor population is boxed. Which of the shared sets defined the anchor is
+   the panel's `Anchor` row, so the set list no longer captions it either. The
+   shading and the box are decoded by one sentence under the table, and that
+   sentence is omitted where no row is marked, which happens when the frozen
+   bundle holds no statistics for the selected scope.
+   Neither mark is green or red. A population size is not evidence for the
+   pair or against it, and spending one of the page's two colours on it would
+   make the colour rule mean two things.
+   `EvidenceCaseVM.context_note` and `.anchor_note` are still built and still
+   on the view model for consumers; the page simply no longer prints them. One
+   sentence did not survive the move: the explanation that a larger anchor
+   weakens the evidence from an identical match. It is method, not evidence
+   about this pair, and it lives here and in the panel's adjustment tooltip. Each
    contribution row names the value that earned it, not the kind of value: the
    matched date rather than "Clinical date", `Female` rather than "Sex", and
    the set members rather than "shared drug set". The value stands alone — a
@@ -195,7 +244,9 @@ rather than for the material each happens to hold:
    very cells the characteristics table renders, so a finding cannot come to
    quote a value the table above it no longer shows. A finding with no single
    pair behind it, such as a drug-set or adverse-event-picture finding, keeps
-   the prose the assessment recorded. then *Superseded findings*
+   the prose the assessment recorded. This table keeps the **full** sentence —
+   the direction, the entity, the distance apart — which is what the panel's
+   chips are short enough to leave to it. then *Superseded findings*
    for the suppressed ones. The verdict itself is in the panel at the top of
    the case, with both questions answered together; neither numbered section
    closes with its own conclusion, because the sections are the evidence and
@@ -303,7 +354,12 @@ What the generator will not do:
 A curated example may carry a `case_interpretation`, written by a person, and
 `summary_mode` decides what the page shows: the generated account
 (`deterministic`), the human's reading in its place (`interpretation`, the
-default once one is supplied), or both with the human's first (`both`).
+default once one is supplied), or both (`both`).
+
+In `both`, vigiTwin's own account comes **first**. It belongs with the panel
+directly above it, which states the same assessment in figures; a human
+reading is a response to that assessment, so it follows rather than standing
+between the panel and the prose restating it.
 
 Human text lives only in the manifest, and the generator has **no write path
 to it** — not as a policy but by construction. `--export-drafts` writes the

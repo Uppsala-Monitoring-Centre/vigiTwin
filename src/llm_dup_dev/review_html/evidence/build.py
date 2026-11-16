@@ -33,6 +33,7 @@ from llm_dup_dev.models.pair_features import (
     FeatureContribution,
     Inconsistency,
     PairFeatures,
+    ReportingContext,
 )
 from llm_dup_dev.models.report import (
     AdverseEvent,
@@ -1058,11 +1059,50 @@ _CONTEXT_PHRASE = {
     ReportingContextLevel.GLOBAL: "the global context",
 }
 
+#: What a scope is called when the artifact recorded no country to name it
+#: by. Named by level, which is all that is left to say.
 _SCOPE_LABEL = {
     "global_stats": "Global",
     "country_stats": "Country (all years)",
     "country_year_stats": "Country-year",
 }
+
+#: Which reporting level each scope row is, so the row the rarity was judged
+#: in can be marked rather than described.
+_SCOPE_LEVEL = {
+    "country_stats": ReportingContextLevel.COUNTRY,
+    "country_year_stats": ReportingContextLevel.COUNTRY_YEAR,
+    "global_stats": ReportingContextLevel.GLOBAL,
+}
+
+#: Which count of the selected row became the anchor population.
+_ANCHOR_COLUMN = {
+    AnchorType.DRUGS: "drugs",
+    AnchorType.AES: "aes",
+    AnchorType.DRUGS_AES: "both",
+}
+
+
+def _scope_label(attr: str, context: ReportingContext) -> str:
+    """A scope's name, as a reader would cite it: ``Canada, 2022``.
+
+    The country and the year are what distinguish one case's context from
+    another's, and a column headed "Country-year" told a reader only how the
+    population was chosen. The country is whatever the run recorded — an ISO
+    code in most artifacts — and is shown verbatim rather than expanded,
+    because inventing a country name from a code is a mapping this module has
+    no business owning. Where no country was recorded there is nothing to
+    name, and the level stands in for it.
+    """
+    country = (context.country or "").strip()
+    if attr == "global_stats" or not country:
+        return _SCOPE_LABEL[attr]
+    if attr == "country_year_stats":
+        # Without a year there is nothing to narrow the country by, and
+        # naming this row for the country alone gave the table two different
+        # rows called "PL". The level is what is left to say.
+        return f"{country}, {context.year}" if context.year else _SCOPE_LABEL[attr]
+    return country
 
 
 def context_phrase(level: ReportingContextLevel) -> str:
@@ -1082,26 +1122,46 @@ def _format_count(value: int) -> str:
     return f"{value:,}"
 
 
-def _build_freq_rows(bundle: FrozenPairBundle | None) -> list[FreqRowVM]:
+def _build_freq_rows(
+    bundle: FrozenPairBundle | None, features: PairFeatures | None = None
+) -> list[FreqRowVM]:
     """Co-occurrence counts per scope, narrowest scope last.
 
     Column headings name the *sets* rather than repeating their members, and
     the counts are for co-occurrence of every term in a set — not for the
     individual terms, which is the reading a reader will otherwise assume.
+
+    Two facts that used to be stated in paragraphs above this table are now
+    marked on it: which scope the rarity was judged in, and which of that
+    row's counts became the anchor population. Both were already visible in
+    the table as numbers; what a reader lacked was a way to tell which ones
+    the assessment reached for, and matching a sentence against a row was
+    the work those paragraphs left them.
     """
     if bundle is None:
         return []
+    context = (
+        features.reporting_context
+        if features is not None
+        else ReportingContext(level=ReportingContextLevel.GLOBAL)
+    )
+    anchor_column = (
+        _ANCHOR_COLUMN.get(features.anchor.type, "") if features is not None else ""
+    )
     rows: list[FreqRowVM] = []
     for attr in ("global_stats", "country_stats", "country_year_stats"):
         stats: FrozenScopeStats | None = getattr(bundle, attr, None)
         if stats is None:
             continue
+        selected = features is not None and _SCOPE_LEVEL[attr] is context.level
         rows.append(
             FreqRowVM(
-                scope_label=_SCOPE_LABEL[attr],
+                scope_label=_scope_label(attr, context),
                 n_drugs=_format_count(stats.N_drugs),
                 n_aes=_format_count(stats.N_AEs),
                 n_both=_format_count(stats.N_drugs_AEs),
+                is_selected=selected,
+                anchor_column=anchor_column if selected else "",
             )
         )
     return rows
@@ -1493,6 +1553,49 @@ def _ae_burden_text(inc: Inconsistency) -> str | None:
     )
 
 
+def _drug_set_names(
+    inc: Inconsistency, reported_names: dict[str, str] | None = None
+) -> str:
+    """Just the substances a drug-set finding is about: ``vitamins nos``.
+
+    The direction — which report carried the drug — is what the sentence in
+    the findings table says. In a chip there is room for the substance and
+    nothing else, and the substance is what a reader is scanning for.
+    """
+    found = resolved_drug_set_terms(inc)
+    if found is None:
+        return ""
+    terms, _kind, _recovered = found
+    lookup = reported_names or {}
+    return "; ".join(
+        lookup.get(normalize_drug_key(term), term) for term in terms
+    )
+
+
+def _short_inconsistency_text(
+    inc: Inconsistency, reported_names: dict[str, str] | None = None
+) -> str:
+    """One inconsistency reduced to the values behind it, or empty.
+
+    Empty where there is nothing shorter to say than the sentence itself: the
+    chip then falls back to that sentence rather than inventing a stub.
+    """
+    if inc.feature == DRUG_SET_FEATURE:
+        return _drug_set_names(inc, reported_names)
+    if inc.terms:
+        return "; ".join(inc.terms)
+    return ""
+
+
+def _short_date_finding_text(finding: ClinicalDateFindingSummary) -> str:
+    """A clinical-date finding as the two dates: ``2002-10-28 vs 2005``.
+
+    Which date of which entity, and how far apart they are, is the findings
+    table's sentence. What a reader checks at a glance is the pair.
+    """
+    return f"{finding.source_date} vs {finding.matched_date}"
+
+
 def _inconsistency_text(
     inc: Inconsistency, reported_names: dict[str, str] | None = None
 ) -> str:
@@ -1635,6 +1738,7 @@ def _build_discrepancies(
                 feature_label=_discrepancy_column(inc.feature),
                 severity=inc.severity.value,
                 text=_inconsistency_text(inc, reported_names),
+                short_text=_short_inconsistency_text(inc, reported_names),
                 left=pair[0] if pair else None,
                 right=pair[1] if pair else None,
                 retained=not inc.suppressed,
@@ -1651,6 +1755,7 @@ def _build_discrepancies(
                 feature_label="Clinical dates",
                 severity=finding.severity.value,
                 text=_date_finding_text(finding),
+                short_text=_short_date_finding_text(finding),
                 retained=True,
                 downgrades=list(finding.downgrades),
                 weight=weight,
@@ -1905,7 +2010,7 @@ def _build_outcome_tiles(
         )
     tiles.append(
         OutcomeTileVM(
-            label="SCLE assessment of reference label", value=value, state=state
+            label="SCLE of reference label", value=value, state=state
         )
     )
     return tiles
@@ -1953,18 +2058,20 @@ def _context_cell(features: PairFeatures) -> EvidenceCell:
     return EvidenceCell(text=text, kind=ValueKind.COUNTRY)
 
 
-def _penalty_arithmetic(penalty: InconsistencyPenalty) -> str:
-    """The penalty as a sum a reader can check: ``3 x 0.4 = 1.2``.
+def _penalty_total(penalty: InconsistencyPenalty) -> str:
+    """The penalty, as the one figure it is: ``1.2``.
+
+    The arithmetic that produced it — ``3 x 0.4 = 1.2`` — sat here until the
+    chips above began carrying each finding's own weight. With the terms
+    listed a row above, restating them as a multiplication was the same sum
+    twice, and the row a reader comes to this panel for is the total.
 
     Where the run made no comparison the figure is flagged as unweighed, in
     the page's own word for it — ``findings_weighed`` governs the same fact a
     few sections below. What the comparison *was*, where one happened, is left
     to the clause beneath this row rather than said twice.
     """
-    terms = " + ".join(
-        f"{term.count} \u00d7 {term.weight:.1f}" for term in penalty.terms
-    )
-    total = f"{terms} = {penalty.w_tot:.1f}" if terms else f"{penalty.w_tot:.1f}"
+    total = f"{penalty.w_tot:.1f}"
     if penalty.threshold is None:
         return f"{total} (not weighed)"
     return total
@@ -2062,7 +2169,7 @@ def _build_summary_panel(
                 )
             )
         ),
-        penalty_text=("" if penalty is None else _penalty_arithmetic(penalty)),
+        penalty_text=("" if penalty is None else _penalty_total(penalty)),
         same_case_note=(
             ""
             if classification is None
@@ -2251,7 +2358,10 @@ def _build_narrative_blocks(
         is_human=True,
     )
     if presentation.summary_mode == "both":
-        return [human, generated]
+        # vigiTwin's own account first, directly under the panel that states
+        # the same assessment in figures: the two belong together, and a
+        # human reading is a response to them rather than a preface.
+        return [generated, human]
     return [human]
 
 
@@ -2322,7 +2432,7 @@ def build_evidence_case(
         _attach_clinical_date_findings(drugs, aes, features, gaps)
 
         shared_sets = _build_shared_sets(features)
-        freq_rows = _build_freq_rows(frozen_bundle)
+        freq_rows = _build_freq_rows(frozen_bundle, features)
         if not freq_rows:
             gaps.append(
                 EvidenceGap(

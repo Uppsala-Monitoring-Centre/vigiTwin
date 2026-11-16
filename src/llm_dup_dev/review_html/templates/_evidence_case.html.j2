@@ -162,13 +162,15 @@
       <dd>
         {%- if case.retained_discrepancies -%}
         {#
-          Named by feature, as the findings table below names them in a column
-          of its own, and carrying the weight the run gave the severity — the
-          same figure the contributions opposite carry, so both sides of the
-          assessment are readable in the same units.
+          The values and the weight, and nothing else. What feature a finding
+          is about, and what the assessment made of it, is the findings table
+          below — which carries both in columns of their own. The weight is
+          unsigned here: every one of these counts against the pair, which
+          the chip's colour says, and a "+" beside a red figure read as a
+          contradiction.
         #}
         {%- for d in case.retained_discrepancies %}
-        <span class="chip chip-against">{% if d.feature_label %}{{ d.feature_label }}: {% endif %}{{ finding(d) }}{% if d.weight_text %} <b>{{ d.weight_text }}</b>{% endif %}</span>
+        <span class="chip chip-against">{{ d.chip_text }}{% if d.unsigned_weight_text %} <b>{{ d.unsigned_weight_text }}</b>{% endif %}</span>
         {%- endfor -%}
         {%- else -%}
         <span class="absent">None</span>
@@ -297,14 +299,21 @@
   {% endif %}
   {% endif %}
 
+{#
+  Two paragraphs opened this section: one saying which reporting context
+  applied and why, one naming the anchor and its size. Both described the
+  table below them, leaving a reader to match a sentence against a row. The
+  table now says it itself — the context is the shaded row, the anchor is the
+  boxed count — and which set defined the anchor is in the panel at the top.
+  ``case.context_note`` and ``case.anchor_note`` are still built and still on
+  the view model for consumers; the page simply no longer prints them.
+#}
   <h3>2. Independence assessment</h3>
-  {% if case.context_note %}<p class="context">{{ case.context_note }}</p>{% endif %}
-  {% if case.anchor_note %}<p>{{ case.anchor_note }}</p>{% endif %}
 
   {% if case.shared_sets %}
   <dl class="set-list">
     {% for s in case.shared_sets %}
-    <dt>{{ s.label }} ({{ s.count }} {{ 'term' if s.count == 1 else 'terms' }}){% if s.is_anchor %} — defines the anchor{% endif %}</dt>
+    <dt>{{ s.label }} ({{ s.count }} {{ 'term' if s.count == 1 else 'terms' }})</dt>
     <dd>{% for m in s.members %}{{ cell(m) }}{% if not loop.last %}; {% endif %}{% endfor %}</dd>
     {% endfor %}
   </dl>
@@ -322,16 +331,27 @@
     </thead>
     <tbody>
       {% for row in case.freq_rows %}
-      <tr>
+      <tr class="{{ row.row_css_class }}">
         <td>{{ row.scope_label }}</td>
-        <td>{{ row.n_drugs }}</td>
-        <td>{{ row.n_aes }}</td>
-        <td>{{ row.n_both }}</td>
+        <td class="{{ row.drugs_css_class }}">{{ row.n_drugs }}</td>
+        <td class="{{ row.aes_css_class }}">{{ row.n_aes }}</td>
+        <td class="{{ row.both_css_class }}">{{ row.n_both }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  <p class="note">Counts include the two reports under review.</p>
+  {#
+    A key, not a paragraph about the method: without it the shading and the
+    box are formatting a reader cannot decode. One sentence, under the table
+    it describes.
+  #}
+  <p class="note">
+    Counts include the two reports under review.
+    {%- if case.freq_rows | selectattr('is_selected') | list %}
+    The shaded row is the reporting context the rarity was judged in, and the
+    boxed count is the anchor population.
+    {%- endif %}
+  </p>
   {% endif %}
 
   {% if case.matching_features %}

@@ -20,6 +20,7 @@ from llm_dup_dev.models.enums import (
 )
 from llm_dup_dev.models.pair_features import (
     AnchorPopulation,
+    ClinicalDateFindingSummary,
     FeatureContribution,
     Inconsistency,
     ProbabilityEstimate,
@@ -301,8 +302,12 @@ class TestItReusesWhatTheSectionsHold:
         html = _flat(features=_with_contribution())
         assert html.count("2002-01-04") >= 2  # the panel and section 2
 
-    def test_a_finding_names_its_feature(self):
-        """"Difference of 1 year." says nothing without saying what differed."""
+    def test_a_finding_with_no_pair_of_values_keeps_its_own_words(self):
+        """A chip has to say *something*; the sentence is the fallback.
+
+        This fixture's reports carry no age, so there is no pair of cells to
+        quote and nothing shorter to say than what the assessment recorded.
+        """
         features = _features(
             matching_drugs=["topiramate"],
             inconsistencies=[
@@ -317,7 +322,27 @@ class TestItReusesWhatTheSectionsHold:
         html = _flat(features=features)
         panel = html[html.index("Assessment at a glance") :]
         panel = panel[: panel.index("<h3>1. Report comparison</h3>")]
-        assert "Age: Difference of 7 years." in panel
+        assert "Difference of 7 years." in panel
+
+    def test_a_finding_does_not_repeat_the_feature_column(self):
+        """The findings table carries the feature; the chip carries values."""
+        features = _features(
+            matching_drugs=["topiramate"],
+            inconsistencies=[
+                Inconsistency(
+                    feature="patient_age",
+                    severity=InconsistencySeverity.MINOR,
+                    difference=7.0,
+                    units="years",
+                )
+            ],
+        )
+        html = _flat(features=features)
+        panel = html[html.index("Assessment at a glance") :]
+        panel = panel[: panel.index("<h3>1. Report comparison</h3>")]
+        assert "Age: Difference" not in panel
+        # Still named where a column can hold it.
+        assert "<td>Age</td>" in html
 
     def test_a_suppressed_finding_is_not_in_the_panel(self):
         """It contributed nothing, so it is not evidence against the pair."""
@@ -378,6 +403,7 @@ class TestFindingsQuoteTheirValues:
         assert finding.right is row.right
 
     def test_the_panel_and_the_findings_table_both_show_them(self):
+        """The same two values, said once with its unit in the chip."""
         html = " ".join(
             _html(
                 report_1=_report("R001", age=31.0),
@@ -385,12 +411,40 @@ class TestFindingsQuoteTheirValues:
                 features=self._age_finding(),
             ).split()
         )
-        assert html.count("31 years") >= 2
-        assert "vs" in html
+        panel = html[html.index("Assessment at a glance") :]
+        panel = panel[: panel.index("<h3>1. Report comparison</h3>")]
+        assert "31 vs 30 years" in panel
+        findings = html[html.index("3. Relationship") :]
+        assert ">31 years</span> vs <span" in findings
         assert "Difference of 1 years." not in html
 
+    def test_a_repeated_unit_is_said_once_in_the_chip(self):
+        (finding,) = self._case_with_ages().retained_discrepancies
+        assert finding.short_pair == ("31", "30", "years")
+        assert finding.chip_text == "31 vs 30 years"
+
+    def test_a_pair_of_words_is_never_spliced(self):
+        """Two names ending alike must not become "United States of vs ..."."""
+        case = _case(
+            report_1=_report("R001", country="United States of America"),
+            report_2=_report("R002", country="Republic of America"),
+            features=_features(
+                matching_drugs=["topiramate"],
+                inconsistencies=[
+                    Inconsistency(
+                        feature="patient_country",
+                        severity=InconsistencySeverity.MINOR,
+                    )
+                ],
+            ),
+        )
+        (finding,) = case.retained_discrepancies
+        assert finding.chip_text == (
+            "United States of America vs Republic of America"
+        )
+
     def test_a_finding_with_no_pair_of_values_keeps_its_prose(self):
-        """A drug-set finding is not about two values side by side."""
+        """An adverse-event finding is not about two values side by side."""
         features = _features(
             matching_drugs=["topiramate"],
             inconsistencies=[
@@ -405,6 +459,63 @@ class TestFindingsQuoteTheirValues:
         (finding,) = _case(features=features).retained_discrepancies
         assert finding.left is None and finding.right is None
         assert finding.text
+
+
+class TestTheChipsCarryTheValuesAndNothingElse:
+    """A chip has room for what the reports said, not for why it counts.
+
+    The findings table two sections down carries the feature, the severity and
+    the sentence. Repeating any of that in the panel spent a line of the page
+    on words a reader had already been given.
+    """
+
+    def _only_finding(self, inc):
+        features = _features(matching_drugs=["topiramate"], inconsistencies=[inc])
+        (finding,) = _case(features=features).retained_discrepancies
+        return finding
+
+    def test_an_adverse_event_finding_is_its_terms(self):
+        finding = self._only_finding(
+            Inconsistency(
+                feature="ae_clinical_picture:unmatched_burden:r1_to_r2",
+                severity=InconsistencySeverity.MINOR,
+                terms=["infection"],
+                source="rule_ae_clinical_picture",
+            )
+        )
+        assert finding.chip_text == "infection"
+        # The direction is still on the record, in the table's own column.
+        assert "without a matching HLT on report B" in finding.text
+
+    def test_a_drug_set_finding_is_its_substances(self):
+        finding = self._only_finding(
+            Inconsistency(
+                feature="drug_set",
+                severity=InconsistencySeverity.MODERATE,
+                terms=["vitamins nos"],
+                kind="missing_in_r2",
+                source="rule_drug_set",
+            )
+        )
+        assert finding.chip_text == "vitamins nos"
+        assert "absent from report B" in finding.text
+
+    def test_a_clinical_date_finding_is_the_two_dates(self):
+        features = _features(
+            matching_drugs=["topiramate"],
+            clinical_date_findings=[
+                ClinicalDateFindingSummary(
+                    entity_label="drug:tacrolimus",
+                    source_date="2002-10-28",
+                    matched_date="2005",
+                    diff_days=796,
+                    severity=InconsistencySeverity.STRONG,
+                )
+            ],
+        )
+        (finding,) = _case(features=features).retained_discrepancies
+        assert finding.chip_text == "2002-10-28 vs 2005"
+        assert "at least 796 days apart" in finding.text
 
 
 class TestTheChips:
@@ -445,7 +556,11 @@ class TestTheChips:
         panel = html[html.index("Assessment at a glance") :]
         panel = panel[: panel.index("<h3>1. Report comparison</h3>")]
         assert '<span class="chip chip-against">' in panel
-        assert "<b>+0.4</b>" in panel
+        # Unsigned: a penalty weight has one direction, which the colour says.
+        assert "<b>0.4</b>" in panel
+        assert "<b>+0.4</b>" not in panel
+        # The findings table keeps the signed form, in its column of figures.
+        assert "(+0.4)" in html
 
     def test_no_chip_is_shaded_by_magnitude(self):
         """Two classes only; a bigger figure gets a bigger number, not a
@@ -476,7 +591,7 @@ class TestThePenaltyRow:
             )
         ).summary_panel
         assert panel is not None
-        assert panel.penalty_text == "3 × 0.4 = 1.2 (not weighed)"
+        assert panel.penalty_text == "1.2 (not weighed)"
 
     def test_a_weighed_penalty_leaves_the_comparison_to_the_clause(self):
         """Saying "< 4.0" here and "below the threshold of 4.0" below is twice."""
@@ -496,7 +611,9 @@ class TestThePenaltyRow:
             )
         ).summary_panel
         assert panel is not None
-        assert panel.penalty_text == "3 × 0.4 = 1.2"
+        # The total, not the arithmetic: the chips above list the terms, and
+        # restating them as a multiplication was the same sum twice.
+        assert panel.penalty_text == "1.2"
         assert "below the same-case threshold of 4.0" in panel.same_case_note
 
     def test_no_terms_still_gives_a_total(self):
@@ -568,6 +685,77 @@ class TestTheClausesAreTheSummarysOwn:
         ).summary_panel
         assert panel is not None
         assert "independence threshold of 1.0" in panel.independence_note
+
+
+class TestTheSameCaseThresholdNamesItsZone:
+    """There is no single same-case threshold, so "the" one cannot be named.
+
+    The tolerance a penalty is put to varies with how strongly independence
+    was rejected. A clause reading "below the same-case threshold of 4.0" let
+    a reader comparing two cases find two different "the" thresholds with no
+    stated reason for either.
+    """
+
+    def _note(self, reason, relationship, penalty):
+        classification = _classification(
+            independence_reason=reason,
+            relationship_assessment=relationship,
+            penalty=penalty,
+        )
+        panel = _case(classification=classification).summary_panel
+        assert panel is not None
+        return panel.same_case_note
+
+    def test_a_satisfied_penalty_names_the_zone(self):
+        note = self._note(
+            IndependenceReason.RARITY_COMPELLING,
+            RelationshipAssessment.SAME_CASE,
+            InconsistencyPenalty(w_tot=2.4, threshold=4.0),
+        )
+        assert (
+            "below the same-case threshold of 4.0 for the compelling range"
+            in note
+        )
+
+    def test_each_zone_names_itself(self):
+        for reason, zone in (
+            (IndependenceReason.RARITY_COMPELLING, "compelling"),
+            (IndependenceReason.RARITY_INTERMEDIATE, "intermediate"),
+            (IndependenceReason.RARITY_LIMITED, "limited"),
+        ):
+            note = self._note(
+                reason,
+                RelationshipAssessment.DIFFERENT_CASE,
+                InconsistencyPenalty(w_tot=5.0, threshold=4.0),
+            )
+            assert f"for the {zone} range" in note, reason
+
+    def test_an_abstain_names_the_zone_too(self):
+        note = self._note(
+            IndependenceReason.RARITY_INTERMEDIATE,
+            RelationshipAssessment.ABSTAIN,
+            InconsistencyPenalty(w_tot=4.0, threshold=4.0),
+        )
+        assert "tolerance of 4.0 for the intermediate range" in note
+        assert note.endswith("leaving the question unresolved")
+
+    def test_a_pair_decided_on_direct_evidence_names_no_zone(self):
+        """There is no rarity zone to name, and inventing one would lie."""
+        note = self._note(
+            IndependenceReason.EXPLICIT_LINK,
+            RelationshipAssessment.SAME_CASE,
+            InconsistencyPenalty(w_tot=2.4, threshold=4.0),
+        )
+        assert "same-case threshold of 4.0" in note
+        assert "range" not in note
+
+    def test_an_unweighed_penalty_has_no_threshold_to_qualify(self):
+        note = self._note(
+            IndependenceReason.RARITY_COMPELLING,
+            RelationshipAssessment.SAME_CASE,
+            InconsistencyPenalty(w_tot=2.4, threshold=None),
+        )
+        assert "range" not in note
 
 
 class TestDegradedInputs:

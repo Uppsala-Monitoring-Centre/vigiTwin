@@ -62,9 +62,27 @@ The matching score, the penalty and the same-case tolerance had appeared
 can read them as figures.
 
 Each piece of evidence is a chip carrying its own figure, so both sides of
-the assessment read in the same units: `Female +0.3` against `Age: 31 years
-vs 30 years +0.4`. Chips take one green and one red and are **never shaded by
-magnitude** — colour says which way a piece told, the figure says how much.
+the assessment read in the same units: `Female +0.3` against `31 vs 30 years
+0.4`. Chips take one green and one red and are **never shaded by magnitude** —
+colour says which way a piece told, the figure says how much.
+
+A chip carries the values and the weight and **nothing said about them**. The
+feature, the severity and the assessment's own sentence are three columns of
+the findings table in section 3, so `Adverse events: infection listed on
+report A without a matching HLT on report B.` is `infection`, a drug-set
+finding is its substances, a clinical-date finding is its two dates, and a
+repeated unit is said once — `31 vs 30 years`. The unit is factored out only
+where both sides are bare figures without it, so two country names that
+happen to end alike are never spliced together.
+
+A finding's weight is **unsigned** here — `0.4`, not `+0.4`: every retained
+finding counts against the pair, which its colour says, and a `+` beside a
+red figure reads as a contradiction. A contribution keeps its sign, where the
+sign is information (the anchor adjustment is the one negative term), and the
+findings table keeps the signed form in its column of figures.
+
+The penalty row states **the total**, not `3 × 0.4 = 1.2`. With each term's
+own weight on a chip a row above, the multiplication was the same sum twice.
 
 New public model `CaseSummaryVM`, and `EvidenceCaseVM.summary_panel` holding
 one (`None` where the stored artifacts support no row). The panel keeps no
@@ -126,6 +144,59 @@ Also public: `format_score` (promoted from `summary._score`, so the panel's
 figure and the clause beside it cannot be formatted two ways) and
 `sign_css_class`. New `AttributionKind.ANCHOR_MULTIPLICITY`, so the
 adjustment's red carries a recorded reason like every other colour.
+
+### Changed — section 2's context table says what two paragraphs said
+
+Two paragraphs opened the independence section: one naming the reporting
+context and why it applied, one naming the anchor and its size. Both described
+the table directly beneath them, so a reader's work was to match a sentence
+against a row. The table now carries both facts itself:
+
+- scope rows are named for the population they **are** — `Canada, 2022`
+  rather than `Country-year`. The level says how the population was chosen,
+  not which one it was, and a reader comparing two cases wants the second. The
+  country is shown as the run recorded it, usually an ISO code; where no
+  country was recorded the level still stands in for it.
+- the row the rarity was judged in is **shaded**, and the count that became
+  the anchor population is **boxed**. Neither mark is green or red: a
+  population size is not evidence for the pair or against it, and spending one
+  of the page's two colours on it would make the colour rule mean two things.
+- one sentence under the table decodes both marks, and is omitted where no row
+  is marked — which happens when the frozen bundle holds no statistics for the
+  selected scope.
+
+`FreqRowVM` gains `is_selected`, `anchor_column` and the derived classes
+`row_css_class`, `drugs_css_class`, `aes_css_class`, `both_css_class`. The set
+list's `— defines the anchor` caption is gone too; the panel's `Anchor` row
+says which sets defined it.
+
+`EvidenceCaseVM.context_note` and `.anchor_note` are **retained and still
+populated**, for the same reason `assessment_rows` is. One sentence did not
+survive the move: that a larger anchor population weakens the evidence from an
+identical match. It is method rather than evidence about this pair, and it
+lives in `docs/evidence_format.md` and in the adjustment chip's tooltip.
+
+### Changed — the same-case threshold is named with its zone
+
+`the total inconsistency penalty of 2.4 is below the same-case threshold of
+4.0` becomes `... of 4.0 for the compelling range`. There is no single
+same-case threshold — the tolerance varies with how strongly independence was
+rejected — so the old clause let a reader comparing two cases find two
+different "the" thresholds with no stated reason for either. A pair whose
+independence was decided on direct evidence rather than on rarity has no zone
+to name, and none is named. This changes the generated summary text, so a
+saved page rendered by 1.1.7 reads differently here.
+
+### Changed — in `both` mode, vigiTwin's own account leads
+
+It belongs with the panel directly above it, which states the same assessment
+in figures. A human reading is a response to that assessment, so it follows
+rather than standing between the panel and the prose restating it.
+
+### Changed — the SCLE tile is headed "SCLE of reference label"
+
+Was "SCLE assessment of reference label". The tile's value is the assessment;
+the word was carrying nothing in a four-across row.
 
 ### Removed — the "vigiTwin classification" decision table in section 3
 

@@ -174,7 +174,8 @@ class TestWorkedExamples:
             "dates. vigiTwin identified two moderate drug inconsistencies and "
             "one minor adverse event inconsistency. The matching score of 15.0 "
             "supports non-independence, and the total inconsistency penalty of "
-            "2.4 is below the same-case threshold of 4.0. The reports were "
+            "2.4 is below the same-case threshold of 4.0 for the compelling "
+            "range. The reports were "
             "classified as duplicates."
         )
 

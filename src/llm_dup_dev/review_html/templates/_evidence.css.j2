@@ -76,6 +76,19 @@ th{background:var(--pale);color:var(--ink);font-size:12px}
 .findings th:nth-child(1){width:20%}
 .findings th:nth-child(2){width:14%}
 .freq th:first-child{width:34%}
+/* The context table says which of its own rows the assessment used, so the
+   section needs no paragraph above it pointing at one. The shading marks the
+   reporting context; the box marks the count that became the anchor
+   population. Neither is green or red: a population size is not evidence for
+   the pair or against it, and spending one of the page's two colours on it
+   would make the colour rule mean two things. */
+.freq tr.scope-selected td{background:var(--pale)}
+.freq tr.scope-selected td:first-child{font-weight:bold}
+/* A border rather than an inset shadow: a shadow is the kind of decoration a
+   print engine is free to drop, and this one carries meaning. */
+.freq td.anchor-count{
+  font-weight:bold;color:var(--accent);border:2px solid var(--accent);
+}
 .decision td:first-child,.decision th:first-child{width:28%}
 .decision td:first-child{font-weight:bold}
 .onsets th:first-child{width:40%}
@@ -134,7 +147,10 @@ tr.row-neutral td,tr.ae-neutral td{background:transparent}
   display:inline-block;margin:0 5px 3px 0;padding:2px 7px;border-radius:3px;
   font-size:12px;line-height:1.35;
 }
-.chip b{font-weight:bold;margin-left:2px}
+/* The figure needs air from the value beside it. A signed contribution
+   separated itself with its "+"; an unsigned penalty weight does not, and
+   "2005 1.2" read as one number. */
+.chip b{font-weight:bold;margin-left:7px}
 .chip-for{background:var(--match-bg);color:var(--match);border:1px solid #cfe6d8}
 .chip-against{
   background:var(--mismatch-bg);color:var(--mismatch);border:1px solid #f0cdd4;

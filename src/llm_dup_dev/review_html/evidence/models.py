@@ -116,6 +116,15 @@ def sign_css_class(value: float) -> str:
     return EvidenceRole.NEUTRAL.css_class
 
 
+def _is_number(token: str) -> bool:
+    """Whether a token is a bare figure, so a unit may be factored off it."""
+    try:
+        float(token.replace(",", ""))
+    except ValueError:
+        return False
+    return True
+
+
 class ValueKind(str, Enum):
     """What kind of report value a cell holds.
 
@@ -398,6 +407,42 @@ class FreqRowVM(BaseModel):
     n_drugs: str
     n_aes: str
     n_both: str
+    #: True for the one scope the rarity was actually judged in. The page
+    #: marks it here rather than describing it in a paragraph above the
+    #: table: a reader looking for "which of these three counts was used"
+    #: was being asked to match a sentence against a row.
+    is_selected: bool = False
+    #: Which count of the selected row defined the anchor population —
+    #: ``"drugs"``, ``"aes"``, ``"both"``, or empty. Only ever set on the
+    #: selected row, since the anchor is drawn from one scope.
+    anchor_column: str = ""
+
+    @property
+    def row_css_class(self) -> str:
+        """Tint for the scope that was used, neutral for the others."""
+        return "scope-selected" if self.is_selected else ""
+
+    def count_css_class(self, column: str) -> str:
+        """Emphasis for the one count that became the anchor population.
+
+        Deliberately not green or red. The anchor size is neither evidence
+        for the pair nor against it — it is the population the rarity was
+        measured in — and spending one of the page's two colours on it
+        would make the colour rule mean two things.
+        """
+        return "anchor-count" if column == self.anchor_column else ""
+
+    @property
+    def drugs_css_class(self) -> str:
+        return self.count_css_class("drugs")
+
+    @property
+    def aes_css_class(self) -> str:
+        return self.count_css_class("aes")
+
+    @property
+    def both_css_class(self) -> str:
+        return self.count_css_class("both")
 
 
 class MatchingFeatureRow(BaseModel):
@@ -522,6 +567,68 @@ class DiscrepancyVM(BaseModel):
     weight: float | None = None
     #: ``weight`` rendered, e.g. ``"+1.0"``; empty when it is unknown.
     weight_text: str = ""
+    #: The finding reduced to the values it is about, for the panel's chips:
+    #: ``"vitamins nos"``, ``"infection"``, ``"2002-10-28 vs 2005"``. Set
+    #: only where the values are not already in ``left``/``right``. Empty
+    #: falls back to ``text``, which is the full sentence.
+    short_text: str = ""
+
+    @property
+    def chip_text(self) -> str:
+        """The finding at a glance: the values, and nothing said about them.
+
+        A chip has room for what the reports said and not for why it counts.
+        "Age: 31 years vs 30 years" becomes "31 vs 30 years" — the feature is
+        the column the findings table below carries, the colour already says
+        it told against the pair, and a repeated unit is said once.
+
+        Derived at render time from ``left``/``right`` rather than frozen at
+        build time, so a publication rewrite of those cells reaches this too.
+        """
+        pair = self.short_pair
+        if pair is not None:
+            left, right, unit = pair
+            return f"{left} vs {right} {unit}".strip()
+        return self.short_text or self.text
+
+    @property
+    def short_pair(self) -> tuple[str, str, str] | None:
+        """``(left, right, shared unit)``, or ``None`` with no pair of values.
+
+        A unit is factored out only when both sides are bare numbers once it
+        is removed, which is exactly the measurement case — ``31 years`` /
+        ``30 years``. Anything else keeps its own words, so two country names
+        that happen to end alike are never spliced together.
+        """
+        if self.left is None or self.right is None:
+            return None
+        left = (self.left.text or "").strip()
+        right = (self.right.text or "").strip()
+        if not left or not right:
+            return None
+        lhs, rhs = left.split(), right.split()
+        unit: list[str] = []
+        while (
+            len(lhs) > 1
+            and len(rhs) > 1
+            and lhs[-1].casefold() == rhs[-1].casefold()
+        ):
+            unit.insert(0, lhs.pop())
+            rhs.pop()
+        if unit and not (_is_number(lhs[-1]) and _is_number(rhs[-1])):
+            return left, right, ""
+        return " ".join(lhs), " ".join(rhs), " ".join(unit)
+
+    @property
+    def unsigned_weight_text(self) -> str:
+        """The weight as a magnitude: ``0.4``, not ``+0.4``.
+
+        A penalty weight has no direction to signal — every one of them
+        counts against the pair, which the chip's colour already says — and a
+        ``+`` beside a red figure reads as a contradiction. The findings
+        table keeps the signed form, where it sits in a column of figures.
+        """
+        return self.weight_text.lstrip("+")
 
     @property
     def row_css_class(self) -> str:
@@ -756,6 +863,10 @@ class EvidenceCaseVM(BaseModel):
     narrative_blocks: list[EvidenceTextVM] = Field(default_factory=list)
 
     characteristics: list[CharacteristicRow] = Field(default_factory=list)
+    #: Why this reporting context applied, in prose. Built and kept for
+    #: consumers; the page no longer prints it, because it described the
+    #: context table below it and that table now marks the selected scope
+    #: itself.
     context_note: str = ""
     drugs: list[DrugEvidenceRow] = Field(default_factory=list)
     adverse_events: list[AEEvidenceRow] = Field(default_factory=list)
@@ -768,6 +879,10 @@ class EvidenceCaseVM(BaseModel):
     findings_weighed: bool = False
 
     shared_sets: list[SharedSetVM] = Field(default_factory=list)
+    #: The anchor and its size, in prose. Built and kept for consumers; the
+    #: page no longer prints it — the panel names the anchor and the context
+    #: table boxes its count. Dropped for ``context_note``'s reason: it was
+    #: a sentence a reader had to match against a row.
     anchor_note: str = ""
     freq_rows: list[FreqRowVM] = Field(default_factory=list)
     matching_features: list[MatchingFeatureRow] = Field(default_factory=list)
