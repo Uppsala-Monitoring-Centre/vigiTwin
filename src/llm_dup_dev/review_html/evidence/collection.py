@@ -19,7 +19,12 @@ from ..formats import evidence_case_from_result, reference_from_annotation
 from ..selection import MissingPairPolicy, PairSelection
 from .build import ExamplePresentation, ReferenceInfo, SCLEAssessment
 from .screening import screening_verdict
-from .manifest import CuratedExample, LoadedExampleManifest, SummaryMode
+from .manifest import (
+    CuratedExample,
+    ExampleDataset,
+    LoadedExampleManifest,
+    SummaryMode,
+)
 from .models import EvidenceCaseVM, EvidencePageVM, number_cases
 from .settings import (
     EvidenceRunSettings,
@@ -100,6 +105,38 @@ def _reference(
     )
 
 
+def _with_declared_settings(
+    run_settings: EvidenceRunSettings | None,
+    dataset: ExampleDataset,
+    dataset_id: str,
+) -> EvidenceRunSettings | None:
+    """Fill run settings the manifest did not record from the collection.
+
+    Only fills. A declaration that contradicts the run's own manifest is an
+    error in the declaration, and saying so is better than silently choosing
+    one of two accounts of what a run did.
+    """
+    declared = dataset.explicit_link_enabled
+    if declared is None:
+        return run_settings
+    if run_settings is None:
+        return EvidenceRunSettings(
+            explicit_link_enabled=declared,
+            source=f"declared in the collection manifest for {dataset_id!r}",
+        )
+    recorded = run_settings.explicit_link_enabled
+    if recorded is not None and recorded != declared:
+        raise ValueError(
+            f"dataset {dataset_id!r} declares explicit_link_enabled="
+            f"{declared}, but its run manifest recorded {recorded}. The run "
+            "manifest is the run's own account of itself; remove the "
+            "declaration, or point the dataset at the right run."
+        )
+    return run_settings.model_copy(
+        update={"explicit_link_enabled": declared}
+    )
+
+
 def build_collection(
     loaded: LoadedExampleManifest,
     *,
@@ -131,6 +168,9 @@ def build_collection(
         run_manifest = loaded.run_manifest_path(dataset_id)
         if run_manifest is not None:
             run_settings = load_evidence_run_settings(run_manifest)
+        run_settings = _with_declared_settings(
+            run_settings, manifest.datasets[dataset_id], dataset_id
+        )
         settings_used.append(run_settings)
 
         selection = PairSelection(

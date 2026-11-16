@@ -415,7 +415,7 @@ class TestFindingsQuoteTheirValues:
         panel = panel[: panel.index("<h3>1. Report comparison</h3>")]
         assert "31 vs 30 years" in panel
         findings = html[html.index("3. Relationship") :]
-        assert ">31 years</span> vs <span" in findings
+        assert ">31 years</span> versus <span" in findings
         assert "Difference of 1 years." not in html
 
     def test_a_repeated_unit_is_said_once_in_the_chip(self):

@@ -301,11 +301,25 @@ _SOURCE_VERDICT_PHRASE = {
 }
 
 
-def _direct_sentence(features: PairFeatures) -> str | None:
-    """Direct evidence of shared provenance, when the record carries any."""
+def _direct_sentence(
+    features: PairFeatures, run_settings: EvidenceRunSettings | None = None
+) -> str | None:
+    """Direct evidence of shared provenance, when the record carries any.
+
+    A run that did not use explicit links contributes none of that evidence,
+    whatever its artifacts happen to carry in the field. Reading it anyway
+    produced sentences citing a declaration the run never looked at.
+    """
     parts: list[str] = []
     link = features.explicit_link
-    if link is not None and link.verdict == ExplicitLinkVerdict.EXPLICIT_LINK:
+    links_used = (
+        run_settings is None or run_settings.explicit_link_enabled is not False
+    )
+    if (
+        links_used
+        and link is not None
+        and link.verdict == ExplicitLinkVerdict.EXPLICIT_LINK
+    ):
         parts.append(
             "one report names the other in its case-identifier fields, an "
             "explicit declaration by the sender that the two describe the same "
@@ -574,7 +588,7 @@ def build_assessment_summary(
     add(SummarySlot.SHARED_PATTERN, _shared_pattern_sentence(features))
     add(SummarySlot.ANCHOR, _anchor_sentence(features))
     add(SummarySlot.ADDITIONAL, _additional_sentence(features))
-    add(SummarySlot.DIRECT, _direct_sentence(features))
+    add(SummarySlot.DIRECT, _direct_sentence(features, run_settings))
 
     if classification is None:
         gaps.append(

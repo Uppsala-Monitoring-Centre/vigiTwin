@@ -54,9 +54,28 @@
 #}
 {% macro finding(d) -%}
 {%- if d.left is not none and d.right is not none -%}
-{{ cell(d.left) }} vs {{ cell(d.right) }}
+{%- if d.lead %}{{ d.lead }}: {% endif -%}
+{{ cell(d.left) }} versus {{ cell(d.right) }}{{ d.tail }}
 {%- else -%}
 {{ d.text }}
+{%- endif -%}
+{%- endmacro %}
+
+{#
+  One report's column for an adverse-event row: the term as that report spelt
+  it, then the onset dates that report gave for it. Laid out like the drug
+  column above, because a reader asks the same question of both — what did
+  this report say, and when — and a second table keyed by term made them
+  match an event against a row to find out.
+#}
+{% macro ae_side(term, onsets) -%}
+{%- if term is none -%}
+{#- Blank: the presence column already says which report carries the term. -#}
+{%- else -%}
+<div class="entity-name">{{ cell(term) }}</div>
+{%- if onsets %}
+<div class="entry-dates">{% for c in onsets %}{{ cell(c) }}{% if not loop.last %}; {% endif %}{% endfor %}</div>
+{%- endif -%}
 {%- endif -%}
 {%- endmacro %}
 
@@ -216,11 +235,13 @@
       <tr>
         <td>{{ row.label }}</td>
         <td>{{ cell(row.left) }}
+          {% if row.left_note %}<span class="subtle">{{ row.left_note }}</span>{% endif %}
           {% if row.left_evidence %}
           <div class="evidence-snippets">{% for s in row.left_evidence %}“{{ s }}” {% endfor %}</div>
           {% endif %}
         </td>
         <td>{{ cell(row.right) }}
+          {% if row.right_note %}<span class="subtle">{{ row.right_note }}</span>{% endif %}
           {% if row.right_evidence %}
           <div class="evidence-snippets">{% for s in row.right_evidence %}“{{ s }}” {% endfor %}</div>
           {% endif %}
@@ -265,38 +286,13 @@
     <tbody>
       {% for row in case.adverse_events %}
       <tr class="{{ row.row_css_class }}">
-        <td>{% if row.left_term %}{{ cell(row.left_term) }}{% endif %}</td>
-        <td>{% if row.right_term %}{{ cell(row.right_term) }}{% endif %}</td>
+        <td>{{ ae_side(row.left_term, row.left_onsets) }}</td>
+        <td>{{ ae_side(row.right_term, row.right_onsets) }}</td>
         <td><span class="{{ row.presence.css_class }}">{{ row.presence.label }}</span></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  {% set onset_rows = case.adverse_events | selectattr('has_onsets') | list %}
-  {% if onset_rows %}
-  <table class="onsets">
-    <thead>
-      <tr>
-        <th scope="col">Reported adverse event onset</th>
-        <th scope="col">Report A</th>
-        <th scope="col">Report B</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in onset_rows %}
-      <tr>
-        <td>{{ row.term.text }}</td>
-        <td>{% if row.left_onsets %}{% for c in row.left_onsets %}{{ cell(c) }} {% endfor %}{% else %}<span class="absent">—</span>{% endif %}</td>
-        <td>{% if row.right_onsets %}{% for c in row.right_onsets %}{{ cell(c) }} {% endfor %}{% else %}<span class="absent">—</span>{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <p class="note">
-    Event-level onset dates, shown separately so the table above does not
-    discard them.
-  </p>
-  {% endif %}
   {% endif %}
 
 {#

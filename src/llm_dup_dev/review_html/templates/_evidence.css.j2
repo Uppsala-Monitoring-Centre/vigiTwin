@@ -91,7 +91,6 @@ th{background:var(--pale);color:var(--ink);font-size:12px}
 }
 .decision td:first-child,.decision th:first-child{width:28%}
 .decision td:first-child{font-weight:bold}
-.onsets th:first-child{width:40%}
 
 /* Evidence colouring. These three classes are the whole visual vocabulary;
    they are set from EvidenceRole, never from a value comparison. */
@@ -164,8 +163,17 @@ tr.row-neutral td,tr.ae-neutral td{background:transparent}
    Set apart so the figure stays scannable and the reasoning stays available
    without a second table. */
 .chain-note{display:block;font-size:12px;color:var(--muted);margin-top:1px}
-.set-list{font-size:13px;line-height:1.5;margin:8px 0 12px}
-.set-list dt{font-weight:bold;margin-top:7px}
+/* The two shared sets side by side, drugs left and adverse events right, in
+   the column order of the counts table directly beneath them. Stacked, a
+   reader had to hold the drug set in mind while scrolling past the AE set to
+   reach the row of numbers that counts both. `grid-auto-flow: column` over
+   two rows puts each set's heading above its own members. */
+.set-list{
+  display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto;
+  grid-auto-flow:column;gap:2px 24px;
+  font-size:13px;line-height:1.5;margin:8px 0 12px;
+}
+.set-list dt{font-weight:bold}
 .set-list dd{margin:2px 0 0}
 .evidence-snippets{font-size:11px;color:var(--muted);margin-top:3px}
 .gaps{
@@ -187,6 +195,8 @@ a{color:var(--accent)}
   .outcomes{grid-template-columns:1fr}
   .chain dl{grid-template-columns:1fr;gap:1px 0}
   .chain dt{margin-top:7px}
+  .set-list{grid-template-columns:1fr;grid-auto-flow:row;gap:0}
+  .set-list dt{margin-top:7px}
   table{font-size:12px}
   th,td{padding:5px}
   h1{font-size:25px}

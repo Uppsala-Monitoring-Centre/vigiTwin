@@ -110,7 +110,9 @@ A case opens with its title, optional human-authored lede, and a row of
 outcome tiles — the reference label (with the set it came from), the screening
 outcome, the vigiTwin classification, and the SCLE state. These are four
 separate verdicts and the page keeps them separate; none is ever inferred from
-another.
+another. A tile is muted only where there is **no verdict to show**: an
+inconclusive SCLE assessment — somebody looked and found the reference label
+genuinely ambiguous — reads as a value, because it is one.
 
 Then the **at-a-glance panel**: the assessment as figures, in the order the
 assessment itself proceeds — reporting context, anchor and anchor population,
@@ -194,7 +196,20 @@ Then three numbered sections, named for the two questions vigiTwin answers
 rather than for the material each happens to hold:
 
 1. **Report comparison** — patient characteristics, drugs, adverse events,
-   narratives. The report values, coloured by the rule above. The page carries
+   narratives.
+   The characteristics carry the **overall adverse-event onset** each report
+   yields, which is the date the case-level onset check actually compares.
+   Without it a finding about that date named two values printed on no table.
+   The value is the pipeline's own `effective_overall_ae_onset_date`, not a
+   second reading of the reports, so the row cannot show a different date
+   from the one the assessment used — and where the pipeline *derived* it
+   rather than reading it off the report, the cell says so beneath the
+   value, because the column is headed "Report A" and a derived date is not
+   something report A stated.
+   Event-level onset dates sit **under their own term** in the adverse-event
+   table, as a drug's dates sit under its substance. They had a second table
+   keyed by term, which made a reader match an event against another row to
+   learn when it started — something the drug table never asked of them. The report values, coloured by the rule above. The page carries
    a two-line legend: the colour key, and the one glyph key a reader cannot
    infer — a blank cell is an absence of reported information. The caveats
    that colour is not severity and that a green term is a set member rather
@@ -206,7 +221,10 @@ rather than for the material each happens to hold:
    than a claim the page makes about itself.
 2. **Independence assessment** — the context table, the shared drug and AE
    terms spelled out, and the per-feature contributions in decades, totalled
-   (below).
+   (below). The two shared sets sit **side by side**, drugs left and adverse
+   events right, in the column order of the counts table directly beneath
+   them; stacked, a reader held the drug set in mind while scrolling past the
+   AE set to reach the row of numbers that counts both.
    Two paragraphs used to open this section: one naming the reporting context
    and why it applied, one naming the anchor and its size. Both described the
    table directly beneath them, so a reader's work was to match a sentence
@@ -255,7 +273,13 @@ rather than for the material each happens to hold:
    pair behind it, such as a drug-set or adverse-event-picture finding, keeps
    the prose the assessment recorded. This table keeps the **full** sentence —
    the direction, the entity, the distance apart — which is what the panel's
-   chips are short enough to leave to it. then *Superseded findings*
+   chips are short enough to leave to it.
+   A clinical-date finding's two dates are **cells inside that sentence**,
+   held on `DiscrepancyVM` as `left`/`right` with the words either side in
+   `lead` and `tail`. They used to be inside a prose string, where the page's
+   colour rule could not reach them: an inconsistency about two dates showed
+   neither of them in red, on a page whose visual vocabulary exists to mark
+   exactly that. then *Superseded findings*
    for the suppressed ones. The verdict itself is in the panel at the top of
    the case, with both questions answered together; neither numbered section
    closes with its own conclusion, because the sections are the evidence and
@@ -371,7 +395,10 @@ What the generator will not do:
 A curated example may carry a `case_interpretation`, written by a person, and
 `summary_mode` decides what the page shows: the generated account
 (`deterministic`), the human's reading in its place (`interpretation`, the
-default once one is supplied), or both (`both`).
+default once one is supplied), or both (`both`). The human block is headed
+**Human interpretation** — named for its author, since the block opposite is
+headed "vigiTwin assessment summary" and which of the two a sentence came
+from is the thing a reader needs to know.
 
 In `both`, vigiTwin's own account comes **first**. It belongs with the panel
 directly above it, which states the same assessment in figures; a human
@@ -575,7 +602,8 @@ example from this set), `reports` and `pairs` (required), then either
 precedence `load_saved_run` applies, stated once in the manifest instead of
 discovered at load time. Optional: `pair_frequencies`, `screening`,
 `screening_verdict_key`, `annotations`, `narrative_demographics`,
-`run_manifest`, `allow_noncanonical_pairs`.
+`run_manifest`, `allow_noncanonical_pairs`, `explicit_link_enabled`,
+`reference_label_map`.
 
 **Example:** `dataset` and `pair_id` (required), `example_id` (also the output
 filename, the section anchor and the label), `title`, `lede`, `kicker`,
@@ -591,6 +619,20 @@ rejects `genuinely_ambiguous` — that is the `inconclusive` state, and the
 error says so. `inconclusive` takes `genuinely_ambiguous` or nothing at all,
 filling it in either way. The two "no assessment" states reject an issue
 outright, since there was no assessment to have an opinion.
+
+**`explicit_link_enabled`** (per dataset) declares whether a run used
+explicit inter-report case links, for runs whose manifest predates the
+setting. A run configured without the feature still writes an `explicit_link`
+field, and the page read it anyway — reporting "neither report carried
+case-identifier data, so no explicit inter-report link could be checked",
+which blames the data for a check nobody ran. With `false`, the note says the
+run did not examine those fields and claims nothing about whether a link
+exists, and the generated summary cites no declaration.
+
+It only **fills** what the run manifest did not record. Where both say
+something and they disagree, the collection fails to build: the run manifest
+is the run's own account of itself, and a declaration against it is an error
+in the declaration, not a tie to break quietly.
 
 **`reference_label_map`** carries a reference set's annotation vocabulary,
 mapped to the study's binary one. It sits on the **dataset**, with the

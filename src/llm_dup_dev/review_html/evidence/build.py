@@ -36,6 +36,9 @@ from llm_dup_dev.models.pair_features import (
     PairFeatures,
     ReportingContext,
 )
+from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
+    effective_overall_ae_onset_date,
+)
 from llm_dup_dev.models.report import (
     AdverseEvent,
     AgeValue,
@@ -176,6 +179,56 @@ def _date_cell(date: PartialDate | None, kind: ValueKind) -> EvidenceCell | None
 # Pass 1 — characteristics
 # ---------------------------------------------------------------------------
 
+#: The case-level adverse-event onset. Named as the findings table names it,
+#: so a reader matching a finding against the table sees one phrase.
+AE_ONSET_LABEL = "Overall adverse event onset"
+
+#: Said beside a derived value, because the column is headed "Report A" and a
+#: derived date is not something report A stated. The rule itself is the
+#: pipeline's, and is documented where it lives.
+_DERIVED_ONSET_NOTE = "derived from the reported event and drug dates"
+
+
+def _overall_ae_onset_row(r1: Report, r2: Report) -> CharacteristicRow | None:
+    """The onset date the clinical-date checks actually compared, per report.
+
+    Absent from this table until now, which left a whole class of finding —
+    an overall-onset inconsistency — with nothing in the report comparison a
+    reader could check it against. The finding named two dates that appeared
+    nowhere else on the page.
+
+    The value is the pipeline's own
+    :func:`~llm_dup_dev.feature_generation.clinical_date_inconsistencies.effective_overall_ae_onset_date`,
+    not a second reading of the reports: a row showing a different date from
+    the one the assessment compared would be worse than no row. Where that
+    value was derived rather than carried on the report, the cell says so —
+    see :attr:`CharacteristicRow.left_note`.
+
+    ``None`` when neither report yields one, where the row would be two
+    blanks.
+    """
+    cells: list[EvidenceCell] = []
+    notes: list[str] = []
+    for report in (r1, r2):
+        value = effective_overall_ae_onset_date(report)
+        cells.append(
+            _cell(value.value if value is not None else "", ValueKind.AE_ONSET_DATE)
+        )
+        notes.append(
+            _DERIVED_ONSET_NOTE
+            if value is not None and report.reported_overall_ae_onset_date is None
+            else ""
+        )
+    if cells[0].missing and cells[1].missing:
+        return None
+    return CharacteristicRow(
+        label=AE_ONSET_LABEL,
+        left=cells[0],
+        right=cells[1],
+        left_note=notes[0],
+        right_note=notes[1],
+    )
+
 
 def _narrative_snippets(
     extraction: NarrativeDemographics | None, attr: str
@@ -234,6 +287,11 @@ def _build_characteristic_rows(
             right=_cell(_date_text(r2.report_date_values), ValueKind.REPORT_DATE),
         ),
     ]
+    # After the report date, with the other date on the page, and before the
+    # optional measurements.
+    onset_row = _overall_ae_onset_row(r1, r2)
+    if onset_row is not None:
+        rows.append(onset_row)
     if r1.patient_height_values or r2.patient_height_values:
         rows.append(
             CharacteristicRow(
@@ -860,6 +918,7 @@ def _attach_suppressed(
 
 
 def _attach_clinical_date_findings(
+    characteristics: list[CharacteristicRow],
     drugs: list[DrugEvidenceRow],
     aes: list[AEEvidenceRow],
     features: PairFeatures,
@@ -893,9 +952,24 @@ def _attach_clinical_date_findings(
                 )
             )
             continue
-        if entity.kind in ("overall_ae_onset", "report_date"):
-            # Case-level, not tied to one drug or event; shown in the
-            # assessment section.
+        if entity.kind == "report_date":
+            # Case-level and not about the patient; the report-date row is
+            # deliberately neutral and the finding is stated in section 3.
+            continue
+        if entity.kind == "overall_ae_onset":
+            # It has a row of its own now, so the finding can colour the two
+            # dates it is about rather than naming dates printed nowhere.
+            values = {finding.source_date, finding.matched_date}
+            for char_row in characteristics:
+                if char_row.label != AE_ONSET_LABEL:
+                    continue
+                for onset_cell in (char_row.left, char_row.right):
+                    if not onset_cell.missing and onset_cell.text in values:
+                        _mark(
+                            onset_cell,
+                            EvidenceRole.INCONSISTENT,
+                            _date_finding_attribution(finding).model_copy(),
+                        )
             continue
 
         attribution = _date_finding_attribution(finding)
@@ -1733,22 +1807,62 @@ def _inconsistency_text(
     return body
 
 
-def _date_finding_text(finding: ClinicalDateFindingSummary) -> str:
-    """A reader-facing sentence for one clinical-date finding."""
+def _date_finding_lead(finding: ClinicalDateFindingSummary) -> str:
+    """What a clinical-date finding is about: the entity, named."""
     entity = parse_entity_label(finding.entity_label)
     label = _ENTITY_READABLE.get(entity.kind, "Clinical date")
     if entity.key:
         label = f"{label} for {entity.key}"
-    body = f"{label}: {finding.source_date} versus {finding.matched_date}"
+    return label
+
+
+def _date_finding_tail(finding: ClinicalDateFindingSummary) -> str:
+    """What a clinical-date finding adds after its two dates."""
+    tail = ""
     if finding.diff_days is not None:
         days = "day" if abs(finding.diff_days) == 1 else "days"
-        body += f", at least {abs(finding.diff_days)} {days} apart"
+        tail += f", at least {abs(finding.diff_days)} {days} apart"
     if finding.downgrades:
-        body += (
-            "; severity reduced because "
-            + "; ".join(finding.downgrades)
-        )
-    return f"{body}."
+        tail += "; severity reduced because " + "; ".join(finding.downgrades)
+    return f"{tail}."
+
+
+def _date_finding_cells(
+    finding: ClinicalDateFindingSummary,
+) -> tuple[EvidenceCell, EvidenceCell]:
+    """The two dates a clinical-date finding names, as red cells.
+
+    Red because that is what the finding is: a retained inconsistency naming
+    these two values. They were previously inside a prose string, where the
+    page's one colour rule could not reach them, so an inconsistency about
+    two dates showed neither of them in red.
+
+    New cells rather than the ones in the drug and adverse-event tables.
+    Those are per record and per report — a drug with two regimens has two
+    start-date cells — and there is no single pair to borrow. A publication
+    transform reaches these by kind like any other date.
+    """
+    return (
+        EvidenceCell(
+            text=finding.source_date,
+            kind=ValueKind.AE_ONSET_DATE,
+            role=EvidenceRole.INCONSISTENT,
+        ),
+        EvidenceCell(
+            text=finding.matched_date,
+            kind=ValueKind.AE_ONSET_DATE,
+            role=EvidenceRole.INCONSISTENT,
+        ),
+    )
+
+
+def _date_finding_text(finding: ClinicalDateFindingSummary) -> str:
+    """A reader-facing sentence for one clinical-date finding."""
+    lead = _date_finding_lead(finding)
+    return (
+        f"{lead}: {finding.source_date} versus {finding.matched_date}"
+        f"{_date_finding_tail(finding)}"
+    )
 
 
 _DISCREPANCY_COLUMN_LABEL: dict[str, str] = {
@@ -1864,12 +1978,17 @@ def _build_discrepancies(
         )
     for finding in features.clinical_date_findings:
         weight, weight_text = weighed(finding.severity.value, suppressed=False)
+        left_date, right_date = _date_finding_cells(finding)
         items.append(
             DiscrepancyVM(
                 feature_label="Clinical dates",
                 severity=finding.severity.value,
                 text=_date_finding_text(finding),
                 short_text=_short_date_finding_text(finding),
+                left=left_date,
+                right=right_date,
+                lead=_date_finding_lead(finding),
+                tail=_date_finding_tail(finding),
                 retained=True,
                 downgrades=list(finding.downgrades),
                 weight=weight,
@@ -2386,13 +2505,28 @@ def _build_assessment_rows(
 # ---------------------------------------------------------------------------
 
 
-def _explicit_link_note(features: PairFeatures) -> str:
+def _explicit_link_note(
+    features: PairFeatures, run_settings: EvidenceRunSettings | None = None
+) -> str:
     """What the case-identifier fields showed — including "nothing to check".
 
     An absent link and an unchecked field are different facts, and the stored
     verdict distinguishes them. Reporting ``not_assessed`` as "no link" would
     turn missing data into evidence of absence.
+
+    A third fact sits above both: a run configured not to use explicit links
+    at all. Its artifacts may still carry an ``explicit_link`` field — an
+    empty or defaulted one — and the page then read that as "neither report
+    carried case-identifier data", blaming the data for a check nobody ran.
+    ``explicit_link_enabled`` is recorded on the run manifest, or declared
+    per dataset in a curated collection when the manifest predates it.
     """
+    if run_settings is not None and run_settings.explicit_link_enabled is False:
+        return (
+            "This run did not use explicit inter-report case links, so the "
+            "case-identifier fields were not examined. This says nothing "
+            "about whether such a link exists."
+        )
     link = features.explicit_link
     if link is None:
         return (
@@ -2497,7 +2631,11 @@ def _build_narrative_blocks(
         return [generated]
 
     human = EvidenceTextVM(
-        heading="Case-level interpretation",
+        # Named for its author, not its scope: the block opposite is headed
+        # "vigiTwin assessment summary", and what a reader needs to know is
+        # which of the two a sentence came from. "Case-level" answered a
+        # question nobody was asking.
+        heading="Human interpretation",
         paragraphs=[
             p.strip() for p in human_text.strip().split("\n\n") if p.strip()
         ],
@@ -2582,7 +2720,9 @@ def build_evidence_case(
         _attach_demographic_contributions(characteristics, features)
         _attach_clinical_date_matches(drugs, aes, features, gaps)
         _attach_inconsistencies(characteristics, drugs, aes, features, gaps)
-        _attach_clinical_date_findings(drugs, aes, features, gaps)
+        _attach_clinical_date_findings(
+            characteristics, drugs, aes, features, gaps
+        )
 
         shared_sets = _build_shared_sets(features)
         freq_rows = _build_freq_rows(frozen_bundle, features)
@@ -2618,7 +2758,7 @@ def build_evidence_case(
         )
         anchor_note = _anchor_note(features)
         context_note = _context_note(report_1, report_2, features)
-        explicit_link_note = _explicit_link_note(features)
+        explicit_link_note = _explicit_link_note(features, run_settings)
         source_case_note = _source_case_note(features)
 
         if classification is not None:
@@ -2754,6 +2894,7 @@ def _dedupe_gaps(gaps: list[EvidenceGap]) -> list[EvidenceGap]:
 
 
 __all__ = [
+    "AE_ONSET_LABEL",
     "BUILTIN_REFERENCE_TERMS",
     "REFERENCE_VOCABULARY",
     "ExamplePresentation",

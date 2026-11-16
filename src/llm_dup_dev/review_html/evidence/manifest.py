@@ -199,6 +199,18 @@ class ExampleDataset(BaseModel):
     #: must not relax identity validation everywhere because one old set
     #: needs it.
     allow_noncanonical_pairs: bool = False
+    #: Whether this run used explicit inter-report case links, for runs whose
+    #: manifest predates the setting. ``False`` tells the review not to
+    #: describe the case-identifier fields as checked: a run configured
+    #: without the feature still writes an ``explicit_link`` field, and the
+    #: page read that as "neither report carried case-identifier data" —
+    #: blaming the data for a check nobody ran.
+    #:
+    #: Only ever fills what the run manifest did not record. Where both say
+    #: something and they disagree, the collection fails to build rather than
+    #: picking one: the manifest is the run's own account of itself, and a
+    #: declaration that contradicts it is an error in the declaration.
+    explicit_link_enabled: bool | None = None
     #: This set's annotation vocabulary, mapped to the study's binary one —
     #: ``{"Otherwise related": "non_duplicate"}``. Per dataset for the same
     #: reason as ``screening_verdict_key``: a reference label is read out of

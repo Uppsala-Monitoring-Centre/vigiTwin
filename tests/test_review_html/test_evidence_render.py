@@ -238,7 +238,7 @@ class TestNarrativeBlocks:
                 case_interpretation="A reviewer reading of the case."
             )
         )
-        assert "Case-level interpretation" in html
+        assert "Human interpretation" in html
         assert "A reviewer reading of the case." in html
         assert "vigiTwin assessment summary" not in html
 
@@ -249,7 +249,7 @@ class TestNarrativeBlocks:
                 summary_mode="both",
             )
         )
-        assert "Case-level interpretation" in html
+        assert "Human interpretation" in html
         assert "vigiTwin assessment summary" in html
 
     def test_vigitwins_own_account_comes_first(self):
@@ -266,7 +266,7 @@ class TestNarrativeBlocks:
         )
         assert html.index("Assessment at a glance") < html.index(
             "vigiTwin assessment summary"
-        ) < html.index("Case-level interpretation")
+        ) < html.index("Human interpretation")
 
     def test_human_text_is_escaped_not_injected(self):
         html = _html(
@@ -735,3 +735,62 @@ class TestTooltipsAreNotLoadBearing:
         html = _html()
         start = html.index("@media print")
         assert "display:none" not in html[start : start + 1200]
+
+
+class TestTheInconclusiveTileIsAVerdict:
+    """Somebody assessed the label and found it genuinely ambiguous.
+
+    Styling that as an absence put it in the small grey type reserved for
+    "Not assessed", which reads as though nobody had looked.
+    """
+
+    def _tile(self, state, issue=None):
+        case = _case(
+            reference=ReferenceInfo(
+                scle=SCLEAssessment(state=state, issue=issue)
+            )
+        )
+        return next(t for t in case.outcomes if "SCLE" in t.label)
+
+    def test_an_inconclusive_verdict_is_styled_like_a_value(self):
+        tile = self._tile(SCLEState.INCONCLUSIVE, "genuinely_ambiguous")
+        assert tile.value == "Genuinely ambiguous"
+        assert tile.css_class == "tile-value"
+
+    def test_so_is_an_ordinary_one(self):
+        tile = self._tile(SCLEState.ASSESSED, "no_apparent_issue")
+        assert tile.value == "No apparent issue"
+        assert tile.css_class == "tile-value"
+
+    def test_an_absence_is_still_muted(self):
+        assert self._tile(SCLEState.NOT_ASSESSED).css_class == "tile-absent"
+        assert self._tile(SCLEState.NOT_ENTERED).css_class == "tile-absent"
+
+    def test_the_two_render_the_same_way(self):
+        ambiguous = " ".join(
+            _html(
+                reference=ReferenceInfo(
+                    scle=SCLEAssessment(
+                        state=SCLEState.INCONCLUSIVE,
+                        issue="genuinely_ambiguous",
+                    )
+                )
+            ).split()
+        )
+        assert '<strong class="tile-value">Genuinely ambiguous</strong>' in (
+            ambiguous
+        )
+
+
+class TestTheSharedSetsSitSideBySide:
+    def test_the_list_is_a_two_column_grid(self):
+        """Drugs left, adverse events right, in the column order of the
+        counts table beneath them."""
+        html = _html()
+        assert ".set-list{" in html
+        assert "grid-template-columns:1fr 1fr" in html
+        assert "grid-auto-flow:column" in html
+
+    def test_it_stacks_on_a_narrow_screen(self):
+        html = _html()
+        assert ".set-list{grid-template-columns:1fr;grid-auto-flow:row" in html

@@ -345,8 +345,10 @@ class AEEvidenceRow(BaseModel):
     presence: PresenceVM
     #: 0 both reports, 1 report A only, 2 report B only.
     presence_rank: int = 0
-    #: Event-level onset dates, kept so the compact two-column table does not
-    #: discard them. Rendered in a detail block, not in the main table.
+    #: Event-level onset dates, under each report's own term, as a drug's
+    #: dates sit under its substance. They had a table of their own, keyed by
+    #: term, which made a reader match an event against a second row to learn
+    #: when it started.
     left_onsets: list[EvidenceCell] = Field(default_factory=list)
     right_onsets: list[EvidenceCell] = Field(default_factory=list)
     row_role: EvidenceRole = EvidenceRole.NEUTRAL
@@ -354,6 +356,7 @@ class AEEvidenceRow(BaseModel):
 
     @property
     def has_onsets(self) -> bool:
+        """Kept for callers; the page no longer selects rows by it."""
         return bool(self.left_onsets or self.right_onsets)
 
     @property
@@ -371,6 +374,13 @@ class CharacteristicRow(BaseModel):
     label: str
     left: EvidenceCell
     right: EvidenceCell
+    #: Where a value is not the report's own words, a line saying so. The
+    #: overall adverse-event onset is the case: a report may carry one
+    #: explicitly, or the pipeline may derive it from the event and drug
+    #: dates, and a derived value shown in a column headed "Report A" would
+    #: otherwise read as something that report stated.
+    left_note: str = ""
+    right_note: str = ""
     #: Verbatim narrative snippets behind a narrative-derived value, per side.
     left_evidence: list[str] = Field(default_factory=list)
     right_evidence: list[str] = Field(default_factory=list)
@@ -549,6 +559,14 @@ class DiscrepancyVM(BaseModel):
     #: reports actually said, which is what a reader is checking.
     left: EvidenceCell | None = None
     right: EvidenceCell | None = None
+    #: What a finding says either side of its two values, where it says
+    #: anything: ``Drug start date for tacrolimus`` before them and ``, at
+    #: least 796 days apart`` after. Kept apart from the values so the
+    #: findings table can colour the values and still print the sentence —
+    #: an inconsistency about two dates showed neither of them in red, which
+    #: is the one thing the page's colour rule exists to do.
+    lead: str = ""
+    tail: str = ""
     #: False only for a suppressed finding, which stayed in the record but
     #: contributed nothing to the penalty.
     retained: bool = True
@@ -672,7 +690,15 @@ class OutcomeTileVM(BaseModel):
 
     @property
     def css_class(self) -> str:
-        return "tile-value" if self.state is TileState.VALUE else "tile-absent"
+        """Muted only where there is no verdict to show.
+
+        ``INCONCLUSIVE`` is a verdict: somebody assessed the reference label
+        and found it genuinely ambiguous. Styling it like an absence put
+        "Genuinely ambiguous" in the small grey type reserved for "Not
+        assessed", which reads as though nobody had looked.
+        """
+        shown = (TileState.VALUE, TileState.INCONCLUSIVE)
+        return "tile-value" if self.state in shown else "tile-absent"
 
 
 class ReferenceVerdictVM(BaseModel):

@@ -179,3 +179,101 @@ class TestWhatDidNotChange:
             _features(matching_drugs=["aspirin"]),
         )
         assert _drug_row(case, "aspirin").row_css_class == "row-match"
+
+
+class TestAClinicalDateFindingShowsItsDatesInRed:
+    """The page's one colour rule could not reach inside a prose string.
+
+    "Overall adverse event onset date: 2021-04-09 versus 2021-04-08, at least
+    1 day apart." is an inconsistency about two dates that showed neither of
+    them in red — on a page whose entire visual vocabulary exists to mark
+    exactly that.
+    """
+
+    def _case(self):
+        return _case(
+            _report("R1", drugs=[_drug("aspirin", "2020-01-01")]),
+            _report("R2", drugs=[_drug("aspirin", "2020-04-01")]),
+            _features(
+                matching_drugs=["aspirin"],
+                clinical_date_findings=[
+                    _date_finding(
+                        "drug_start:aspirin", "2020-01-01", "2020-04-01"
+                    )
+                ],
+                inconsistency_counts=InconsistencyCounts(minor=1),
+            ),
+        )
+
+    def test_the_two_dates_are_cells(self):
+        (finding,) = self._case().retained_discrepancies
+        assert finding.left is not None and finding.right is not None
+        assert finding.left.role is EvidenceRole.INCONSISTENT
+        assert finding.right.role is EvidenceRole.INCONSISTENT
+
+    def test_the_sentence_around_them_is_kept(self):
+        (finding,) = self._case().retained_discrepancies
+        assert finding.lead == "Drug start date for aspirin"
+        assert finding.tail == ", at least 91 days apart."
+
+    def test_the_full_prose_is_still_on_the_model(self):
+        (finding,) = self._case().retained_discrepancies
+        assert finding.text == (
+            "Drug start date for aspirin: 2020-01-01 versus 2020-04-01, "
+            "at least 91 days apart."
+        )
+
+    def test_the_findings_table_colours_them(self):
+        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
+        from llm_dup_dev.review_html.render import render_evidence_page
+
+        html = " ".join(
+            render_evidence_page(
+                EvidencePageVM(title="t", cases=[self._case()])
+            ).split()
+        )
+        findings = html[html.index("3. Relationship") :]
+        assert 'class="value-mismatch">2020-01-01</span>' in findings
+        assert 'class="value-mismatch">2020-04-01</span>' in findings
+        assert "Drug start date for aspirin:" in findings
+        assert "at least 91 days apart." in findings
+
+    def test_the_panel_chip_still_shows_the_bare_pair(self):
+        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
+        from llm_dup_dev.review_html.render import render_evidence_page
+
+        html = " ".join(
+            render_evidence_page(
+                EvidencePageVM(title="t", cases=[self._case()])
+            ).split()
+        )
+        panel = html[html.index("Assessment at a glance") :]
+        panel = panel[: panel.index("<h3>1. Report comparison</h3>")]
+        assert "Drug start date" not in panel
+        assert "days apart" not in panel
+        (finding,) = self._case().retained_discrepancies
+        assert finding.chip_text == "2020-01-01 vs 2020-04-01"
+
+    def test_a_downgrade_reason_stays_in_the_tail(self):
+        from llm_dup_dev.models.pair_features import ClinicalDateFindingSummary
+
+        case = _case(
+            _report("R1", drugs=[_drug("aspirin", "2020-01-01")]),
+            _report("R2", drugs=[_drug("aspirin", "2020-04-01")]),
+            _features(
+                matching_drugs=["aspirin"],
+                clinical_date_findings=[
+                    ClinicalDateFindingSummary(
+                        entity_label="drug_start:aspirin",
+                        severity=InconsistencySeverity.MINOR,
+                        source_date="2020-01-01",
+                        matched_date="2020-04-01",
+                        diff_days=91,
+                        downgrades=["concomitant drug downgrade (-1 step)"],
+                    )
+                ],
+                inconsistency_counts=InconsistencyCounts(minor=1),
+            ),
+        )
+        (finding,) = case.retained_discrepancies
+        assert "severity reduced because" in finding.tail

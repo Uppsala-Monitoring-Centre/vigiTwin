@@ -43,6 +43,10 @@ datasets:
     pair_results: synthetic_run/pair_results.json
     pair_frequencies: synthetic_run/pair_frequencies.json
     run_manifest: synthetic_run/run_manifest.json
+    # Declare whether this run used explicit inter-report case links, for runs
+    # whose manifest predates the setting. Only fills what the run manifest did
+    # not record; a declaration contradicting it fails the build.
+    explicit_link_enabled: true
     # The screening algorithm's own per-pair basis. Its flagged/not-flagged
     # verdict is read from a named boolean in each entry — one of
     # IsSuspectedDuplicate, screening_retrieved, retrieved or flagged — and

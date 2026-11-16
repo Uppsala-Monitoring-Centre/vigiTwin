@@ -145,6 +145,77 @@ figure and the clause beside it cannot be formatted two ways) and
 `sign_css_class`. New `AttributionKind.ANCHOR_MULTIPLICITY`, so the
 adjustment's red carries a recorded reason like every other colour.
 
+### Added — the overall adverse-event onset is in the report comparison
+
+The date the case-level onset check compares appeared **nowhere on the page**,
+so a finding about it named two values a reader could not check against
+anything. It is now a characteristics row, taken from the pipeline's own
+`effective_overall_ae_onset_date` rather than re-derived — a row showing a
+different date from the one the assessment used would be worse than no row.
+
+Where the pipeline derived it rather than reading it off the report, the cell
+says so: the column is headed "Report A", and a derived date is not something
+report A stated. New `CharacteristicRow.left_note` / `right_note` carry that;
+new public `AE_ONSET_LABEL` names the row. An overall-onset finding now
+colours those two cells, which it previously could not reach.
+
+### Changed — event onsets sit under their own term
+
+They had a table of their own, keyed by term, so a reader who wanted to know
+when an event started had to match it against a second row — something the
+drug table never asked of them. They are now under each report's own term in
+the adverse-event table, laid out as a drug's dates are under its substance.
+The separate `onsets` table and its note are gone; `AEEvidenceRow.has_onsets`
+is kept for callers but no longer selects anything.
+
+### Fixed — a clinical-date finding now shows its dates in red
+
+"Overall adverse event onset date: 2021-04-09 versus 2021-04-08, at least 1
+day apart." is an inconsistency about two dates that showed **neither of them
+in red**, on a page whose whole visual vocabulary exists to mark exactly that.
+The dates were inside a prose string the colour rule could not reach.
+
+`DiscrepancyVM` gains `lead` and `tail` — the words either side of the two
+values — so the findings table colours the values and still prints the
+sentence. `text` keeps the full prose for callers, and the panel's chip is
+unchanged.
+
+### Changed — the shared sets sit side by side
+
+Drugs left, adverse events right, in the column order of the counts table
+directly beneath them. Stacked, a reader held the drug set in mind while
+scrolling past the AE set to reach the row of numbers that counts both. They
+stack again below 650px.
+
+### Fixed — an inconclusive SCLE verdict is styled as a verdict
+
+"Genuinely ambiguous" rendered in the small grey type reserved for "Not
+assessed", which reads as though nobody had looked. Somebody did look and
+found the reference label genuinely ambiguous, which is a finding.
+`OutcomeTileVM.css_class` mutes `NOT_ENTERED` and `NOT_ASSESSED` only.
+
+### Fixed — a run that used no explicit links is no longer described as if it had
+
+A run configured without the feature still writes an `explicit_link` field,
+and the page read it anyway: "neither report carried case-identifier data, so
+no explicit inter-report link could be checked" — blaming the data for a check
+nobody ran, on a page whose point is to tell an assessed absence from an
+absence of assessment. The generated summary could likewise cite a
+declaration the run never looked at.
+
+`EvidenceRunSettings.explicit_link_enabled` (already read from the run
+manifest, already in the footer) is now honoured by both. New
+`ExampleDataset.explicit_link_enabled` declares it for runs whose manifest
+predates the setting; it only **fills** what the manifest did not record, and
+a declaration contradicting the manifest fails the build rather than quietly
+winning.
+
+### Changed — the human narrative block is headed "Human interpretation"
+
+Was "Case-level interpretation". The block opposite is headed "vigiTwin
+assessment summary", and which of the two a sentence came from is what a
+reader needs to know; "case-level" answered a question nobody was asking.
+
 ### Fixed — a matched drug with differing dates is no longer a red row
 
 A substance both reports carry, matched as part of the shared pattern, with a
