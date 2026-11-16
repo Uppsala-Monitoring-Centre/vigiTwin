@@ -29,12 +29,23 @@ from enum import Enum
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from llm_dup_dev.study_eval.scle.form import ReferenceLabelIssue
 
 from ..render import _safe_filename
-from .build import SCLEState
+from .build import (
+    BUILTIN_REFERENCE_TERMS,
+    REFERENCE_VOCABULARY,
+    SCLEState,
+    normalise_reference_term,
+)
 
 SCHEMA_VERSION = "1.0"
 
@@ -230,6 +241,14 @@ class CuratedExampleManifest(BaseModel):
     #: Names the rule used to compare a reference label against vigiTwin's
     #: four-label output. A study choice, so it is stated rather than assumed.
     positive_class: str = "primary"
+    #: This reference set's own annotation vocabulary, mapped to the study's
+    #: binary one: ``{"Otherwise related": "non_duplicate"}``. A reference set
+    #: may annotate in terms no other set uses, and how those terms were read
+    #: in the analysis is a study decision that lives with the study — this
+    #: package cannot infer it, and guessing would be inventing a human
+    #: verdict. Keys are matched case-insensitively, with spaces, underscores
+    #: and hyphens treated alike.
+    reference_label_map: dict[str, str] = Field(default_factory=dict)
     datasets: dict[str, ExampleDataset]
     examples: list[CuratedExample]
 
@@ -239,6 +258,8 @@ class CuratedExampleManifest(BaseModel):
             raise ValueError("a manifest needs at least one dataset.")
         if not self.examples:
             raise ValueError("a manifest needs at least one example.")
+
+        self._check_reference_label_map()
 
         unknown = sorted(
             {e.dataset for e in self.examples if e.dataset not in self.datasets}
@@ -287,6 +308,57 @@ class CuratedExampleManifest(BaseModel):
                 f"the same pair appears more than once: {', '.join(repeats)}."
             )
         return self
+
+
+    def _check_reference_label_map(self) -> None:
+        """Reject a mapping that cannot mean what it says.
+
+        Three ways it can be wrong, each silent if unchecked: a target
+        outside the study's binary vocabulary (so the page would show a
+        label no estimand knows), a key that redefines a built-in term (so a
+        collection could quietly make ``duplicate`` mean non-duplicate), and
+        two keys that fold to the same term (so which one applies would
+        depend on dict order).
+        """
+        if not self.reference_label_map:
+            return
+        bad = sorted(
+            f"{key!r} -> {value!r}"
+            for key, value in self.reference_label_map.items()
+            if value not in REFERENCE_VOCABULARY
+        )
+        if bad:
+            raise ValueError(
+                "reference_label_map may only map to the study's reference "
+                f"vocabulary ({', '.join(sorted(REFERENCE_VOCABULARY))}); "
+                f"got {'; '.join(bad)}."
+            )
+        seen: dict[str, str] = {}
+        for key in self.reference_label_map:
+            term = normalise_reference_term(key)
+            if not term:
+                raise ValueError(
+                    "reference_label_map has an empty key; a term with no "
+                    "letters cannot be matched against an annotation."
+                )
+            if term in BUILTIN_REFERENCE_TERMS:
+                raise ValueError(
+                    f"reference_label_map may not redefine {key!r}: "
+                    f"{term!r} is part of the study's own vocabulary."
+                )
+            if term in seen:
+                raise ValueError(
+                    f"reference_label_map keys {seen[term]!r} and {key!r} "
+                    "are the same term once case and punctuation are folded."
+                )
+            seen[term] = key
+
+    def resolved_reference_label_map(self) -> dict[str, str]:
+        """The mapping keyed by folded term, ready to look an annotation up."""
+        return {
+            normalise_reference_term(key): value
+            for key, value in self.reference_label_map.items()
+        }
 
 
 class LoadedExampleManifest(BaseModel):

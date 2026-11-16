@@ -18,12 +18,14 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 from .evidence.build import (
+    BUILTIN_REFERENCE_TERMS,
     ExamplePresentation,
     ReferenceInfo,
     build_evidence_case,
+    normalise_reference_term,
 )
 from .evidence.models import EvidenceCaseVM
 from .evidence.screening import screening_verdict
@@ -40,18 +42,6 @@ class ReviewFormat(str, Enum):
     EVIDENCE = "evidence"
 
 
-#: The reference vocabulary an annotation may carry, mapped to the study's
-#: binary reference labels. The pipeline's own four labels are deliberately
-#: absent: an annotation carrying one of those is a *prediction*, not a
-#: reference verdict, and treating it as one is how the two vocabularies get
-#: conflated.
-_ANNOTATION_TO_REFERENCE = {
-    "duplicate": "duplicate",
-    "non_duplicate": "non_duplicate",
-    "abstain": "abstain",
-}
-
-
 def reference_from_annotation(
     annotation: dict | None,
     *,
@@ -60,6 +50,7 @@ def reference_from_annotation(
     screening_algorithm: str = "vigiMatch",
     screening_note: str = "",
     positive_class: str = "primary",
+    label_map: Mapping[str, str] | None = None,
 ) -> ReferenceInfo:
     """Read a reference label out of a saved run's annotation entry.
 
@@ -67,17 +58,42 @@ def reference_from_annotation(
     the pipeline's vocabulary is left unread rather than reinterpreted —
     showing it as a reference label would present one method's output as a
     human verdict.
+
+    ``label_map`` carries the vocabulary of a *particular* reference set,
+    supplied by whoever knows how that set was read in the analysis. A set
+    annotating ``Otherwise related`` and collapsing it to non-duplicates for
+    the study says so there; this package cannot know that collapse, and
+    guessing it would be inventing a human verdict. Built-in terms win over a
+    supplied one, so a collection cannot redefine ``duplicate``.
+
+    A value that maps to nothing is reported on ``reference_note`` rather than
+    dropped. An unreadable label used to be indistinguishable from an absent
+    one — both showed "Not supplied" — which is how a whole reference set can
+    go unread without anyone noticing.
     """
     label: str | None = None
+    note = ""
     if annotation:
-        raw = str(annotation.get("duplicates_assessment", "")).strip().lower()
-        label = _ANNOTATION_TO_REFERENCE.get(raw)
+        raw = str(annotation.get("duplicates_assessment", "")).strip()
+        term = normalise_reference_term(raw)
+        if term:
+            label = BUILTIN_REFERENCE_TERMS.get(term)
+            if label is None and label_map:
+                label = label_map.get(term)
+            if label is None:
+                note = (
+                    f"The reference annotation reads {raw!r}, which is not a "
+                    "term this review knows. It is shown as not supplied "
+                    "rather than guessed at; give the set's own vocabulary "
+                    "under 'reference_label_map' in the collection manifest."
+                )
     return ReferenceInfo(
         reference_label=label,
         set_label=set_label,
         screening_retrieved=screening_retrieved,
         screening_algorithm=screening_algorithm,
         screening_note=screening_note,
+        reference_note=note,
         positive_class=positive_class,
     )
 

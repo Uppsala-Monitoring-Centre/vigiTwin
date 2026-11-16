@@ -12,6 +12,7 @@ editorial content.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from ..formats import evidence_case_from_result, reference_from_annotation
@@ -63,6 +64,7 @@ def _reference(
     screening_retrieved: bool | None,
     screening_note: str,
     positive_class: str,
+    label_map: Mapping[str, str],
 ) -> ReferenceInfo:
     """Reference metadata, taken from the artifacts and the SCLE entry only.
 
@@ -78,6 +80,7 @@ def _reference(
         screening_note=screening_note,
         screening_algorithm=screening_algorithm or "vigiMatch",
         positive_class=positive_class,
+        label_map=label_map,
     )
     entry = example.scle_assessment
     scle = SCLEAssessment(
@@ -91,6 +94,7 @@ def _reference(
         screening_retrieved=base.screening_retrieved,
         screening_note=base.screening_note,
         screening_algorithm=base.screening_algorithm,
+        reference_note=base.reference_note,
         scle=scle,
         positive_class=base.positive_class,
     )
@@ -109,6 +113,9 @@ def build_collection(
     from ..saved_run import load_saved_run
 
     manifest = loaded.manifest
+    # Folded once for the whole collection: the vocabulary belongs to the
+    # reference set, not to an example.
+    label_map = manifest.resolved_reference_label_map()
     cases_by_key: dict[tuple[str, str], EvidenceCaseVM] = {}
     # One entry per dataset rendered, so the footer can name the run when the
     # collection draws on a single one and say so when it does not.
@@ -164,6 +171,7 @@ def build_collection(
                         screening_retrieved=verdict.retrieved,
                         screening_note=verdict.note,
                         positive_class=manifest.positive_class,
+                        label_map=label_map,
                     ),
                     run_settings=run_settings,
                 )

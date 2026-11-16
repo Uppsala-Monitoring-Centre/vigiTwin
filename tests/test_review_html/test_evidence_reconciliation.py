@@ -141,8 +141,15 @@ class TestTheProseIsGone:
         assert "stored matching score" not in _html(case)
 
 
-class TestTheBoundsStillDecideTheGap:
-    """The flags survive because they separate a bound from a disagreement."""
+class TestTheBoundsAreStillNamed:
+    """The flags survive as description, not as the gap's deciding test.
+
+    A reader and a caller both want to know which bound a score is sitting
+    on. What ``ceiling_reached`` and ``floor_reached`` no longer do is decide
+    whether a difference needs reporting — see
+    :class:`TestTheStabiliserIsNotOnlyACeiling` for why a yes/no bound test
+    was the wrong instrument for a stabiliser that acts gradually.
+    """
 
     def test_the_ceiling_explains_the_difference(self):
         r, case = _reconciliation(
@@ -151,7 +158,7 @@ class TestTheBoundsStillDecideTheGap:
         assert r.ceiling_reached
         assert "score_unreconciled" not in _codes(case)
 
-    def test_without_epsilon_the_cap_cannot_be_assumed(self):
+    def test_without_epsilon_the_stored_score_cannot_be_reproduced(self):
         r, case = _reconciliation(_with(decades=17.2, n_anchor=2, stored=15.0))
         assert not r.ceiling_reached
         assert "score_unreconciled" in _codes(case)
@@ -168,6 +175,61 @@ class TestTheBoundsStillDecideTheGap:
         assert not r.floor_reached
         assert "score_unreconciled" in _codes(case)
 
+class TestTheStabiliserIsNotOnlyACeiling:
+    """Epsilon bends the score long before the score reaches its ceiling.
+
+    ``L_match = -log10(P_match + epsilon)``. The stabiliser does not switch
+    on at 15.0: it is already a twentieth of a decade at a score of 14, and
+    growing. Asking "is the stored score *at* its ceiling?" is therefore the
+    wrong question, and asking it produced a limitation note on perfectly
+    ordinary pairs — one quoting two figures that print identically, because
+    the whole difference lives below the first decimal.
+
+    So the stored score is recomputed from the contributions rather than
+    bounded, which covers the ceiling, the floor and everything between.
+    """
+
+    def test_a_score_near_the_ceiling_reconciles(self):
+        r, case = _reconciliation(
+            _with(decades=14.1, n_anchor=2, stored=14.0485), _EPSILON
+        )
+        assert not r.ceiling_reached
+        assert "score_unreconciled" not in _codes(case)
+
+    def test_the_old_tolerance_would_have_flagged_it(self):
+        """Guards the regression rather than the fix: the additive figure and
+        the stored score differ by more than rounding, and that was the test."""
+        r, _ = _reconciliation(
+            _with(decades=14.1, n_anchor=2, stored=14.0485), _EPSILON
+        )
+        assert abs(r.additive_total - r.stored_score) > 0.05
+
+    def test_a_large_anchor_near_the_ceiling_reconciles(self):
+        # 101 reports -> M = C(101,2) = 5050.
+        r, case = _reconciliation(
+            _with(decades=17.8, n_anchor=101, stored=14.0485), _EPSILON
+        )
+        assert "score_unreconciled" not in _codes(case)
+        assert r.additive_total_text == "+14.1"
+
+    def test_a_real_disagreement_near_the_ceiling_is_still_caught(self):
+        r, case = _reconciliation(
+            _with(decades=14.1, n_anchor=2, stored=12.0), _EPSILON
+        )
+        assert "score_unreconciled" in _codes(case)
+
+    def test_the_note_shows_enough_decimals_to_be_read(self):
+        """"totals +14.1, while the run stored 14.1" contradicts itself."""
+        _, case = _reconciliation(
+            _with(decades=14.1, n_anchor=2, stored=14.14), _EPSILON
+        )
+        (gap,) = [g for g in case.gaps if g.code.value == "score_unreconciled"]
+        assert "+14.1," not in gap.message
+        assert "14.1000" in gap.message or "14.10" in gap.message
+        assert "14.14" in gap.message
+
+
+class TestTheKnownDisagreements:
     def test_a_known_epsilon_does_not_excuse_a_disagreement(self):
         """Knowing epsilon rules a ceiling in or out; it explains nothing else.
 

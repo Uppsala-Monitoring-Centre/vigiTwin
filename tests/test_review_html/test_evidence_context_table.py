@@ -274,7 +274,25 @@ class TestTheRenderedTable:
         """Shading nobody explained is decoration a reader has to guess at."""
         html = " ".join(_html(frozen_bundle=_bundle()).split())
         assert "The shaded row is the reporting context" in html
-        assert "the boxed count is the anchor population" in html
+        assert "The boxed count is the anchor population" in html
+
+    def test_the_box_is_not_claimed_when_none_is_drawn(self):
+        """A key promising a box that is not there sends a reader hunting."""
+        html = " ".join(
+            _html(
+                features=_features(
+                    matching_drugs=["topiramate"],
+                    matching_AEs=[],
+                    reporting_context=ReportingContext(
+                        level=ReportingContextLevel.GLOBAL
+                    ),
+                    anchor=_anchor(AnchorType.DRUGS_AES, 9),
+                ),
+                frozen_bundle=_bundle(),
+            ).split()
+        )
+        assert "The shaded row is the reporting context" in html
+        assert "boxed count" not in html
 
     def test_the_key_is_not_claimed_when_no_row_is_marked(self):
         """A bundle missing the selected scope leaves nothing to point at."""
@@ -293,3 +311,82 @@ class TestTheRenderedTable:
         )
         assert "Counts include the two reports under review." in html
         assert "The shaded row" not in html
+
+
+class TestAColumnWithNoSetIsBlank:
+    """"How many reports carry every term in this set" has no answer for a
+    set with no terms. The stored count is the whole scope, which is not a
+    co-occurrence of anything, and printing it invited a reader to read a
+    population size as evidence."""
+
+    def _rows_for(self, **sets):
+        features = _features(
+            reporting_context=ReportingContext(
+                level=ReportingContextLevel.COUNTRY_YEAR,
+                country="Canada",
+                year=2022,
+            ),
+            **sets,
+        )
+        return _case(features=features, frozen_bundle=_bundle()).freq_rows
+
+    def test_no_shared_drugs_blanks_the_drug_column(self):
+        rows = self._rows_for(matching_drugs=[], matching_AEs=["cleft lip"])
+        assert [r.n_drugs for r in rows] == ["", "", ""]
+        assert rows[0].n_aes == "4,000"
+
+    def test_no_shared_drugs_also_blanks_both_sets(self):
+        """It is then a restatement of the one set that is left, not an
+        intersection of two."""
+        rows = self._rows_for(matching_drugs=[], matching_AEs=["cleft lip"])
+        assert [r.n_both for r in rows] == ["", "", ""]
+
+    def test_no_shared_aes_blanks_the_ae_column(self):
+        rows = self._rows_for(matching_drugs=["topiramate"], matching_AEs=[])
+        assert [r.n_aes for r in rows] == ["", "", ""]
+        assert [r.n_both for r in rows] == ["", "", ""]
+        assert rows[0].n_drugs == "5,000"
+
+    def test_neither_set_shared_gives_no_table_at_all(self):
+        assert self._rows_for(matching_drugs=[], matching_AEs=[]) == []
+
+    def test_that_is_not_recorded_as_missing_statistics(self):
+        """Nothing is missing: there is no co-occurrence to count."""
+        features = _features(matching_drugs=[], matching_AEs=[])
+        case = _case(features=features, frozen_bundle=_bundle())
+        assert "frequency_stats_missing" not in [g.code.value for g in case.gaps]
+
+    def test_an_absent_bundle_is_still_recorded_as_missing(self):
+        case = _case(
+            features=_features(matching_drugs=["topiramate"]),
+            frozen_bundle=None,
+        )
+        assert "frequency_stats_missing" in [g.code.value for g in case.gaps]
+
+    def test_the_blank_cells_render_empty(self):
+        html = " ".join(
+            _html(
+                features=_features(
+                    matching_drugs=[],
+                    matching_AEs=["cleft lip"],
+                    reporting_context=ReportingContext(
+                        level=ReportingContextLevel.COUNTRY_YEAR,
+                        country="Canada",
+                        year=2022,
+                    ),
+                ),
+                frozen_bundle=_bundle(),
+            ).split()
+        )
+        table = html[html.index('<table class="freq">') :]
+        table = table[: table.index("</table>")]
+        assert '<td class=""></td>' in table
+        assert "4,000" in table
+        assert "5,000" not in table
+
+    def test_a_blank_column_is_never_boxed_as_the_anchor(self):
+        rows = self._rows_for(matching_drugs=[], matching_AEs=["cleft lip"])
+        selected = _by_label(rows, "Canada, 2022")
+        assert selected.is_selected
+        assert selected.anchor_column == ""
+        assert selected.both_css_class == ""

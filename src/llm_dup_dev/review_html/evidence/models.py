@@ -721,6 +721,7 @@ class EvidenceGapCode(str, Enum):
     CLINICAL_DATE_VALUE_MISSING = "clinical_date_value_missing"
     CLINICAL_DATE_VALUE_RECOVERED = "clinical_date_value_recovered"
     SCREENING_VERDICT_UNREADABLE = "screening_verdict_unreadable"
+    REFERENCE_LABEL_UNREADABLE = "reference_label_unreadable"
     UNMAPPED_INCONSISTENCY = "unmapped_inconsistency"
     UNKNOWN_ENTITY_LABEL = "unknown_entity_label"
     RUN_SETTINGS_MISSING = "run_settings_missing"

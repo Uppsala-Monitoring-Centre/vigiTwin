@@ -342,14 +342,17 @@
   </table>
   {#
     A key, not a paragraph about the method: without it the shading and the
-    box are formatting a reader cannot decode. One sentence, under the table
-    it describes.
+    box are formatting a reader cannot decode. Each half is claimed only
+    where its mark is actually drawn — a key promising a box that is not
+    there sends a reader hunting for it.
   #}
   <p class="note">
     Counts include the two reports under review.
     {%- if case.freq_rows | selectattr('is_selected') | list %}
-    The shaded row is the reporting context the rarity was judged in, and the
-    boxed count is the anchor population.
+    The shaded row is the reporting context the rarity was judged in.
+    {%- endif %}
+    {%- if case.freq_rows | selectattr('anchor_column') | list %}
+    The boxed count is the anchor population.
     {%- endif %}
   </p>
   {% endif %}

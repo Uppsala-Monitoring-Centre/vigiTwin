@@ -101,7 +101,7 @@ def _penalty(value: float, decimals: int = 1) -> str:
     return f"{value:.{decimals}f}"
 
 
-def _separating_decimals(a: float, b: float) -> int:
+def separating_decimals(a: float, b: float) -> int:
     """Decimals needed to show *a* and *b* as different numbers.
 
     One decimal is the house style, but a score of ``3.999`` against a
@@ -448,7 +448,7 @@ def independence_clause(
             "of independence"
         )
         if threshold is not None:
-            decimals = _separating_decimals(shown, threshold)
+            decimals = separating_decimals(shown, threshold)
             clause += (
                 f", which required more than {_penalty(threshold, decimals)}"
             )
@@ -461,7 +461,7 @@ def independence_clause(
         # the next sentence states — and attaching the zone's boundary here
         # said this pair had to clear 3.0 when it had to clear 1.0.
         zone = _ZONE_NAME.get(reason) if reason else None
-        decimals = _separating_decimals(shown, threshold)
+        decimals = separating_decimals(shown, threshold)
         clause += (
             f", exceeding the independence threshold of "
             f"{_penalty(threshold, decimals)}"
@@ -514,7 +514,7 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
         )
 
     if relationship is RelationshipAssessment.ABSTAIN:
-        decimals = _separating_decimals(penalty.w_tot, penalty.threshold)
+        decimals = separating_decimals(penalty.w_tot, penalty.threshold)
         return (
             f"the total inconsistency penalty of "
             f"{_penalty(penalty.w_tot, decimals)} reached the same-case "
@@ -523,7 +523,7 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
         )
 
     comparison = "below" if penalty.satisfied else "at or above"
-    decimals = _separating_decimals(penalty.w_tot, penalty.threshold)
+    decimals = separating_decimals(penalty.w_tot, penalty.threshold)
     return (
         f"the total inconsistency penalty of "
         f"{_penalty(penalty.w_tot, decimals)} is {comparison} the same-case "
@@ -669,6 +669,7 @@ __all__ = [
     "SummarySlot",
     "build_assessment_summary",
     "format_score",
+    "separating_decimals",
     "independence_clause",
     "same_case_clause",
 ]

@@ -145,6 +145,81 @@ figure and the clause beside it cannot be formatted two ways) and
 `sign_css_class`. New `AttributionKind.ANCHOR_MULTIPLICITY`, so the
 adjustment's red carries a recorded reason like every other colour.
 
+### Fixed — a matched drug with differing dates is no longer a red row
+
+A substance both reports carry, matched as part of the shared pattern, with a
+clinical-date inconsistency on one of its records, came out **red**. A row's
+tint was the strongest role among its cells, so the date won and the row read
+as though the medication were the finding. It is not: the substance matched,
+and a date attached to it did not.
+
+A row's tint is now the verdict on the **entity the row is about** — the
+substance, the adverse-event term. The inconsistency is not hidden by this; it
+is red in the cell it is about, and still listed in section 3. Where the
+entity carries no verdict of its own, the strongest role among the row's cells
+still decides, so an inconsistency is never left untinted. Same change for the
+adverse-event table and its onset dates.
+
+### Fixed — ordinary pairs were being reported as unreconciled
+
+`score_unreconciled` fired on pairs whose arithmetic was perfectly consistent,
+in a sentence quoting two figures that print identically: *"totals +14.1,
+while the run stored a matching score of 14.1"*.
+
+Two causes, both fixed:
+
+- **The stabiliser is not only a ceiling.** `L_match = -log10(P_match +
+  epsilon)`. `epsilon` does not switch on at 15.0 — it inflates the
+  denominator continuously as `P_match` approaches it, so a score of 14.1
+  against `epsilon = 1e-15` is already about 0.05 below its additive figure,
+  past a tolerance built for rounding and nowhere near the ceiling a bound
+  test looks for. Where `epsilon` is known the stored score is now
+  **recomputed** through the score's own formula and compared, which covers
+  the ceiling, the floor and everything between in one expression. Where it is
+  not, that arithmetic at `epsilon = 0` bounds the stored score from above,
+  and a score below that bound is unverifiable rather than wrong.
+  `ceiling_reached` and `floor_reached` stay on `ReconciliationVM` as
+  description; they no longer decide whether a difference is reported.
+- **One decimal hid the difference it was reporting.** The gap now names both
+  figures to enough decimals to tell them apart.
+
+### Changed — a set column with no set is left blank
+
+"How many reports carry every term in this set" has no answer for a set with
+no terms; the stored count is the whole scope, which is not a co-occurrence of
+anything, and printing it invited a reader to weigh a population size as
+evidence. *Both sets* blanks as soon as either side does, being then a
+restatement of the one that is left. With neither set shared the table does
+not appear.
+
+That is **not** a gap: `frequency_stats_missing` now means the frozen bundle
+was absent, and is no longer recorded for a pair that simply shares no terms.
+
+### Added — a reference set's own annotation vocabulary
+
+A reference set annotating `Otherwise related` had that label **silently
+dropped**: three terms were built in, anything else became `None`, and the
+tile read "Not supplied" — indistinguishable from a pair nobody had annotated.
+That is how a whole set's annotations can go unread with nobody noticing.
+
+- `CuratedExampleManifest.reference_label_map` carries the set's own
+  vocabulary mapped to the study's binary one, e.g. `{Otherwise related:
+  non_duplicate}`. How a set's terms were read in an analysis is a study
+  decision that lives with the study; this package cannot infer it, and
+  guessing would be inventing a human verdict. Keys fold case, spaces,
+  underscores and hyphens. Targets must be `duplicate`, `non_duplicate` or
+  `abstain`, and a key may not redefine a built-in term — both rejected at
+  load, so a collection cannot quietly make `duplicate` mean its opposite.
+- An unmapped term is now **reported**: new gap `reference_label_unreadable`
+  names it and points at the manifest field. New `ReferenceInfo.reference_note`
+  carries it, mirroring `screening_note`.
+- `reference_from_annotation` takes `label_map`. New public
+  `normalise_reference_term`, `REFERENCE_VOCABULARY`, `BUILTIN_REFERENCE_TERMS`.
+- Folding is applied to the built-in terms too, so an annotation reading
+  `Non duplicate` is now read where it previously was not.
+
+Also public: `separating_decimals` (promoted from `summary._separating_decimals`).
+
 ### Changed — section 2's context table says what two paragraphs said
 
 Two paragraphs opened the independence section: one naming the reporting

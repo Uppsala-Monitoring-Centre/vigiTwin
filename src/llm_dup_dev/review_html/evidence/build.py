@@ -16,6 +16,7 @@ the assessment flagged it — which is what the reviewer needs to see.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field as dc_field
 from enum import Enum
 
@@ -100,6 +101,7 @@ from .summary import (
     format_score,
     independence_clause,
     same_case_clause,
+    separating_decimals,
 )
 
 #: Shown where a report supplied no value: nothing at all. An unpopulated
@@ -958,6 +960,33 @@ def _combine(cells: list[EvidenceCell]) -> EvidenceRole:
     return role
 
 
+def _row_role(entity: EvidenceCell, cells: list[EvidenceCell]) -> EvidenceRole:
+    """A row's tint: what the assessment made of the *entity* the row is about.
+
+    The row is about a substance or an adverse-event term, and its tint
+    answers "what did vigiTwin make of this one?". Where the entity carries a
+    verdict of its own — matched as part of the shared pattern, or flagged as
+    an inconsistency — that verdict is the row's.
+
+    This differs from taking the strongest role among the row's cells, which
+    is what it used to do. A drug reported by both reports, matched as part of
+    the shared pattern, with a date inconsistency on one of its records, came
+    out **red**: the strongest cell won, and the row read as though the
+    substance itself were the problem. It is not. The substance matched; a
+    date attached to it did not, and that date is red in the cell where it is
+    shown. Tinting the whole row red for it overstated a date difference into
+    a finding about the medication.
+
+    Where the entity carries no verdict — neither report's shared pattern
+    includes it and nothing flagged it — the strongest role among the row's
+    cells still decides, so an inconsistency on a date is never left with no
+    tint at all.
+    """
+    if entity.role is not EvidenceRole.NEUTRAL:
+        return entity.role
+    return _combine(cells)
+
+
 def _mirror(source: EvidenceCell, target: EvidenceCell | None) -> None:
     """Give a per-side name cell the row's role and attributions.
 
@@ -981,16 +1010,16 @@ def _finalise_drug_rows(rows: list[DrugEvidenceRow]) -> list[DrugEvidenceRow]:
     before a concomitant one. Rows present in both keep alphabetical order, so
     the two reports' shared medication list reads as a list.
 
-    Evidence is carried by colour rather than by position. A row's role is
-    still its strongest negative evidence, so a row carrying both a matched
-    date and a flagged substance shows red on the substance and green on the
-    date — the inconsistency is never hidden because the substance matched.
+    Evidence is carried by colour rather than by position. The row's tint is
+    the substance's own verdict (see :func:`_row_role`); a date inconsistency
+    on a matched substance is red in its own cell and does not repaint the
+    row.
     """
     for row in rows:
         cells = [row.name]
         for entry in [*row.left_entries, *row.right_entries]:
             cells.extend(entry.cells)
-        row.row_role = _combine(cells)
+        row.row_role = _row_role(row.name, cells)
         row.presence.role = row.row_role
         _mirror(row.name, row.left_name)
         _mirror(row.name, row.right_name)
@@ -1039,7 +1068,7 @@ def _finalise_ae_rows(rows: list[AEEvidenceRow]) -> list[AEEvidenceRow]:
     """
     for row in rows:
         cells = [row.term, *row.left_onsets, *row.right_onsets]
-        row.row_role = _combine(cells)
+        row.row_role = _row_role(row.term, cells)
         row.presence.role = row.row_role
         _mirror(row.term, row.left_term)
         _mirror(row.term, row.right_term)
@@ -1137,6 +1166,16 @@ def _build_freq_rows(
     the table as numbers; what a reader lacked was a way to tell which ones
     the assessment reached for, and matching a sentence against a row was
     the work those paragraphs left them.
+
+    A column whose set is empty is left **blank**. "How many reports carry
+    every term in this set" has no answer for a set with no terms — the
+    stored count is the whole scope, which is not a co-occurrence of
+    anything — and printing it invited a reader to compare a real count
+    against a population size. *Both sets* goes blank as soon as either side
+    does, since it is then not the intersection of two sets but a restatement
+    of the one that is left. With neither set shared there is nothing to
+    count at all, and the table does not appear; the panel's Context row
+    still names the population.
     """
     if bundle is None:
         return []
@@ -1148,6 +1187,16 @@ def _build_freq_rows(
     anchor_column = (
         _ANCHOR_COLUMN.get(features.anchor.type, "") if features is not None else ""
     )
+    has_drugs = features is None or bool(features.matching_drugs)
+    has_aes = features is None or bool(features.matching_AEs)
+    if not has_drugs and not has_aes:
+        return []
+    shown = {"drugs": has_drugs, "aes": has_aes, "both": has_drugs and has_aes}
+    # Never box a cell that has no count in it. The anchor type and the
+    # shared sets agree in real artifacts, but a mismatch would otherwise
+    # draw the reader's eye to an empty box.
+    if not shown.get(anchor_column, False):
+        anchor_column = ""
     rows: list[FreqRowVM] = []
     for attr in ("global_stats", "country_stats", "country_year_stats"):
         stats: FrozenScopeStats | None = getattr(bundle, attr, None)
@@ -1157,9 +1206,13 @@ def _build_freq_rows(
         rows.append(
             FreqRowVM(
                 scope_label=_scope_label(attr, context),
-                n_drugs=_format_count(stats.N_drugs),
-                n_aes=_format_count(stats.N_AEs),
-                n_both=_format_count(stats.N_drugs_AEs),
+                n_drugs=_format_count(stats.N_drugs) if has_drugs else "",
+                n_aes=_format_count(stats.N_AEs) if has_aes else "",
+                n_both=(
+                    _format_count(stats.N_drugs_AEs)
+                    if has_drugs and has_aes
+                    else ""
+                ),
                 is_selected=selected,
                 anchor_column=anchor_column if selected else "",
             )
@@ -1356,6 +1409,46 @@ def _build_matching_features(
 _RECONCILE_TOLERANCE = 0.05
 
 
+def _expected_score(total: float, n_anchor: int, epsilon: float | None) -> float | None:
+    """What ``L_match`` should be, given the contributions and the anchor.
+
+    The page's two figures add to ``-log10(p_joint x M)``; the stored score is
+    ``max(0, -log10(P_match + epsilon))`` with ``P_match = 1 - (1 - p_joint) ** M``.
+    Rather than asking whether the stored score sits *at* a bound, this
+    reproduces the pipeline's own arithmetic and compares the result, which
+    covers the bounds and everything between them in one expression.
+
+    That distinction is not academic. ``epsilon`` does not act only at the
+    ceiling: it inflates the denominator continuously as ``P_match``
+    approaches it, so a score of 14.1 against a stabiliser of 1e-15 is already
+    0.05 below the additive figure — enough to trip a tolerance built for
+    rounding, while sitting nowhere near the 15.0 ceiling a bound test looks
+    for. Such pairs were reported as unreconciled, in a sentence quoting two
+    figures that print identically.
+
+    ``None`` when ``epsilon`` is unknown, where the stored score cannot be
+    predicted; the caller then bounds it from above instead.
+    """
+    p_joint = 10.0 ** -total
+    pairs = n_anchor * (n_anchor - 1) // 2
+    if pairs <= 0 or p_joint >= 1.0:
+        # No comparison to make, or a "probability" at or above one: either
+        # way a chance match is not unlikely and the score is at its floor.
+        p_match = 1.0
+    else:
+        # ``1 - (1 - p) ** M`` loses every significant digit for p below
+        # about 1e-16, which is exactly the range a score of 15 lives in.
+        p_match = -math.expm1(pairs * math.log1p(-p_joint))
+    denominator = p_match + (epsilon or 0.0)
+    if epsilon is None:
+        if p_match <= 0.0:
+            return None
+        return max(0.0, -math.log10(p_match))
+    if denominator <= 0.0:
+        return None
+    return max(0.0, -math.log10(denominator))
+
+
 def _anchor_adjustment(n_anchor: int) -> float | None:
     """``-log10(M)`` for ``M = C(N_anchor, 2)`` pairwise opportunities.
 
@@ -1403,13 +1496,22 @@ def _build_reconciliation(
       It needs no run settings to state, because neither bound's arithmetic
       depends on epsilon here.
 
-    Where the numbers disagree and no bound explains it, this records a gap
-    rather than asserting a ceiling it cannot verify.
+    Those two flags stay, because a reader and a caller both want to know
+    which bound a score is sitting on. What they no longer do is decide
+    whether a difference is a disagreement. Where epsilon is known the stored
+    score is simply **recomputed** (:func:`_expected_score`) and compared: a
+    bound test asks a yes/no question of a stabiliser whose effect is
+    gradual, and reported perfectly ordinary pairs — a score of 14.1 is
+    already 0.05 below its additive figure — as unreconciled. Where epsilon
+    is unknown the stored score can only be bounded from above, and a score
+    *below* that bound is unverifiable rather than wrong.
     """
     total = sum(r.contribution for r in matching_features)
     adjustment = _anchor_adjustment(features.anchor.N_anchor)
     stored = features.L_match
     ceiling = run_settings.score_ceiling if run_settings is not None else None
+
+    epsilon = run_settings.epsilon if run_settings is not None else None
 
     additive = total + (adjustment or 0.0)
     at_ceiling = (
@@ -1423,13 +1525,24 @@ def _build_reconciliation(
         and stored <= _RECONCILE_TOLERANCE
         and additive < -_RECONCILE_TOLERANCE
     )
+
+    # With epsilon known, ``expected`` is what the pipeline would have stored.
+    # Without it, ``expected`` is the score at epsilon = 0, which is an upper
+    # bound: sitting below it is what an unrecorded stabiliser looks like, and
+    # the second message below says so rather than claiming a disagreement.
+    expected = _expected_score(total, features.anchor.N_anchor, epsilon)
     unexplained = (
-        not at_ceiling
-        and not at_floor
-        and abs(additive - stored) > _RECONCILE_TOLERANCE
+        abs(additive - stored) > _RECONCILE_TOLERANCE
+        if expected is None
+        else abs(stored - expected) > _RECONCILE_TOLERANCE
     )
 
     if unexplained:
+        # Enough decimals that the two figures read as different numbers. A
+        # note saying "totals +14.1, while the run stored 14.1" contradicts
+        # itself, and the difference it is reporting is exactly the part a
+        # single decimal hides.
+        places = separating_decimals(additive, stored)
         # The page states the additive figure and never the stored score, so
         # a disagreement between them is otherwise invisible to a reader. It
         # has to be recorded whether or not epsilon is known: not knowing it
@@ -1440,17 +1553,18 @@ def _build_reconciliation(
                 code=EvidenceGapCode.SCORE_UNRECONCILED,
                 message=(
                     "The matching evidence listed here totals "
-                    f"{additive:+.1f}, while the run stored a matching score "
-                    f"of {stored:.1f}. This page shows the total, and neither "
-                    "bound of the score accounts for the difference."
+                    f"{additive:+.{places}f}, while the run stored a matching "
+                    f"score of {stored:.{places}f}. This page shows the "
+                    "total, and the score's own arithmetic does not account "
+                    "for the difference."
                     if ceiling is not None
                     else (
                         "The matching evidence listed here totals "
-                        f"{additive:+.1f}, while the run stored a matching "
-                        f"score of {stored:.1f}. This page shows the total. "
-                        "The run's numerical stabiliser was not recorded, so "
-                        "whether the stored score sits at its ceiling cannot "
-                        "be stated; supply the run manifest to resolve this."
+                        f"{additive:+.{places}f}, while the run stored a "
+                        f"matching score of {stored:.{places}f}. This page "
+                        "shows the total. The run's numerical stabiliser was "
+                        "not recorded, so the stored score cannot be "
+                        "reproduced; supply the run manifest to resolve this."
                     )
                 ),
             )
@@ -1816,6 +1930,33 @@ class SCLEAssessment:
     note: str = ""
 
 
+#: The study's binary reference vocabulary. The only values a mapping may
+#: produce, and the only labels this review will show as a human verdict.
+REFERENCE_VOCABULARY = frozenset({"duplicate", "non_duplicate", "abstain"})
+
+#: The reference vocabulary an annotation may carry, mapped to the study's
+#: binary reference labels. The pipeline's own four labels are deliberately
+#: absent: an annotation carrying one of those is a *prediction*, not a
+#: reference verdict, and treating it as one is how the two vocabularies get
+#: conflated.
+BUILTIN_REFERENCE_TERMS: dict[str, str] = {
+    "duplicate": "duplicate",
+    "non_duplicate": "non_duplicate",
+    "abstain": "abstain",
+}
+
+
+def normalise_reference_term(value: str) -> str:
+    """Fold an annotation value, or a mapping key, to one comparable form.
+
+    ``Otherwise related``, ``otherwise_related`` and ``Otherwise-Related`` are
+    one term written three ways, and a reference set is free to use any of
+    them. Case, surrounding space, and runs of spaces, underscores or hyphens
+    are all folded, so a mapping written the obvious way matches the data.
+    """
+    return re.sub(r"[\s_-]+", "_", value.strip().lower()).strip("_")
+
+
 @dataclass(frozen=True)
 class ReferenceInfo:
     """What the reference set says about this pair, and what screening did.
@@ -1837,6 +1978,11 @@ class ReferenceInfo:
     #: rejected. Rendered as a gap, so a malformed verdict is visible rather
     #: than indistinguishable from an absent one. See :mod:`.screening`.
     screening_note: str = ""
+    #: Why no reference label could be read, when the annotation carried a
+    #: value this review does not know. Rendered as a gap for the same reason
+    #: as ``screening_note``: an unread label and an absent one both show
+    #: "Not supplied", and only the note tells them apart.
+    reference_note: str = ""
     scle: SCLEAssessment = dc_field(default_factory=SCLEAssessment)
     #: Name of the positive-class rule used to compare the reference label
     #: against the vigiTwin label.
@@ -2401,6 +2547,13 @@ def build_evidence_case(
                 message=reference.screening_note,
             )
         )
+    if reference is not None and reference.reference_note:
+        gaps.append(
+            EvidenceGap(
+                code=EvidenceGapCode.REFERENCE_LABEL_UNREADABLE,
+                message=reference.reference_note,
+            )
+        )
 
     characteristics = _build_characteristic_rows(
         report_1,
@@ -2433,7 +2586,12 @@ def build_evidence_case(
 
         shared_sets = _build_shared_sets(features)
         freq_rows = _build_freq_rows(frozen_bundle, features)
-        if not freq_rows:
+        # Keyed on the bundle rather than on the rows. A pair sharing no drug
+        # or adverse-event terms produces no rows either, but nothing is
+        # missing there — there is simply no co-occurrence to count, and
+        # calling that a gap would send a reader looking for data that was
+        # never relevant.
+        if frozen_bundle is None:
             gaps.append(
                 EvidenceGap(
                     code=EvidenceGapCode.FREQUENCY_STATS_MISSING,
@@ -2596,10 +2754,13 @@ def _dedupe_gaps(gaps: list[EvidenceGap]) -> list[EvidenceGap]:
 
 
 __all__ = [
+    "BUILTIN_REFERENCE_TERMS",
+    "REFERENCE_VOCABULARY",
     "ExamplePresentation",
     "ReferenceInfo",
     "SCLEAssessment",
     "SCLEState",
     "build_evidence_case",
     "context_phrase",
+    "normalise_reference_term",
 ]

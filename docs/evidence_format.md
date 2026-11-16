@@ -219,6 +219,15 @@ rather than for the material each happens to hold:
    shading and the box are decoded by one sentence under the table, and that
    sentence is omitted where no row is marked, which happens when the frozen
    bundle holds no statistics for the selected scope.
+   A column whose set is **empty is left blank**. "How many reports carry
+   every term in this set" has no answer for a set with no terms — the stored
+   count is the whole scope, which is not a co-occurrence of anything — and
+   printing it invited a reader to weigh a population size as evidence.
+   *Both sets* goes blank as soon as either side does, since it is then a
+   restatement of the one that is left rather than an intersection of two.
+   With neither set shared there is nothing to count and the table does not
+   appear at all; that is not recorded as a gap, because nothing is missing.
+   `frequency_stats_missing` means the frozen bundle was absent.
    Neither mark is green or red. A population size is not evidence for the
    pair or against it, and spending one of the page's two colours on it would
    make the colour rule mean two things.
@@ -309,9 +318,17 @@ coded differently on the two reports, say — so they belong adjacent.
 A cell carrying several attributions takes the strongest role:
 `INCONSISTENT` > `ANCHOR` = `MATCHING` > `NEUTRAL`. Red wins because it is a
 claim the assessment made *against* a value, where green is additive. Both
-attributions stay on the cell, so a tooltip can show both. A row's own tint is
-the strongest role among its cells, so a row holding a matched date and a
-flagged substance reads as flagged while keeping the green on the date.
+attributions stay on the cell, so a tooltip can show both.
+
+A **row's** tint is a claim about the entity the row is about — the substance,
+the adverse-event term — and not about the strongest thing in it. A drug both
+reports carry, matched as part of the shared pattern, with a date
+inconsistency on one of its records, is a **green** row with a red date in it.
+Tinting the whole row red for a date difference overstated it into a finding
+about the medication, which is not what the assessment said. Where the entity
+carries no verdict of its own — in neither report's shared pattern, and
+flagged by nothing — the strongest role among the row's cells still decides,
+so an inconsistency is never left with no tint at all.
 
 Note what row role does *not* do: it does not move the row. Position is set by
 presence, because a reader scanning the drug table is first asking which
@@ -412,11 +429,30 @@ than quoting a number the column does not add to. `ReconciliationVM` carries
 `reconciled` for exactly this choice, alongside `ceiling_reached` and
 `floor_reached`, which record which bound was invoked.
 
+**How "disagree" is decided.** Where `epsilon` is known the stored score is
+*recomputed* from the contributions and the anchor — `p_joint = 10**-total`,
+`P_match = 1 - (1 - p_joint) ** M`, `L_match = max(0, -log10(P_match +
+epsilon))` — and compared against what the run stored. Where it is not, the
+same arithmetic at `epsilon = 0` gives an upper bound on the stored score
+instead, and a score sitting below that bound is unverifiable rather than
+wrong; the gap says so and asks for the run manifest.
+
+This replaced a test for whether the stored score sat *at* a bound, which was
+the wrong instrument. `epsilon` does not switch on at the ceiling: it inflates
+the denominator continuously as `P_match` approaches it, so a score of 14.1
+against a stabiliser of 1e-15 is already about 0.05 below its additive figure
+— past a tolerance built for rounding, and nowhere near the 15.0 a bound test
+looks for. Ordinary pairs were being reported as unreconciled, in a sentence
+quoting two figures that print identically.
+
 An unreconciled case always carries a `score_unreconciled` gap under
-*Limitations of this review*, naming both figures. Before 1.1.8 that gap was
-recorded only when the run had supplied no `epsilon`; a disagreement with a
-known `epsilon` passed silently, which mattered little while the page printed
-the stored score and matters a great deal now that it prints the total.
+*Limitations of this review*, naming both figures to **enough decimals to
+tell them apart**: a note reading "totals +14.1, while the run stored 14.1"
+contradicts itself, and the difference it is reporting is exactly the part one
+decimal hides. Before 1.1.8 the gap was also recorded only when the run had
+supplied no `epsilon`; a disagreement with a known `epsilon` passed silently,
+which mattered little while the page printed the stored score and matters a
+great deal now that it prints the total.
 
 `epsilon` and the `L_match` zone boundaries are **not** in a saved run's
 features file. They live on `PipelineConfig` and `DecisionThresholds`, and are
@@ -530,6 +566,7 @@ examples:
 ### Fields
 
 **Collection:** `schema_version`, `title`, `intro`, `note`, `positive_class`,
+`reference_label_map`,
 `datasets`, `examples`.
 
 **Dataset** (`datasets.<dataset_id>`): `label` (the kicker shown on each
@@ -554,6 +591,32 @@ rejects `genuinely_ambiguous` — that is the `inconclusive` state, and the
 error says so. `inconclusive` takes `genuinely_ambiguous` or nothing at all,
 filling it in either way. The two "no assessment" states reject an issue
 outright, since there was no assessment to have an opinion.
+
+**`reference_label_map`** carries the annotation vocabulary of *this*
+reference set, mapped to the study's binary one:
+
+```yaml
+reference_label_map:
+  Otherwise related: non_duplicate
+```
+
+Three terms are built in — `duplicate`, `non_duplicate`, `abstain` — because
+those are the vocabulary every estimand knows. A reference set may annotate in
+its own words, and how those words were read in the analysis is a study
+decision that lives with the study: this package cannot infer that
+`Otherwise related` was collapsed to non-duplicates, and guessing would be
+inventing a human verdict. Keys are matched with case, spaces, underscores and
+hyphens all folded, so `Otherwise related` and `otherwise_related` are one
+term. Targets must be one of the three built-in values — `Non-duplicates` is
+the study's *class* name, not a label value, and is rejected. A key that
+redefines a built-in term is rejected too, so a collection cannot quietly make
+`duplicate` mean its opposite.
+
+An annotation whose term maps to nothing is **reported**, not dropped: the
+tile still reads "Not supplied", and a `reference_label_unreadable` gap names
+the term. Before 1.1.8 an unread label and an absent one were
+indistinguishable, which is how a whole set's annotations can go unread with
+nobody noticing.
 
 **`positive_class`** names the rule used when comparing a binary reference
 label against vigiTwin's four-label output: `primary` (only `Duplicates`
@@ -643,12 +706,13 @@ says which is which, and the template filters on it.
 | `clinical_date_value_missing` | A clinical-date contribution carries no `matched_value`, and none could be read from its description either. |
 | `clinical_date_value_recovered` *(provenance)* | The matched date was read from the contribution's own stored description, because the run predates `matched_value`. The date is highlighted wherever it appears; the run did not record which date *field* it came from, so a report carrying it twice shows both. |
 | `screening_verdict_unreadable` | A screening entry's verdict key held something other than `true` or `false`, or a named `screening_verdict_key` was absent. The tile reads "Not evaluated". |
+| `reference_label_unreadable` | An annotation carried a verdict in a vocabulary this review does not know. The tile reads "Not supplied"; the gap names the term and points at `reference_label_map`. |
 | `unmapped_inconsistency` | An inconsistency whose `feature` this format does not know how to attach to a report element. It is still listed in section 3. |
 | `unknown_entity_label` | A clinical-date finding whose `entity_label` does not parse into one of the four known forms. |
 | `run_settings_missing` | No run manifest was supplied, so thresholds and the score ceiling are not quoted. |
-| `frequency_stats_missing` | No frozen pair frequencies, so the frequency table is absent. |
+| `frequency_stats_missing` | No frozen pair frequencies were supplied. Not recorded for a pair that merely shares no drug or adverse-event terms: there is then no co-occurrence to count. |
 | `no_features` / `no_classification` | The pair's assessment was not saved. It renders as a report comparison with everything neutral — not with colours invented from a comparison this format does not perform. |
-| `score_unreconciled` | Contributions and stored score disagree by more than the tolerance, and no bound explains it. The page then quotes the stored score. |
+| `score_unreconciled` | The stored score is not what the contributions and the anchor imply, recomputed through the score's own formula. The page then quotes the stored score. |
 
 ### Runs saved before the structured fields
 
