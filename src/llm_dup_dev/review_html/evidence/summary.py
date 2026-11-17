@@ -292,8 +292,11 @@ _SOURCE_KIND_PHRASE: dict[SourceIdentifierType, str] = {
     SourceIdentifierType.LINKED_CASE: "linked-case reference",
     SourceIdentifierType.PROTOCOL_NUMBER: "protocol number",
     SourceIdentifierType.STUDY_NAME: "named study",
-    SourceIdentifierType.ARTICLE_REFERENCE: "literature citation",
-    SourceIdentifierType.UNKNOWN: "source reference",
+    # The sentence template is "a shared {kind}", so these read "a shared
+    # external source" — source-neutral, because the catch-all kinds cover a
+    # registry entry or a company case series as readily as a paper.
+    SourceIdentifierType.ARTICLE_REFERENCE: "external source",
+    SourceIdentifierType.UNKNOWN: "external source",
 }
 
 _SOURCE_VERDICT_PHRASE = {

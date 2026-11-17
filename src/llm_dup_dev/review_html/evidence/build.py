@@ -2571,7 +2571,7 @@ def _build_assessment_rows(
             "independence has been rejected."
         )
     else:
-        verdict = relationship.value.replace("_", " ").capitalize()
+        verdict = relationship_label(relationship)
         same_case_text = (
             f"{verdict}" + (f" — {same_case}." if same_case else ".")
         )
@@ -2675,8 +2675,14 @@ _SOURCE_IDENTIFIER_LABEL: dict[SourceIdentifierType, str] = {
     SourceIdentifierType.LINKED_CASE: "Linked-case reference",
     SourceIdentifierType.PROTOCOL_NUMBER: "Protocol number",
     SourceIdentifierType.STUDY_NAME: "Study name",
-    SourceIdentifierType.ARTICLE_REFERENCE: "Literature citation",
-    SourceIdentifierType.UNKNOWN: "Source reference",
+    # The two catch-alls. ``article_reference`` is documented as "a free-text
+    # citation when no more specific type fits", so labelling it a literature
+    # citation claimed something specific about a source that need not be a
+    # publication at all — a registry entry, a programme, a company's own
+    # case series. Source-neutral, and the same words for both, because both
+    # mean "shared, and we cannot say more than that".
+    SourceIdentifierType.ARTICLE_REFERENCE: "Shared external source",
+    SourceIdentifierType.UNKNOWN: "Shared external source",
 }
 
 #: Verdicts that establish a shared source outright.
@@ -2891,6 +2897,28 @@ _INDEPENDENCE_ROLE: dict[IndependenceAssessment, EvidenceRole] = {
     IndependenceAssessment.INDEPENDENT: EvidenceRole.INCONSISTENT,
 }
 
+#: What each relationship outcome is called on the page.
+#:
+#: The stored values are ``Same_case`` and ``Different_case``: field names,
+#: and the page printed them as they stood. The plural matters — two reports
+#: found not to be one case describe *different cases* — and an underscore in
+#: a decision tile is the same tell as a parenthetical field name anywhere
+#: else. Used for the tile and for the assessment table, so the page calls
+#: one outcome one thing.
+_RELATIONSHIP_LABEL: dict[RelationshipAssessment, str] = {
+    RelationshipAssessment.SAME_CASE: "Same case",
+    RelationshipAssessment.DIFFERENT_CASE: "Different cases",
+    RelationshipAssessment.ABSTAIN: "Abstain",
+}
+
+
+def relationship_label(relationship: RelationshipAssessment) -> str:
+    """The reader-facing name for a relationship outcome."""
+    return _RELATIONSHIP_LABEL.get(
+        relationship, relationship.value.replace("_", " ").capitalize()
+    )
+
+
 _RELATIONSHIP_ROLE: dict[RelationshipAssessment, EvidenceRole] = {
     RelationshipAssessment.SAME_CASE: EvidenceRole.MATCHING,
     RelationshipAssessment.DIFFERENT_CASE: EvidenceRole.INCONSISTENT,
@@ -3005,7 +3033,7 @@ def _relationship_tile(
     return DecisionTileVM(
         stage=DecisionStage.RELATIONSHIP,
         stage_label="Relationship assessment",
-        outcome=relationship.value,
+        outcome=relationship_label(relationship),
         role=_RELATIONSHIP_ROLE.get(relationship, EvidenceRole.NEUTRAL),
         pathway=pathway,
         basis="" if basis == pathway_label(pathway) else basis,

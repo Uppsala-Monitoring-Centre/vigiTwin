@@ -21,6 +21,31 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-17
+
+Two reader-facing names on the evidence page. Presentation only: no schema,
+no public name and no classification result moves.
+
+### Changed — the relationship outcome is named, not spelled
+
+The decision tile and the assessment table printed `Same_case` and
+`Different_case`, which are the classifier's field names. They now read
+**Same case** and **Different cases** — plural, because two reports found not
+to be one case describe different cases — from one table used by both, so the
+page calls one outcome one thing. `RelationshipAssessment` is unchanged and
+`final_label` still reads as it always did.
+
+### Changed — a shared source is not assumed to be a publication
+
+`SourceIdentifierType.ARTICLE_REFERENCE` is documented as "a free-text
+citation when no more specific type fits", and the page labelled it
+*Literature citation* — a specific claim about a source that need not be a
+paper at all: a registry entry, a programme, a company's own case series. It
+and `UNKNOWN`, the other catch-all, now read **Shared external source** in
+the source-context block and "a shared external source" in the generated
+summary. The specific kinds — trial registration, DOI, PubMed ID, protocol
+number, study name, linked-case reference — are still named specifically.
+
 ## [1.2.0] - 2026-11-17
 
 A second presentation of the evidence review, with its displayed values

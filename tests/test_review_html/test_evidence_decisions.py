@@ -120,7 +120,7 @@ class TestAThinArtifactStillReadsAsATile:
 
     def test_the_outcome_is_still_reported(self):
         tiles = _tiles(self._case())
-        assert tiles[DecisionStage.RELATIONSHIP].outcome == "Same_case"
+        assert tiles[DecisionStage.RELATIONSHIP].outcome == "Same case"
         assert tiles[DecisionStage.RELATIONSHIP].state is TileState.VALUE
 
     def test_the_tile_says_why_it_is_thin(self):
@@ -660,3 +660,120 @@ class TestTheLimitationsListDoesNotNameTheSourceFinding:
             ),
         )
         assert "unmapped_inconsistency" in {g.code.value for g in case.gaps}
+
+
+class TestOutcomesAreNamedForTheReader:
+    """Not the stored field names.
+
+    ``Same_case`` and ``Different_case`` are what the classifier records. An
+    underscore in a decision tile is the same tell as a parenthetical field
+    name anywhere else on the page, and the plural matters: two reports found
+    not to be one case describe *different cases*.
+    """
+
+    def test_the_tile_says_same_case(self):
+        tile = _tiles(probabilistic_case())[DecisionStage.RELATIONSHIP]
+        assert tile.outcome == "Same case"
+
+    def test_the_tile_says_different_cases_in_the_plural(self):
+        tile = _tiles(shared_source_case())[DecisionStage.RELATIONSHIP]
+        assert tile.outcome == "Different cases"
+
+    def test_the_assessment_table_says_the_same_thing(self):
+        """One outcome, one name, wherever the page shows it."""
+        case = shared_source_case()
+        row = next(r for r in case.assessment_rows if r.label == "Same case")
+        assert row.text.startswith("Different cases")
+
+    def test_no_underscored_outcome_reaches_the_page(self):
+        for case in (shared_source_case(), probabilistic_case()):
+            html = _html(case)
+            assert "Same_case" not in html
+            assert "Different_case" not in html
+
+    def test_an_abstention_keeps_its_own_word(self):
+        from llm_dup_dev.models.enums import RelationshipAssessment
+        from llm_dup_dev.review_html.evidence.build import relationship_label
+
+        assert relationship_label(RelationshipAssessment.ABSTAIN) == "Abstain"
+
+
+class TestTheSourceKindIsSourceNeutral:
+    """A catch-all identifier kind must not claim to be a publication.
+
+    ``article_reference`` is documented as "a free-text citation when no more
+    specific type fits", so calling it a literature citation said something
+    specific about a source that need not be a paper at all — a registry
+    entry, a programme, a company's own case series.
+    """
+
+    @staticmethod
+    def _case_with(kind):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceCaseAssessment,
+            SourceCaseVerdict,
+        )
+        from tests.test_review_html.test_evidence_build import (
+            _case,
+            _features,
+            _report,
+        )
+
+        return _case(
+            _report("R1"),
+            _report("R2"),
+            _features(
+                source_case_assessment=SourceCaseAssessment(
+                    verdict=SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+                    shared_source_identifier="SYNTH-SOURCE-0003",
+                    shared_source_identifier_type=kind,
+                )
+            ),
+        )
+
+    def test_the_catch_all_kinds_read_as_a_shared_external_source(self):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceIdentifierType,
+        )
+
+        for kind in (
+            SourceIdentifierType.ARTICLE_REFERENCE,
+            SourceIdentifierType.UNKNOWN,
+        ):
+            case = self._case_with(kind)
+            assert case.source_context is not None
+            assert (
+                case.source_context.identifier_label
+                == "Shared external source"
+            )
+
+    def test_the_prose_reads_the_same_way(self):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceIdentifierType,
+        )
+
+        case = self._case_with(SourceIdentifierType.ARTICLE_REFERENCE)
+        summary = " ".join(
+            p for b in case.narrative_blocks for p in b.paragraphs
+        )
+        assert "a shared external source" in summary
+
+    def test_a_specific_kind_is_still_named_specifically(self):
+        """The anti-requirement: source-neutral where the type is a
+        catch-all, not everywhere."""
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceIdentifierType,
+        )
+
+        case = self._case_with(SourceIdentifierType.TRIAL_REGISTRATION)
+        assert case.source_context is not None
+        assert case.source_context.identifier_label == "Trial registration"
+
+    def test_no_literature_claim_reaches_the_page(self):
+        from llm_dup_dev.models.narrative_source_case import (
+            SourceIdentifierType,
+        )
+
+        html = _html(self._case_with(SourceIdentifierType.ARTICLE_REFERENCE))
+        assert "iterature citation" not in html
+        assert "Shared external source" in html

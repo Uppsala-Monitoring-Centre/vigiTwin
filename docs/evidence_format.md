@@ -155,6 +155,13 @@ They are *described* from what the run stored —
 and the source verdict — and never re-derived, so a tile cannot reach a
 different answer from the classifier's.
 
+**The outcome is named, not spelled.** `relationship_assessment` holds
+`Same_case` and `Different_case`; the page shows **Same case** and
+**Different cases**. The plural is deliberate — two reports found not to be
+one case describe different cases — and the same table names the outcome in
+the assessment section, so the page calls one outcome one thing. The stored
+field is unchanged, and the data-model documentation quotes it as it stands.
+
 Then the **at-a-glance panel**: the assessment as figures, in the order the
 assessment itself proceeds — reporting context, anchor and anchor population,
 the additional matching features with their contributions, the matching
@@ -418,6 +425,14 @@ kind. The sentences name no identifier. That is the same division the
 reporting context already keeps, and for the same reason: values live in
 cells, and prose that carries no identity reads the same in both
 presentations.
+
+The identifier's *kind* is named in the reader's words, and source-neutrally
+where the stored kind is a catch-all: `article_reference` is documented as "a
+free-text citation when no more specific type fits", so labelling it a
+literature citation claimed something specific about a source that need not
+be a paper — a registry entry, a programme, a company's own case series. It
+and `unknown` both read **Shared external source**; the specific kinds are
+still named specifically.
 
 The block states the case comparison rather than leaving a reader to infer
 it from the verdict's name. Two reports can share a source and describe one
