@@ -671,16 +671,22 @@ class TestTheInconsistencyNoteFollowsTheDecision:
         html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
         assert "1.0 (not weighed)" in html
 
-    def test_the_panel_says_it_for_a_pinned_relationship(self):
-        """Removed from one place because it is stated in another."""
-        html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
-        assert "no inconsistency-penalty comparison" in html
+    def test_the_page_says_it_for_a_pinned_relationship(self):
+        """Removed from one place because it is stated in another.
 
-    def test_the_panel_says_it_for_an_independent_pair(self):
+        Now stated in the relationship decision tile, and positively: the
+        reports were assessed on source context alone, which is what having
+        no penalty comparison means.
+        """
+        html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
+        assert "assessed on source context alone" in html
+
+    def test_the_page_says_it_for_an_independent_pair(self):
         """The other way a penalty goes unweighed, covered the same way.
 
-        This is the guarantee the dropped decision table used to provide; it
-        now lives in the clause under the panel's Penalty row.
+        This is the guarantee the dropped decision table used to provide. It
+        now lives in the relationship decision tile, which also says in so
+        many words that the question was not reached.
         """
         html = " ".join(
             _html(
@@ -694,9 +700,10 @@ class TestTheInconsistencyNoteFollowsTheDecision:
             ).split()
         )
         assert (
-            "the relationship question was not reached, because independence "
+            "he relationship question was not reached, because independence "
             "was not rejected"
         ) in html
+        assert "Not reached" in html
 
     def test_the_weight_is_still_shown_when_nothing_was_weighed(self):
         """The run assigns the severity a weight either way; it just went unused."""

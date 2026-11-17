@@ -114,11 +114,53 @@ another. A tile is muted only where there is **no verdict to show**: an
 inconclusive SCLE assessment — somebody looked and found the reference label
 genuinely ambiguous — reads as a value, because it is one.
 
+Then the **decision tiles** — one per stage, Independence and Relationship —
+which are the most prominent thing under the heading, and new. The outcome
+tiles above them are verdicts from four different places and say nothing
+about how vigiTwin reached its own; these say it. Each carries the outcome, a
+badge naming the **pathway** the decision took, the evidence that drove it
+where that is not already the badge, and the threshold or tolerance clause.
+
+**They are coloured by which way the decision went, not by which route it
+took** — green where the outcome counts towards the reports being one case,
+red where it counts against, neutral for an abstention or an absence. That is
+the page's one colour rule, the same one the tables follow, so a reader who
+has learned it does not learn a second. A badge coloured per pathway said
+that a shared-source decision and a rarity decision were different *kinds* of
+thing, which is not the distinction a colour is needed for.
+
+Both tiles always appear, in the same shape, whichever route each took. That
+is the point of them: direct evidence of a shared source decides as firmly as
+a rarity calculation, and a layout giving the arithmetic a panel and the
+source context a sentence in passing told a reader otherwise. A reader
+comparing two cases finds the same two tiles in the same place and reads the
+difference off the pathway badge.
+
+The pathways are `Shared source`, `Individual ids`, `Explicit reference`,
+`Probabilistic matching`, `Inconsistency assessment`, `Not reached`
+(independence was not rejected, so the relationship question never arose) and
+`Not recorded` (no classification was saved).
+
+`Shared source` and `Individual ids` are kept apart because a reader needs
+both halves of that route. A shared source is what made the comparison
+possible and is what rejects independence; the case labels *within* that
+source are what the relationship turned on. So a pair sharing one trial
+registration and naming different cases within it reads `Shared source` on
+the independence tile, green, and `Individual ids` on the relationship tile,
+red — which says in two badges both where the evidence came from and which
+way it pointed.
+
+They are *described* from what the run stored —
+`independence_reason`, `relationship_assessment`, the penalty's `threshold`
+and the source verdict — and never re-derived, so a tile cannot reach a
+different answer from the classifier's.
+
 Then the **at-a-glance panel**: the assessment as figures, in the order the
 assessment itself proceeds — reporting context, anchor and anchor population,
 the additional matching features with their contributions, the matching
-score, the retained inconsistencies with their weights, and the inconsistency
-penalty. It sits directly above the written summary so the same assessment is
+score, the scored inconsistencies with their weights, and the inconsistency
+penalty. The figures only: why each settled the question, or did not, is the
+decision tile above, said once. It sits directly above the written summary so the same assessment is
 available in figures and in prose, adjacent, and a reader meets the
 conclusion before the evidence rather than assembling it from three sections
 of tables.
@@ -359,6 +401,86 @@ presence, because a reader scanning the drug table is first asking which
 report listed what. Evidence orders rows only inside a presence group.
 
 ---
+
+## Source context, and evidence that did not decide
+
+Two things the format now keeps apart that it used to run together.
+
+### Source context is structure, not a sentence
+
+Section 2 carries a **Source context** block wherever the narrative
+comparison reached a verdict: the verdict in the reader's terms, the shared
+source identifier, and what became of the case labels *within* that source.
+
+The identifier is an `EvidenceCell`, so it is coloured by the page's one
+colour rule like any other value and a publication transform reaches it by
+kind. The sentences name no identifier. That is the same division the
+reporting context already keeps, and for the same reason: values live in
+cells, and prose that carries no identity reads the same in both
+presentations.
+
+The block states the case comparison rather than leaving a reader to infer
+it from the verdict's name. Two reports can share a source and describe one
+case, two cases, or two labels nobody can line up — and "same source
+different case" is three nouns and no sentence.
+
+### A pinned verdict's finding is not a weighed inconsistency
+
+Where a definitive source-context verdict settles the relationship — a shared
+source with different case labels within it — the classifier pins the outcome
+*whatever the inconsistency penalty comes to*. The verdict also produces an
+`Inconsistency` row, with a severity and a weight, and the page used to list
+it in the table of weighed findings beside the ones that were weighed. A row
+in that table, with a weight in its severity column, says the arithmetic
+reached the conclusion.
+
+So the page shows it under its own heading, **Decided on source context**,
+with the severity the assessment recorded and no weight, and a note saying it
+decided on its own. It is excluded from the scored trace: the findings table,
+the panel's chips, and the generated summary's count of inconsistencies.
+
+This is a **presentation change only**. The finding keeps its severity, its
+weight, its retained flag and its place in `EvidenceCaseVM.discrepancies` and
+in every stored artifact; `retained_discrepancies` is still the unfiltered
+audit view. What moved is where the page puts it:
+
+| Property | What it holds |
+|---|---|
+| `discrepancies` | every finding, as the assessment recorded it |
+| `retained_discrepancies` | the retained ones — the audit view |
+| `scored_discrepancies` | the retained ones the decision trace presents as weighed |
+| `deferred_discrepancies` | the source-derived ones shown as source-context evidence instead |
+
+`scored_discrepancies` equals `retained_discrepancies` except where
+`source_context_decided` is true, which is the only case that differs.
+
+### The panel's penalty is the total of what the panel lists
+
+`InconsistencyPenalty.w_tot` is the stored total over every retained finding,
+the source-derived one included. Where that finding is shown as source-context
+evidence instead, the panel's Inconsistencies row says **None** — so its
+Penalty row shows the sum of the findings it does list, which for a pinned
+verdict is usually `0.0`. A pair carrying a source verdict *and* an ordinary
+finding shows the ordinary one's weight; a run that recorded no weights at
+all falls back to the stored total, because there is no sum to take and a
+default this run may not have used would be worse.
+
+The stored `w_tot` is untouched, in the artifacts and in the audit record.
+
+### The tile does not discuss evidence that did not decide
+
+The pathway badge says what the decision rested on, which is enough. An
+earlier draft added a line to each tile naming the figure that had *not*
+decided — "the matching score of 4.2 was computed and did not bear on this
+decision" — and it answered a question the tile never raised. The shared
+clause builders end theirs with "not on the matching score" for a reader who
+has just been shown the score in a paragraph; on a tile that has not quoted
+it, the qualifier reads the same way. Both are gone from the tiles.
+
+The generated summary keeps its own wording, and agrees about the count: it
+draws from the same exclusion, so a pair decided on source context is not
+described as having "identified one decisive source and case inconsistency",
+which would place the verdict among the weighed findings.
 
 ## The assessment summary
 
@@ -833,15 +955,28 @@ review and not a publication-safe document.
 
 ## What this format is not
 
+**It does not show the assessment's own field names.** Verdicts, identifier
+kinds and pathways are named in the reader's words throughout. The stored
+values are field names — `article_reference`, `same_source_different_case`,
+`trial_registration` — and a parenthetical field name in a reader-facing line
+is the clearest sign a page is showing its internals. A test asserts that
+none of them reaches the rendered page.
+
 **It is not publication-safe.** An evidence review may carry original report
 identifiers, country names and narrative text, and its footer says so. Omitting
 the debug panels does not make a page anonymised, and nothing here should be
 described as publication-ready.
 
-A later phase adds the confidentiality transformations — date and age
-offsets, country masking, identifier replacement, narrative redaction — and
-the publication export built on them. This phase is designed to *accommodate*
-that and deliberately does not implement it.
+The confidentiality transformations — date and age offsets, country masking,
+identifier replacement, narrative review — and the fail-closed publication
+export built on them live in `llm_dup_dev.review_html.evidence.publication`,
+and are described in `docs/evidence_publication_mode.md`. They produce a
+*second* presentation from the same cases and the same template; this one is
+unchanged by them and stays the default.
+
+Publication mode does not make a page publication-safe either. It produces a
+candidate for disclosure review, which is what its footer and its manifest
+say.
 
 The design commitment that makes it possible: after the builder returns, the
 only report value anywhere in the evidence view model is `EvidenceCell.text`.

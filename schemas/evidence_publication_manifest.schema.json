@@ -1,0 +1,238 @@
+{
+  "$defs": {
+    "CountryMaskingSummary": {
+      "additionalProperties": false,
+      "description": "Whether the countries on these pages are real.\n\nA reader can tell by looking \u2014 ``Country 1`` is plainly an alias and\n``SE`` is plainly not \u2014 but a methods section needs to state the policy,\nand a reader of the manifest alone needs to know which of the two they are\nabout to see. ``cases_masked`` counts how many examples were masked, since\na single example can be decided against the default.",
+      "properties": {
+        "default_masked": {
+          "title": "Default Masked",
+          "type": "boolean"
+        },
+        "cases_masked": {
+          "default": 0,
+          "title": "Cases Masked",
+          "type": "integer"
+        },
+        "cases_retained": {
+          "default": 0,
+          "title": "Cases Retained",
+          "type": "integer"
+        },
+        "statement": {
+          "default": "",
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "default_masked"
+      ],
+      "title": "CountryMaskingSummary",
+      "type": "object"
+    },
+    "DisclosureStatus": {
+      "additionalProperties": false,
+      "description": "Where the disclosure review stood when this manifest was written.",
+      "properties": {
+        "cleared": {
+          "title": "Cleared",
+          "type": "boolean"
+        },
+        "findings_total": {
+          "default": 0,
+          "title": "Findings Total",
+          "type": "integer"
+        },
+        "findings_resolved": {
+          "default": 0,
+          "title": "Findings Resolved",
+          "type": "integer"
+        },
+        "findings_unresolved": {
+          "default": 0,
+          "title": "Findings Unresolved",
+          "type": "integer"
+        },
+        "statement": {
+          "default": "Displayed values were transformed for publication. This is a candidate for disclosure review, not a document certified as anonymised.",
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cleared"
+      ],
+      "title": "DisclosureStatus",
+      "type": "object"
+    },
+    "PresentationMode": {
+      "description": "Which presentation a page is \u2014 and so what it may be shown to.\n\n``INTERNAL`` is the default everywhere, which is the point: the existing\npresentation is unchanged, and a page becomes a publication candidate\nonly by being put through\n:func:`llm_dup_dev.review_html.evidence.publication.scramble_page`. The\nfooter states the mode, so the two cannot be mistaken for one another\nonce they are separate files on a disk.\n\n``PUBLICATION`` says the displayed values have been transformed. It does\nnot say the page is anonymous: that is a disclosure reviewer's\nconclusion, never an attribute a renderer can set.",
+      "enum": [
+        "internal",
+        "publication"
+      ],
+      "title": "PresentationMode",
+      "type": "string"
+    },
+    "SourceMaskingSummary": {
+      "additionalProperties": false,
+      "description": "Whether the shared source identifiers on these pages are real.\n\nDecided separately from the country, and masked by default: a named\nstudy or publication is a small and often public set of patients, so\nnaming one beside a drug, an event and two dates narrows the field much\nfurther than a country does.",
+      "properties": {
+        "default_masked": {
+          "title": "Default Masked",
+          "type": "boolean"
+        },
+        "cases_masked": {
+          "default": 0,
+          "title": "Cases Masked",
+          "type": "integer"
+        },
+        "cases_retained": {
+          "default": 0,
+          "title": "Cases Retained",
+          "type": "integer"
+        },
+        "statement": {
+          "default": "",
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "default_masked"
+      ],
+      "title": "SourceMaskingSummary",
+      "type": "object"
+    },
+    "TransformCounts": {
+      "additionalProperties": false,
+      "description": "How many distinct values of each class the transform was applied to.\n\nA count, never a value. **Applied to, not changed by:** a published value\nis allowed to equal its original, so a count of values that *moved* would\ntell a reader of this manifest that some value did not \u2014 and in a case\nwhere none moved, that every date on the page is the real one. The count\nof values put through the transform says the same useful thing to a\nmethods reader and says nothing about any of them.",
+      "properties": {
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "values_transformed": {
+          "title": "Values Transformed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "values_transformed"
+      ],
+      "title": "TransformCounts",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The non-sensitive record of one publication run.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "mode": {
+      "$ref": "#/$defs/PresentationMode",
+      "default": "publication"
+    },
+    "policy_version": {
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "key_id": {
+      "title": "Key Id",
+      "type": "string"
+    },
+    "dev_package_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dev Package Version"
+    },
+    "dev_git_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dev Git Commit"
+    },
+    "cases": {
+      "default": 0,
+      "title": "Cases",
+      "type": "integer"
+    },
+    "date_offset_bound_days": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "title": "Date Offset Bound Days",
+      "type": "array"
+    },
+    "age_offset_bound_years": {
+      "title": "Age Offset Bound Years",
+      "type": "integer"
+    },
+    "measurement_offset_bound_kg": {
+      "title": "Measurement Offset Bound Kg",
+      "type": "number"
+    },
+    "counts": {
+      "items": {
+        "$ref": "#/$defs/TransformCounts"
+      },
+      "title": "Counts",
+      "type": "array"
+    },
+    "country_masking": {
+      "$ref": "#/$defs/CountryMaskingSummary"
+    },
+    "source_masking": {
+      "$ref": "#/$defs/SourceMaskingSummary"
+    },
+    "transform_note": {
+      "default": "",
+      "title": "Transform Note",
+      "type": "string"
+    },
+    "disclosure": {
+      "$ref": "#/$defs/DisclosureStatus"
+    }
+  },
+  "required": [
+    "created_at",
+    "policy_version",
+    "key_id",
+    "date_offset_bound_days",
+    "age_offset_bound_years",
+    "measurement_offset_bound_kg",
+    "country_masking",
+    "source_masking",
+    "disclosure"
+  ],
+  "title": "PublicationTransformManifest",
+  "type": "object"
+}

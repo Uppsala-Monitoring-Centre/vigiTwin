@@ -38,9 +38,23 @@
     {{ (vm.provenance.lines or ['vigiTwin']) | join(' · ') }} ·
     llm_dup_dev.review_html, evidence format{% if vm.generated_at %} · rendered {{ vm.generated_at }}{% endif %}.
     <br/>
+    {% if vm.mode.value == 'publication' %}
+    {#
+      What was transformed comes from the run, not from this template: the
+      policy is configurable, and a footer naming every attribute category
+      would be wrong for any run that left one of them as reported.
+    #}
+    Prepared for publication.
+    {{ vm.transform_note or "Displayed values have been transformed, and the
+    assessments, scores, contributions and penalties are those of the
+    original reports." }}
+    A candidate for disclosure review, not a document certified as
+    anonymised.
+    {% else %}
     This is an internal evidence review. It may contain original report
     identifiers, country names and narrative text, and is not a
     publication-safe document.
+    {% endif %}
   </footer>
 </main>
 </body>

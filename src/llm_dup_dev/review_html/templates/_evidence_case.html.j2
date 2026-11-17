@@ -12,6 +12,7 @@
 #}
 {% macro cell(c) -%}
 {%- if c is none -%}<span class="absent">{{ "—" }}</span>
+{%- elif c.withheld -%}<span class="withheld">Withheld</span>
 {%- elif c.missing -%}{%- if c.text %}<span class="absent">{{ c.text }}</span>{% endif -%}
 {%- else -%}<span class="{{ c.css_class }}"{% if c.title %} title="{{ c.title }}"{% endif %}>{{ c.text }}</span>
 {%- endif -%}
@@ -115,6 +116,32 @@
     {% endfor %}
   </div>
 
+{#
+  The two decision stages, in the same shape whichever route each took. The
+  tiles above are verdicts from four different places — a reference label, a
+  screening algorithm, vigiTwin, a human reviewer — and say nothing about how
+  vigiTwin's was reached. These two say it: the outcome, what drove it, and
+  what was computed and did not.
+#}
+  {% if case.decisions %}
+  <div class="decisions">
+    {% for d in case.decisions %}
+    <div class="decision {{ d.css_class }}">
+      <p class="decision-stage">{{ d.stage_label }}</p>
+      <p class="decision-outcome">{{ d.outcome }}</p>
+      <p><span class="{{ d.pathway_css_class }}">{{ d.pathway_label }}</span></p>
+      {% if d.basis %}<p class="decision-basis">{{ d.basis }}</p>{% endif %}
+      {#
+        Already a sentence when it gets here: `build._as_sentence` does it,
+        because Jinja's `capitalize` lower-cases the rest of the string and
+        one of these clauses begins with "vigiTwin".
+      #}
+      {% if d.note %}<p class="decision-note">{{ d.note }}</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% if case.reference_verdict %}
   {% set v = case.reference_verdict %}
   <p class="note">
@@ -170,16 +197,16 @@
       </dd>
       {% if p.score_text %}
       <dt>Matching score</dt>
-      <dd>
-        {{ p.score_text }}
-        {%- if p.independence_note %}
-        <span class="chain-note">{{ p.independence_note }}</span>
-        {%- endif %}
-      </dd>
+      {#
+        The figure only. Why it settled the question, or did not, is the
+        independence decision tile above — said once, where a reader looking
+        for the decision goes first.
+      #}
+      <dd>{{ p.score_text }}</dd>
       {% endif %}
       <dt>Inconsistencies</dt>
       <dd>
-        {%- if case.retained_discrepancies -%}
+        {%- if case.scored_discrepancies -%}
         {#
           The values and the weight, and nothing else. What feature a finding
           is about, and what the assessment made of it, is the findings table
@@ -188,7 +215,7 @@
           the chip's colour says, and a "+" beside a red figure read as a
           contradiction.
         #}
-        {%- for d in case.retained_discrepancies %}
+        {%- for d in case.scored_discrepancies %}
         <span class="chip chip-against">{{ d.chip_text }}{% if d.unsigned_weight_text %} <b>{{ d.unsigned_weight_text }}</b>{% endif %}</span>
         {%- endfor -%}
         {%- else -%}
@@ -197,12 +224,7 @@
       </dd>
       {% if p.penalty_text %}
       <dt>Penalty</dt>
-      <dd>
-        {{ p.penalty_text }}
-        {%- if p.same_case_note %}
-        <span class="chain-note">{{ p.same_case_note }}</span>
-        {%- endif %}
-      </dd>
+      <dd>{{ p.penalty_text }}</dd>
       {% endif %}
     </dl>
   </div>
@@ -384,7 +406,41 @@
   {% endif %}
 
   {% if case.explicit_link_note %}<p class="note">{{ case.explicit_link_note }}</p>{% endif %}
-  {% if case.source_case_note %}<p class="note">{{ case.source_case_note }}</p>{% endif %}
+
+{#
+  Source-context evidence, given the same standing as the arithmetic above
+  it. The identifier is a cell, so it is coloured by the same rule as every
+  other value on the page and a publication transform reaches it by kind;
+  the sentences name no identifier, so they read the same in both
+  presentations.
+#}
+  {% if case.source_context %}
+  {% set sc = case.source_context %}
+  <h4>Source context</h4>
+  <table>
+    <tbody>
+      <tr>
+        <th scope="row">Verdict</th>
+        <td class="{{ sc.css_class }}">{{ sc.verdict_label }}</td>
+      </tr>
+      {% if sc.identifier %}
+      <tr>
+        <th scope="row">{{ sc.identifier_label or "Shared source" }}</th>
+        <td>{{ cell(sc.identifier) }}</td>
+      </tr>
+      {% endif %}
+      {% if sc.case_comparison %}
+      <tr>
+        <th scope="row">Cases within the source</th>
+        <td>{{ sc.case_comparison }}</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% elif case.source_case_note %}
+  <p class="note">{{ case.source_case_note }}</p>
+  {% endif %}
+
   {% if case.narrative_note %}<p class="note">{{ case.narrative_note }}</p>{% endif %}
 
 {#
@@ -394,8 +450,18 @@
   reasoning needs to see the findings before the verdict.
 #}
   <h3>3. Relationship assessment</h3>
-  <h4>Inconsistencies</h4>
-  {% if case.retained_discrepancies %}
+
+{#
+  Where a definitive source-context verdict settled the relationship, the
+  finding it produced is shown here and not in the table of weighed
+  inconsistencies below. It is a scored inconsistency in every stored
+  artifact, with its severity and its weight; what it is not is a term in a
+  comparison that happened, because the verdict pinned the outcome whatever
+  the penalty came to. A row in a table of weighed severities, with a weight
+  beside it, says the arithmetic reached the conclusion.
+#}
+  {% if case.deferred_discrepancies %}
+  <h4>Decided on source context</h4>
   <table class="findings">
     <thead>
       <tr>
@@ -405,7 +471,29 @@
       </tr>
     </thead>
     <tbody>
-      {% for d in case.retained_discrepancies %}
+      {% for d in case.deferred_discrepancies %}
+      <tr class="row-mismatch">
+        <td>{{ d.feature_label }}</td>
+        <td>{{ d.severity | capitalize }}</td>
+        <td>{{ finding(d) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <h4>Inconsistencies</h4>
+  {% if case.scored_discrepancies %}
+  <table class="findings">
+    <thead>
+      <tr>
+        <th scope="col">Feature</th>
+        <th scope="col">Severity</th>
+        <th scope="col">Finding</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in case.scored_discrepancies %}
       <tr class="{{ d.row_css_class }}">
         <td>{{ d.feature_label }}</td>
         <td>{{ d.severity | capitalize }}{% if d.weight_text %} ({{ d.weight_text }}){% endif %}</td>
@@ -429,6 +517,8 @@
     what sum to the inconsistency penalty that decided the same-case question.
   </p>
   {% endif %}
+  {% elif case.deferred_discrepancies %}
+  <p>vigiTwin recorded no other inconsistencies for this pair.</p>
   {% elif case.assessment_rows %}
   <p>vigiTwin recorded no inconsistencies for this pair.</p>
   {% endif %}

@@ -76,9 +76,11 @@ class TestTheNoteUnderTheAssessment:
         assert "No explicit inter-report case link was found" not in (
             case.explicit_link_note
         )
-        assert "says nothing about whether such a link exists" in (
-            case.explicit_link_note
-        )
+        # It says what was not done, and nothing about what would have been
+        # found. The explicit disclaimer that followed was spelling out the
+        # absence of a claim the sentence had not made.
+        assert "were not examined" in case.explicit_link_note
+        assert "says nothing about" not in case.explicit_link_note
 
     def test_an_enabled_run_is_unchanged(self):
         case = _case(

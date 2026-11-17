@@ -58,6 +58,45 @@ table tfoot td{border-top:2px solid var(--line);font-weight:bold}
 .outcome strong{font-size:16px;display:block;line-height:1.25;margin-top:3px}
 .outcome strong.tile-absent{color:var(--muted);font-weight:normal;font-size:14px}
 
+/* The two decision stages. Deliberately the most prominent thing after the
+   outcome tiles: a reader's first question is what was decided and on what,
+   and the page used to answer the second only by implication. Both tiles
+   take the same shape whichever route they took, so a shared-source
+   decision reads as firmly as a rarity calculation. */
+.decisions{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));
+  gap:12px;margin:0 0 16px;
+}
+.decision{
+  border:1px solid var(--line);border-left:4px solid var(--muted);
+  padding:10px 12px;background:#fbfcfd;
+}
+.decision p{margin:0 0 4px}
+.decision p:last-child{margin-bottom:0}
+.decision-absent{background:#fafbfb}
+.decision-stage{font-size:11px;color:var(--muted);font-weight:bold;
+  text-transform:uppercase;letter-spacing:.04em}
+.decision-outcome{font-size:18px;font-weight:600;line-height:1.25}
+.decision-absent .decision-outcome{color:var(--muted);font-weight:normal;font-size:14px}
+.decision-basis{font-size:14px}
+.decision-note{font-size:12.5px;color:#4a5761}
+.pathway{
+  display:inline-block;font-size:11px;font-weight:bold;text-transform:uppercase;
+  letter-spacing:.04em;padding:2px 7px;border-radius:9px;
+  background:#eceff1;color:var(--muted);
+}
+/* Coloured by which way the decision went, not by which route it took. A
+   badge coloured per pathway said a shared-source decision and a rarity
+   decision were different kinds of thing, which is not what a reader needs
+   from a colour; whether the outcome counts towards one case is. The same
+   two colours the tables use, so there is one colour rule on the page. */
+.pathway.value-match{background:var(--match-bg);color:var(--match)}
+.pathway.value-mismatch{background:var(--mismatch-bg);color:var(--mismatch)}
+.decision.value-match{border-left-color:var(--match)}
+.decision.value-mismatch{border-left-color:var(--mismatch)}
+.decision-absent.value-match,.decision-absent.value-mismatch,
+.decision-absent{border-left-color:var(--muted)}
+
 /* Tables */
 table{
   border-collapse:collapse;width:100%;font-size:13px;line-height:1.4;
@@ -97,7 +136,7 @@ th{background:var(--pale);color:var(--ink);font-size:12px}
 .value-match{color:var(--match);font-weight:600}
 .value-mismatch{color:var(--mismatch);font-weight:600}
 .value-neutral{color:var(--ink)}
-.absent{color:#687681;font-style:italic}
+.absent,.withheld{color:#687681;font-style:italic}
 tr.row-match td,tr.ae-match td{background:var(--match-bg)}
 tr.row-mismatch td,tr.ae-mismatch td{background:var(--mismatch-bg)}
 tr.row-neutral td,tr.ae-neutral td{background:transparent}
@@ -192,7 +231,7 @@ a{color:var(--accent)}
 
 @media(max-width:650px){
   main{padding:20px;margin:0}
-  .outcomes{grid-template-columns:1fr}
+  .outcomes,.decisions{grid-template-columns:1fr}
   .chain dl{grid-template-columns:1fr;gap:1px 0}
   .chain dt{margin-top:7px}
   .set-list{grid-template-columns:1fr;grid-auto-flow:row;gap:0}
@@ -220,7 +259,7 @@ a{color:var(--accent)}
   tr{break-inside:avoid}
   .case+.case{break-before:page}
   .case{margin-top:20px}
-  .outcomes,.callout,.gaps,.chain{break-inside:avoid}
+  .outcomes,.decisions,.decision,.callout,.gaps,.chain{break-inside:avoid}
   /* Long narratives and interpretations must not be cut off mid-sentence. */
   .callout p,.narrative-text{overflow:visible;break-inside:auto}
   a{text-decoration:none;color:inherit}

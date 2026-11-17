@@ -256,7 +256,7 @@ class TestThresholdsAreOnlyQuotedWhenKnown:
         text = build_assessment_summary(
             _features(), _classification(), run_settings=settings
         ).as_text()
-        assert "exceeding the independence threshold of 1.0" in text
+        assert "exceeds the independence threshold of 1.0" in text
 
     def test_the_zone_is_named_without_a_threshold_of_its_own(self):
         """The zone selects the same-case tolerance, so it is still named."""
@@ -323,7 +323,10 @@ class TestNoComparisonWasMade:
             penalty=InconsistencyPenalty(w_tot=100.0),
         )
         text = build_assessment_summary(features, classification).as_text()
-        assert "no inconsistency-penalty comparison" in text
+        # Says what was done, not what was not: being assessed on source
+        # context alone is what having no penalty comparison means, and the
+        # trailing qualifier restated the clause it hung off.
+        assert "assessed on source context alone" in text
         assert "below" not in text
 
 
@@ -343,7 +346,9 @@ class TestDecisionPathways:
         )
         text = build_assessment_summary(features, classification).as_text()
         assert "direct evidence of a shared source" in text
-        assert "not on the matching score" in text
+        # The score is never quoted on this route, so a clause denying that it
+        # decided answers a question the paragraph has not raised.
+        assert "not on the matching score" not in text
         assert "matching score of 0.2" not in text
 
     def test_explicit_link_is_named_as_such(self):

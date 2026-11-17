@@ -25,10 +25,20 @@ from llm_dup_dev.models.classification import (
     ClassificationResult,
     InconsistencyPenalty,
 )
-from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
+from llm_dup_dev.models.enums import (
+    AnchorType,
+    IndependenceAssessment,
+    IndependenceReason,
+    RelationshipAssessment,
+    ReportingContextLevel,
+)
 from llm_dup_dev.models.explicit_link import ExplicitLinkVerdict
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
-from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+from llm_dup_dev.models.narrative_source_case import (
+    SourceCaseAssessment,
+    SourceCaseVerdict,
+    SourceIdentifierType,
+)
 from llm_dup_dev.models.pair_features import (
     ClinicalDateFindingSummary,
     FeatureContribution,
@@ -77,6 +87,9 @@ from .models import (
     AttributionKind,
     CaseSummaryVM,
     CharacteristicRow,
+    DecisionPathway,
+    DecisionStage,
+    DecisionTileVM,
     DiscrepancyVM,
     DrugEntryVM,
     DrugEvidenceRow,
@@ -94,8 +107,10 @@ from .models import (
     ReconciliationVM,
     ReferenceVerdictVM,
     SharedSetVM,
+    SourceContextVM,
     TileState,
     ValueKind,
+    pathway_label,
     stronger_role,
 )
 from .settings import EvidenceRunSettings
@@ -788,9 +803,17 @@ def _attach_inconsistencies(
             _attach_ae_terms(inc, aes)
             continue
 
-        # Nothing in the tables corresponds to this finding (a source/case
-        # verdict, for instance). It is still listed in the assessment
-        # section; the gap records that no cell could carry it.
+        # A source/case verdict has a presentation of its own — the Source
+        # context block names the identifier and what became of the case
+        # labels — so recording it as evidence nothing could carry is no
+        # longer true, and a limitations list earns its space by naming what
+        # is absent.
+        if inc.feature.startswith("source_case_"):
+            continue
+
+        # Nothing in the tables corresponds to this finding. It is still
+        # listed in the assessment section; the gap records that no cell
+        # could carry it.
         gaps.append(
             EvidenceGap(
                 code=EvidenceGapCode.UNMAPPED_INCONSISTENCY,
@@ -1371,6 +1394,24 @@ _MATCHING_FEATURE_LABEL = {
     "patient_weight": "Weight",
 }
 
+#: What kind of value a matching-feature row's label actually holds.
+#:
+#: ``_matching_feature_label`` below writes the *matched value* into the cell
+#: where there is one — an age read off the characteristics table, a shared
+#: drug set, a matched clinical date — so the cell's ``kind`` has to say which
+#: of those it is. It drives no colour and no rendering; it is the dispatch
+#: key the publication transform uses, and a row stamped ``FREE_TEXT`` would
+#: carry a reported age onto a published page untouched.
+_MATCHING_FEATURE_KIND = {
+    "patient_sex": ValueKind.SEX,
+    "patient_age": ValueKind.AGE,
+    "patient_height": ValueKind.HEIGHT,
+    "patient_weight": ValueKind.WEIGHT,
+    "clinical_date": ValueKind.DRUG_START_DATE,
+    "drug_set": ValueKind.DRUG_SUBSTANCE,
+    "ae_set": ValueKind.AE_TERM,
+}
+
 
 def _demographic_match_values(
     characteristics: list[CharacteristicRow],
@@ -1454,11 +1495,7 @@ def _build_matching_features(
         decades = _contribution_decades(fc)
         if decades is None:
             continue
-        kind = (
-            ValueKind.DRUG_START_DATE
-            if fc.feature == "clinical_date"
-            else ValueKind.FREE_TEXT
-        )
+        kind = _MATCHING_FEATURE_KIND.get(fc.feature, ValueKind.FREE_TEXT)
         rows.append(
             MatchingFeatureRow(
                 label=EvidenceCell(
@@ -1974,6 +2011,7 @@ def _build_discrepancies(
                 suppressed_by=inc.suppressed_by,
                 weight=weight,
                 weight_text=weight_text,
+                source_context=inc.feature.startswith("source_case_"),
             )
         )
     for finding in features.clinical_date_findings:
@@ -2323,7 +2361,41 @@ def _context_cell(features: PairFeatures) -> EvidenceCell:
     return EvidenceCell(text=text, kind=ValueKind.COUNTRY)
 
 
-def _penalty_total(penalty: InconsistencyPenalty) -> str:
+def _scored_penalty_total(
+    penalty: InconsistencyPenalty,
+    discrepancies: list[DiscrepancyVM],
+    *,
+    source_context_decided: bool,
+) -> float:
+    """The penalty of the findings the panel lists directly above the figure.
+
+    ``w_tot`` is the stored total over every retained finding, the
+    source-derived one included. Where the source context decided, that
+    finding is shown as source-context evidence and not as a weighed
+    inconsistency — so the panel read "Inconsistencies: None" with a penalty
+    of 100.0 underneath, which is the arithmetic of a row it had just said
+    was not there.
+
+    The figure is therefore the sum of the chips above it. With nothing
+    listed that is exactly zero, which is the common case: a pinned verdict
+    usually produces the only finding there is. A pair with a source verdict
+    *and* an ordinary finding shows the ordinary one's weight.
+
+    Falls back to the stored total where a listed finding's weight is not
+    known — no classification recorded the weights, so there is no sum to
+    take and quoting a default this run may not have used would be worse than
+    quoting the figure it stored. The stored ``w_tot`` is untouched either
+    way, in the artifacts and in the audit record.
+    """
+    if not source_context_decided:
+        return penalty.w_tot
+    scored = [d for d in discrepancies if d.retained and not d.source_context]
+    if any(d.weight is None for d in scored):
+        return penalty.w_tot
+    return sum(d.weight or 0.0 for d in scored)
+
+
+def _penalty_total(penalty: InconsistencyPenalty, total: float) -> str:
     """The penalty, as the one figure it is: ``1.2``.
 
     The arithmetic that produced it — ``3 x 0.4 = 1.2`` — sat here until the
@@ -2336,10 +2408,10 @@ def _penalty_total(penalty: InconsistencyPenalty) -> str:
     few sections below. What the comparison *was*, where one happened, is left
     to the clause beneath this row rather than said twice.
     """
-    total = f"{penalty.w_tot:.1f}"
+    shown = f"{total:.1f}"
     if penalty.threshold is None:
-        return f"{total} (not weighed)"
-    return total
+        return f"{shown} (not weighed)"
+    return shown
 
 
 def _as_clause(sentence: str | None) -> str:
@@ -2381,6 +2453,9 @@ def _build_summary_panel(
     run_settings: EvidenceRunSettings | None,
     shared_sets: list[SharedSetVM],
     reconciliation: ReconciliationVM | None,
+    discrepancies: list[DiscrepancyVM] | None = None,
+    *,
+    source_context_decided: bool = False,
 ) -> CaseSummaryVM:
     """The assessment chain in figures, for the panel above the narrative.
 
@@ -2434,7 +2509,18 @@ def _build_summary_panel(
                 )
             )
         ),
-        penalty_text=("" if penalty is None else _penalty_total(penalty)),
+        penalty_text=(
+            ""
+            if penalty is None
+            else _penalty_total(
+                penalty,
+                _scored_penalty_total(
+                    penalty,
+                    discrepancies or [],
+                    source_context_decided=source_context_decided,
+                ),
+            )
+        ),
         same_case_note=(
             ""
             if classification is None
@@ -2524,8 +2610,7 @@ def _explicit_link_note(
     if run_settings is not None and run_settings.explicit_link_enabled is False:
         return (
             "This run did not use explicit inter-report case links, so the "
-            "case-identifier fields were not examined. This says nothing "
-            "about whether such a link exists."
+            "case-identifier fields were not examined."
         )
     link = features.explicit_link
     if link is None:
@@ -2552,8 +2637,76 @@ def _explicit_link_note(
     )
 
 
+#: What each source-case verdict says, in the reader's terms.
+#:
+#: The stored values are field names — ``same_source_different_case`` — and
+#: the page used to print them with their underscores swapped for spaces. A
+#: reader met "Same source different case", which is three nouns and no
+#: sentence, and could not tell whether the *reports* differed or the *cases*
+#: did. These say which.
+_SOURCE_VERDICT_LABEL: dict[SourceCaseVerdict, str] = {
+    SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT: (
+        "Shared source, describing a single patient"
+    ),
+    SourceCaseVerdict.SAME_SOURCE_SAME_CASE: (
+        "Shared source, and the same case within it"
+    ),
+    SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE: (
+        "Shared source, but different cases within it"
+    ),
+    SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE: (
+        "Shared source, cases within it not comparable"
+    ),
+    SourceCaseVerdict.MULTI_PATIENT_CONTEXT_NO_LINK: (
+        "A source describing several patients, with no shared identifier"
+    ),
+    SourceCaseVerdict.NO_DECISIVE_SIGNAL: "No decisive source or case signal",
+    SourceCaseVerdict.NOT_ASSESSED: "Source context not assessed",
+}
+
+#: What kind of source an identifier names, for the label beside its value.
+#: Never the enum member: ``article_reference`` is a field name, and a
+#: parenthetical field name in a reader-facing line is the clearest sign a
+#: page is showing its internals.
+_SOURCE_IDENTIFIER_LABEL: dict[SourceIdentifierType, str] = {
+    SourceIdentifierType.DOI: "Publication (DOI)",
+    SourceIdentifierType.PMID: "Publication (PubMed ID)",
+    SourceIdentifierType.TRIAL_REGISTRATION: "Trial registration",
+    SourceIdentifierType.LINKED_CASE: "Linked-case reference",
+    SourceIdentifierType.PROTOCOL_NUMBER: "Protocol number",
+    SourceIdentifierType.STUDY_NAME: "Study name",
+    SourceIdentifierType.ARTICLE_REFERENCE: "Literature citation",
+    SourceIdentifierType.UNKNOWN: "Source reference",
+}
+
+#: Verdicts that establish a shared source outright.
+_SHARED_SOURCE_VERDICTS = frozenset(
+    {
+        SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
+        SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
+        SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE,
+        SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
+    }
+)
+
+#: Verdicts that settle the relationship on their own, whatever the penalty
+#: comes to. Mirrors the pinned branches of
+#: :func:`llm_dup_dev.classifier.decision_logic._relationship`; the builder
+#: describes that decision and never remakes it.
+_RELATIONSHIP_PINNING_VERDICTS = frozenset(
+    {SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE}
+)
+
+
 def _source_case_note(features: PairFeatures) -> str:
-    """The narrative-derived source and case verdict, when one was reached."""
+    """The source and case verdict in prose, naming no identifier.
+
+    The identifier lives in :class:`SourceContextVM.identifier`, a cell, for
+    the reason ``context_phrase`` gives about the reporting context: keeping
+    the identity out of the sentences means a publication export needs no
+    different ones, and the one place it appears is a cell the transform
+    reaches by kind.
+    """
     assessment = features.source_case_assessment
     if assessment is None:
         return ""
@@ -2562,19 +2715,302 @@ def _source_case_note(features: PairFeatures) -> str:
         SourceCaseVerdict.NO_DECISIVE_SIGNAL,
     ):
         return ""
-    parts = [assessment.verdict.value.replace("_", " ").capitalize() + "."]
+    label = _SOURCE_VERDICT_LABEL.get(assessment.verdict, "")
+    if not label:  # pragma: no cover - the table covers the enum
+        return ""
+    return f"{label}."
+
+
+def _case_comparison_text(assessment: SourceCaseAssessment) -> str:
+    """What became of the cases *within* the shared source.
+
+    The distinction the verdict turns on, said rather than left to be
+    inferred from the verdict's name: two reports can share a source and
+    describe one case, two cases, or two labels nobody can line up.
+    """
+    if not assessment.case_identifiers_compared:
+        return (
+            "Case labels within the source were not available on both sides, "
+            "so they were not compared."
+        )
+    if not assessment.case_identifiers_comparable:
+        return (
+            "Case labels within the source were present on both sides but "
+            "not of a kind that can be compared, so their difference is not "
+            "evidence of different patients."
+        )
+    if assessment.verdict is SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE:
+        return (
+            "Case labels within the source were compared and name different "
+            "cases."
+        )
+    return "Case labels within the source were compared and agree."
+
+
+def _source_context(
+    features: PairFeatures,
+    classification: ClassificationResult | None,
+) -> SourceContextVM | None:
+    """The source-context evidence, as structure.
+
+    ``None`` where the comparison reached nothing worth a reader's time: not
+    assessed, or assessed and decisive about neither the source nor the case.
+    """
+    assessment = features.source_case_assessment
+    if assessment is None:
+        return None
+    if assessment.verdict in (
+        SourceCaseVerdict.NOT_ASSESSED,
+        SourceCaseVerdict.NO_DECISIVE_SIGNAL,
+    ):
+        return None
+
+    shared = assessment.verdict in _SHARED_SOURCE_VERDICTS
+    identifier: EvidenceCell | None = None
+    identifier_label = ""
     if assessment.shared_source_identifier:
-        kind = (
-            assessment.shared_source_identifier_type.value
-            if assessment.shared_source_identifier_type is not None
-            else "identifier"
+        identifier = EvidenceCell(
+            text=assessment.shared_source_identifier,
+            kind=ValueKind.SOURCE_IDENTIFIER,
+            # Green: a shared source is evidence counted *for* the pair, in
+            # the same sense the matching sets are. It is not a term in the
+            # matching score, which is why it carries no contribution.
+            role=EvidenceRole.MATCHING if shared else EvidenceRole.NEUTRAL,
+            attributions=[
+                Attribution(
+                    kind=AttributionKind.MATCHING_FEATURE,
+                    source=EvidenceSource.SOURCE_CASE,
+                    feature="shared_source_identifier",
+                    note="Both narratives name this source",
+                )
+            ]
+            if shared
+            else [],
         )
-        parts.append(
-            f"Shared source {kind}: {assessment.shared_source_identifier}."
+        identifier_label = _SOURCE_IDENTIFIER_LABEL.get(
+            assessment.shared_source_identifier_type
+            or SourceIdentifierType.UNKNOWN,
+            "Source reference",
         )
-    if assessment.reasoning:
-        parts.append(assessment.reasoning)
-    return " ".join(parts)
+
+    decided = assessment.verdict in _RELATIONSHIP_PINNING_VERDICTS and (
+        classification is not None
+        and classification.relationship_assessment is not None
+    )
+    return SourceContextVM(
+        verdict_label=_SOURCE_VERDICT_LABEL.get(assessment.verdict, ""),
+        identifier=identifier,
+        identifier_label=identifier_label,
+        case_comparison=_case_comparison_text(assessment),
+        decided_relationship=decided,
+        role=EvidenceRole.MATCHING if shared else EvidenceRole.NEUTRAL,
+    )
+
+
+#: Which pathway each recorded independence reason belongs to.
+_INDEPENDENCE_PATHWAY: dict[IndependenceReason, DecisionPathway] = {
+    IndependenceReason.SHARED_SOURCE: DecisionPathway.SHARED_SOURCE,
+    IndependenceReason.EXPLICIT_LINK: DecisionPathway.EXPLICIT_LINK,
+    IndependenceReason.RARITY_COMPELLING: DecisionPathway.PROBABILISTIC_MATCHING,
+    IndependenceReason.RARITY_INTERMEDIATE: (
+        DecisionPathway.PROBABILISTIC_MATCHING
+    ),
+    IndependenceReason.RARITY_LIMITED: DecisionPathway.PROBABILISTIC_MATCHING,
+    IndependenceReason.RARITY_INSUFFICIENT: (
+        DecisionPathway.PROBABILISTIC_MATCHING
+    ),
+}
+
+_EXPLICIT_LINK_BASIS = "One report references the other"
+
+
+def _as_sentence(clause: str) -> str:
+    """A clause from the summary's builders, as a sentence on its own.
+
+    The clauses are written to sit mid-paragraph, so some arrive lower-cased
+    ("the total inconsistency penalty of ...") and some already capitalised
+    ("Independence was rejected ..."). Jinja's ``capitalize`` would have done
+    this, and it lower-cases the rest of the string: one clause begins with
+    "vigiTwin", which came out as "Vigitwin". So a word that already carries a
+    capital is left alone — it is a name, and capitalising its first letter
+    renames it.
+    """
+    if not clause:
+        return ""
+    first = clause.split(" ", 1)[0]
+    if not any(character.isupper() for character in first):
+        clause = clause[0].upper() + clause[1:]
+    return clause if clause.endswith(".") else f"{clause}."
+
+
+def _build_decision_tiles(
+    features: PairFeatures,
+    classification: ClassificationResult | None,
+    source_context: SourceContextVM | None,
+    run_settings: EvidenceRunSettings | None,
+    *,
+    score: float | None,
+) -> list[DecisionTileVM]:
+    """The two decision stages, described from what the run recorded.
+
+    Described, never re-derived: every branch below reads
+    ``independence_reason``, ``relationship_assessment``, the penalty's
+    ``threshold`` and the source verdict, all of them stored, and maps them
+    onto a pathway. Nothing here can reach a different answer from the
+    classifier's, because nothing here computes one.
+    """
+    if classification is None:
+        absent = DecisionTileVM(
+            stage=DecisionStage.INDEPENDENCE,
+            stage_label="Independence assessment",
+            outcome="Not recorded",
+            state=TileState.NOT_ENTERED,
+        )
+        return [
+            absent,
+            absent.model_copy(
+                update={
+                    "stage": DecisionStage.RELATIONSHIP,
+                    "stage_label": "Relationship assessment",
+                }
+            ),
+        ]
+    return [
+        _independence_tile(
+            features, classification, source_context, run_settings, score
+        ),
+        _relationship_tile(features, classification, source_context),
+    ]
+
+
+#: Which way each outcome points, for the tile's colour. The same two
+#: colours the tables use: green counts towards the reports being one case,
+#: red counts against, and an abstention points neither way.
+_INDEPENDENCE_ROLE: dict[IndependenceAssessment, EvidenceRole] = {
+    IndependenceAssessment.NON_INDEPENDENT: EvidenceRole.MATCHING,
+    IndependenceAssessment.INDEPENDENT: EvidenceRole.INCONSISTENT,
+}
+
+_RELATIONSHIP_ROLE: dict[RelationshipAssessment, EvidenceRole] = {
+    RelationshipAssessment.SAME_CASE: EvidenceRole.MATCHING,
+    RelationshipAssessment.DIFFERENT_CASE: EvidenceRole.INCONSISTENT,
+    RelationshipAssessment.ABSTAIN: EvidenceRole.NEUTRAL,
+}
+
+#: What the case labels within a shared source came to, as the relationship
+#: tile's basis. The source made the comparison possible; these are what it
+#: turned on, which is the half a reader was missing.
+_INDIVIDUAL_IDENTIFIER_BASIS: dict[SourceCaseVerdict, str] = {
+    SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE: (
+        "Differing comparable individual identifiers"
+    ),
+    SourceCaseVerdict.SAME_SOURCE_SAME_CASE: (
+        "Matching comparable individual identifiers"
+    ),
+}
+
+
+def _independence_tile(
+    features: PairFeatures,
+    classification: ClassificationResult,
+    source_context: SourceContextVM | None,
+    run_settings: EvidenceRunSettings | None,
+    score: float | None,
+) -> DecisionTileVM:
+    reason = classification.independence_reason
+    pathway = (
+        _INDEPENDENCE_PATHWAY.get(reason, DecisionPathway.UNRECORDED)
+        if reason is not None
+        else DecisionPathway.UNRECORDED
+    )
+    shown = features.L_match if score is None else score
+
+    if pathway is DecisionPathway.SHARED_SOURCE:
+        basis = "Shared source"
+    elif pathway is DecisionPathway.EXPLICIT_LINK:
+        basis = _EXPLICIT_LINK_BASIS
+    else:
+        basis = f"Matching score {format_score(shown)}"
+    # One wording for the tile and the prose, from the clause builder the
+    # summary uses, so the two cannot drift apart.
+    note = _as_sentence(
+        independence_clause(features, classification, run_settings, score=score)
+    )
+
+    return DecisionTileVM(
+        stage=DecisionStage.INDEPENDENCE,
+        stage_label="Independence assessment",
+        outcome=classification.independence_assessment.value,
+        role=_INDEPENDENCE_ROLE.get(
+            classification.independence_assessment, EvidenceRole.NEUTRAL
+        ),
+        pathway=pathway,
+        # Nothing is gained by repeating the badge directly under it.
+        basis="" if basis == pathway_label(pathway) else basis,
+        note=note,
+    )
+
+
+def _relationship_tile(
+    features: PairFeatures,
+    classification: ClassificationResult,
+    source_context: SourceContextVM | None,
+) -> DecisionTileVM:
+    relationship = classification.relationship_assessment
+    penalty = classification.penalty
+    assessment = features.source_case_assessment
+    verdict = assessment.verdict if assessment is not None else None
+    reason = classification.independence_reason
+
+    if relationship is None:
+        return DecisionTileVM(
+            stage=DecisionStage.RELATIONSHIP,
+            stage_label="Relationship assessment",
+            outcome="Not reached",
+            state=TileState.NOT_ASSESSED,
+            pathway=DecisionPathway.NOT_REACHED,
+            note=_as_sentence(same_case_clause(classification) or ""),
+        )
+
+    note = _as_sentence(same_case_clause(classification) or "")
+
+    if verdict in _INDIVIDUAL_IDENTIFIER_BASIS:
+        # The source made the comparison possible; the individual identifiers
+        # are what it turned on, and a badge saying only "Shared source" left
+        # a reader to work out which of the two had decided.
+        pathway = DecisionPathway.INDIVIDUAL_IDENTIFIERS
+        basis = _INDIVIDUAL_IDENTIFIER_BASIS[verdict]
+    elif verdict is SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT:
+        pathway = DecisionPathway.SHARED_SOURCE
+        basis = "Source describes a single patient"
+    elif reason is IndependenceReason.EXPLICIT_LINK:
+        pathway = DecisionPathway.EXPLICIT_LINK
+        basis = _EXPLICIT_LINK_BASIS
+    elif penalty is not None and penalty.threshold is not None:
+        pathway = DecisionPathway.INCONSISTENCY_PENALTY
+        basis = f"Inconsistency penalty {penalty.w_tot:.1f}"
+    else:
+        pathway = DecisionPathway.UNRECORDED
+        basis = ""
+
+    if pathway is DecisionPathway.UNRECORDED and not note:
+        # A saved run from before the penalty carried its threshold, or one
+        # that recorded no penalty at all. Say that rather than leave a tile
+        # a reader has to interpret by its emptiness.
+        note = (
+            "The run recorded no evidence pathway for this decision, so the "
+            "page can state the outcome and not what reached it."
+        )
+
+    return DecisionTileVM(
+        stage=DecisionStage.RELATIONSHIP,
+        stage_label="Relationship assessment",
+        outcome=relationship.value,
+        role=_RELATIONSHIP_ROLE.get(relationship, EvidenceRole.NEUTRAL),
+        pathway=pathway,
+        basis="" if basis == pathway_label(pathway) else basis,
+        note=note,
+    )
 
 
 def _narrative_note(r1: Report, r2: Report) -> str:
@@ -2713,6 +3149,7 @@ def build_evidence_case(
     context_note = ""
     explicit_link_note = ""
     source_case_note = ""
+    source_context: SourceContextVM | None = None
     narrative_blocks: list[EvidenceTextVM] = []
 
     if features is not None:
@@ -2753,13 +3190,23 @@ def build_evidence_case(
             penalty=classification.penalty if classification else None,
             demographic_cells=_demographic_cells(characteristics),
         )
+        source_case_note = _source_case_note(features)
+        source_context = _source_context(features, classification)
         summary_panel = _build_summary_panel(
-            features, classification, run_settings, shared_sets, reconciliation
+            features,
+            classification,
+            run_settings,
+            shared_sets,
+            reconciliation,
+            discrepancies,
+            source_context_decided=(
+                source_context is not None
+                and source_context.decided_relationship
+            ),
         )
         anchor_note = _anchor_note(features)
         context_note = _context_note(report_1, report_2, features)
         explicit_link_note = _explicit_link_note(features, run_settings)
-        source_case_note = _source_case_note(features)
 
         if classification is not None:
             assessment_rows = _build_assessment_rows(
@@ -2821,6 +3268,15 @@ def build_evidence_case(
         title=presentation.title,
         lede=presentation.lede,
         outcomes=_build_outcome_tiles(reference, final_label),
+        decisions=_build_decision_tiles(
+            features,
+            classification,
+            source_context,
+            run_settings,
+            score=shown_score(features, reconciliation),
+        )
+        if features is not None
+        else [],
         reference_verdict=_build_reference_verdict(reference, final_label),
         summary_panel=(
             None
@@ -2840,6 +3296,7 @@ def build_evidence_case(
         reconciliation=reconciliation,
         explicit_link_note=explicit_link_note,
         source_case_note=source_case_note,
+        source_context=source_context,
         narrative_note=_narrative_note(report_1, report_2),
         assessment_rows=assessment_rows,
         discrepancies=discrepancies,

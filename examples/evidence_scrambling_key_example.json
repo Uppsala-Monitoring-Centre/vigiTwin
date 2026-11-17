@@ -1,0 +1,244 @@
+{
+  "schema_version": "1.0",
+  "created_at": "2026-01-01T00:00:00+00:00",
+  "key_id": "8b55a166f630871d",
+  "policy_version": "1.0",
+  "policy": {
+    "policy_version": "1.0",
+    "allow_unchanged_values": true,
+    "date_offset_min_days": 0,
+    "date_offset_max_days": 400,
+    "date_offset_candidates": 1024,
+    "date_year_floor": 1960,
+    "date_year_ceiling": 2100,
+    "separation_exact_days": 7,
+    "separation_relative_tolerance": 0.2,
+    "age_offset_max_years": 3,
+    "age_offset_max_months": 6,
+    "age_offset_max_days": 20,
+    "age_bands": [
+      [
+        "infant",
+        0.0,
+        2.0
+      ],
+      [
+        "child",
+        2.0,
+        12.0
+      ],
+      [
+        "adolescent",
+        12.0,
+        18.0
+      ],
+      [
+        "adult",
+        18.0,
+        65.0
+      ],
+      [
+        "elderly",
+        65.0,
+        200.0
+      ]
+    ],
+    "measurement_offset_max_kg": 3.0,
+    "measurement_offset_max_cm": 4.0,
+    "measurement_offset_max_lb": 6,
+    "measurement_offset_max_in": 2,
+    "mask_countries": false,
+    "country_alias_template": "Country {n}",
+    "mask_source_identifiers": true,
+    "source_alias_template": "Source {n}",
+    "identifier_alias_template": "Identifier {n}",
+    "pair_alias_template": "Pair {n}",
+    "report_alias_labels": [
+      "Report A",
+      "Report B"
+    ],
+    "provenance_source_label": "secure study environment",
+    "withheld_text_notice": "Withheld from the published version.",
+    "free_text_default": "review",
+    "advisories_block": false
+  },
+  "dev_package_version": "1.2.0",
+  "dev_git_commit": "0000000000000000000000000000000000000000",
+  "cases": [
+    {
+      "example_id": "R1__R2",
+      "pair_id": "R1__R2",
+      "position": 1,
+      "published_example_id": "pair-01",
+      "published_example_label": "Pair 1",
+      "date_offset_days": 5,
+      "date_candidates_tried": 155,
+      "numeric_offsets": {
+        "age:years": "+3 years"
+      },
+      "substitutions": [
+        {
+          "original": "2024-02-20",
+          "published": "2024-02-25",
+          "kind": "date:day",
+          "note": "+5 days",
+          "changed": true
+        },
+        {
+          "original": "2023-11-13",
+          "published": "2023-11-18",
+          "kind": "date:day",
+          "note": "+5 days",
+          "changed": true
+        },
+        {
+          "original": "2023-11-12",
+          "published": "2023-11-17",
+          "kind": "date:day",
+          "note": "+5 days",
+          "changed": true
+        },
+        {
+          "original": "2023",
+          "published": "2023",
+          "kind": "date:year",
+          "note": "+5 days",
+          "changed": false
+        },
+        {
+          "original": "81 years",
+          "published": "84 years",
+          "kind": "age",
+          "note": "+3 years",
+          "changed": true
+        },
+        {
+          "original": "SE",
+          "published": "SE",
+          "kind": "country",
+          "note": "retained: mask_countries is off",
+          "changed": false
+        },
+        {
+          "original": "2024",
+          "published": "2024",
+          "kind": "date:year",
+          "note": "reporting context year, not shifted",
+          "changed": false
+        },
+        {
+          "original": "SE 2024",
+          "published": "SE 2024",
+          "kind": "country",
+          "note": "reporting context, retained: mask_countries is off",
+          "changed": false
+        }
+      ],
+      "cells": [
+        {
+          "path": "summary_panel.context",
+          "kind": "country",
+          "original": "SE 2024",
+          "published": "SE 2024",
+          "changed": false
+        },
+        {
+          "path": "characteristics[1].left",
+          "kind": "age",
+          "original": "81 years",
+          "published": "84 years",
+          "changed": true
+        },
+        {
+          "path": "characteristics[1].right",
+          "kind": "age",
+          "original": "81 years",
+          "published": "84 years",
+          "changed": true
+        },
+        {
+          "path": "characteristics[2].left",
+          "kind": "country",
+          "original": "SE",
+          "published": "SE",
+          "changed": false
+        },
+        {
+          "path": "characteristics[2].right",
+          "kind": "country",
+          "original": "SE",
+          "published": "SE",
+          "changed": false
+        },
+        {
+          "path": "characteristics[3].left",
+          "kind": "report_date",
+          "original": "2024-02-20",
+          "published": "2024-02-25",
+          "changed": true
+        },
+        {
+          "path": "characteristics[3].right",
+          "kind": "report_date",
+          "original": "2024-02-20",
+          "published": "2024-02-25",
+          "changed": true
+        },
+        {
+          "path": "characteristics[4].left",
+          "kind": "ae_onset_date",
+          "original": "2023-11-13",
+          "published": "2023-11-18",
+          "changed": true
+        },
+        {
+          "path": "characteristics[4].right",
+          "kind": "ae_onset_date",
+          "original": "2023-11-12",
+          "published": "2023-11-17",
+          "changed": true
+        },
+        {
+          "path": "drugs[0].left_entries[0].start_date",
+          "kind": "drug_start_date",
+          "original": "2023",
+          "published": "2023",
+          "changed": false
+        },
+        {
+          "path": "drugs[0].right_entries[0].start_date",
+          "kind": "drug_start_date",
+          "original": "2023",
+          "published": "2023",
+          "changed": false
+        },
+        {
+          "path": "adverse_events[0].left_onsets[0]",
+          "kind": "ae_onset_date",
+          "original": "2023-11-13",
+          "published": "2023-11-18",
+          "changed": true
+        },
+        {
+          "path": "adverse_events[0].right_onsets[0]",
+          "kind": "ae_onset_date",
+          "original": "2023-11-12",
+          "published": "2023-11-17",
+          "changed": true
+        }
+      ],
+      "separations": [],
+      "withheld_paths": [],
+      "replaced_paths": [
+        "pair_id",
+        "example_id",
+        "example_label"
+      ],
+      "dates_total": 5,
+      "dates_changed": 3,
+      "date_pattern_unchanged": false
+    }
+  ],
+  "findings": [],
+  "resolved_findings": []
+}

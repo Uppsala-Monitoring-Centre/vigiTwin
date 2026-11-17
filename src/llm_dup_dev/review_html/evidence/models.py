@@ -148,6 +148,11 @@ class ValueKind(str, Enum):
     AE_TERM = "ae_term"
     AE_ONSET_DATE = "ae_onset_date"
     IDENTIFIER = "identifier"
+    #: A study, publication, protocol or linked-case reference that ties two
+    #: reports to one underlying source. Its own kind rather than
+    #: ``IDENTIFIER``: it names a *source*, not a report, so it is masked
+    #: under its own policy and aliased in its own series.
+    SOURCE_IDENTIFIER = "source_identifier"
     COUNT = "count"
     SCORE = "score"
     FREE_TEXT = "free_text"
@@ -571,6 +576,12 @@ class DiscrepancyVM(BaseModel):
     #: contributed nothing to the penalty.
     retained: bool = True
     suppressed: bool = False
+    #: True for a finding the source-context assessment produced. It is a
+    #: scored inconsistency in the stored artifacts like any other, and where
+    #: the source context *decided* the relationship it is not one in the
+    #: decision trace: the decision was pinned on the verdict regardless of
+    #: what the penalty came to. See ``EvidenceCaseVM.scored_discrepancies``.
+    source_context: bool = False
 
     suppressed_by: str = ""
     #: Non-empty when a clinical-date finding was downgraded; each entry is
@@ -699,6 +710,150 @@ class OutcomeTileVM(BaseModel):
         """
         shown = (TileState.VALUE, TileState.INCONCLUSIVE)
         return "tile-value" if self.state in shown else "tile-absent"
+
+
+class DecisionStage(str, Enum):
+    """Which of the two questions a decision tile reports."""
+
+    INDEPENDENCE = "independence"
+    RELATIONSHIP = "relationship"
+
+
+class DecisionPathway(str, Enum):
+    """What the decision actually turned on.
+
+    The page used to let a reader infer this from which figures were filled
+    in, which worked for the rarity route and not at all for the others: a
+    pair decided on direct evidence of a shared source showed a matching
+    score, an inconsistency penalty and no indication that neither had
+    settled anything.
+    """
+
+    SHARED_SOURCE = "shared_source"
+    #: The case labels *within* a shared source — matching ones putting the
+    #: pair on one case, differing ones on two. Named apart from
+    #: ``SHARED_SOURCE`` because a reader needs both halves: a shared source
+    #: is what made the comparison possible, and the individual identifiers
+    #: are what it turned on.
+    INDIVIDUAL_IDENTIFIERS = "individual_identifiers"
+    EXPLICIT_LINK = "explicit_link"
+    PROBABILISTIC_MATCHING = "probabilistic_matching"
+    INCONSISTENCY_PENALTY = "inconsistency_penalty"
+    #: The question was never put, because independence was not rejected.
+    NOT_REACHED = "not_reached"
+    #: No classification was saved, so there is nothing to report.
+    UNRECORDED = "unrecorded"
+
+
+#: Reader-facing name for each pathway. Source-neutral and free of the
+#: assessment's own field names: a reader is told what the decision rested
+#: on, not which enum member recorded it.
+_PATHWAY_LABEL: dict[DecisionPathway, str] = {
+    DecisionPathway.SHARED_SOURCE: "Shared source",
+    DecisionPathway.INDIVIDUAL_IDENTIFIERS: "Individual ids",
+    DecisionPathway.EXPLICIT_LINK: "Explicit reference",
+    DecisionPathway.PROBABILISTIC_MATCHING: "Probabilistic matching",
+    DecisionPathway.INCONSISTENCY_PENALTY: "Inconsistency assessment",
+    DecisionPathway.NOT_REACHED: "Not reached",
+    DecisionPathway.UNRECORDED: "Not recorded",
+}
+
+
+def pathway_label(pathway: DecisionPathway) -> str:
+    """The reader-facing badge text for a pathway."""
+    return _PATHWAY_LABEL.get(pathway, "Not recorded")
+
+
+class DecisionTileVM(BaseModel):
+    """One of the two decision stages, as a tile.
+
+    The two stages get the same shape and the same prominence whichever route
+    each took, which is the point: direct evidence of a shared source decides
+    as firmly as a rarity calculation, and a layout that gave the arithmetic a
+    panel and the source context a sentence in passing told a reader
+    otherwise.
+
+    :attr:`basis` is the evidence that drove the decision. :attr:`role`
+    carries which way the outcome went, so the tile is coloured by the page's
+    one colour rule rather than by a vocabulary of its own.
+    """
+
+    stage: DecisionStage
+    stage_label: str
+    outcome: str
+    state: TileState = TileState.VALUE
+    pathway: DecisionPathway = DecisionPathway.UNRECORDED
+    #: Which way this outcome points: green where it counts towards the
+    #: reports being one case, red where it counts against. The same two
+    #: colours the rest of the page uses, which is the point — a reader who
+    #: has learned the colour rule on the tables can read these without
+    #: learning a second one. ``NEUTRAL`` for an abstention or an absence,
+    #: which point neither way.
+    role: EvidenceRole = EvidenceRole.NEUTRAL
+    #: The decision-driving evidence in a phrase: "Differing comparable
+    #: individual identifiers", "Matching score 4.2". Empty where it would
+    #: only repeat :attr:`pathway_label`.
+    basis: str = ""
+    #: The threshold, the tolerance or the reason.
+    note: str = ""
+
+    @property
+    def pathway_label(self) -> str:
+        return pathway_label(self.pathway)
+
+    @property
+    def css_class(self) -> str:
+        """Tile classes: present or muted, and which way the outcome went."""
+        present = (
+            "decision-value"
+            if self.state is TileState.VALUE
+            else "decision-absent"
+        )
+        return f"{present} {self.role.css_class}"
+
+    @property
+    def pathway_css_class(self) -> str:
+        """The badge, coloured by the outcome rather than by the route.
+
+        A badge coloured per pathway said that a shared-source decision and a
+        rarity decision were different *kinds* of thing, which is not the
+        distinction a reader needs from a colour. Which way the decision went
+        is.
+        """
+        return f"pathway {self.role.css_class}"
+
+
+class SourceContextVM(BaseModel):
+    """What the narratives said about a shared source, and about the cases in it.
+
+    Held apart from the inconsistency findings because it is a different kind
+    of evidence: a shared source identifier is a fact about provenance, and
+    where the verdict is definitive the relationship follows from it directly
+    rather than from a weighed penalty.
+
+    The identifier is an :class:`EvidenceCell` and the prose names no
+    identifier, which is the same division the reporting context already
+    keeps: values live in cells, where a publication transform can reach them
+    by kind, and sentences stay the same in both presentations.
+    """
+
+    #: The verdict in the reader's terms — never the stored enum value.
+    verdict_label: str
+    #: The shared source identifier, where the comparison found one.
+    identifier: EvidenceCell | None = None
+    #: What kind of source the identifier names: "Study name", "Trial
+    #: registration", "Publication (DOI)".
+    identifier_label: str = ""
+    #: Whether the cases *within* that source were compared, and what came of
+    #: it. The distinction the verdict rests on, stated rather than implied.
+    case_comparison: str = ""
+    #: True when this assessment determined the relationship classification.
+    decided_relationship: bool = False
+    role: EvidenceRole = EvidenceRole.NEUTRAL
+
+    @property
+    def css_class(self) -> str:
+        return self.role.css_class
 
 
 class ReferenceVerdictVM(BaseModel):
@@ -880,6 +1035,10 @@ class EvidenceCaseVM(BaseModel):
     lede: str = ""
 
     outcomes: list[OutcomeTileVM] = Field(default_factory=list)
+    #: The two decision stages, in order. Always both, whichever route each
+    #: took: a reader comparing two cases should find the same two tiles in
+    #: the same place and read the difference off the pathway.
+    decisions: list[DecisionTileVM] = Field(default_factory=list)
     reference_verdict: ReferenceVerdictVM | None = None
     #: The at-a-glance panel, rendered between the verdict note and the
     #: written summary. ``None`` when the stored artifacts support no row.
@@ -916,7 +1075,11 @@ class EvidenceCaseVM(BaseModel):
     reconciliation: ReconciliationVM | None = None
 
     explicit_link_note: str = ""
+    #: The narrative-derived source and case verdict, where one was reached.
+    #: Prose only: the identifier itself is in ``source_context``.
     source_case_note: str = ""
+    #: The source-context evidence, as structure rather than as a sentence.
+    source_context: SourceContextVM | None = None
     narrative_note: str = ""
 
     assessment_rows: list[AssessmentRowVM] = Field(default_factory=list)
@@ -939,11 +1102,44 @@ class EvidenceCaseVM(BaseModel):
 
     @property
     def retained_discrepancies(self) -> list[DiscrepancyVM]:
+        """Every finding the assessment retained. The audit view, unfiltered."""
         return [d for d in self.discrepancies if d.retained]
 
     @property
     def suppressed_discrepancies(self) -> list[DiscrepancyVM]:
         return [d for d in self.discrepancies if not d.retained]
+
+    @property
+    def source_context_decided(self) -> bool:
+        """Whether a definitive source-context verdict settled the relationship."""
+        return (
+            self.source_context is not None
+            and self.source_context.decided_relationship
+        )
+
+    @property
+    def scored_discrepancies(self) -> list[DiscrepancyVM]:
+        """The findings the decision trace presents as weighed inconsistencies.
+
+        The same as :attr:`retained_discrepancies`, except where the source
+        context decided the relationship. There the source-derived finding is
+        not a term in a comparison that happened — the verdict pinned the
+        outcome whatever the penalty came to — so listing it in a table of
+        weighed severities, with a weight beside it, says the arithmetic
+        reached the conclusion. The finding keeps its severity and its weight
+        in :attr:`discrepancies` and in every stored artifact; what changes is
+        where the page shows it, which is the source-context block.
+        """
+        if not self.source_context_decided:
+            return self.retained_discrepancies
+        return [d for d in self.retained_discrepancies if not d.source_context]
+
+    @property
+    def deferred_discrepancies(self) -> list[DiscrepancyVM]:
+        """Retained findings shown as source-context evidence instead."""
+        if not self.source_context_decided:
+            return []
+        return [d for d in self.retained_discrepancies if d.source_context]
 
 
 @lru_cache(maxsize=1)
@@ -1013,6 +1209,25 @@ class ProvenanceVM(BaseModel):
         return out
 
 
+class PresentationMode(str, Enum):
+    """Which presentation a page is — and so what it may be shown to.
+
+    ``INTERNAL`` is the default everywhere, which is the point: the existing
+    presentation is unchanged, and a page becomes a publication candidate
+    only by being put through
+    :func:`llm_dup_dev.review_html.evidence.publication.scramble_page`. The
+    footer states the mode, so the two cannot be mistaken for one another
+    once they are separate files on a disk.
+
+    ``PUBLICATION`` says the displayed values have been transformed. It does
+    not say the page is anonymous: that is a disclosure reviewer's
+    conclusion, never an attribute a renderer can set.
+    """
+
+    INTERNAL = "internal"
+    PUBLICATION = "publication"
+
+
 class EvidencePageVM(BaseModel):
     """One HTML document holding one or more cases."""
 
@@ -1020,6 +1235,14 @@ class EvidencePageVM(BaseModel):
     intro: str = ""
     note: str = ""
     generated_at: str = ""
+    #: Internal by default. The footer branches on it, and nothing else does:
+    #: a publication page is the same template over transformed cases.
+    mode: PresentationMode = PresentationMode.INTERNAL
+    #: What the publication transform actually did, for the footer. Set by
+    #: the publication layer from the effective policy, because the policy is
+    #: configurable: a footer naming every attribute category would be wrong
+    #: for any run that left one of them as reported.
+    transform_note: str = ""
     #: Always present, so the footer can state the rendering version even for
     #: a hand-built page; the run fields fill in when a manifest was supplied.
     provenance: ProvenanceVM = Field(default_factory=ProvenanceVM)
@@ -1084,6 +1307,9 @@ __all__ = [
     "AttributionKind",
     "CaseSummaryVM",
     "CharacteristicRow",
+    "DecisionPathway",
+    "DecisionStage",
+    "DecisionTileVM",
     "DiscrepancyVM",
     "DrugEntryVM",
     "DrugEvidenceRow",
@@ -1101,13 +1327,16 @@ __all__ = [
     "MatchingFeatureRow",
     "OutcomeTileVM",
     "PresenceVM",
+    "PresentationMode",
     "ReconciliationVM",
     "ReferenceVerdictVM",
     "SharedSetVM",
+    "SourceContextVM",
     "TileState",
     "ValueKind",
     "missing_cell",
     "number_cases",
+    "pathway_label",
     "sign_css_class",
     "stronger_role",
 ]

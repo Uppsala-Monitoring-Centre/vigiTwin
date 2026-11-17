@@ -1,0 +1,578 @@
+{
+  "$defs": {
+    "AgeBand": {
+      "maxItems": 3,
+      "minItems": 3,
+      "prefixItems": [
+        {
+          "title": "Label",
+          "type": "string"
+        },
+        {
+          "title": "Lower Years",
+          "type": "number"
+        },
+        {
+          "title": "Upper Years",
+          "type": "number"
+        }
+      ],
+      "type": "array"
+    },
+    "CaseKeyRecord": {
+      "additionalProperties": false,
+      "description": "The transform applied to one case.",
+      "properties": {
+        "example_id": {
+          "title": "Example Id",
+          "type": "string"
+        },
+        "pair_id": {
+          "title": "Pair Id",
+          "type": "string"
+        },
+        "position": {
+          "title": "Position",
+          "type": "integer"
+        },
+        "published_example_id": {
+          "title": "Published Example Id",
+          "type": "string"
+        },
+        "published_example_label": {
+          "title": "Published Example Label",
+          "type": "string"
+        },
+        "date_offset_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date Offset Days"
+        },
+        "date_candidates_tried": {
+          "default": 0,
+          "title": "Date Candidates Tried",
+          "type": "integer"
+        },
+        "numeric_offsets": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Numeric Offsets",
+          "type": "object"
+        },
+        "substitutions": {
+          "items": {
+            "$ref": "#/$defs/SubstitutionRecord"
+          },
+          "title": "Substitutions",
+          "type": "array"
+        },
+        "cells": {
+          "items": {
+            "$ref": "#/$defs/CellRecord"
+          },
+          "title": "Cells",
+          "type": "array"
+        },
+        "separations": {
+          "items": {
+            "$ref": "#/$defs/SeparationRecord"
+          },
+          "title": "Separations",
+          "type": "array"
+        },
+        "withheld_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Withheld Paths",
+          "type": "array"
+        },
+        "replaced_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Replaced Paths",
+          "type": "array"
+        },
+        "dates_total": {
+          "default": 0,
+          "title": "Dates Total",
+          "type": "integer"
+        },
+        "dates_changed": {
+          "default": 0,
+          "title": "Dates Changed",
+          "type": "integer"
+        },
+        "date_pattern_unchanged": {
+          "default": false,
+          "title": "Date Pattern Unchanged",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "example_id",
+        "pair_id",
+        "position",
+        "published_example_id",
+        "published_example_label"
+      ],
+      "title": "CaseKeyRecord",
+      "type": "object"
+    },
+    "CellRecord": {
+      "additionalProperties": false,
+      "description": "One displayed value at one place on the page, before and after.\n\nThe substitution table is keyed by *value*; this is keyed by *place*, and\na reviewer needs both: which values moved, and where on the page a value\nthat did not move is on show.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "original": {
+          "title": "Original",
+          "type": "string"
+        },
+        "published": {
+          "title": "Published",
+          "type": "string"
+        },
+        "changed": {
+          "title": "Changed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "original",
+        "published",
+        "changed"
+      ],
+      "title": "CellRecord",
+      "type": "object"
+    },
+    "DisclosureCode": {
+      "description": "Why one element of a page is not publishable as it stands.",
+      "enum": [
+        "date_unparseable",
+        "date_transform_rejected",
+        "age_unparseable",
+        "age_transform_rejected",
+        "measurement_unparseable",
+        "measurement_transform_rejected",
+        "country_unparseable",
+        "context_year_disagreement",
+        "unsupported_value_kind",
+        "unsupported_text_field",
+        "substitution_conflict",
+        "human_text_review_required",
+        "narrative_snippet_review_required",
+        "curator_text_review_required",
+        "residual_original_value",
+        "residual_date_token",
+        "residual_digit_run",
+        "unasserted_relation_changed",
+        "date_pattern_unchanged"
+      ],
+      "title": "DisclosureCode",
+      "type": "string"
+    },
+    "DisclosureFinding": {
+      "additionalProperties": false,
+      "description": "One element of one case that needs a decision before publication.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/DisclosureCode"
+        },
+        "example_id": {
+          "title": "Example Id",
+          "type": "string"
+        },
+        "field_path": {
+          "default": "",
+          "title": "Field Path",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "detail": {
+          "default": "",
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "example_id",
+        "message"
+      ],
+      "title": "DisclosureFinding",
+      "type": "object"
+    },
+    "FreeTextPolicy": {
+      "description": "How one string-bearing field of the view model is handled.",
+      "enum": [
+        "pass_through",
+        "substitute",
+        "alias",
+        "review"
+      ],
+      "title": "FreeTextPolicy",
+      "type": "string"
+    },
+    "PublicationPolicy": {
+      "additionalProperties": false,
+      "description": "Numeric and naming settings for the publication transform.\n\nVersioned, and the version is recorded in both emitted artifacts: two\nsupplements produced under different policies are not comparable, and a\nreader has no other way to tell.",
+      "properties": {
+        "policy_version": {
+          "default": "1.0",
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "allow_unchanged_values": {
+          "default": true,
+          "title": "Allow Unchanged Values",
+          "type": "boolean"
+        },
+        "date_offset_min_days": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Date Offset Min Days",
+          "type": "integer"
+        },
+        "date_offset_max_days": {
+          "default": 400,
+          "minimum": 0,
+          "title": "Date Offset Max Days",
+          "type": "integer"
+        },
+        "date_offset_candidates": {
+          "default": 1024,
+          "minimum": 1,
+          "title": "Date Offset Candidates",
+          "type": "integer"
+        },
+        "date_year_floor": {
+          "default": 1960,
+          "minimum": 1,
+          "title": "Date Year Floor",
+          "type": "integer"
+        },
+        "date_year_ceiling": {
+          "default": 2100,
+          "minimum": 1,
+          "title": "Date Year Ceiling",
+          "type": "integer"
+        },
+        "separation_exact_days": {
+          "default": 7,
+          "minimum": 0,
+          "title": "Separation Exact Days",
+          "type": "integer"
+        },
+        "separation_relative_tolerance": {
+          "default": 0.2,
+          "minimum": 0.0,
+          "title": "Separation Relative Tolerance",
+          "type": "number"
+        },
+        "age_offset_max_years": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Age Offset Max Years",
+          "type": "integer"
+        },
+        "age_offset_max_months": {
+          "default": 6,
+          "minimum": 1,
+          "title": "Age Offset Max Months",
+          "type": "integer"
+        },
+        "age_offset_max_days": {
+          "default": 20,
+          "minimum": 1,
+          "title": "Age Offset Max Days",
+          "type": "integer"
+        },
+        "age_bands": {
+          "default": [
+            [
+              "infant",
+              0.0,
+              2.0
+            ],
+            [
+              "child",
+              2.0,
+              12.0
+            ],
+            [
+              "adolescent",
+              12.0,
+              18.0
+            ],
+            [
+              "adult",
+              18.0,
+              65.0
+            ],
+            [
+              "elderly",
+              65.0,
+              200.0
+            ]
+          ],
+          "items": {
+            "$ref": "#/$defs/AgeBand"
+          },
+          "title": "Age Bands",
+          "type": "array"
+        },
+        "measurement_offset_max_kg": {
+          "default": 3.0,
+          "exclusiveMinimum": 0,
+          "title": "Measurement Offset Max Kg",
+          "type": "number"
+        },
+        "measurement_offset_max_cm": {
+          "default": 4.0,
+          "exclusiveMinimum": 0,
+          "title": "Measurement Offset Max Cm",
+          "type": "number"
+        },
+        "measurement_offset_max_lb": {
+          "default": 6,
+          "minimum": 1,
+          "title": "Measurement Offset Max Lb",
+          "type": "integer"
+        },
+        "measurement_offset_max_in": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Measurement Offset Max In",
+          "type": "integer"
+        },
+        "mask_countries": {
+          "default": false,
+          "title": "Mask Countries",
+          "type": "boolean"
+        },
+        "country_alias_template": {
+          "default": "Country {n}",
+          "title": "Country Alias Template",
+          "type": "string"
+        },
+        "mask_source_identifiers": {
+          "default": true,
+          "title": "Mask Source Identifiers",
+          "type": "boolean"
+        },
+        "source_alias_template": {
+          "default": "Source {n}",
+          "title": "Source Alias Template",
+          "type": "string"
+        },
+        "identifier_alias_template": {
+          "default": "Identifier {n}",
+          "title": "Identifier Alias Template",
+          "type": "string"
+        },
+        "pair_alias_template": {
+          "default": "Pair {n}",
+          "title": "Pair Alias Template",
+          "type": "string"
+        },
+        "report_alias_labels": {
+          "default": [
+            "Report A",
+            "Report B"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Report Alias Labels",
+          "type": "array"
+        },
+        "provenance_source_label": {
+          "default": "secure study environment",
+          "title": "Provenance Source Label",
+          "type": "string"
+        },
+        "withheld_text_notice": {
+          "default": "Withheld from the published version.",
+          "title": "Withheld Text Notice",
+          "type": "string"
+        },
+        "free_text_default": {
+          "$ref": "#/$defs/FreeTextPolicy",
+          "default": "review"
+        },
+        "advisories_block": {
+          "default": false,
+          "title": "Advisories Block",
+          "type": "boolean"
+        }
+      },
+      "title": "PublicationPolicy",
+      "type": "object"
+    },
+    "SeparationRecord": {
+      "additionalProperties": false,
+      "description": "A day-count the page quotes, as computed and as now displayed.\n\nPresentation only. The finding's severity, its weight and the penalty it\ncontributed to are the pipeline's and are untouched; this records that the\n*figure beside the two dates* was brought into line with them.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "assessed_days": {
+          "title": "Assessed Days",
+          "type": "integer"
+        },
+        "displayed_days": {
+          "title": "Displayed Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "assessed_days",
+        "displayed_days"
+      ],
+      "title": "SeparationRecord",
+      "type": "object"
+    },
+    "SubstitutionRecord": {
+      "additionalProperties": false,
+      "description": "One value as reported and as published. Identifying by construction.",
+      "properties": {
+        "original": {
+          "title": "Original",
+          "type": "string"
+        },
+        "published": {
+          "title": "Published",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        },
+        "changed": {
+          "default": true,
+          "title": "Changed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "original",
+        "published",
+        "kind"
+      ],
+      "title": "SubstitutionRecord",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The secure half of one publication run.\n\nWritten by :func:`~.export.write_scrambling_key` to a path the caller\nchooses, which must be inside the secure environment.",
+  "properties": {
+    "schema_version": {
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "key_id": {
+      "title": "Key Id",
+      "type": "string"
+    },
+    "policy_version": {
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "policy": {
+      "$ref": "#/$defs/PublicationPolicy"
+    },
+    "dev_package_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dev Package Version"
+    },
+    "dev_git_commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Dev Git Commit"
+    },
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/CaseKeyRecord"
+      },
+      "title": "Cases",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/DisclosureFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "resolved_findings": {
+      "items": {
+        "$ref": "#/$defs/DisclosureFinding"
+      },
+      "title": "Resolved Findings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "created_at",
+    "key_id",
+    "policy_version",
+    "policy"
+  ],
+  "title": "ScramblingKeyRecord",
+  "type": "object"
+}

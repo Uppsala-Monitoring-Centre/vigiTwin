@@ -29,6 +29,10 @@ from llm_dup_dev.models.classification import ClassificationResult
 from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
 from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
 from llm_dup_dev.feature_generation.probability import FrequencyStats
+from llm_dup_dev.review_html.evidence.publication import (
+    PublicationTransformManifest,
+    ScramblingKeyRecord,
+)
 
 
 # Resolve paths relative to repo root
@@ -48,6 +52,8 @@ MODEL_MAP = {
     "frozen_narrative_demographics": FrozenNarrativeDemographics,
     "screening_details": ScreeningDetails,
     "characterization_report": CharacterizationReport,
+    "evidence_publication_manifest": PublicationTransformManifest,
+    "evidence_scrambling_key": ScramblingKeyRecord,
 }
 
 

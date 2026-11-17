@@ -11,10 +11,15 @@ Entry points::
     from llm_dup_dev.review_html.evidence import build_evidence_case
     from llm_dup_dev.review_html.evidence import build_assessment_summary
 
+Publication mode lives in :mod:`.publication`: the same cases, with their
+displayed values transformed and a fail-closed export. The internal review
+here is unchanged by it.
+
 CLI::
 
     python -m llm_dup_dev.review_html --format evidence ...      # a saved run
     python -m llm_dup_dev.review_html.evidence --manifest ...    # a collection
+    python -m llm_dup_dev.review_html.evidence --mode publication ...
 """
 
 from __future__ import annotations
@@ -42,8 +47,12 @@ from .manifest import (
     load_curated_manifest,
     write_curated_manifest,
 )
+from . import publication
 from .models import (
     Attribution,
+    DecisionPathway,
+    DecisionStage,
+    DecisionTileVM,
     AttributionKind,
     CaseSummaryVM,
     EvidenceCaseVM,
@@ -53,7 +62,9 @@ from .models import (
     EvidencePageVM,
     EvidenceRole,
     EvidenceSource,
+    PresentationMode,
     ProvenanceVM,
+    SourceContextVM,
     TileState,
     ValueKind,
 )
@@ -77,6 +88,9 @@ __all__ = [
     "CaseSummaryVM",
     "CuratedExample",
     "CuratedExampleManifest",
+    "DecisionPathway",
+    "DecisionStage",
+    "DecisionTileVM",
     "EvidenceCaseVM",
     "EvidenceCell",
     "EvidenceGap",
@@ -88,6 +102,7 @@ __all__ = [
     "ExampleDataset",
     "ExamplePresentation",
     "LoadedExampleManifest",
+    "PresentationMode",
     "ProvenanceVM",
     "ReferenceInfo",
     "ReviewStatus",
@@ -95,6 +110,7 @@ __all__ = [
     "SCLEAssessmentEntry",
     "SCLEState",
     "ScreeningVerdict",
+    "SourceContextVM",
     "SummaryMode",
     "SummarySlot",
     "TileState",
@@ -106,6 +122,7 @@ __all__ = [
     "load_curated_manifest",
     "load_evidence_run_settings",
     "page_provenance",
+    "publication",
     "screening_verdict",
     "write_curated_manifest",
     "write_summary_drafts",

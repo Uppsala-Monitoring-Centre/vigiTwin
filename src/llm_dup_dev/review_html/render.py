@@ -24,6 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover
         EvidenceIndexItem,
         EvidenceIndexVM,
         EvidencePageVM,
+        PresentationMode,
         ProvenanceVM,
     )
 
@@ -248,13 +249,23 @@ def write_evidence_html(
     intro: str = "",
     note: str = "",
     provenance: "ProvenanceVM | None" = None,
+    mode: "PresentationMode | None" = None,
 ) -> Path:
     """Render and write one case as its own evidence document.
 
     ``provenance`` names the run behind the cases, for the footer. Omitted, the
     footer still states the rendering version, which needs no run manifest.
+
+    ``mode`` is the presentation the footer states. It defaults to internal,
+    which is the only mode this writer can produce on its own: a publication
+    page is this same writer over cases that
+    :mod:`llm_dup_dev.review_html.evidence.publication` has transformed.
     """
-    from .evidence.models import EvidencePageVM
+    from .evidence.models import (
+        EvidencePageVM,
+        PresentationMode,
+        ProvenanceVM,
+    )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     page = EvidencePageVM(
@@ -262,8 +273,9 @@ def write_evidence_html(
         intro=intro,
         note=note,
         generated_at=_utc_now(),
-        **({} if provenance is None else {"provenance": provenance}),
+        mode=mode or PresentationMode.INTERNAL,
         cases=[case],
+        provenance=provenance or ProvenanceVM(),
     )
     path = output_dir / evidence_filename(case)
     path.write_text(render_evidence_page(page), encoding="utf-8")
@@ -279,6 +291,7 @@ def write_evidence_batch_html(
     collection_intro: str = "",
     collection_note: str = "",
     provenance: "ProvenanceVM | None" = None,
+    mode: "PresentationMode | None" = None,
 ) -> Path:
     """Write one evidence document per case, plus an optional index.
 
@@ -305,6 +318,7 @@ def write_evidence_batch_html(
             intro=collection_intro,
             note=collection_note,
             provenance=provenance,
+            mode=mode,
         )
         label = next(
             (
@@ -349,6 +363,7 @@ def write_evidence_document(
     intro: str = "",
     note: str = "",
     provenance: "ProvenanceVM | None" = None,
+    mode: "PresentationMode | None" = None,
 ) -> Path:
     """Write every case into one document.
 
@@ -356,7 +371,12 @@ def write_evidence_document(
     a later phase builds the supplementary document on top of this, with the
     publication transforms applied to the cases before they arrive here.
     """
-    from .evidence.models import EvidencePageVM, number_cases
+    from .evidence.models import (
+        EvidencePageVM,
+        PresentationMode,
+        ProvenanceVM,
+        number_cases,
+    )
 
     path.parent.mkdir(parents=True, exist_ok=True)
     page = EvidencePageVM(
@@ -364,8 +384,9 @@ def write_evidence_document(
         intro=intro,
         note=note,
         generated_at=_utc_now(),
-        **({} if provenance is None else {"provenance": provenance}),
+        mode=mode or PresentationMode.INTERNAL,
         cases=number_cases(cases),
+        provenance=provenance or ProvenanceVM(),
     )
     path.write_text(render_evidence_page(page), encoding="utf-8")
     return path

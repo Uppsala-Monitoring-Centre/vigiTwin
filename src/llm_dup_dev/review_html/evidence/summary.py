@@ -36,7 +36,10 @@ from llm_dup_dev.models.enums import (
     RelationshipAssessment,
 )
 from llm_dup_dev.models.explicit_link import ExplicitLinkVerdict
-from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+from llm_dup_dev.models.narrative_source_case import (
+    SourceCaseVerdict,
+    SourceIdentifierType,
+)
 from llm_dup_dev.models.pair_features import PairFeatures
 
 from ..attribution_maps import SEVERITY_ORDER
@@ -278,6 +281,21 @@ _SHARED_SOURCE_VERDICTS = {
     SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
 }
 
+#: What kind of source an identifier names, in the reader's words. The stored
+#: values are field names — ``article_reference``, ``trial_registration`` —
+#: and the summary used to splice them straight into a sentence, so a reader
+#: met "(a shared trial_registration)" in otherwise plain prose.
+_SOURCE_KIND_PHRASE: dict[SourceIdentifierType, str] = {
+    SourceIdentifierType.DOI: "publication",
+    SourceIdentifierType.PMID: "publication",
+    SourceIdentifierType.TRIAL_REGISTRATION: "trial registration",
+    SourceIdentifierType.LINKED_CASE: "linked-case reference",
+    SourceIdentifierType.PROTOCOL_NUMBER: "protocol number",
+    SourceIdentifierType.STUDY_NAME: "named study",
+    SourceIdentifierType.ARTICLE_REFERENCE: "literature citation",
+    SourceIdentifierType.UNKNOWN: "source reference",
+}
+
 _SOURCE_VERDICT_PHRASE = {
     SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT: (
         "both reports cite the same source, which describes a single patient"
@@ -332,7 +350,10 @@ def _direct_sentence(
             if assessment.verdict in _SHARED_SOURCE_VERDICTS and (
                 assessment.shared_source_identifier_type is not None
             ):
-                kind = assessment.shared_source_identifier_type.value
+                kind = _SOURCE_KIND_PHRASE.get(
+                    assessment.shared_source_identifier_type,
+                    "source reference",
+                )
                 phrase = f"{phrase} (a shared {kind})"
             parts.append(phrase)
     if not parts:
@@ -364,16 +385,28 @@ def _domain(feature: str) -> str:
 
 
 def _discrepancy_groups(features: PairFeatures) -> list[tuple[str, str, int]]:
-    """``(domain, severity, count)`` for every retained finding, ordered.
+    """``(domain, severity, count)`` for every retained *weighed* finding.
 
     Suppressed findings are excluded: they contributed nothing to the penalty,
     so counting them here would describe an assessment that was not made.
     Clinical-date findings are counted at their final, post-downgrade
     severity, which is the severity that was actually weighed.
+
+    Source-derived findings are excluded for a related reason, where the
+    source context settled the relationship. The sentence this feeds reads
+    "vigiTwin identified one decisive source and case inconsistency", which
+    places the verdict among the weighed inconsistencies — and the verdict
+    pinned the relationship whatever the penalty came to. The preceding
+    sentence already states the shared source as direct evidence, so leaving
+    it out here loses nothing and stops the summary crediting a penalty that
+    decided nothing.
     """
     counts: dict[tuple[str, str], int] = {}
+    deferred = _source_context_decided(features)
     for inc in features.inconsistencies:
         if inc.suppressed:
+            continue
+        if deferred and inc.feature.startswith("source_case_"):
             continue
         key = (_domain(inc.feature), inc.severity.value)
         counts[key] = counts.get(key, 0) + 1
@@ -383,6 +416,22 @@ def _discrepancy_groups(features: PairFeatures) -> list[tuple[str, str, int]]:
     return sorted(
         ((domain, sev, n) for (domain, sev), n in counts.items()),
         key=lambda item: (-SEVERITY_ORDER.get(item[1], -1), item[0]),
+    )
+
+
+#: Verdicts that settle the relationship on their own. Mirrors the pinned
+#: branches of ``classifier.decision_logic._relationship``.
+_RELATIONSHIP_PINNING_VERDICTS = frozenset(
+    {SourceCaseVerdict.SAME_SOURCE_DIFFERENT_CASE}
+)
+
+
+def _source_context_decided(features: PairFeatures) -> bool:
+    """Whether a definitive source verdict settled the relationship."""
+    assessment = features.source_case_assessment
+    return (
+        assessment is not None
+        and assessment.verdict in _RELATIONSHIP_PINNING_VERDICTS
     )
 
 
@@ -438,16 +487,18 @@ def independence_clause(
         is IndependenceAssessment.NON_INDEPENDENT
     )
 
+    # No "not on the matching score" on either of these. The summary reaches
+    # the sentence that quotes the score only on the rarity route, so on
+    # these two the qualifier answers a question nothing has raised — and it
+    # read, on a decision tile that quotes no score at all, exactly the same
+    # way.
     if reason is IndependenceReason.EXPLICIT_LINK:
         return (
             "Independence was rejected because one report explicitly "
-            "references the other, not on the matching score"
+            "references the other"
         )
     if reason is IndependenceReason.SHARED_SOURCE:
-        return (
-            "Independence was rejected on direct evidence of a shared source, "
-            "not on the matching score"
-        )
+        return "Independence was rejected on direct evidence of a shared source"
 
     shown = features.L_match if score is None else score
     score_text = format_score(shown)
@@ -468,23 +519,26 @@ def independence_clause(
             )
         return clause
 
-    clause = f"The matching score of {score_text} supports non-independence"
     if threshold is not None:
-        # The zone is named without a number of its own. It is not what
-        # independence required — it selects the same-case tolerance, which
-        # the next sentence states — and attaching the zone's boundary here
-        # said this pair had to clear 3.0 when it had to clear 1.0.
+        # The comparison before the conclusion, which is the order a reader
+        # checks it in: the figure, the bar it had to clear, then what that
+        # established. The zone is named without a number of its own — it is
+        # not what independence required, it selects the same-case tolerance,
+        # and attaching the zone's boundary here said this pair had to clear
+        # 3.0 when it had to clear 1.0.
         zone = _ZONE_NAME.get(reason) if reason else None
         decimals = separating_decimals(shown, threshold)
-        clause += (
-            f", exceeding the independence threshold of "
-            f"{_penalty(threshold, decimals)}"
+        clause = (
+            f"The matching score of {score_text} exceeds the independence "
+            f"threshold of {_penalty(threshold, decimals)} and supports "
+            "non-independence"
         )
         if zone:
-            clause += f" and falling in the {zone} range"
-    elif reason is None:
-        clause = "vigiTwin assessed the reports as non-independent"
-    return clause
+            clause += f", falling in the {zone} range"
+        return clause
+    if reason is None:
+        return "vigiTwin assessed the reports as non-independent"
+    return f"The matching score of {score_text} supports non-independence"
 
 
 def same_case_clause(classification: ClassificationResult) -> str | None:
@@ -522,10 +576,10 @@ def same_case_clause(classification: ClassificationResult) -> str | None:
                 "the relationship question was not reached, because "
                 "independence was not rejected"
             )
-        return (
-            "the reports were assessed on source context alone, with no "
-            "inconsistency-penalty comparison"
-        )
+        # "with no inconsistency-penalty comparison" restated the clause it
+        # was attached to: being assessed on source context alone is what
+        # having no penalty comparison means.
+        return "the reports were assessed on source context alone"
 
     if relationship is RelationshipAssessment.ABSTAIN:
         decimals = separating_decimals(penalty.w_tot, penalty.threshold)

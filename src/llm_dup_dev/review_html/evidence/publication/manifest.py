@@ -1,0 +1,241 @@
+"""The public record: what was done, with nothing that could undo it.
+
+This travels with the supplement, and so is written against one rule — a
+reader must be able to tell what class of transformation was applied without
+being able to reverse any of it. So it records the policy, the version that
+produced it, the *bounds* the offsets were drawn from, and how many values of
+each class moved. It records no offset, no mapping, no original value and no
+salt.
+
+Recording the seed verbatim is the right thing to do for a sampling draw —
+:class:`llm_dup_dev.study_eval.records.SamplingRecord` does exactly that,
+because the protocol requires the randomisation to be reproducible from the
+published record. Here it would be the opposite of the right thing: the
+record would carry the means to reverse its own transform. Reproducibility
+lives in the secure :class:`~.key.ScramblingKeyRecord` instead, and this
+manifest names the salt only by its keyed digest.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from llm_dup_dev.run_manifest._git import try_dev_git_commit
+from llm_dup_dev.run_manifest.builder import _detect_package_version
+
+from ..models import PresentationMode
+from .scramble import ScrambleResult
+
+SCHEMA_VERSION = "1.0"
+
+
+class TransformCounts(BaseModel):
+    """How many distinct values of each class the transform was applied to.
+
+    A count, never a value. **Applied to, not changed by:** a published value
+    is allowed to equal its original, so a count of values that *moved* would
+    tell a reader of this manifest that some value did not — and in a case
+    where none moved, that every date on the page is the real one. The count
+    of values put through the transform says the same useful thing to a
+    methods reader and says nothing about any of them.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    values_transformed: int
+
+
+class CountryMaskingSummary(BaseModel):
+    """Whether the countries on these pages are real.
+
+    A reader can tell by looking — ``Country 1`` is plainly an alias and
+    ``SE`` is plainly not — but a methods section needs to state the policy,
+    and a reader of the manifest alone needs to know which of the two they are
+    about to see. ``cases_masked`` counts how many examples were masked, since
+    a single example can be decided against the default.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: The policy's own setting, before any per-example override.
+    default_masked: bool
+    cases_masked: int = 0
+    cases_retained: int = 0
+    statement: str = ""
+
+
+class SourceMaskingSummary(BaseModel):
+    """Whether the shared source identifiers on these pages are real.
+
+    Decided separately from the country, and masked by default: a named
+    study or publication is a small and often public set of patients, so
+    naming one beside a drug, an event and two dates narrows the field much
+    further than a country does.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_masked: bool
+    cases_masked: int = 0
+    cases_retained: int = 0
+    statement: str = ""
+
+
+class DisclosureStatus(BaseModel):
+    """Where the disclosure review stood when this manifest was written."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: True only when no finding was left unresolved. A published supplement
+    #: should always carry ``True``; the field exists because the manifest can
+    #: also be written for a blocked candidate under review.
+    cleared: bool
+    findings_total: int = 0
+    findings_resolved: int = 0
+    findings_unresolved: int = 0
+    #: Deliberately plain. A transform that preserved every stated
+    #: relationship is not the same as an anonymised document, and a manifest
+    #: that implied otherwise would be the most consequential thing on the page.
+    statement: str = (
+        "Displayed values were transformed for publication. This is a "
+        "candidate for disclosure review, not a document certified as "
+        "anonymised."
+    )
+
+
+class PublicationTransformManifest(BaseModel):
+    """The non-sensitive record of one publication run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = SCHEMA_VERSION
+    created_at: str
+    mode: PresentationMode = PresentationMode.PUBLICATION
+    policy_version: str
+    #: Keyed digest of the salt. Identifies the key without revealing it, so
+    #: two supplements can be told apart and neither can be unpicked.
+    key_id: str
+    dev_package_version: str | None = None
+    dev_git_commit: str | None = None
+    cases: int = 0
+    #: The ranges the offsets were drawn from, for a methods section. Bounds,
+    #: not draws: an offset would be an invitation to subtract it. The lower
+    #: bound is normally zero, because an offset of zero has to be a possible
+    #: draw — see ``PublicationPolicy.date_offset_min_days``.
+    date_offset_bound_days: tuple[int, int]
+    age_offset_bound_years: int
+    measurement_offset_bound_kg: float
+    counts: list[TransformCounts] = Field(default_factory=list)
+    #: The effective country-masking policy for this run.
+    country_masking: CountryMaskingSummary
+    #: The effective source-identifier policy, decided independently of it.
+    source_masking: SourceMaskingSummary
+    #: What the run actually transformed, in the words the footer uses.
+    transform_note: str = ""
+    disclosure: DisclosureStatus
+
+
+def _country_masking(result: ScrambleResult) -> CountryMaskingSummary:
+    masked = sum(1 for t in result.transforms if t.countries_masked)
+    retained = len(result.transforms) - masked
+    if masked and retained:
+        statement = (
+            "Countries are replaced by positional aliases in some examples "
+            "and shown as reported in others; the labels say which."
+        )
+    elif masked:
+        statement = (
+            "Countries are replaced by positional aliases. Equality between "
+            "reports and with the reporting context is preserved; the aliases "
+            "carry nothing of the original."
+        )
+    else:
+        statement = (
+            "Countries are shown as reported. They are part of the reporting "
+            "context the rarity was judged in, and the contextual counts "
+            "belong to that country and calendar year."
+        )
+    return CountryMaskingSummary(
+        default_masked=result.policy.mask_countries,
+        cases_masked=masked,
+        cases_retained=retained,
+        statement=statement,
+    )
+
+
+def _source_masking(result: ScrambleResult) -> SourceMaskingSummary:
+    masked = sum(1 for t in result.transforms if t.sources_masked)
+    retained = len(result.transforms) - masked
+    if masked and retained:
+        statement = (
+            "Shared source identifiers are replaced by aliases in some "
+            "examples and shown as reported in others."
+        )
+    elif masked:
+        statement = (
+            "Shared source identifiers are replaced by aliases in their own "
+            "series. Two reports that share a source still visibly share it, "
+            "and the verdict says whether they describe the same case within "
+            "it."
+        )
+    else:
+        statement = "Shared source identifiers are shown as reported."
+    return SourceMaskingSummary(
+        default_masked=result.policy.mask_source_identifiers,
+        cases_masked=masked,
+        cases_retained=retained,
+        statement=statement,
+    )
+
+
+def build_publication_manifest(
+    result: ScrambleResult,
+) -> PublicationTransformManifest:
+    """The public manifest for one :class:`~.scramble.ScrambleResult`."""
+    counts: dict[str, int] = {}
+    for transform in result.transforms:
+        for entry in transform.table.entries.values():
+            counts[entry.kind] = counts.get(entry.kind, 0) + 1
+    report = result.report
+    total = len(report.findings) + len(report.resolved)
+    return PublicationTransformManifest(
+        created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        policy_version=result.policy.policy_version,
+        key_id=result.key_id,
+        dev_package_version=_detect_package_version(),
+        dev_git_commit=try_dev_git_commit(),
+        cases=len(result.transforms),
+        date_offset_bound_days=(
+            result.policy.date_offset_min_days,
+            result.policy.date_offset_max_days,
+        ),
+        age_offset_bound_years=result.policy.age_offset_max_years,
+        measurement_offset_bound_kg=result.policy.measurement_offset_max_kg,
+        counts=[
+            TransformCounts(kind=kind, values_transformed=number)
+            for kind, number in sorted(counts.items())
+        ],
+        country_masking=_country_masking(result),
+        source_masking=_source_masking(result),
+        transform_note=result.page.transform_note,
+        disclosure=DisclosureStatus(
+            cleared=not report.blocked,
+            findings_total=total,
+            findings_resolved=len(report.resolved),
+            findings_unresolved=len(report.findings),
+        ),
+    )
+
+
+__all__ = [
+    "SCHEMA_VERSION",
+    "CountryMaskingSummary",
+    "DisclosureStatus",
+    "SourceMaskingSummary",
+    "PublicationTransformManifest",
+    "TransformCounts",
+    "build_publication_manifest",
+]

@@ -1,0 +1,210 @@
+{#
+  The disclosure reviewer's working document, and a secure-side artifact: it
+  prints original values beside published ones, which is the whole point and
+  also the reason it must never leave the secure environment.
+
+  Three things per case, in the order a reviewer needs them: the two
+  renderings to open side by side, the table of what changed, and the
+  findings that still need a decision.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>{{ title }}</title>
+<style>
+  :root{--ink:#1d2730;--rule:#dfe4e8;--mismatch:#b4232a;--match:#1a6b45}
+  body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       color:var(--ink);background:#fff;margin:0;padding:24px 16px}
+  main{max-width:1040px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px}
+  h2{font-size:18px;margin:32px 0 6px;border-top:1px solid var(--rule);padding-top:18px}
+  h3{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:#5a6771;margin:18px 0 6px}
+  table{border-collapse:collapse;width:100%;margin:6px 0 12px}
+  th,td{border-bottom:1px solid var(--rule);padding:5px 8px;text-align:left;vertical-align:top}
+  th{font-weight:600;font-size:13px;color:#5a6771}
+  code{font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+  .banner{padding:10px 12px;border-radius:4px;margin:12px 0 0;font-weight:600}
+  .blocked{background:#fdeceb;color:var(--mismatch)}
+  .cleared{background:#eaf5ef;color:var(--match)}
+  .subtle{color:#5a6771;font-size:13px}
+  .finding{border-left:3px solid var(--mismatch);padding:4px 10px;margin:6px 0}
+  .finding.resolved{border-left-color:var(--match)}
+  .finding.advisory{border-left-color:#b78a16}
+  .profile{background:#f3f5f7;padding:8px 12px;border-radius:4px;font-size:14px}
+  .profile.alert{background:#fdf4e3;border-left:3px solid #b78a16}
+  .links a{margin-right:14px}
+  .none{color:#687681;font-style:italic}
+</style>
+</head>
+<body>
+<main>
+  <h1>{{ title }}</h1>
+  <p class="subtle">
+    Key {{ key_id }} · policy {{ policy_version }} ·
+    {{ rows | length }} case{{ '' if rows | length == 1 else 's' }}
+  </p>
+  <div class="banner {{ 'blocked' if blocked else 'cleared' }}">
+    {{ summary }}
+    {%- if blocked %} — publication export is blocked.{% endif %}
+  </div>
+  <p class="subtle">
+    Original values appear below. This page belongs in the secure
+    environment and must not be published. A cleared candidate is still a
+    candidate: the transform preserves what the page states, which is not
+    the same as establishing that the result is anonymous.
+  </p>
+
+  {% for row in rows %}
+  <h2>{{ row.published_label }} — <code>{{ row.example_id }}</code></h2>
+  <p class="links">
+    <a href="{{ row.internal_href }}">internal</a>
+    <a href="{{ row.publication_href }}">publication candidate</a>
+    <span class="subtle">
+      pair <code>{{ row.pair_id }}</code> → <code>{{ row.published_example_id }}</code>
+    </span>
+  </p>
+  <p class="subtle">
+    Dates: {{ row.date_offset }}{% for item in row.numeric_offsets %} ·
+    {{ item }}{% endfor %}
+  </p>
+
+  <p class="profile {{ 'alert' if row.date_pattern_unchanged else '' }}">
+    {{ row.dates_changed }} of {{ row.dates_total }} date value(s) moved.
+    {%- if row.date_pattern_unchanged %}
+    <strong>Every date is published as reported.</strong> That is an allowed
+    outcome — a transform that always moved a date would let a reader rule
+    out the displayed date as the true one — but this page carries the pair's
+    real timeline, so weigh the re-identification risk directly.
+    {%- endif %}
+    <br/>
+    Countries:
+    {%- if row.countries_masked %} replaced by positional aliases.
+    {%- else %} <strong>shown as reported.</strong> They name the reporting
+    context the contextual counts belong to; confirm the country is already
+    public for this study, or override the policy for this example.
+    {%- endif %}
+  </p>
+
+  <h3>Transformed — moved</h3>
+  {% if row.transformed %}
+  <table>
+    <thead><tr>
+      <th scope="col">Kind</th><th scope="col">As reported</th>
+      <th scope="col">As published</th><th scope="col">How</th>
+    </tr></thead>
+    <tbody>
+    {% for entry in row.transformed %}
+      <tr>
+        <td>{{ entry.kind }}</td>
+        <td><code>{{ entry.original }}</code></td>
+        <td><code>{{ entry.published }}</code></td>
+        <td class="subtle">{{ entry.note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="none">No value moved in this case.</p>
+  {% endif %}
+
+  {% if row.unchanged %}
+  <h3>Transformed — unchanged</h3>
+  <p class="subtle">
+    The transform ran on these and they came out as reported. Not a failure:
+    an outcome an observer must not be able to tell from a value that moved.
+    They are on show as reported, so they belong in the risk assessment.
+  </p>
+  <table>
+    <thead><tr>
+      <th scope="col">Kind</th><th scope="col">As reported and published</th>
+      <th scope="col">How</th>
+    </tr></thead>
+    <tbody>
+    {% for entry in row.unchanged %}
+      <tr>
+        <td>{{ entry.kind }}</td>
+        <td><code>{{ entry.original }}</code></td>
+        <td class="subtle">{{ entry.note }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if row.separations %}
+  <h3>Figures recomputed for presentation</h3>
+  <p class="subtle">
+    A day-count the page quotes, brought into line with the dates now printed
+    beside it. The assessment's own severity, weight and counts are
+    unchanged — only the displayed figure moved.
+  </p>
+  <table>
+    <thead><tr>
+      <th scope="col">Where</th><th scope="col">As assessed</th>
+      <th scope="col">As displayed</th>
+    </tr></thead>
+    <tbody>
+    {% for path, assessed, displayed in row.separations %}
+      <tr>
+        <td><code>{{ path }}</code></td>
+        <td>{{ assessed }} days</td>
+        <td>{{ displayed }} days</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if row.withheld_paths or row.replaced_paths %}
+  <h3>Text decisions</h3>
+  <ul class="subtle">
+    {% for path in row.replaced_paths %}
+    <li>replaced: <code>{{ path }}</code></li>
+    {% endfor %}
+    {% for path in row.withheld_paths %}
+    <li>withheld: <code>{{ path }}</code></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if row.advisories %}
+  <h3>Advisory — fidelity, not disclosure</h3>
+  <p class="subtle">
+    A relationship the page does not state moved under the accepted offset.
+    Nothing has leaked; what may have changed is a reading the page never
+    offers. Confirm no reader depends on it.
+  </p>
+    {% for finding in row.advisories %}
+  <div class="finding advisory">
+    <strong>{{ finding.code.value }}</strong>
+    <br/><span class="subtle">{{ finding.detail }}</span>
+  </div>
+    {% endfor %}
+  {% endif %}
+
+  <h3>Failed transformations and findings</h3>
+  {% if row.findings or row.resolved %}
+    {% for finding in row.findings %}
+    <div class="finding">
+      <strong>{{ finding.code.value }}</strong>
+      {% if finding.field_path %}<code>{{ finding.field_path }}</code>{% endif %}
+      <br/>{{ finding.message }}
+      {% if finding.detail %}<br/><span class="subtle">{{ finding.detail }}</span>{% endif %}
+    </div>
+    {% endfor %}
+    {% for finding in row.resolved %}
+    <div class="finding resolved">
+      <strong>{{ finding.code.value }}</strong> (resolved by review)
+      {% if finding.field_path %}<code>{{ finding.field_path }}</code>{% endif %}
+      <br/>{{ finding.message }}
+    </div>
+    {% endfor %}
+  {% else %}
+  <p class="none">Nothing requiring adjudication.</p>
+  {% endif %}
+  {% endfor %}
+</main>
+</body>
+</html>

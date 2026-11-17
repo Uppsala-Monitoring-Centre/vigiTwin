@@ -21,6 +21,257 @@ snapshot, not by a round version number.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-17
+
+A second presentation of the evidence review, with its displayed values
+transformed, and a gate that refuses to write it while anything is
+unresolved. The internal review is unchanged and remains the default.
+
+### Added — publication mode
+
+`llm_dup_dev.review_html.evidence.publication` turns a built
+`EvidencePageVM` into a publication candidate: dates shifted by one whole-day
+offset per pair, ages and measurements offset per unit, countries and report
+identifiers replaced by positional aliases, and human-authored or verbatim
+narrative text held back for review. `scramble_page` does the transform;
+`write_publication_evidence` writes it, or raises `PublicationBlocked`;
+`write_side_by_side` writes both presentations plus a disclosure review page
+listing every value that changed and every finding.
+
+vigiTwin is not re-run. The input is the view model, so every role,
+attribution, contribution, contextual frequency, penalty and classification on
+a publication page is the one the pipeline produced.
+
+**Partial dates are the substance of it.** A single offset is exact for
+complete dates; a partial date is shifted along the same timeline and written
+back at its original precision, so a year-only drug start can sit unchanged
+beside an onset that moved by a month. Representability is not the same as
+preserved meaning, so each candidate offset is checked against the
+relationships the page actually states — display equality, the pipeline's own
+match verdict, exact day differences, separations, interval ordering, the
+reporting context's year — and rejected if any of them stops holding. The
+search is exhaustive over its pool and makes two passes, preferring an offset
+that disturbs nothing at all to one that disturbs only what the page does not
+state. See `docs/evidence_publication_mode.md`.
+
+**A value may be published as reported, and that is the point.** Nothing
+requires a date or an age to move: zero is a candidate offset like any other,
+whole-year offsets are candidates, and a published value may equal a value the
+pair reported. A transform obliged to change every value tells anyone holding
+the policy that the displayed value is *not* the true one, which is a narrower
+search than they had before. The outcome is reported instead of prevented — a
+case whose dates all held carries a `date_pattern_unchanged` advisory and the
+review page says so above its tables. `allow_unchanged_values` restores the
+stricter behaviour, and exists so its cost is visible rather than because it
+is right.
+
+**A separation has to keep its meaning, not its arithmetic.** Separations of
+zero are preserved exactly, as are those at or below `separation_exact_days`
+(seven, the whole minor band), so a one-day discrepancy between two onsets
+cannot be rounded into something else. Larger ones may move by
+`separation_relative_tolerance` — 20% — provided they stay inside the same
+severity band, with the bands imported from the pipeline's own clinical-date
+thresholds so the transform cannot move a finding into a severity the
+assessment never gave it. The figure a finding quotes is then recomputed from
+the dates printed beside it, **for presentation only**: severity, weight,
+penalty and every count stay exactly as the pipeline produced them, and both
+figures are recorded in the key record.
+
+**Countries are shown as reported by default.** `mask_countries` is new on
+`PublicationPolicy` and defaults to `false`: a country is part of the
+reporting context vigiTwin judged rarity in, and where a reference set was
+drawn by country the countries are known from the design, so masking them
+costs the reader the population the counts belong to and buys little. A single
+example can be decided against the default with a `CountryMaskingOverride` in
+the approvals file, and the effective policy is recorded per case in the key
+record and summarised in the manifest's `country_masking`. A retained country
+is registered as an unchanged mapping rather than skipped, so it appears in the
+review page's unchanged table and the residual scan does not report it.
+
+**The country-year a contextual count came from is no longer reattributed.**
+The counts are real and published unchanged, and the context label says which
+country and calendar year they belong to — so the year in that label is now
+frozen rather than shifted with the timeline. Shifting it attributed real
+counts to a year they did not come from, which with the country retained is a
+claim a reader could check and find false. Because `reporting_context` takes
+the year the two reports *share*, an offset that carries either report's date
+over a new year is now rejected: the page cannot name a country-year its own
+dates do not support. The cost is that a pair reported close to a year boundary
+has fewer usable offsets, which the review page's date profile makes visible.
+
+**The residual scan compares values, not substrings.** Dates are extracted as
+maximal tokens, so an unchanged `2023` is no longer reported as a leak inside
+every `2023-…` date; count, score and weight fields are exempt from
+date-shape detection, so a co-occurrence count of 2019 reports is not read as
+a year; a bare four-digit token is only a year inside the policy's era
+window; and each case is scanned with its own table rather than a merged one,
+since one pair's original is routinely another pair's published value.
+
+Two new artifacts, deliberately separate: `ScramblingKeyRecord`
+(`schemas/evidence_scrambling_key.schema.json`) holds the offsets, the
+mappings, the per-place cell outcomes, the recomputed figures and the count of
+dates moved against dates total, and belongs in the secure key store;
+`PublicationTransformManifest`
+(`schemas/evidence_publication_manifest.schema.json`) travels with the
+supplement and records the policy, the offset bounds and per-class counts of
+values the transform was **applied to** — not of values that moved, which in
+a case where none did would say that every date on the page is the real one.
+No offset, no mapping, no original value, no salt. The salt comes from
+`VIGITWIN_PUBLICATION_SALT` and has no default.
+
+The disclosure review page keeps the three outcomes apart — transformed and
+moved, transformed and unchanged, and failed — and opens each case with how
+many of its dates moved, highlighted where the answer is none.
+
+`EvidencePageVM.mode` is new, defaulting to `PresentationMode.INTERNAL`, and
+the evidence writers take an optional `mode`. The CLI takes `--mode
+publication`, `--policy`, `--approvals`, `--key-out` and
+`--side-by-side-dir`.
+
+### Added — the two decision stages, as tiles
+
+Each case now opens with one tile per stage, Independence and Relationship,
+carrying the outcome, a badge naming the **pathway** the decision took, the
+evidence that drove it, the threshold clause, and — where there is one — a
+line naming evidence that was computed and did not decide. Both tiles always
+appear, in the same shape, whichever route each took. The outcome tiles above
+them are verdicts from four different places and say nothing about how
+vigiTwin reached its own.
+
+The pathways are `Shared source`, `Explicit reference`, `Probabilistic
+matching`, `Inconsistency assessment`, `Not reached` and `Not recorded`. They
+are described from what the run stored and never re-derived, so a tile cannot
+reach a different answer from the classifier's. `DecisionTileVM`,
+`DecisionStage` and `DecisionPathway` are new on `EvidenceCaseVM.decisions`.
+
+The threshold and tolerance clauses move from the at-a-glance panel into the
+tiles, said once rather than twice; the panel keeps the figures.
+
+Tiles are coloured by **which way the decision went**, not by which route it
+took: green where the outcome counts towards the reports being one case, red
+where it counts against, neutral for an abstention. That is the page's one
+colour rule, so a reader who has learned it on the tables does not learn a
+second.
+
+`Shared source` and `Individual ids` are separate pathways, because a reader
+needs both halves of that route: a shared source is what rejects
+independence, and the case labels within it are what the relationship turns
+on. A pair sharing one registration and naming different cases within it
+reads `Shared source` green on the independence tile and `Individual ids` red
+on the relationship tile.
+
+A tile does not comment on evidence that did not decide. The badge says what
+the decision rested on, and a line naming the figure that had *not* decided
+answered a question the tile never raised — as did the shared clauses'
+trailing "not on the matching score" and "with no inconsistency-penalty
+comparison", which are written for a paragraph that has just quoted the
+figure. The generated summary keeps its own wording.
+
+### Added — source context as structure
+
+`EvidenceCaseVM.source_context` is new: the verdict in the reader's terms,
+the shared source identifier as an `EvidenceCell`, and what became of the
+case labels *within* that source. Section 2 renders it as a table rather than
+as a sentence in passing, which is what gave direct source evidence the
+standing of a footnote beside the rarity arithmetic. The identifier is a cell
+so the page's colour rule reaches it and a publication transform reaches it
+by kind; the prose names no identifier, so it reads the same in both
+presentations.
+
+### Changed — a pinned verdict's finding is no longer a weighed inconsistency
+
+Where a definitive source-context verdict settles the relationship, the
+classifier pins the outcome whatever the inconsistency penalty comes to. The
+verdict also produces an `Inconsistency` row with a severity and a weight,
+and the page listed it in the table of weighed findings beside the ones that
+were weighed — which says the arithmetic reached the conclusion.
+
+It now appears under its own heading, **Decided on source context**, with the
+severity the assessment recorded, no weight, and a note saying it decided on
+its own. It is out of the findings table, out of the panel's chips and out of
+the generated summary's count of inconsistencies.
+
+**Presentation only.** The finding keeps its severity, its weight, its
+retained flag and its place in `discrepancies` and in every stored artifact.
+`retained_discrepancies` is unchanged and remains the audit view; the new
+`scored_discrepancies` and `deferred_discrepancies` split it, and they differ
+only where `source_context_decided` is true.
+
+### Fixed — the panel's penalty no longer contradicts the row above it
+
+`w_tot` is the stored total over every retained finding. With the
+source-derived one shown as source-context evidence, the panel read
+"Inconsistencies: None" with a penalty of 100.0 underneath — the arithmetic
+of a row it had just said was not there. The Penalty row is now the sum of
+the findings the panel lists, which for a pinned verdict is 0.0; a pair with a
+source verdict *and* an ordinary finding shows the ordinary one's weight, and
+a run that recorded no weights falls back to the stored total. The stored
+`w_tot` is unchanged.
+
+### Changed — three sentences removed, and one threshold named
+
+The limitations list no longer records a source verdict as evidence "the
+comparison tables" could not carry: the Source context block names the
+identifier and says what became of the case labels, so the sentence had
+stopped being true. The note under **Decided on source context** is gone, as
+is the trailing "This says nothing about whether such a link exists." from
+the disabled-explicit-links note — a sentence spelling out the absence of a
+claim the preceding sentence had not made.
+
+The independence clause now puts the comparison before the conclusion, which
+is the order a reader checks it in: "The matching score of 5.1 exceeds the
+independence threshold of 1.0 and supports non-independence, falling in the
+compelling range."
+
+### Changed — reader-facing wording throughout the source-context path
+
+No stored field name reaches the page. `_source_case_note` printed
+`same_source_different_case` with its underscores swapped for spaces, and the
+generated summary spliced `trial_registration` into otherwise plain prose as
+"(a shared trial_registration)". Verdicts now say which thing differed —
+"Shared source, but different cases within it" — and identifier kinds are
+named in words. A test asserts that `article_reference` and its siblings do
+not appear in the rendered page.
+
+### Added — shared source identifiers are masked in publication mode
+
+`PublicationPolicy.mask_source_identifiers` defaults to `True`, decided
+independently of `mask_countries`. A country is a population; a named study
+or publication is a small and often public set of patients, so naming one
+beside a drug, an event and two dates narrows the field much further. Aliases
+go in their own series (`Source 1`), so a reader can tell a masked study from
+a masked report and a source named twice is visibly one source — the sharing
+is the evidence, and it survives.
+
+Generated prose is covered by construction, because it names no identifier;
+human-authored text naming one blocks the export until a reviewer approves a
+replacement. `ValueKind.SOURCE_IDENTIFIER` is new, and the manifest records
+`source_masking` beside `country_masking`.
+
+### Changed — the publication footer says what the run actually did
+
+It was a fixed sentence naming ages, dates, countries and report identifiers.
+With the masking switches configurable that overstated any run that left one
+of those as reported, and an overstated footer is the one piece of
+publication metadata a reader cannot check. It is now built from the
+effective policy and recorded in the manifest as `transform_note`.
+
+### Changed — publication output is a candidate, not a certificate
+
+A publication page's footer states that its values were transformed and that
+it is a candidate for disclosure review, in those words, and the public
+manifest repeats it. Nothing in this release certifies a page as anonymised.
+
+`EvidenceCell.withheld` — reserved since 1.1.4 and never set — now renders as
+`Withheld`, distinct from a `missing` cell, which still renders blank.
+Internal pages set it nowhere, so their rendered output is unchanged apart
+from the one CSS selector the new state needs.
+
+A matching-feature row that quotes a demographic value now carries that
+value's own `ValueKind` rather than `FREE_TEXT`. The kind drives no colouring
+and no rendering, so internal pages are byte-identical; without it an age in
+that row would reach a publication page untransformed.
+
 ## [1.1.8] - 2026-11-16
 
 Each evidence case now opens with the assessment in figures, and red on the

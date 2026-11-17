@@ -91,6 +91,7 @@ If specifications conflict with legacy code, **the specification takes precedenc
 │   ├── repository_roles.md                 # Repo separation and security controls
 │   ├── study_eval.md                       # Performance-evaluation package
 │   ├── evidence_format.md                  # The reader-facing `evidence` review
+│   ├── evidence_publication_mode.md        # Scrambling + fail-closed export
 │   ├── reference_set_characteristics.md    # "Table 1" for reference sets
 │   └── migration_notes_*.md                # One per breaking contract change
 │
@@ -113,6 +114,7 @@ If specifications conflict with legacy code, **the specification takes precedenc
     ├── characterization/              # Descriptive "Table 1" for reference sets
     ├── review_html/                   # Side-by-side HTML review renderer
     │   └── evidence/                  #   reader-facing evidence review
+    │       └── publication/           #     scrambling for publication
     │
     ├── dataset_manifest/              # Per-validation-set manifest
     └── run_manifest/                  # Per-run manifest (version + git provenance)
@@ -142,6 +144,8 @@ NCBI_TOOL=                # Tool name for NCBI E-utilities
 NCBI_EMAIL=               # Email for NCBI queries
 NCBI_API_KEY=             # Optional; increases NCBI rate limit
 FETCH_STUDY_HIGH_CONFIDENCE=0.85   # Minimum confidence to accept a study hit
+VIGITWIN_PUBLICATION_SALT=         # Salt for publication-mode scrambling;
+                                   #   no default, from the secure key store
 ```
 DB connection details live in the secure companion repo.
 
