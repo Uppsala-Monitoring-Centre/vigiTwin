@@ -243,12 +243,23 @@ provisional commit acquires a permanent citation:
 | a git tag | an immutable name for a commit | free; in practice irrevocable once public |
 | a GitHub **Release** | what Zenodo watches | mints a permanent version DOI, listed forever on the concept record |
 
-- **`origin` is where work happens; `github` is a mirror of validated
-  functionality, not a mirror of `main`.** Development, PRs and review all
-  run on Azure DevOps. A version reaches
-  <https://github.com/Uppsala-Monitoring-Centre/vigiTwin> only after it has
-  been exercised against the secure companion repo — so the public history is
-  a sequence of validated states, not a replay of every merge.
+- **`origin` is where work happens; `github` mirrors selected validated
+  functionality, not `main`.** Development, PRs and review all run on Azure
+  DevOps. A version reaches
+  <https://github.com/Uppsala-Monitoring-Centre/vigiTwin> only when two
+  things hold: it has been **exercised against the secure companion repo**,
+  and there is **confidence that it is stable and of value to the broader
+  community**. The first is necessary and not sufficient. A version that has
+  merely run secure-side is *eligible*, not ready, and eligibility is not a
+  reason to publish.
+- **A backlog of unmirrored versions on `main` is the normal state, not a
+  debt to clear.** Most merged versions are never mirrored individually:
+  several merges collapse into one public version, which is one push, one
+  tag and one README pin. Publishing the backlog because it has accumulated
+  would make the mirror the replay of every merge this policy exists to
+  prevent. Do not propose mirroring; the decision is the maintainer's, and
+  it turns on the two conditions above rather than on how many versions have
+  gone by.
 - **Tag every version that reaches GitHub.** A tag costs nothing and buys
   three things: `git describe` resolves on any public commit, the README's
   install-from-tag instruction has a tag to point at for every public
