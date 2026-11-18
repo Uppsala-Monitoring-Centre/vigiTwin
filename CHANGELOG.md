@@ -2,24 +2,60 @@
 
 All notable changes to `llm-dup-dev` are recorded here.
 
-The version follows [Semantic Versioning](https://semver.org). It is the
-**consumer-contract** signal — the JSON schemas in `schemas/` plus the public
-API the secure companion repo imports — not a per-commit identifier. Exact code
+**The version is a significance signal, and deliberately not strict
+[SemVer](https://semver.org).** It says how far the method has moved, not what
+shape of diff produced it — never a per-commit identifier. Exact code
 provenance lives in the `dev_git_commit` field of each manifest; this file and
 the version number carry the *meaning* of a change. See `agents.md` §
-Conventions → Versioning for the bump rules.
+Conventions → Versioning for the full convention.
 
-From 1.0.0 on: a breaking schema/API change bumps the **major**, an additive
-backward-compatible change bumps the **minor**, and a fix — including a
-behaviour fix that moves no schema or API shape — bumps the **patch**. Entries
-below `1.0.0` follow the older pre-1.0 rule, where a breaking change bumped the
-minor and everything else the patch.
+- **major** — a substantial new generation of vigiTwin. Breaking API or schema
+  changes alone do not earn one.
+- **minor** — meaningful new functionality or a substantial enhancement. May
+  carry backward-incompatible API or schema changes.
+- **patch** — fixes, smaller functional improvements, and minor interface or
+  schema adjustments, including limited backward-incompatible ones.
+- **no bump** — documentation, tests and refactoring. Recorded under
+  `[Unreleased]` when a consumer would still notice.
 
-**A release is not a study.** The version tracks compatibility only. The version
-behind a given published analysis is identified by a git tag and an archived
-snapshot, not by a round version number.
+Because the number no longer tracks compatibility, **every incompatible change
+is spelled out in its entry**, with a `docs/migration_notes_*.md` wherever a
+consumer needs steps rather than a sentence.
+
+Entries from `1.1.0` to `1.2.1` were renumbered on 2026-11-18 when this
+convention replaced strict SemVer; the old numbers they shipped under are
+mapped in `docs/migration_notes_version_renumbering.md`. Entries below `1.0.0`
+follow the pre-1.0 rule, where a breaking change bumped the minor and
+everything else the patch.
+
+**A release is not a study.** The version behind a given published analysis is
+identified by a git tag and an archived snapshot, not by a round version
+number.
 
 ## [Unreleased]
+
+### Changed — the version is a significance signal, not strict SemVer
+
+No bump: documentation and convention only, with no functional change. It is
+recorded here because it changes how a consumer should *read* every number in
+this file.
+
+A major is now reserved for a substantial new generation of vigiTwin; a minor
+marks meaningful new functionality or a substantial enhancement; a patch covers
+fixes, smaller improvements and minor interface or schema adjustments. Breaking
+API or schema changes no longer earn a major on their own, and a minor or a
+patch may carry one — so **the version number is no longer the warning that a
+break happened.** The entry here is, together with a
+`docs/migration_notes_*.md` where updating takes steps.
+
+The versions from 1.1.0 to 1.2.1 were renumbered to match, from the eleven
+numbers the old rule had spent on them. Old → new numbers, old → new commit
+hashes, and what a consumer has to remap:
+`docs/migration_notes_version_renumbering.md`. Nothing published moved — `v1.0.2`
+and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
+
+One consequence worth stating: the planned package rename no longer requires a
+2.0.0, and the README no longer promises one.
 
 ## [1.2.1] - 2026-11-17
 
@@ -933,12 +969,13 @@ the prose now agrees with it.
 
 ### Public surface
 
-Unchanged, which is why this is a patch and not a minor. The two new
-properties — `EvidenceGap.is_provenance` and `DiscrepancyVM.row_css_class` —
-sit on models that are **not** in `docs/integration_guide.md` § Public surface
-and not in `review_html.__all__`, so they are internal by this repo's own
-rule. Everything a consumer can observe here is rendered text, and a
-behaviour change that moves no schema and no listed name takes the patch.
+Unchanged. The two new properties — `EvidenceGap.is_provenance` and
+`DiscrepancyVM.row_css_class` — sit on models that are **not** in
+`docs/integration_guide.md` § Public surface and not in
+`review_html.__all__`, so they are internal by this repo's own rule.
+Everything a consumer can observe here is rendered text: the page says less
+about itself. That is a refinement of a presentation shipped two patches
+earlier, which is what makes it a patch.
 
 A collection's own `note` is unaffected — that text is the manifest author's,
 not the template's.
@@ -1066,15 +1103,18 @@ manifest field.
 No assessment logic, rendering output or schema moved. `schemas/` is
 byte-identical and no page renders differently.
 
-**On the version number.** A renamed public name is a breaking change, and
-`agents.md` § Versioning calls for a major bump. This ships as a **minor**
-deliberately: `--bundles` and `bundles_path` have no consumer — the secure side
-does not call them, and the evidence format that introduced the manifest field
-has not been published to GitHub or consumed anywhere. A 2.0.0 spent on a
-naming fix would also displace the breaking work already earmarked for it (the
-package rename, the regulator pilot). Recorded here rather than left to be
-inferred, because the next person to read the bump rules should see that this
-entry knows it is an exception.
+**On the version number.** This is a naming adjustment, so it takes a
+**patch** — the level that admits limited backward-incompatible changes. The
+three names that moved have no consumer: the secure side does not call
+`--bundles` or `bundles_path`, and the evidence format that introduced the
+manifest field has reached neither GitHub nor any consumer. What makes the
+break safe is not the number but this entry and the table above it, which is
+the whole point of sizing a version by significance rather than by how many
+names moved.
+
+*Shipped as 1.2.0 under the old strict-SemVer rule, where it had to be argued
+as a deliberate exception to a major bump. Renumbered 2026-11-18; see
+`docs/migration_notes_version_renumbering.md`.*
 
 ### Documentation
 

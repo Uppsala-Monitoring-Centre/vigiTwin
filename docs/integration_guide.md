@@ -66,8 +66,12 @@ print("llm_dup_dev installed successfully")
 ## Public surface
 
 This section defines the **consumer contract**. Everything listed here is
-covered by the versioning guarantees in `agents.md` § Conventions → Versioning:
-a breaking change to any of it requires a major bump and a migration note.
+covered by `agents.md` § Conventions → Versioning: a breaking change to any of
+it is announced in `CHANGELOG.md`, with a `docs/migration_notes_*.md` where
+updating takes steps. Note that the version number is a significance signal
+rather than strict SemVer, so a break may arrive in a minor or even a patch —
+the entry and the migration note, not the number, are what tell you one
+happened.
 
 **Anything not listed here is internal**, regardless of whether its name begins
 with an underscore, and may be renamed, moved, or removed in any release. If you

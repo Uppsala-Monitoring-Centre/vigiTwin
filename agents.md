@@ -199,39 +199,64 @@ run in CI (`.github/workflows/ci.yml`):
 
 ### Versioning
 - The single source of truth is `version` in `pyproject.toml`; it is
-  SemVer and consumed at runtime (baked into manifests as
-  `dev_package.version`).
-- **Exact identity vs. semantic meaning are split across two manifest
+  consumed at runtime (baked into manifests as `dev_package.version`).
+- **This is not strict SemVer, deliberately.** The version signals how
+  *significant* a change is, not what shape of diff produced it. A
+  renamed field does not spend a major; a new generation of the method
+  does. Read a version number here as "how far the method has moved",
+  not as a machine-checkable compatibility promise — which is why an
+  incompatible change is *documented* rather than merely numbered (see
+  below).
+- **Exact identity vs. significance are split across two manifest
   fields.** `dev_git_commit` records *which precise code ran* (unique,
-  automatic). `dev_package.version` records *the state of the consumer
-  contract* — it is deliberately sticky and changes only when that
-  contract changes. Don't couple the version to git; the commit already
-  identifies the code.
-- **The contract = the JSON schemas + the public surface enumerated in
-  `docs/integration_guide.md` § Public surface.** Anything not listed
-  there is internal and may change in any release. Bump the version in
-  the *same PR* that changes any `schemas/*.schema.json` or any listed
-  name:
-  - breaking change (renamed/removed field or name, changed manifest
-    shape or label semantics) → **major** (`1.4.2` → `2.0.0`)
-  - additive, backward-compatible change → **minor** (`1.4.2` → `1.5.0`)
-  - fix with no contract change → **patch** (`1.4.2` → `1.4.3`); this
-    applies to behaviour fixes too, even where no schema or API shape
-    moves — the fix changes what a consumer gets back, so it gets its
-    own version and its own CHANGELOG heading
-  - (pre-1.0 the rule was breaking → minor, everything else → patch;
-    that is history now, retained only to read old entries.)
+  automatic). `dev_package.version` records *how far the method has
+  come* — it is deliberately sticky. Don't couple the version to git;
+  the commit already identifies the code.
+- Size the bump by what the change means to someone using the method:
+  - **major** (`2.3.4` → `3.0.0`) — a substantial new generation of
+    vigiTwin: a methodological advance intended for sustained use, and
+    potentially for its own scientific evaluation. **Breaking API or
+    schema changes alone do not warrant a major bump**, however many
+    names move.
+  - **minor** (`2.3.4` → `2.4.0`) — meaningful new functionality or a
+    substantial enhancement; the evidence presentation added in 1.1.0
+    is the worked example. May carry backward-incompatible API or
+    schema changes, including package restructuring or renaming.
+  - **patch** (`2.3.4` → `2.3.5`) — bug fixes, smaller functional
+    improvements, and minor interface or schema adjustments, including
+    limited backward-incompatible ones.
+  - **no bump** — documentation, tests, refactoring, and anything else
+    with no meaningful functional impact.
+- **Nothing bumps automatically.** A touched `schemas/*.schema.json`,
+  or a moved name in `docs/integration_guide.md` § Public surface, is a
+  prompt to ask how significant the change is — not a trigger. The
+  previous rule bumped on contract shape alone and spent eleven version
+  numbers on three days of work, twice having to argue in the
+  `CHANGELOG` against the rule it was following; see
+  `docs/migration_notes_version_renumbering.md`.
+- **An incompatible change is documented whether or not it moves the
+  version.** Decoupling the number from the break puts the entire
+  warning on the prose: say in `CHANGELOG.md` what moved and how to
+  update, and add a `docs/migration_notes_*.md` wherever a consumer
+  needs steps rather than a sentence. A break nobody wrote down is the
+  one failure mode this convention can produce, and the note is what
+  prevents it.
+- **The contract is still worth naming**, even though it no longer
+  drives the number: the JSON schemas in `schemas/` plus the public
+  surface enumerated in `docs/integration_guide.md` § Public surface.
+  Anything not listed there is internal and may change in any release.
 - **No deprecation window.** With a single known consumer, a breaking
-  change ships as a major bump plus a `docs/migration_notes_*.md`, not
-  as a two-release deprecation cycle. Say what moved and how to update.
-- **Releases and study cycles are different things.** The version tracks
-  compatibility only. A completed study cycle is marked by a git tag and
-  an archived snapshot (DOI), which is what a publication cites — do not
-  reach for a major bump to signal "this is the version behind the
-  paper".
+  change ships with a migration note, not a two-release deprecation
+  cycle. Say what moved and how to update.
+- **Releases and study cycles are different things.** A completed study
+  cycle is marked by a git tag and an archived snapshot (DOI), which is
+  what a publication cites — do not reach for a major bump to signal
+  "this is the version behind the paper".
 - Record every bump in `CHANGELOG.md` under a new version heading —
-  that file carries the "what changed for consumers" narrative that
-  neither the SHA nor the version number expresses on its own.
+  that file carries the "what changed and why it mattered" narrative
+  that neither the SHA nor the version number expresses on its own. A
+  change that takes no bump still belongs there when a consumer would
+  notice it; it goes under `[Unreleased]`.
 
 ### Tags, GitHub Releases and DOIs
 Three separate things, deliberately decoupled — conflating them is how a
@@ -239,7 +264,7 @@ provisional commit acquires a permanent citation:
 
 | | What it is | Cost |
 |---|---|---|
-| `version` in `pyproject.toml` | the consumer contract | spent the moment any artifact records it |
+| `version` in `pyproject.toml` | how far the method has moved | spent the moment any artifact records it |
 | a git tag | an immutable name for a commit | free; in practice irrevocable once public |
 | a GitHub **Release** | what Zenodo watches | mints a permanent version DOI, listed forever on the concept record |
 
@@ -253,13 +278,20 @@ provisional commit acquires a permanent citation:
   merely run secure-side is *eligible*, not ready, and eligibility is not a
   reason to publish.
 - **A backlog of unmirrored versions on `main` is the normal state, not a
-  debt to clear.** Most merged versions are never mirrored individually:
-  several merges collapse into one public version, which is one push, one
-  tag and one README pin. Publishing the backlog because it has accumulated
-  would make the mirror the replay of every merge this policy exists to
-  prevent. Do not propose mirroring; the decision is the maintainer's, and
-  it turns on the two conditions above rather than on how many versions have
-  gone by.
+  debt to clear.** Most versions never become a public milestone of their
+  own: several of them collapse into one, which is one push, one tag and
+  one README pin. Publishing the backlog because it has accumulated would
+  make the mirror the replay of every merge this policy exists to prevent.
+  Do not propose mirroring; the decision is the maintainer's, and it turns
+  on the two conditions above rather than on how many versions have gone by.
+- **A milestone carries the full intervening commit history.** What is
+  selected is *which version* becomes public, not which commits. The push
+  fast-forwards `github/main`, so every commit between the last public tag
+  and the new one goes out with it — nothing is squashed, rebased or
+  flattened on the way. That is what keeps `github/main` an ancestor of
+  `origin/main`, and it is also what makes the line between the two
+  histories usable: everything up to the public tip is permanent, and
+  everything after it is still ours to rewrite.
 - **Tag every version that reaches GitHub.** A tag costs nothing and buys
   three things: `git describe` resolves on any public commit, the README's
   install-from-tag instruction has a tag to point at for every public
@@ -270,9 +302,9 @@ provisional commit acquires a permanent citation:
   README's pinned install example to the new tag in the same change — an
   install line pointing at a superseded version is the one piece of drift a
   reader follows by default.
-- **Cut a Release only for citable milestones**: a version referenced in a
-  manuscript, or one whose changes external users should be actively
-  retrieving. Everything between those gets a tag and no Release. Zenodo
+- **Cut a Release only for significant, stable, citable versions**: one
+  referenced in a manuscript, or one whose changes external users should be
+  actively retrieving. Everything between those gets a tag and no Release. Zenodo
   mints a DOI from a Release, never from a tag push, so this is the one step
   that cannot be taken back or quietly corrected.
 - **A Release and `CITATION.cff` move in the same change, and only then.**

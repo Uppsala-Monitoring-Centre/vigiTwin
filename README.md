@@ -58,8 +58,8 @@ pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.0.2
 
 Python 3.11 or 3.12. The package is pure Python with four dependencies
 (`pydantic`, `jinja2`, `pyyaml`, `openpyxl`) and installs anywhere. It is not
-on PyPI yet; a PyPI release is planned to accompany the package rename in
-2.0.0.
+on PyPI yet; a PyPI release is planned to accompany the package rename, which
+will be announced in `CHANGELOG.md` with a migration note.
 
 ## What you can run without database access
 
@@ -118,12 +118,18 @@ tests/       ~2000 tests, all on synthetic data
 
 ## Versioning and provenance
 
-The version number is a **consumer contract** signal — the JSON schemas plus the
-public API — not a per-commit identifier. Every artifact the pipeline emits
-records both `dev_package.version` (what the contract was) and `dev_git_commit`
-(exactly which code ran). See [`CHANGELOG.md`](CHANGELOG.md) for the narrative of
-what changed for consumers at each version, and `agents.md` § Conventions →
-Versioning for the bump rules.
+The version number is a **significance** signal — how far the method has moved
+— and deliberately **not strict SemVer**: a major is reserved for a substantial
+new generation of vigiTwin, a minor marks meaningful new functionality, and a
+patch covers fixes and smaller adjustments. Breaking API or schema changes
+alone do not earn a major, so an incompatible change is announced in
+[`CHANGELOG.md`](CHANGELOG.md) — with a `docs/migration_notes_*.md` where
+updating takes steps — rather than signalled by the number alone.
+
+The version is never a per-commit identifier. Every artifact the pipeline emits
+records both `dev_package.version` (how far the method had come) and
+`dev_git_commit` (exactly which code ran). See `agents.md` § Conventions →
+Versioning for the full convention.
 
 ## Citation
 
