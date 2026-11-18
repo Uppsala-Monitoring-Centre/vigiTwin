@@ -85,10 +85,12 @@ hashes. The remaining seventeen were rewritten.
 | `ccc0c2f832` | `57761ad007` | 1.7.1 → 1.2.1 | Name the relationship outcome, and stop assuming a shared source is a paper |
 | `93a6513019` | `e895fa6dac` | 1.7.1 → 1.2.1 | Say what the GitHub mirror is actually for |
 
-The old commits survive on the local branch `backup/pre-renumber-2026-11-18`
-until it is deleted. They are not recoverable from either remote once
-`origin/main` has been force-updated, which is why the map is written down here
-rather than left to `git reflog`.
+**The old commits no longer exist anywhere.** They were never on `github`, they
+are gone from `origin` since the force-update, and the local backup branch that
+held them was deleted on 2026-11-18 once this map was verified against it. A
+reflog entry on the one machine that did the rewrite may still resolve an old
+hash until it is garbage-collected; nothing else will. This table is the record
+— don't go looking for `backup/pre-renumber-2026-11-18`.
 
 ## What a consumer has to do
 
