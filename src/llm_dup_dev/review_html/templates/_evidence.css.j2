@@ -221,8 +221,28 @@ tr.row-neutral td,tr.ae-neutral td{background:transparent}
 }
 .gaps ul{margin:5px 0 0;padding-left:18px}
 .reconciliation{font-size:12px;color:var(--muted);margin:6px 0 12px}
+/* The agreement line sits directly under the outcome tiles, because that is
+   the row it is about: it compares two of the four verdicts printed there.
+   Pulled up against them so it reads as part of that row rather than as the
+   first thing in the decisions block beneath it. */
+.verdict-note{margin:-8px 0 14px}
 .verdict-agree{color:var(--match);font-weight:600}
 .verdict-disagree{color:var(--mismatch);font-weight:600}
+/* The publication band. Full width at the top of the page, in the colour the
+   page already uses for "counts against", because that is the only strong
+   colour here a reader has already been taught. The word is large and
+   letter-spaced so it survives being screenshotted, scaled into a figure or
+   printed in grey. */
+.masked-banner{
+  display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+  margin:0 0 22px;padding:10px 16px;
+  background:var(--mismatch);color:#fff;
+}
+.masked-word{
+  font-size:22px;font-weight:bold;text-transform:uppercase;letter-spacing:4px;
+  line-height:1.1;
+}
+.masked-detail{font-size:11.5px;line-height:1.35;max-width:620px}
 footer{
   margin-top:34px;padding-top:12px;border-top:1px solid var(--line);
   font-size:11px;color:var(--muted);
@@ -231,6 +251,7 @@ a{color:var(--accent)}
 
 @media(max-width:650px){
   main{padding:20px;margin:0}
+  .masked-word{font-size:18px;letter-spacing:3px}
   .outcomes,.decisions{grid-template-columns:1fr}
   .chain dl{grid-template-columns:1fr;gap:1px 0}
   .chain dt{margin-top:7px}
@@ -260,6 +281,11 @@ a{color:var(--accent)}
   .case+.case{break-before:page}
   .case{margin-top:20px}
   .outcomes,.decisions,.decision,.callout,.gaps,.chain{break-inside:avoid}
+  /* The band is the one element on the page whose absence changes what the
+     document claims, so it is kept whole and its colour is forced (the
+     print-colour rule below covers it, but a grey band with white text
+     would still read). */
+  .masked-banner{break-inside:avoid;break-after:avoid}
   /* Long narratives and interpretations must not be cut off mid-sentence. */
   .callout p,.narrative-text{overflow:visible;break-inside:auto}
   a{text-decoration:none;color:inherit}

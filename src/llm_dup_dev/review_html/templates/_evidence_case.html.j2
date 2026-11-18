@@ -117,6 +117,24 @@
   </div>
 
 {#
+  Whether vigiTwin and the reference label agree, directly under the tiles
+  that state them. It is a statement *about that row* — two of its four
+  verdicts compared — so it belongs with the row and not after the decision
+  tiles, where a reader met it a stage later than the thing it describes.
+#}
+  {% if case.reference_verdict %}
+  {% set v = case.reference_verdict %}
+  <p class="note verdict-note">
+    {% if v.agrees_with_vigitwin is true %}
+    <span class="verdict-agree">vigiTwin agrees with the reference label.</span>
+    {% elif v.agrees_with_vigitwin is false %}
+    <span class="verdict-disagree">vigiTwin disagrees with the reference label.</span>
+    {% endif %}
+    {{ v.comparison_note }}
+  </p>
+  {% endif %}
+
+{#
   The two decision stages, in the same shape whichever route each took. The
   tiles above are verdicts from four different places — a reference label, a
   screening algorithm, vigiTwin, a human reviewer — and say nothing about how
@@ -140,18 +158,6 @@
     </div>
     {% endfor %}
   </div>
-  {% endif %}
-
-  {% if case.reference_verdict %}
-  {% set v = case.reference_verdict %}
-  <p class="note">
-    {% if v.agrees_with_vigitwin is true %}
-    <span class="verdict-agree">vigiTwin agrees with the reference label.</span>
-    {% elif v.agrees_with_vigitwin is false %}
-    <span class="verdict-disagree">vigiTwin disagrees with the reference label.</span>
-    {% endif %}
-    {{ v.comparison_note }}
-  </p>
   {% endif %}
 
   {#
@@ -401,11 +407,26 @@
     </tfoot>
     {% endif %}
   </table>
-  {% else %}
-  <p>No additional matching features contributed to the score.</p>
   {% endif %}
+  {#
+    No sentence where there were none. The panel at the top of the case says
+    it in the countable form the rest of the page uses — "Additional matching
+    features: None" — and a paragraph here repeated that as a claim about
+    what was not found.
+  #}
 
-  {% if case.explicit_link_note %}<p class="note">{{ case.explicit_link_note }}</p>{% endif %}
+{#
+  Only a link that was *found* is printed. The other three states — nothing
+  checked, nothing found, the feature not used by this run — are an absence
+  of evidence, and a paragraph asserting one told a reader nothing they could
+  act on while reading as though a check had produced a result. The note
+  itself is unchanged and still on the view model for every state, because
+  the distinction between them is real and a consumer may need it;
+  ``explicit_link_found`` is what the page branches on.
+#}
+  {% if case.explicit_link_found and case.explicit_link_note %}
+  <p class="note">{{ case.explicit_link_note }}</p>
+  {% endif %}
 
 {#
   Source-context evidence, given the same standing as the arithmetic above
@@ -503,24 +524,25 @@
     </tbody>
   </table>
   {#
-    Only the weighed case carries a note. Where nothing was weighed, the
-    assessment table below already says so — on the Same case row, which
-    states that the question is reached only once independence is rejected —
-    and saying it twice on one page was the redundancy this removed.
+    No note under the table. It explained how to read the table's own two
+    columns — severity as the level finally counted, the figure beside it as
+    the weight applied to that level — which is format documentation and now
+    lives only in ``docs/evidence_format.md``. ``case.findings_weighed`` is
+    still built and still on the view model for consumers: a caller that
+    needs to know whether the penalty was compared against a tolerance reads
+    it there, and the panel at the top of the case still marks an uncompared
+    figure ``(not weighed)``.
   #}
-  {% if case.findings_weighed %}
-  <p class="note">
-    These are the findings vigiTwin retained and weighed. Severity is the
-    level that was counted: a finding whose severity was reduced is listed at
-    its final level, with the reason given. The figure beside it is the weight
-    this run applied to that level, and the retained findings' weights are
-    what sum to the inconsistency penalty that decided the same-case question.
-  </p>
-  {% endif %}
-  {% elif case.deferred_discrepancies %}
-  <p>vigiTwin recorded no other inconsistencies for this pair.</p>
-  {% elif case.assessment_rows %}
-  <p>vigiTwin recorded no inconsistencies for this pair.</p>
+  {#
+    Nothing weighed: the heading keeps its place and the answer is a value,
+    not a sentence. "vigiTwin recorded no inconsistencies for this pair" said
+    in nine words what the panel above already states as `Inconsistencies —
+    None`, and said it as though a result had been reached. The heading stays
+    so that every case in a supplement has the same skeleton and a reader
+    comparing two of them finds the same question in the same place.
+  #}
+  {% elif case.assessment_rows or case.deferred_discrepancies %}
+  <p><span class="absent">None</span></p>
   {% endif %}
 
   {% if case.suppressed_discrepancies %}
@@ -559,18 +581,15 @@
   longer the page's own way of saying this.
 #}
 {#
-  Only the gaps that name something *absent* are printed. A provenance gap —
-  a date or a substance read out of the run's own description — stays on
-  ``case.gaps`` for a caller and a test, but a reader does not need a
-  paragraph about how a value in the table above was obtained.
+  No limitations list. Every entry on it named something the stored artifacts
+  could not support, and a reader of the review wants what *was* found: the
+  list cost a paragraph per case to say what had not been.
+
+  ``case.gaps`` is unchanged and still carries every one of them, codes and
+  messages, for a caller, a test and the publication gate — which is where a
+  gap now does its work. ``EvidenceGap.is_provenance`` stays with it. The
+  cost of this is real and worth naming: a page whose matching contributions
+  do not reconcile with the stored score no longer says so on itself, and
+  only a caller reading ``gaps`` will know.
 #}
-  {% set absences = case.gaps | rejectattr('is_provenance') | list %}
-  {% if absences %}
-  <div class="gaps">
-    <strong>Limitations of this review</strong>
-    <ul>
-      {% for gap in absences %}<li>{{ gap.message }}</li>{% endfor %}
-    </ul>
-  </div>
-  {% endif %}
 </section>

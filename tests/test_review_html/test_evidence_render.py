@@ -155,6 +155,40 @@ class TestSections:
         assert "vigiTwin classification" in html
         assert "SCLE of reference label" in html
 
+    def test_the_agreement_line_sits_with_the_tiles_it_compares(self):
+        """One level up from where it was: under the row, not under the
+        decision tiles.
+
+        It compares two of the four verdicts the tile row states, so a reader
+        meets it while that row is still what they are looking at. Behind the
+        decision tiles it arrived a stage later than the thing it describes.
+        """
+        html = " ".join(
+            _html(
+                reference=ReferenceInfo(
+                    reference_label="non_duplicate", set_label="FDA Gold"
+                )
+            ).split()
+        )
+        assert "vigiTwin disagrees with the reference label." in html
+        assert html.index("SCLE of reference label") < html.index(
+            "vigiTwin disagrees with the reference label."
+        )
+        assert html.index("vigiTwin disagrees with the reference label.") < (
+            html.index('<div class="decisions">')
+        )
+
+    def test_no_sentence_where_no_matching_feature_contributed(self):
+        """An absence the panel already states as a value.
+
+        "Additional matching features: None" is in the panel, in the
+        countable form the rest of the page uses. The paragraph under the
+        table said the same thing as a claim about what was not found.
+        """
+        html = " ".join(_html().split())
+        assert "No additional matching features" not in html
+        assert "<dt>Additional matching features</dt>" in html
+
     def test_frequency_headings_name_the_sets(self):
         from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
 
@@ -372,13 +406,24 @@ class TestFilesAndIndex:
         assert not (tmp_path / "index.html").exists()
 
 
-class TestGapsAreVisible:
-    """A limitation is a footnote, not a silent omission."""
+class TestGapsAreRecordedAndNotPrinted:
+    """The limitations list is gone; the gaps behind it are not.
 
-    def test_missing_frequency_statistics_is_stated(self):
+    Every entry on that list named something the stored artifacts could not
+    support, which is what the page no longer spends a reader's attention on.
+    The record is unchanged: a gap keeps its code and its message on the
+    case, where a caller, a test and the publication gate read it.
+    """
+
+    def test_a_missing_input_is_recorded_on_the_case(self):
+        case = _case()
+        codes = {gap.code.value for gap in case.gaps}
+        assert "frequency_stats_missing" in codes
+
+    def test_it_is_not_printed(self):
         html = _html()
-        assert "Limitations of this review" in html
-        assert "no frozen frequency statistics" in html
+        assert "Limitations of this review" not in html
+        assert "no frozen frequency statistics" not in html
 
 
 class TestAbsentValueRendering:
@@ -580,8 +625,13 @@ class TestTheLegendStaysCompact:
         assert "A dash inside a treatment period" not in text
 
 
-class TestLimitationsListsAbsencesOnly:
-    """A provenance note is recorded but not printed."""
+class TestNoGapReachesThePage:
+    """Neither kind of gap is printed now — and both are still on the case.
+
+    The distinction between a provenance note and an absence is still drawn
+    on the model, because a consumer may act on it; it simply no longer
+    decides what a reader sees, since no gap reaches the page at all.
+    """
 
     @staticmethod
     def _case_with_gaps(*gaps):
@@ -604,11 +654,26 @@ class TestLimitationsListsAbsencesOnly:
         assert gap.is_provenance
         html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
         assert "own stored description" not in html
-        # The fixture carries absence gaps of its own, so the section is
-        # still rendered; what must not appear is this gap's sentence.
-        assert "Limitations of this review" in html
 
-    def test_an_absence_gap_is_printed(self):
+    def test_an_absence_gap_is_recorded_but_not_printed_either(self):
+        from llm_dup_dev.review_html.evidence.models import (
+            EvidenceGap,
+            EvidenceGapCode,
+        )
+
+        gap = EvidenceGap(
+            code=EvidenceGapCode.CLINICAL_DATE_VALUE_MISSING,
+            message="A date could not be attributed.",
+        )
+        case = self._case_with_gaps(gap)
+        html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
+        assert gap in case.gaps
+        assert not gap.is_provenance
+        assert "A date could not be attributed." not in html
+        assert "Limitations of this review" not in html
+
+    def test_the_page_still_collects_every_case_gap(self):
+        """``EvidencePageVM.gaps`` is the caller's way in, and is unchanged."""
         from llm_dup_dev.review_html.evidence.models import (
             EvidenceGap,
             EvidenceGapCode,
@@ -620,13 +685,21 @@ class TestLimitationsListsAbsencesOnly:
                 message="A date could not be attributed.",
             )
         )
-        html = render_evidence_page(EvidencePageVM(title="t", cases=[case]))
-        assert "Limitations of this review" in html
-        assert "A date could not be attributed." in html
+        page = EvidencePageVM(title="t", cases=[case])
+        assert "A date could not be attributed." in {
+            gap.message for gap in page.gaps
+        }
 
 
 class TestTheInconsistencyNoteFollowsTheDecision:
-    """"Retained and weighed" is only true where the weighing happened."""
+    """The findings table carries no explanatory note, in either case.
+
+    The note told a reader how to read the table's own two columns, which is
+    format documentation and lives in ``docs/evidence_format.md``. What the
+    page still does, and these tests still hold it to, is say where the
+    penalty went: the panel marks an uncompared figure, and the relationship
+    tile says why no comparison happened.
+    """
 
     @staticmethod
     def _features_with_finding():
@@ -651,20 +724,42 @@ class TestTheInconsistencyNoteFollowsTheDecision:
             ).split()
         )
 
-    def test_a_compared_penalty_says_retained_and_weighed(self):
+    def test_a_compared_penalty_carries_no_note(self):
+        """Dropped where it was true, not only where it was not.
+
+        ``findings_weighed`` is still built — a consumer reads it — and the
+        page simply no longer prints a paragraph off it.
+        """
         html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=4.0))
-        assert "retained and weighed" in html
-        assert "decided the same-case question" in html
+        assert "retained and weighed" not in html
+        assert "decided the same-case question" not in html
 
     def test_an_uncompared_penalty_carries_no_note(self):
         """The panel says it once; the findings table does not repeat it.
 
-        What must not happen is the *weighed* note appearing where nothing
-        was weighed — that would claim the findings decided something.
+        What must never appear is the *weighed* note where nothing was
+        weighed — that would claim the findings decided something.
         """
         html = self._html_with(InconsistencyPenalty(w_tot=1.0, threshold=None))
         assert "retained and weighed" not in html
         assert "weighed against a same-case tolerance" not in html
+
+    def test_the_flag_is_still_on_the_view_model(self):
+        """The page stopped printing it; the view model did not stop saying it."""
+        weighed = _case(
+            features=self._features_with_finding(),
+            classification=_classification(
+                penalty=InconsistencyPenalty(w_tot=1.0, threshold=4.0)
+            ),
+        )
+        unweighed = _case(
+            features=self._features_with_finding(),
+            classification=_classification(
+                penalty=InconsistencyPenalty(w_tot=1.0, threshold=None)
+            ),
+        )
+        assert weighed.findings_weighed is True
+        assert unweighed.findings_weighed is False
 
     def test_the_panel_marks_an_unweighed_penalty_as_such(self):
         """The figure itself says no comparison was made."""

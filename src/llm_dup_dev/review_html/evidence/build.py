@@ -2637,6 +2637,23 @@ def _explicit_link_note(
     )
 
 
+def _explicit_link_found(
+    features: PairFeatures, run_settings: EvidenceRunSettings | None = None
+) -> bool:
+    """Whether the case-identifier fields produced a link, as opposed to not.
+
+    The same two inputs :func:`_explicit_link_note` reads, so the flag and
+    the sentence cannot come to disagree: a run that did not use explicit
+    links found none whatever its artifacts carry in the field, and both
+    ``NOT_ASSESSED`` and ``NO_LINK`` are absences — of the check and of a
+    result — rather than a link.
+    """
+    if run_settings is not None and run_settings.explicit_link_enabled is False:
+        return False
+    link = features.explicit_link
+    return link is not None and link.verdict is ExplicitLinkVerdict.EXPLICIT_LINK
+
+
 #: What each source-case verdict says, in the reader's terms.
 #:
 #: The stored values are field names — ``same_source_different_case`` — and
@@ -3042,24 +3059,19 @@ def _relationship_tile(
 
 
 def _narrative_note(r1: Report, r2: Report) -> str:
-    """Whether narratives were available, and any literature references."""
-    refs = [
-        r.literature_reference
-        for r in (r1, r2)
-        if r.literature_reference
-    ]
-    have = [bool(r1.narrative), bool(r2.narrative)]
-    if not any(have) and not refs:
-        return ""
-    parts: list[str] = []
-    if all(have):
-        parts.append("Both reports carry a narrative.")
-    elif any(have):
-        side = "A" if have[0] else "B"
-        parts.append(f"Only report {side} carries a narrative.")
-    for ref in _dedupe(refs):
-        parts.append(f"Literature reference: {ref}")
-    return " ".join(parts)
+    """Any literature reference the two reports carry.
+
+    It used to open by saying whether each report had a narrative at all —
+    "Both reports carry a narrative", or "Only report A carries a narrative".
+    Neither sentence was evidence about the pair: the first said that the
+    ordinary case held, and the second named an absence a reader can do
+    nothing with. What remains is the reference itself, which is a value and
+    is cited.
+    """
+    refs = _dedupe(
+        [r.literature_reference for r in (r1, r2) if r.literature_reference]
+    )
+    return " ".join(f"Literature reference: {ref}" for ref in refs)
 
 
 def _build_narrative_blocks(
@@ -3176,6 +3188,7 @@ def build_evidence_case(
     anchor_note = ""
     context_note = ""
     explicit_link_note = ""
+    explicit_link_found = False
     source_case_note = ""
     source_context: SourceContextVM | None = None
     narrative_blocks: list[EvidenceTextVM] = []
@@ -3235,6 +3248,7 @@ def build_evidence_case(
         anchor_note = _anchor_note(features)
         context_note = _context_note(report_1, report_2, features)
         explicit_link_note = _explicit_link_note(features, run_settings)
+        explicit_link_found = _explicit_link_found(features, run_settings)
 
         if classification is not None:
             assessment_rows = _build_assessment_rows(
@@ -3323,6 +3337,7 @@ def build_evidence_case(
         matching_features=matching_features,
         reconciliation=reconciliation,
         explicit_link_note=explicit_link_note,
+        explicit_link_found=explicit_link_found,
         source_case_note=source_case_note,
         source_context=source_context,
         narrative_note=_narrative_note(report_1, report_2),

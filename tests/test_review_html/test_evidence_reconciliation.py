@@ -235,8 +235,12 @@ class TestTheKnownDisagreements:
 
         This used to pass silently, which mattered little while the page
         printed the stored score. The page now prints the total and never the
-        stored score, so an unexplained difference has to be recorded or no
-        reader can see it.
+        stored score, so an unexplained difference has to be recorded.
+
+        It is recorded on the case. The page no longer carries a limitations
+        list, so a disagreement reaches a reader only through a caller that
+        reads ``gaps`` — which is the cost of dropping that list, and is
+        asserted here rather than left implicit.
         """
         r, case = _reconciliation(
             _with(decades=3.0, n_anchor=2, stored=9.0), _EPSILON
@@ -244,5 +248,6 @@ class TestTheKnownDisagreements:
         assert not r.ceiling_reached
         assert not r.floor_reached
         assert "score_unreconciled" in _codes(case)
-        assert "totals +3.0" in _html(case)
-        assert "stored a matching score of 9.0" in _html(case)
+        (gap,) = [g for g in case.gaps if g.code.value == "score_unreconciled"]
+        assert "totals +3.0" in gap.message
+        assert "stored a matching score of 9.0" in gap.message

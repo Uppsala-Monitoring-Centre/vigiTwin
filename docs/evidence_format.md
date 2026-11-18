@@ -114,6 +114,15 @@ another. A tile is muted only where there is **no verdict to show**: an
 inconclusive SCLE assessment — somebody looked and found the reference label
 genuinely ambiguous — reads as a value, because it is one.
 
+Directly beneath that row, and nowhere else, is the line saying whether
+vigiTwin **agrees with the reference label**. It compares two of the four
+verdicts printed immediately above it, so it belongs to that row; below the
+decision tiles — where it used to sit — a reader met it a stage later than
+the thing it describes, and read it as a comment on how vigiTwin decided
+rather than on what the tiles say. Agreement is computed in the binary space
+the reference label lives in, under a named positive-class rule, and an
+abstention on either side yields no verdict at all.
+
 Then the **decision tiles** — one per stage, Independence and Relationship —
 which are the most prominent thing under the heading, and new. The outcome
 tiles above them are verdicts from four different places and say nothing
@@ -128,6 +137,36 @@ the page's one colour rule, the same one the tables follow, so a reader who
 has learned it does not learn a second. A badge coloured per pathway said
 that a shared-source decision and a rarity decision were different *kinds* of
 thing, which is not the distinction a colour is needed for.
+
+**An absence of evidence is not written out as a sentence.** Where a signal
+contributed nothing, the page says so once, as a value, in the place a reader
+already looks for that signal: "Additional matching features — None" and
+"Inconsistencies — None" in the panel, `None` under the Inconsistencies
+heading in section 3, a muted tile where there is no verdict to show, a blank
+cell where nothing was reported. What it no longer carries is prose asserting
+the absence — that no explicit inter-report case link was found, that no
+additional matching feature contributed, that vigiTwin recorded no
+inconsistencies for this pair — which reads like a result while reporting
+none, and takes a paragraph of a reader's attention to say nothing happened.
+The generated summary follows the same rule: a slot with nothing in it is
+dropped rather than filled with a sentence about nothing.
+
+The underlying fields are unchanged on the view model, because the *kinds* of
+absence differ and a consumer may need to tell them apart; it is the page
+that stops printing them. A heading never goes with its sentence: section 3
+keeps its *Inconsistencies* heading and answers `None`, so every case in a
+supplement has the same skeleton and a reader comparing two of them finds the
+same question in the same place.
+
+The **Limitations of this review** list went the same way, and this is the
+one place the rule has a cost worth stating. Every entry on it named
+something the stored artifacts could not support, and most of those were
+plain absences of input — no frozen frequency statistics, no run manifest.
+But one was not: `score_unreconciled` says the contributions on *this page*
+do not add up to the score the run stored. That no longer appears anywhere a
+reader can see. It is still recorded on `EvidenceCaseVM.gaps`, with its code
+and its message, where a caller, a test and the publication gate read it, and
+a consumer that cares must read it there.
 
 Both tiles always appear, in the same shape, whichever route each took. That
 is the point of them: direct evidence of a shared source decides as firmly as
@@ -336,26 +375,28 @@ rather than for the material each happens to hold:
    Retained rows are tinted red, with the same two row classes the drug and
    adverse-event tables use; a superseded row is not, because it contributed
    nothing and a red row would say the assessment weighed it.
-   The note beneath the findings appears only where the weighing actually
-   happened — where the penalty was compared against a same-case tolerance
-   (`InconsistencyPenalty.threshold is not None`, carried on the case as
-   `findings_weighed`). Where it did not, there is no note: the panel at the
-   top of the case already says why, marking the figure `(not weighed)` and
-   giving the reason beneath it — either that the question is reached only
-   once independence has been rejected, or that the reports were assessed on
-   source context alone with no inconsistency-penalty comparison. That
-   guarantee moved with the decision table and did not lapse with it: it is
-   now a test over the panel. The findings are still shown, still
-   tinted, and still carry their weights; what no longer happens is the page
-   saying twice that nothing weighed them. What must never appear is the
-   "retained and weighed" note on a pair where nothing was weighed, which is
-   what `findings_weighed` prevents.
-   Severity carries the weight the run applied to it, as `Moderate (+1.0)`,
-   and the retained weights are what sum to the inconsistency penalty. The
-   weight comes from the stored `InconsistencyPenalty.terms`, which records
-   what the run actually used, so a run with custom weights is described with
-   its own numbers and a run that saved no classification shows severity
-   alone rather than a default that may not have applied.
+   **The findings table carries no note.** It used to be followed by a
+   paragraph explaining how to read its own two columns — severity as the
+   level finally counted, the figure beside it as the weight this run applied
+   to that level, the retained weights summing to the penalty. That is how
+   the format works rather than evidence about this pair, so it is stated
+   here, once, instead of under every table in a supplement. Where the
+   penalty was not compared against a tolerance at all, the panel at the top
+   of the case still says so — marking the figure `(not weighed)` and giving
+   the reason, either that the question is reached only once independence has
+   been rejected or that the reports were assessed on source context alone.
+   That guarantee is a test over the panel. `EvidenceCaseVM.findings_weighed`
+   (`InconsistencyPenalty.threshold is not None`) is still built and still on
+   the view model for consumers; the page simply no longer prints a paragraph
+   off it.
+   So, read here rather than there: severity carries the weight the run
+   applied to it, as `Moderate (+1.0)`; a finding whose severity was reduced
+   is listed at its final level with the reason given; and the retained
+   weights are what sum to the inconsistency penalty. The weight comes from
+   the stored `InconsistencyPenalty.terms`, which records what the run
+   actually used, so a run with custom weights is described with its own
+   numbers and a run that saved no classification shows severity alone rather
+   than a default that may not have applied.
 
 ### Row ordering
 
@@ -514,6 +555,17 @@ comes first and the findings follow with the explicit note that they were
 never weighed — which is the fact a reader most needs and the thing an
 undifferentiated template would bury.
 
+**An empty slot is dropped, not filled.** A pair with no additional matching
+evidence, or no inconsistency, gets no sentence about it: "No additional
+matching evidence was identified" and "vigiTwin identified no
+inconsistencies" are gone, for the reason given under § Page structure. Where
+independence was not rejected and nothing was found, what remains is the half
+that says something — that the relationship question was not reached, because
+independence was not rejected. One consequence for callers:
+`AssessmentSummary.paragraphs(split_after=...)` splits on a slot being
+*present*, so a summary with no sentence in that slot comes back as one
+paragraph.
+
 What the generator will not do:
 
 - It never quotes a numeric threshold unless a run manifest supplied it.
@@ -609,9 +661,10 @@ against a stabiliser of 1e-15 is already about 0.05 below its additive figure
 looks for. Ordinary pairs were being reported as unreconciled, in a sentence
 quoting two figures that print identically.
 
-An unreconciled case always carries a `score_unreconciled` gap under
-*Limitations of this review*, naming both figures to **enough decimals to
-tell them apart**: a note reading "totals +14.1, while the run stored 14.1"
+An unreconciled case always carries a `score_unreconciled` gap on
+`EvidenceCaseVM.gaps` — read there, not on the page, which no longer prints a
+limitations list — naming both figures to **enough decimals to tell them
+apart**: a note reading "totals +14.1, while the run stored 14.1"
 contradicts itself, and the difference it is reporting is exactly the part one
 decimal hides. Before 1.1.8 the gap was also recorded only when the run had
 supplied no `epsilon`; a disagreement with a known `epsilon` passed silently,
@@ -766,6 +819,13 @@ which blames the data for a check nobody ran. With `false`, the note says the
 run did not examine those fields and claims nothing about whether a link
 exists, and the generated summary cites no declaration.
 
+The note is still built for all four states and is still on the view model.
+What reaches the page is only the state that found something:
+`EvidenceCaseVM.explicit_link_found` is true where the case-identifier fields
+produced a link, and the paragraph is printed then and only then. The three
+absences — nothing found, nothing to check, the feature not used — are an
+absence of evidence, and a reader does not need a paragraph for each.
+
 It only **fills** what the run manifest did not record. Where both say
 something and they disagree, the collection fails to build: the run manifest
 is the run's own account of itself, and a declaration against it is an error
@@ -894,17 +954,23 @@ and its artifacts move together.
 
 ## Gaps
 
-Anything the stored artifacts cannot support becomes a visible footnote and a
-test-assertable record, never a silent omission. An evidence review that
-quietly drops what it could not compute is indistinguishable from one where
-there was nothing to show.
+Anything the stored artifacts cannot support becomes a test-assertable
+record on `EvidenceCaseVM.gaps`, never a silent omission *in the record*.
+
+**No gap is printed on the page.** The reader-facing "Limitations of this
+review" list is gone: every entry on it named what was not there, which is
+what the page no longer spends a reader's attention on. Gaps keep their codes
+and their messages, `EvidencePageVM.gaps` still collects them across a
+collection, and they are what a caller, a test and the publication gate act
+on. The one entry a reader loses that was not a plain absence is
+`score_unreconciled`; see § Page structure for why that matters and where to
+read it instead.
 
 Two of the codes below are **provenance** rather than absence: they say how a
-value that *is* shown was obtained. Those are recorded on the case and
-assertable in a test, but the page does not print them — a reader-facing
-"Limitations" list earns its space by naming what is missing, and a note about
-a date sitting in the table above it does not. `EvidenceGap.is_provenance`
-says which is which, and the template filters on it.
+value that *is* shown was obtained. `EvidenceGap.is_provenance` still says
+which is which — a consumer may want to treat them differently — though it no
+longer decides what a reader sees, since nothing on this list reaches the
+page.
 
 | Code | Means |
 |---|---|

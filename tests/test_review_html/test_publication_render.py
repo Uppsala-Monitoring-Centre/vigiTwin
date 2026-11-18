@@ -33,6 +33,47 @@ def _html(page: EvidencePageVM) -> str:
     return render_evidence_page(page)
 
 
+class TestTheMaskedBand:
+    """A publication page says what it is before anything else on it.
+
+    The footer still states the transform in full. A footnote is read last,
+    or not at all: a page lifted into a slide, a figure or a printed bundle
+    arrives with transformed values, and the band is what travels with it.
+    """
+
+    def test_a_publication_page_carries_it(self):
+        result = scramble(publication_page(worked_example_case()))
+        html = " ".join(_html(result.page).split())
+        assert ">MASKED<" in html
+        assert '<div class="masked-banner"' in html
+
+    def test_it_comes_before_the_content(self):
+        result = scramble(publication_page(worked_example_case()))
+        html = " ".join(_html(result.page).split())
+        assert html.index('<div class="masked-banner"') < html.index(
+            "<section class="
+        )
+
+    def test_it_says_select_values_and_leaves_the_rest_to_the_footer(self):
+        """One line under the word, and it does not overstate the transform.
+
+        A transform may leave a value as reported, so the band says *select*
+        values. What this run actually did, and the caveat that the page is
+        not a certificate, are in the footer, which is built from the
+        effective policy rather than written as prose here.
+        """
+        result = scramble(publication_page(worked_example_case()))
+        html = " ".join(_html(result.page).split())
+        assert "Select displayed values have been transformed." in html
+        assert "certified as anonymised" in html
+
+    def test_an_internal_page_does_not_carry_it(self):
+        """The stylesheet is shared, so the markup is what distinguishes them."""
+        html = _html(publication_page(worked_example_case()))
+        assert '<div class="masked-banner"' not in html
+        assert ">MASKED<" not in html
+
+
 class TestTheFooterStatesTheMode:
     def test_an_internal_page_still_says_it_is_not_publication_safe(self):
         """Unchanged wording: the existing presentation is not touched."""

@@ -177,7 +177,11 @@ class TestEvidenceFormat:
         main(_argv(artifacts, out, "--format", "evidence"))
         html = (out / "R001__R002.html").read_text(encoding="utf-8")
         assert "exceeding the independence threshold" not in html
-        assert "were not recorded" in html
+        # The gap saying the settings were not recorded is on the case, not
+        # on the page: the limitations list is gone. What the page must do is
+        # name the evidence zone instead of quoting a threshold it never had.
+        assert "were not recorded" not in html
+        assert "threshold of" not in html
 
 
 class TestPairSelection:

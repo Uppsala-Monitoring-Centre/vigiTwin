@@ -222,8 +222,8 @@ class TestWorkedExamples:
         assert build_assessment_summary(features, classification).as_text() == (
             "The reports share one drug term and one adverse event term. This "
             "combination occurs in 11 reports in the selected country-year "
-            "context and defines the anchor population. No additional matching "
-            "evidence was identified. The matching score of 0 did not support "
+            "context and defines the anchor population. "
+            "The matching score of 0 did not support "
             "rejection of independence, and the reports were classified as "
             "unrelated. Two minor adverse event inconsistencies were "
             "identified, but not weighed against the same-case tolerance: "
@@ -507,9 +507,30 @@ class TestParagraphs:
     """Splitting is by slot, so the break lands in the same place every time."""
 
     def test_split_after_additional_evidence(self):
+        features = _features(
+            probability=ProbabilityEstimate(
+                p_joint=1e-7,
+                p_match=1e-7,
+                feature_contributions=[_contribution("patient_sex", 0.3)],
+            )
+        )
         paragraphs = build_assessment_summary(
-            _features(), _classification()
+            features, _classification()
         ).paragraphs(split_after=SummarySlot.ADDITIONAL)
         assert len(paragraphs) == 2
         assert paragraphs[0].startswith("The reports share")
-        assert paragraphs[1].startswith("vigiTwin identified")
+        assert "Additional matching evidence includes sex." in paragraphs[0]
+        assert paragraphs[1].startswith("The matching score")
+
+    def test_a_missing_slot_is_no_break(self):
+        """Nothing contributed, so there is no additional-evidence sentence.
+
+        The slot is dropped rather than filled with "No additional matching
+        evidence was identified", and a split keyed on a slot that is not
+        there leaves the account in one piece.
+        """
+        paragraphs = build_assessment_summary(
+            _features(), _classification()
+        ).paragraphs(split_after=SummarySlot.ADDITIONAL)
+        assert len(paragraphs) == 1
+        assert "No additional matching evidence" not in paragraphs[0]

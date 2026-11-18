@@ -57,6 +57,89 @@ and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 One consequence worth stating: the planned package rename no longer requires a
 2.0.0, and the README no longer promises one.
 
+## [1.2.2] - 2026-11-18
+
+A pass over what the evidence review puts in front of a reader: one thing
+moved, one added, and a good deal of prose about what was *not* found taken
+out. Presentation only — no schema, no classification result and no public
+name moves, and one additive field on `EvidenceCaseVM` — but a consumer that
+relied on the page's limitations list should read the last entry.
+
+### Changed — the agreement line sits with the verdicts it compares
+
+"vigiTwin agrees / disagrees with the reference label" moved up one level, to
+directly under the row of outcome tiles. It compares two of the four verdicts
+that row states; below the decision tiles, where it was, a reader met it a
+stage later than the thing it describes and read it as a comment on how
+vigiTwin decided.
+
+### Added — a publication page says MASKED at the top
+
+A publication-mode page now opens with a band carrying the word **MASKED**
+and one line: *Select displayed values have been transformed.* The footer is
+unchanged and still carries the full, policy-derived account of what the run
+did, and the caveat that the page is a candidate for disclosure review rather
+than a document certified as anonymised — but a footnote does not travel: a
+page screenshotted into a slide, cropped into a figure or printed as the
+first sheet of a bundle arrives with transformed values and, until now,
+nothing on it saying so. The line says *select* values because a transform
+may leave a value as reported, and a band claiming more would be publication
+metadata a reader cannot check. Internal pages are untouched, and the
+side-by-side disclosure review deliberately carries no band: it prints
+originals.
+
+### Changed — an absence of evidence is no longer written out as a sentence
+
+The page stops asserting what was not there. Gone: the explicit
+inter-report case link note except where a link was actually **found**; "No
+additional matching features contributed to the score."; "vigiTwin recorded
+no inconsistencies for this pair" (section 3 keeps its *Inconsistencies*
+heading and answers `None`, so every case has the same skeleton); and the
+sentence saying whether each report carried a narrative, which left the
+literature reference it used to precede. Each said in a sentence what the
+panel at the top of the case already states as a value a reader can count.
+
+The generated summary follows the same rule: an empty slot is dropped rather
+than filled, so "No additional matching evidence was identified" and
+"vigiTwin identified no inconsistencies" no longer appear, and the pair that
+stayed independent is told only the half that says something — that the
+relationship question was not reached, because independence was not rejected.
+One consequence for callers:
+`AssessmentSummary.paragraphs(split_after=...)` splits on a slot being
+present, so a summary with nothing in that slot now comes back as one
+paragraph rather than two.
+
+`EvidenceCaseVM.explicit_link_note` is unchanged and still describes all four
+states, because the difference between "none found", "nothing to check" and
+"this run did not look" is real and a consumer may need it. The new
+`EvidenceCaseVM.explicit_link_found` is what the page branches on.
+
+### Removed — the Limitations of this review list
+
+**Worth reading before upgrading a consumer that relied on the page.** The
+reader-facing limitations list is gone from the page. Most of what it carried
+were plain absences of input — no frozen frequency statistics, no run
+manifest — but one entry was not: `score_unreconciled` says the contributions
+printed on *that page* do not add up to the score the run stored, and that
+warning no longer appears anywhere a reader can see.
+
+Nothing changed in the record. Every gap keeps its code and its message on
+`EvidenceCaseVM.gaps`, `EvidencePageVM.gaps` still collects them across a
+collection, and `EvidenceGap.is_provenance` still distinguishes a provenance
+note from an absence. A consumer that wants a reader warned must read `gaps`
+and say so itself.
+
+### Changed — the findings table carries no explanatory note
+
+The paragraph under *Inconsistencies* explained how to read the table's own
+two columns: severity as the level finally counted, the figure beside it as
+the weight this run applied to that level, the retained weights summing to
+the penalty. That is how the format works rather than evidence about this
+pair, so it now lives once in `docs/evidence_format.md` instead of under
+every table in a supplement. `EvidenceCaseVM.findings_weighed` is still built
+and still on the view model; the panel still marks an uncompared penalty
+`(not weighed)` and says why, which remains a test.
+
 ## [1.2.1] - 2026-11-17
 
 Two reader-facing names on the evidence page. Presentation only: no schema,

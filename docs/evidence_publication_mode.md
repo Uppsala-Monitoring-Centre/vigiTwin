@@ -355,6 +355,41 @@ decisions, the advisories and the findings.
 It is written whether or not the candidate is clear, because it is how a
 reviewer clears a block.
 
+## The page says MASKED before it says anything else
+
+A publication page opens with a band carrying the word **MASKED** and one
+line: *Select displayed values have been transformed.* It is drawn only in
+publication mode, from `EvidencePageVM.mode`, and it is the first element
+inside `<main>`.
+
+The line says **select** values because that is what is true. A transform may
+leave a value as reported — zero is a candidate offset like any other — and a
+band claiming everything had moved would be the one piece of publication
+metadata a reader has no way to check. What this run actually did, and the
+caveat that the page is a candidate for disclosure review rather than a
+document certified as anonymised, stay in the footer, which is built from the
+effective policy.
+
+It complements the footer rather than replacing it. The footer is the full,
+policy-derived account of what this run did, and it stays; what it cannot do
+is travel. A page gets screenshotted into a slide, cropped into a figure,
+printed as the first sheet of a bundle, or read for ten seconds by someone
+who never scrolls — and in every one of those a footnote at the bottom is
+gone while the transformed values are still on show. The band is at the top
+for that reason.
+
+It is a band and not a tint behind the text. A diagonal wash over a page of
+tables is what a print engine is free to drop and what a screen reader never
+had, and this is the one claim on the page that must not be lost; the word is
+capitalised in the markup rather than only by CSS, so a copy with its
+stylesheet stripped still carries it. It says *masked*, not *anonymised*:
+what ran is a transform, and whether the result may be released is a
+disclosure reviewer's conclusion.
+
+The side-by-side disclosure review carries no band. It prints originals and
+says so — it is a secure-side artifact, and labelling it masked would be the
+one wrong thing to say about it.
+
 ## The footer says what this run did
 
 The publication footer is built from the effective policy rather than written

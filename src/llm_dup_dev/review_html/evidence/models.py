@@ -1075,6 +1075,13 @@ class EvidenceCaseVM(BaseModel):
     reconciliation: ReconciliationVM | None = None
 
     explicit_link_note: str = ""
+    #: True only where the case-identifier fields actually produced a link.
+    #: ``explicit_link_note`` describes all four states — a link found,
+    #: nothing found, nothing to check, the feature not used by the run — and
+    #: the three absences are an absence of evidence, which the page no
+    #: longer prints as a paragraph. The note stays for consumers, which is
+    #: why this is a separate flag rather than an empty note.
+    explicit_link_found: bool = False
     #: The narrative-derived source and case verdict, where one was reached.
     #: Prose only: the identifier itself is in ``source_context``.
     source_case_note: str = ""

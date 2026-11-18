@@ -107,6 +107,57 @@ class TestTheNoteUnderTheAssessment:
         )
 
 
+class TestWhatThePagePrints:
+    """Only a link that was found reaches the page.
+
+    The note still describes all four states on the view model, because the
+    difference between them is real and a consumer may need it. What a reader
+    no longer meets is a paragraph asserting an absence — nothing checked,
+    nothing found, or a check this run did not run — which reads as a result
+    while reporting none.
+    """
+
+    def _html(self, verdict, run_settings=None):
+        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
+        from llm_dup_dev.review_html.render import render_evidence_page
+
+        case = _case(
+            features=_features(
+                matching_drugs=["topiramate"], explicit_link=_linked(verdict)
+            ),
+            run_settings=run_settings,
+        )
+        page = EvidencePageVM(title="t", cases=[case])
+        return case, " ".join(render_evidence_page(page).split())
+
+    def test_a_found_link_is_printed(self):
+        case, html = self._html(ExplicitLinkVerdict.EXPLICIT_LINK, _ON)
+        assert case.explicit_link_found is True
+        assert "explicitly references the other" in html
+
+    def test_nothing_found_is_not_printed(self):
+        case, html = self._html(ExplicitLinkVerdict.NO_LINK, _ON)
+        assert case.explicit_link_found is False
+        assert "No explicit inter-report case link was found" in (
+            case.explicit_link_note
+        )
+        assert "No explicit inter-report case link was found" not in html
+
+    def test_nothing_to_check_is_not_printed(self):
+        case, html = self._html(ExplicitLinkVerdict.NOT_ASSESSED, _ON)
+        assert case.explicit_link_found is False
+        assert "Neither report carried case-identifier data" not in html
+
+    def test_a_disabled_run_prints_nothing_either(self):
+        """The note a reader least needs: a sentence about a check nobody ran."""
+        case, html = self._html(ExplicitLinkVerdict.EXPLICIT_LINK, _OFF)
+        assert case.explicit_link_found is False
+        assert "did not use explicit inter-report case links" in (
+            case.explicit_link_note
+        )
+        assert "did not use explicit inter-report case links" not in html
+
+
 class TestTheGeneratedSummary:
     def _text(self, run_settings) -> str:
         features = _features(

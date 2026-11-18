@@ -256,6 +256,12 @@ def _additional_sentence(features: PairFeatures) -> str:
     Read straight off the contributions, which already exclude whichever set
     defined the anchor. Nothing here has to know about that exclusion, so the
     sentence cannot start claiming an anchor set also raised the score.
+
+    Empty where nothing contributed. "No additional matching evidence was
+    identified" spent a sentence of a short account on what was not there,
+    and the panel states the same absence as a value a reader can count.
+    ``build_assessment_summary`` drops an empty slot, so there is no sentence
+    rather than a sentence about nothing.
     """
     present: set[str] = set()
     n_dates = 0
@@ -270,7 +276,7 @@ def _additional_sentence(features: PairFeatures) -> str:
     if n_dates:
         named.append(f"{_count(n_dates)} clinical {_plural(n_dates, 'date')}")
     if not named:
-        return "No additional matching evidence was identified."
+        return ""
     return f"Additional matching evidence includes {_join(named)}."
 
 
@@ -689,11 +695,12 @@ def build_assessment_summary(
     )
 
     if rejected:
+        # Nothing where nothing was found: the slot is dropped rather than
+        # filled with "vigiTwin identified no inconsistencies", which reads
+        # as a result and reports none.
         add(
             SummarySlot.DISCREPANCIES,
-            f"vigiTwin identified {_join(phrases)}."
-            if phrases
-            else "vigiTwin identified no inconsistencies.",
+            f"vigiTwin identified {_join(phrases)}." if phrases else "",
         )
         decision = independence
         if same_case:
@@ -722,10 +729,13 @@ def build_assessment_summary(
             "that comparison is only reached once independence is rejected.",
         )
     else:
+        # The half of that sentence that says something: why no comparison
+        # happened. That no inconsistency was found is left to the page,
+        # which states it as a value.
         add(
             SummarySlot.RELATIONSHIP,
-            "No inconsistencies were identified, and the relationship "
-            "question was not reached, because independence was not rejected.",
+            "The relationship question was not reached, because independence "
+            "was not rejected.",
         )
     return AssessmentSummary(sentences=sentences, gaps=gaps)
 

@@ -17,6 +17,34 @@
 <body>
 <main>
 {#
+  A publication page says what it is before anything else on it. The footer
+  states the transform in full and must stay there, but a footnote is read
+  last, or not at all: a page lifted into a slide, a figure or a printed
+  bundle arrives with transformed values and no indication of it. This band
+  travels with the first thing a reader sees.
+
+  Deliberately a band and not a tint behind the text: a diagonal wash over a
+  page of tables is what print engines drop and screen readers never had, and
+  the one claim this page must not lose is this one. For the same reason it
+  says MASKED and not "anonymised" — what ran is a transform, and whether the
+  result may be released is a disclosure reviewer's conclusion. The line under
+  the word says *select* values, because that is what is true: a transform may
+  leave a value as reported, and a band claiming everything had moved would be
+  the one piece of publication metadata a reader cannot check. What this run
+  actually did, and the caveat that the page is not certified anonymised, are
+  in the footer, which is written from the effective policy.
+#}
+  {% if vm.mode.value == 'publication' %}
+  <div class="masked-banner" role="note">
+    {#- The word is capitalised in the markup, not only by CSS: a copy
+       of this page with its stylesheet stripped, or any reader taking the
+       text, must still carry it. -#}
+    <span class="masked-word">MASKED</span>
+    <span class="masked-detail">Select displayed values have been
+    transformed.</span>
+  </div>
+  {% endif %}
+{#
   The heading is skipped when a single case already carries its own title:
   the case's own <h2> is then the document's heading, and printing both would
   show the same words twice. A collection always gets the heading, because its
