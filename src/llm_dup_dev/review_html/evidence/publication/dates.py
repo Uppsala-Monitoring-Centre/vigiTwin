@@ -144,14 +144,14 @@ def within_plausible_window(pd: PartialDate, policy: PublicationPolicy) -> bool:
 def _bounds(
     policy: PublicationPolicy, role: DateRole
 ) -> tuple[int, int, tuple[int, ...]]:
-    """The floor, the ceiling and the directions one block may move in."""
-    if role is DateRole.CLINICAL and policy.decouple_clinical_dates:
-        return (
-            policy.clinical_offset_min_days,
-            policy.clinical_offset_max_days,
-            (-1,) if policy.clinical_offset_backward_only else (-1, 1),
-        )
-    return policy.date_offset_min_days, policy.date_offset_max_days, (-1, 1)
+    """The floor, the ceiling and the directions one block may move in.
+
+    Delegates to the policy, which owns the arithmetic so that
+    :meth:`~.policy.PublicationPolicy.offset_band_sizes` and this function
+    cannot disagree about how large a band is — the disagreement that let the
+    candidate cap sample the clinical band for several releases.
+    """
+    return policy.offset_bounds(clinical=role is DateRole.CLINICAL)
 
 
 def offset_floor(policy: PublicationPolicy, role: DateRole) -> int:
@@ -200,7 +200,11 @@ def offset_candidates(
     that survive the relation invariants at all: anything else moves a bare
     ``2006`` relative to a ``2006-05-30``. The clinical block's range is wide
     enough to hold several of them, which is what makes a floor satisfiable
-    for a case with a long history.
+    for a case with a long history. They are in the pool *because the pool is
+    searched exhaustively*, which
+    :meth:`~.policy.PublicationPolicy.offset_band_sizes` and the policy
+    validator now enforce — before they did, the candidate cap sampled the
+    clinical band and dropped some of these on most seeds.
 
     **Zero is still in the pool where the policy allows it, but it is tried
     last.** Keeping it is what stops "it looks unshifted" and "it is
@@ -250,6 +254,12 @@ def offset_tiers(
             for sign in signs
         ]
         random.Random(f"{seed}:{lowest}-{highest}").shuffle(pool)
+        # The slice is a backstop, not a sampler: the policy validator
+        # rejects a cap below any band's size, so this cannot truncate for
+        # any policy that was constructed. It stays because a band that grew
+        # past the cap unnoticed is the defect this module already shipped
+        # once, and a bounded pool fails visibly where an unbounded one
+        # fails as a hang.
         return pool[: policy.date_offset_candidates]
 
     tiers = [band(max(floor, 1), ceiling)]

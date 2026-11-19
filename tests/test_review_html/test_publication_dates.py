@@ -10,6 +10,9 @@ separation is not.
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from llm_dup_dev.models.report import PartialDate
 from llm_dup_dev.review_html.evidence.publication import (
     SEVERITY_BOUNDARY_DAYS,
@@ -25,6 +28,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     shift_partial_date,
 )
 from llm_dup_dev.review_html.evidence.publication.dates import (
+    DateRole,
     offset_tiers,
     within_plausible_window,
 )
@@ -297,6 +301,63 @@ class TestCandidateOffsets:
             allow_unchanged_values=False, date_offset_min_days=1
         )
         assert 0 not in offset_candidates(policy, "s")
+
+
+class TestTheCandidatePoolIsSearchedNotSampled:
+    """The regression tests for a cap that sat below the band it protected.
+
+    ``date_offset_candidates`` was 2048 and documented as exceeding every
+    band. The clinical band is 3594 candidates, so it was sampled, and a
+    sample drops whole-year multiples — which a mixed-precision history is
+    often solvable only at. ``TestCandidateOffsets`` missed it because it
+    asserts ``{365, -365}`` against the *report* role, whose band is 742 and
+    was never truncated.
+    """
+
+    def test_every_whole_year_survives_in_the_clinical_band(self):
+        policy = PublicationPolicy()
+        wanted = {sign * 365 * k for k in range(1, 6) for sign in (-1, 1)}
+        for seed in (f"seed{i}" for i in range(20)):
+            band = offset_tiers(policy, seed, role=DateRole.CLINICAL)[0]
+            assert wanted <= set(band), seed
+
+    def test_the_default_cap_covers_every_band(self):
+        policy = PublicationPolicy()
+        assert policy.date_offset_candidates >= max(
+            policy.offset_band_sizes().values()
+        )
+
+    def test_the_band_sizes_match_the_bands_actually_built(self):
+        """The arithmetic the validator trusts is the arithmetic the pool
+        uses: the two disagreeing is what shipped the defect."""
+        policy = PublicationPolicy()
+        sizes = policy.offset_band_sizes()
+        for name, role in (
+            ("report", DateRole.REPORT),
+            ("clinical", DateRole.CLINICAL),
+        ):
+            tiers = offset_tiers(policy, "s", role=role)
+            assert len(tiers[0]) == sizes[name]
+            assert len(tiers[1]) == sizes[f"{name}:below_floor"]
+
+    def test_a_cap_below_a_band_is_refused(self):
+        """Loudly, at construction. The old default is now a ValueError."""
+        with pytest.raises(ValidationError, match="would sample these bands"):
+            PublicationPolicy(date_offset_candidates=2048)
+
+    def test_the_refusal_names_the_band_and_the_size_it_needs(self):
+        with pytest.raises(ValidationError) as caught:
+            PublicationPolicy(date_offset_candidates=100)
+        message = str(caught.value)
+        assert "clinical needs 3594" in message
+        assert "report needs 742" in message
+
+    def test_a_narrower_range_may_use_a_smaller_cap(self):
+        """The cap is not a magic number; it is a bound on the range."""
+        policy = PublicationPolicy(
+            clinical_offset_max_days=400, date_offset_candidates=742
+        )
+        assert policy.offset_band_sizes()["clinical"] == 742
 
 
 class TestSolvingAWholeCase:

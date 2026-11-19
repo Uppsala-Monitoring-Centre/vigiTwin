@@ -103,26 +103,6 @@
       ],
       "title": "SourceMaskingSummary",
       "type": "object"
-    },
-    "TransformCounts": {
-      "additionalProperties": false,
-      "description": "How many distinct values of each class the transform was applied to.\n\nA count, never a value. **Applied to, not changed by:** a published value\nis allowed to equal its original, so a count of values that *moved* would\ntell a reader of this manifest that some value did not \u2014 and in a case\nwhere none moved, that every date on the page is the real one. The count\nof values put through the transform says the same useful thing to a\nmethods reader and says nothing about any of them.",
-      "properties": {
-        "kind": {
-          "title": "Kind",
-          "type": "string"
-        },
-        "values_transformed": {
-          "title": "Values Transformed",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "kind",
-        "values_transformed"
-      ],
-      "title": "TransformCounts",
-      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -221,13 +201,6 @@
     "measurement_offset_bound_kg": {
       "title": "Measurement Offset Bound Kg",
       "type": "number"
-    },
-    "counts": {
-      "items": {
-        "$ref": "#/$defs/TransformCounts"
-      },
-      "title": "Counts",
-      "type": "array"
     },
     "country_masking": {
       "$ref": "#/$defs/CountryMaskingSummary"

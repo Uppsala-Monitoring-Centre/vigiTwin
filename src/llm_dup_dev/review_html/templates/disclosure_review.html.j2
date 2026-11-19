@@ -174,16 +174,19 @@
   {% endif %}
 
   {% if row.advisories %}
-  <h3>Advisory — fidelity, not disclosure</h3>
+  <h3>Advisory — nothing leaked, and no transform can fix it</h3>
   <p class="subtle">
-    A relationship the page does not state moved under the accepted offset.
-    Nothing has leaked; what may have changed is a reading the page never
-    offers. Confirm no reader depends on it.
+    Not all of these are about fidelity.
+    <code>unasserted_relation_changed</code> says a reading the page never
+    offers has moved — confirm no reader depends on it. The others say the
+    obfuscation on this case came out weaker than the policy asks for, which
+    is a disclosure judgement for you rather than a defect in the transform.
   </p>
     {% for finding in row.advisories %}
   <div class="finding advisory">
     <strong>{{ finding.code.value }}</strong>
-    <br/><span class="subtle">{{ finding.detail }}</span>
+    <br/>{{ finding.message }}
+    {% if finding.detail %}<br/><span class="subtle">{{ finding.detail }}</span>{% endif %}
   </div>
     {% endfor %}
   {% endif %}

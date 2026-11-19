@@ -20,6 +20,87 @@ Two things it is not:
   Publication output is a candidate for disclosure review, and both the page
   footer and the public manifest say so in those words.
 
+## Threat model
+
+The scheme has **one secret: the salt** in `VIGITWIN_PUBLICATION_SALT`, held
+in the secure key store, never serialised, and named in artifacts only by
+`key_id`. Everything else — this document, the invariants, the candidate
+pools, the policy defaults, the code — is assumed public. That is not a
+concession to the decision to publish; it is how the layer was built, and the
+reason `PublicationSecrets` has no default salt is precisely that a default
+would make every offset guessable "by anyone holding this source".
+
+Stating who the scheme does and does not resist matters more here than in most
+places, because a transform that preserves every relationship a reader needs
+cannot also conceal the structure those relationships form.
+
+### Four readers
+
+- **A reader with no special access.** Sees transformed dates, ages and
+  measurements and aliased identifiers. They cannot invert any of it: the
+  offsets are drawn under the salt and no artifact that travels with the
+  supplement records one.
+- **A reader holding this source.** Anyone, once this is on the public
+  mirror, and the layer assumes it already. They can enumerate the
+  candidate offsets a block was drawn from, run the invariants over the
+  *published* dates, and recover the set of offsets that would have been
+  accepted. They cannot tell which member of that set was chosen — that is the
+  salt's job, and the only thing the salt does. Where the set is small the salt
+  is doing correspondingly little, which is what `date_offset_pool_thin`
+  exists to report (§ How many offsets would have worked). **This is the whole
+  of what publishing the algorithm costs.**
+- **A reader holding the comparison database.** The strong adversary, and the
+  one this layer does not defend against. They do not need to recover an
+  offset. Every interval the adjudication reads is preserved exactly, by
+  design, and so are the drug substances, the adverse event terms, the sex,
+  the scores, the contextual counts and — by default — the country and
+  calendar year. Those together are a strong fingerprint, and a database
+  holder can match on them and then read the real dates out of their own
+  records. No parameter in `PublicationPolicy` closes this, because the
+  property being exploited is the property that makes the page evidence:
+  a reader who cannot trust the intervals cannot read the discrepancies, and
+  the footer has to tell them the intervals are faithful.
+- **An insider with the key store.** Holds the salt and `ScramblingKeyRecord`,
+  which is to say everything. Out of scope: the key record is the audit
+  artifact and exists to be complete.
+
+### What that means in practice
+
+The dominant residual risk is **not** reverse engineering. It is matching on
+the values that are retained on purpose, by someone who already holds the
+database — and someone who holds the database has less need of the supplement
+than anyone. For FAERS the comparison data is public, but so are the cases, so
+a successful match links a published page to a record that was already public
+and already de-identified. For VigiBase the comparison data is not public, so
+the match needs access that makes the supplement redundant.
+
+That asymmetry is the reason this layer is worth having and also the reason it
+should not be oversold. Scrambling is a **disclosure-risk reduction measure
+applied to data already held to be non-identifying**: it removes the easy
+read-off, it makes a casual link materially harder, and it does not make the
+page anonymous. The manifest and the footer both say so in those words, and
+nothing in this document should be quoted as saying more.
+
+### For anyone adopting this on their own data
+
+The defaults are tuned for a large multi-national database and a reference set
+drawn by country. Two of them deserve a second look on a smaller population,
+and both are one field each:
+
+- **`mask_countries` is off.** The argument for showing the country is that it
+  is the population the counts belong to and, in a country-drawn reference
+  set, already known from the design. Neither half of that holds for a
+  national centre publishing from its own database, where the country is a
+  constant and naming it narrows nothing *because* it narrows everything.
+- **`min_contextual_count` is 5.** A small count in a named country-year is
+  the combination most likely to identify, and it now blocks the export
+  rather than sitting in a limitations paragraph. On a database of a few
+  hundred thousand reports, a higher threshold is the cheaper instrument.
+
+The gate proves its own checks passed. It does not know how large your
+database is, and it will clear a page that is far more identifying on a
+national dataset than the same page would be on VigiBase.
+
 ## What is kept and what is transformed
 
 | | |
@@ -268,8 +349,8 @@ displayed", so a reviewer can see which figures moved and by how much.
 ### Choosing the offset
 
 Candidates are whole-day offsets of either sign between `date_offset_min_days`
-(zero by default) and `date_offset_max_days`. Nothing is excluded — not zero,
-not whole years — for the reason given above. The pool is built in sorted
+(thirty days by default) and `date_offset_max_days`. Nothing is excluded — not
+zero, not whole years — for the reason given above. The pool is built in sorted
 order and then shuffled with
 `random.Random(f"{salt}:{policy}:dates:{pair_id}")`, the house determinism
 style from `study_eval.sampling`.
@@ -278,10 +359,47 @@ The search makes **two passes over the same order**. The first accepts only an
 offset that raises no advisory at all; the second accepts any offset that
 passes the invariants. So an offset that leaves every relationship intact is
 preferred to one that leaves only the stated ones intact, without either
-becoming a requirement, and the choice stays reproducible from the seed. The
-default candidate count exceeds the pool, so the search is exhaustive: a case
-is never flagged merely because a sample missed the one offset that would have
-worked. The whole pool costs well under a tenth of a second per case.
+becoming a requirement, and the choice stays reproducible from the seed.
+
+The search is **exhaustive, and that is now enforced rather than asserted.**
+`date_offset_candidates` caps how many candidates a band may offer, and the
+cap used to be 2048 against a clinical band of 3594 — so the band was
+sampled, and a sample drops whole-year multiples, which a mixed-precision
+history is frequently solvable only at. Measured over twenty seeds it lost
+four of the ten whole-year offsets on average and eight at worst; a case left
+with none of them falls through the below-floor band, which holds no
+year-shaped offset either, onto zero. The number existed to prevent exactly
+that, and was set below the band it was protecting.
+`PublicationPolicy.offset_band_sizes` now computes every band the policy
+produces and the validator refuses a cap that would truncate one, so the
+arithmetic the guarantee rests on is the arithmetic the pool uses. The whole
+pool costs well under a tenth of a second per case.
+
+### How many offsets would have worked
+
+The accepted offset is the first in trial order, as before. What the search
+also reports is **how many candidates survived** — because publishing the
+method changes what a reader can work out. The salt chooses *within* the set
+of offsets the invariants accept; it does nothing to hide the set. Anyone
+holding this source and a published page can run the invariants over the
+published dates and recover that set, so a case with three survivors narrows
+the real timeline to one of three however good the salt is.
+
+So the scan does not stop at the winner: it continues until it has seen
+`date_offset_min_survivors` survivors (four by default), and a case that runs
+out first takes a `date_offset_pool_thin` advisory naming the count. It stops
+at the threshold rather than counting the set out, because the question is
+only whether the pool is wide enough to be worth anything, and a wide pool is
+the common case. The threshold is deliberately low: almost every real pair
+mixes a year-only date with a complete one and is solvable only at whole-year
+multiples, of which the clinical band holds ten, so a threshold near ten
+would fire on nearly every case and tell a reviewer nothing.
+
+The advisory does not block — nothing identifying has been left in the output
+— and it sits beside `date_offset_below_floor` as a statement that the
+obfuscation on this case is weaker than the policy asks for. Reporting a
+weakness rather than hiding it is the only posture available once the
+algorithm is public, and it is the one the rest of this layer already takes.
 
 ## Ages and measurements
 
@@ -304,6 +422,43 @@ every value of a kind in the pair is consistent with a whole number of pounds
 at the original number of decimals. The decision is per pair and per kind,
 never per value: shifting one side in pounds and its counterpart in kilograms
 would break the difference between them.
+
+## Retaining the country
+
+`mask_countries` is **off by default**, and the reasoning is in
+`PublicationPolicy`: the country is the population the contextual counts were
+judged in, and in a study whose reference set was drawn by country it is known
+from the design, so masking it costs the reader the population and buys
+little. A shared source identifier is decided separately and *is* masked by
+default, because a named study or publication is a small and often public set
+of patients rather than a population.
+
+What the default leaves standing is the combination this document has long
+called the main thing a reviewer should be weighing: **a real country, a real
+calendar year and a small contextual count.** The counts are retained by
+instruction, so nothing upstream objects; and the counts **include the two
+reports under review**, so a co-occurrence count of two in `SE, 2024` is this
+pair and nobody else. Someone with database access can work back from it.
+
+That used to be a paragraph in § Known limitations, which is not where a
+reviewer is looking when they clear a case. It is now a check.
+`retained_country_small_count` fires where a scope that *names a country*
+shows a count at or below `min_contextual_count` (five by default, the
+conventional small-cell threshold; zero switches it off), and it **blocks**.
+
+It blocks rather than advising because, unlike the date advisories, there is
+something a reviewer can do:
+
+- mask this one example's country with a `CountryMaskingOverride`, which
+  removes the half of the combination that narrows the population; or
+- sign a `FindingResolution` saying why the population is wide enough.
+
+Whether a remedy exists is the line between a blocking finding and an advisory
+throughout this layer — `date_offset_pool_thin` and `date_pattern_unchanged`
+advise because nothing can be done about them, and `human_text_review_required`
+blocks because something can. The global scope is not reported, because the
+population a global count narrows is one the page never names; § Known
+limitations says what that leaves open.
 
 ## The residual scan
 
@@ -464,8 +619,17 @@ Two artifacts, deliberately written by two calls to two paths:
 - **`PublicationTransformManifest`**
   (`schemas/evidence_publication_manifest.schema.json`) — travels with the
   supplement. The policy and its version, the `key_id`, the offset *bounds*
-  for a methods section, per-class counts of values that moved, and the
-  disclosure status. No offset, no mapping, no original value, no salt.
+  for a methods section, and the disclosure status. No offset, no mapping, no
+  original value, no salt.
+
+  It used to carry per-class counts of the values transformed, aggregated over
+  the run. Those are gone. They were the one field here that gave a reader of
+  the *manifest alone* something the supplement did not already give them: a
+  reader holding the pages can see every transformed value and very nearly
+  count them, so the counts added nothing for them — while for a single-case
+  supplement the run-level aggregate is that case's own profile, and
+  `date:day → 16` is close to a fingerprint. A field that is derivable where
+  it is useful and identifying where it is not is a field worth losing.
 
 Recording the seed verbatim is right for a sampling draw —
 `study_eval.records.SamplingRecord` does exactly that, because the protocol
@@ -586,10 +750,14 @@ live here and are exercised against synthetic data.
 
 ## Known limitations
 
-- **Contextual frequencies are retained** as instructed, so a very small count
-  in a narrow country-year scope remains a residual disclosure consideration
-  that no transform here addresses. The reviewer sees the counts in both
-  presentations.
+- **Contextual frequencies are retained** as instructed, so no transform here
+  addresses a small count. A small count in a scope that *names a country* now
+  blocks the export (`retained_country_small_count`, § Retaining the country),
+  which is a decision forced rather than a risk removed. A small count in the
+  **global** scope is not reported: the population it narrows is one the page
+  does not name, so the country half of the combination is absent — but a
+  global co-occurrence count of two is still two reports worldwide, and the
+  reviewer sees the counts in both presentations.
 - **Age, report-date and clinical-date offsets are drawn independently.** The
   layer validates the relationships the presentation displays; a quantity
   derived from two of them but not shown — an implied birth year, say — is not
@@ -612,13 +780,11 @@ live here and are exercised against synthetic data.
 - **Aliases are per case.** `Country 1` in two examples need not be the same
   country, which is a disclosure property rather than an oversight: a reader
   cannot pool values across the supplement.
-- **Retaining the country raises the stakes on the counts.** A real country, a
-  real calendar year and a small contextual count together narrow the
-  population considerably, and someone with database access could work back
-  from them. The counts are retained by instruction and the country is retained
-  by default, so this combination is the main thing a disclosure reviewer
-  should be weighing; `mask_countries` and the per-example override are there
-  for the cases where it is too much.
+- **Retaining the country raises the stakes on the counts**, and this is now
+  checked rather than described. See § Retaining the country below: the
+  combination blocks the export at or below `min_contextual_count`, and
+  `mask_countries` and the per-example override are the remedies the finding
+  names.
 - **A country-year context bounds the date offset.** Where a report date sits
   close to a year boundary, few offsets keep the context year shared by both
   reports, so those pairs get less date obfuscation than others. The review
@@ -631,5 +797,12 @@ live here and are exercised against synthetic data.
   surfaces the per-report labels, they will need their own alias series
   (`Case A` within `Source 1`) and their own policy entry — the
   `ValueKind` exhaustiveness test will say so.
+- **A thin surviving set is a real residual risk, and the salt does not
+  address it.** The salt chooses among the offsets the invariants accept; it
+  does not conceal which offsets those are, and a reader holding the method
+  and the published page can recompute the set. `date_offset_pool_thin`
+  reports a case whose set is small enough to enumerate, but reporting is all
+  it does — the remedy is a reviewer's judgement, or a wider range for the
+  block in question.
 - **The gate proves its own checks passed.** It does not certify anonymity,
   and no part of this layer should be quoted as though it did.

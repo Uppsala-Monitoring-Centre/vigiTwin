@@ -8,7 +8,8 @@
     "allow_unchanged_values": true,
     "date_offset_min_days": 30,
     "date_offset_max_days": 400,
-    "date_offset_candidates": 2048,
+    "date_offset_candidates": 3600,
+    "date_offset_min_survivors": 4,
     "decouple_clinical_dates": true,
     "clinical_offset_min_days": 30,
     "clinical_offset_max_days": 1826,
@@ -53,6 +54,7 @@
     "measurement_offset_max_lb": 6,
     "measurement_offset_max_in": 2,
     "mask_countries": false,
+    "min_contextual_count": 5,
     "country_alias_template": "Country {n}",
     "mask_source_identifiers": true,
     "source_alias_template": "Source {n}",
@@ -78,7 +80,9 @@
       "published_example_label": "Pair 1",
       "date_offset_days": 182,
       "clinical_offset_days": 46,
-      "date_candidates_tried": 18,
+      "date_candidates_tried": 48,
+      "report_offset_survivors": null,
+      "clinical_offset_survivors": null,
       "numeric_offsets": {
         "age:years": "+3 years"
       },

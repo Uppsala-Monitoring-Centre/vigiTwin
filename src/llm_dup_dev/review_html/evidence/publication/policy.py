@@ -295,15 +295,40 @@ class PublicationPolicy(BaseModel):
     #: the offset to one value, which a test uses to reach the all-unchanged
     #: state on purpose.
     date_offset_max_days: int = Field(default=400, ge=0)
-    #: How many candidate offsets to try per band before giving up on a case
-    #: and flagging it for manual handling. The default exceeds the size of
-    #: every band, so the search is exhaustive and a case is never flagged
-    #: merely because a sample missed the one offset that would have worked.
-    #: That property is the reason it is 2048 and not 1024: the clinical
-    #: band runs to five years, and a mixed-precision history is often
-    #: solvable only at whole-year multiples, so a band that sampled would
-    #: drop the handful of offsets that work.
-    date_offset_candidates: int = Field(default=2048, ge=1)
+    #: How many candidate offsets may be tried per band. The search is meant
+    #: to be **exhaustive**, and this is now enforced rather than hoped for:
+    #: :meth:`offset_band_sizes` computes every band this policy produces and
+    #: the validator below rejects a cap that would truncate any of them.
+    #:
+    #: It was 2048, with a docstring saying 2048 "exceeds the size of every
+    #: band". It did not. The clinical band runs from 30 days to five years
+    #: over two signs — 3594 candidates — so the pool was *sampled*, and a
+    #: sample drops whole-year multiples, which for a mixed-precision history
+    #: are frequently the only offsets the relation invariants admit at all.
+    #: Measured over twenty seeds it dropped four of the ten whole-year
+    #: offsets on average and eight at worst, and a case left with none of
+    #: them falls through the below-floor band (which holds no year-shaped
+    #: offset either) onto zero — publishing the pair's real timeline for
+    #: want of a candidate that was in the band and got shuffled out. The
+    #: number existed to prevent exactly that and was set below the band it
+    #: was protecting.
+    date_offset_candidates: int = Field(default=3600, ge=1)
+    #: How many candidate offsets must survive the invariants before the
+    #: obfuscation is considered adequate. Below this, the case takes a
+    #: :attr:`~.findings.DisclosureCode.DATE_OFFSET_POOL_THIN` advisory: the
+    #: dates moved and nothing leaked, but someone holding this source and the
+    #: published page can enumerate the candidates the invariants would have
+    #: accepted, so a case with three survivors is a one-in-three guess at the
+    #: real timeline. That inference is the price of publishing the algorithm,
+    #: and the house answer to a weakness is to report it rather than to hide
+    #: it — as :attr:`~.findings.DisclosureCode.DATE_OFFSET_BELOW_FLOOR`
+    #: already does for a different weakness in the same search.
+    #:
+    #: Deliberately low. Almost every real pair mixes a year-only date with a
+    #: complete one and is solvable only at whole-year multiples, of which the
+    #: clinical band holds ten, so a threshold near ten would fire on nearly
+    #: every case and tell a reviewer nothing. Zero switches the check off.
+    date_offset_min_survivors: int = Field(default=4, ge=0)
     #: Whether clinical dates take an offset of their own, independent of the
     #: report dates. **On by default.** A report date records when a report
     #: reached the centre; a drug start, drug end or onset date records when
@@ -386,6 +411,30 @@ class PublicationPolicy(BaseModel):
     #: A single example can be decided differently through
     #: :class:`CountryMaskingOverride`.
     mask_countries: bool = False
+    #: A contextual count at or below this, displayed for a scope that names a
+    #: real country, raises
+    #: :attr:`~.findings.DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT` and
+    #: **blocks** the export until a reviewer decides.
+    #:
+    #: This is the combination the limitations section has called the main
+    #: thing a disclosure reviewer should be weighing, and until now the only
+    #: place it was stated was that paragraph. The counts are retained by
+    #: instruction and the country is retained by default, so nothing in the
+    #: pipeline objected to a page showing a real country, a real calendar
+    #: year and a co-occurrence count of two — and the counts **include the
+    #: two reports under review**, so a displayed two means this pair and
+    #: nobody else.
+    #:
+    #: It blocks rather than advises because, unlike the date advisories,
+    #: there is something a reviewer can *do*: mask this one example's country
+    #: with a :class:`CountryMaskingOverride`, or sign a
+    #: :class:`FindingResolution` saying why the population is wide enough.
+    #: That is the line between the two kinds of finding in this layer —
+    #: whether a remedy exists — and it is why this one is not advisory.
+    #:
+    #: Five is the conventional small-cell threshold in statistical
+    #: disclosure control. Zero switches the check off.
+    min_contextual_count: int = Field(default=5, ge=0)
     country_alias_template: str = "Country {n}"
     #: Whether a shared source identifier — a study name, a trial
     #: registration, a DOI, a linked-case reference — is replaced by an
@@ -423,11 +472,64 @@ class PublicationPolicy(BaseModel):
     #: year-only date with a complete one. They are reported either way.
     advisories_block: bool = False
 
+    def offset_bounds(self, *, clinical: bool) -> tuple[int, int, tuple[int, ...]]:
+        """The floor, the ceiling and the directions one block may move in.
+
+        Lives here rather than in :mod:`.dates` so the validator below can
+        reach it: a cap that truncates a band is a property of the policy, and
+        a policy that cannot check its own invariant has to state it in a
+        docstring and hope. See :attr:`date_offset_candidates` for what that
+        cost the previous version.
+        """
+        if clinical and self.decouple_clinical_dates:
+            return (
+                self.clinical_offset_min_days,
+                self.clinical_offset_max_days,
+                (-1,) if self.clinical_offset_backward_only else (-1, 1),
+            )
+        return self.date_offset_min_days, self.date_offset_max_days, (-1, 1)
+
+    def offset_band_sizes(self) -> dict[str, int]:
+        """Every band this policy produces, by name, with its candidate count.
+
+        Mirrors :func:`~.dates.offset_tiers`: a band at or above the floor,
+        and a below-floor band where the floor leaves room for one. Zero is
+        its own single-candidate tier and is never sampled.
+        """
+        sizes: dict[str, int] = {}
+        for name, clinical in (("report", False), ("clinical", True)):
+            floor, ceiling, signs = self.offset_bounds(clinical=clinical)
+            lowest = max(floor, 1)
+            if ceiling >= lowest:
+                sizes[name] = (ceiling - lowest + 1) * len(signs)
+            if floor > 1:
+                sizes[f"{name}:below_floor"] = (floor - 1) * len(signs)
+        return sizes
+
     @model_validator(mode="after")
     def _check_ranges(self) -> PublicationPolicy:
         if self.date_offset_min_days > self.date_offset_max_days:
             raise ValueError(
                 "date_offset_min_days must not exceed date_offset_max_days"
+            )
+        truncated = {
+            name: size
+            for name, size in self.offset_band_sizes().items()
+            if size > self.date_offset_candidates
+        }
+        if truncated:
+            spelled = ", ".join(
+                f"{name} needs {size}" for name, size in sorted(truncated.items())
+            )
+            raise ValueError(
+                f"date_offset_candidates is {self.date_offset_candidates}, "
+                f"which would sample these bands rather than search them "
+                f"({spelled}). A sampled band drops whole-year offsets, and a "
+                "mixed-precision history is often solvable only at those, so "
+                "the case would fall through to a weaker offset or to zero "
+                "while a candidate that worked sat outside the sample. Raise "
+                "date_offset_candidates to at least the largest band, or "
+                "narrow the offset range"
             )
         if self.separation_relative_tolerance > 1.0:
             raise ValueError(

@@ -141,6 +141,13 @@ class CaseTransform:
     #: ``decouple_clinical_dates`` off always does.
     clinical_offset_days: int | None = None
     date_candidates_tried: int = 0
+    #: How many candidate offsets survived the invariants for each block,
+    #: where the search ran out of candidates before reaching the policy's
+    #: threshold. ``None`` means the threshold was met and the count was not
+    #: pursued further — the search stops as soon as the pool is known to be
+    #: wide enough, so a large set is never counted out in full.
+    report_offset_survivors: int | None = None
+    clinical_offset_survivors: int | None = None
     #: Whether this case's countries were replaced by aliases. The policy's
     #: default unless an override decided otherwise, and recorded either way:
     #: a retained country is a deliberate choice a reviewer must see, not an
@@ -445,6 +452,14 @@ class _OffsetSearch:
     advisories: tuple[InvariantFailure, ...] = ()
     failures: tuple[InvariantFailure, ...] = ()
     tried: int = 0
+    #: How many candidates were found to survive the invariants. Exact only
+    #: when :attr:`thin` — the search stops counting at the policy's
+    #: threshold, because the question a reviewer needs answered is "is this
+    #: set small enough to enumerate", not "how large is it".
+    survivors: int = 0
+    #: True when the accepted tier ran out of candidates before the threshold
+    #: was reached, so :attr:`survivors` is the whole surviving set.
+    thin: bool = False
 
 
 def _context_year_failure(guard: _ContextGuard) -> InvariantFailure:
@@ -480,10 +495,22 @@ def _search_offset(
     weaker one that moves nothing. Obfuscation first, fidelity second: the
     other order would answer a disclosure question with a presentational
     preference.
+
+    The accepted candidate is the first one in trial order, exactly as
+    before. What is new is that the scan does not stop there: it keeps going
+    until it has seen
+    :attr:`~.policy.PublicationPolicy.date_offset_min_survivors` survivors,
+    so the result can say whether the set the offset was drawn from is small
+    enough for a reader to enumerate. It stops at the threshold rather than
+    counting the set out, because the question is only whether the pool is
+    wide enough — and a wide pool is the common case, so counting it in full
+    would be work for an answer nobody reads.
     """
     found = _OffsetSearch()
+    wanted = max(policy.date_offset_min_survivors, 1)
     for tier in tiers:
         for clean_only in (True, False):
+            accepted: list[int] = []
             for candidate in tier:
                 found.tried += 1
                 report = check_date_offset(
@@ -502,8 +529,15 @@ def _search_offset(
                     if not verdict.accepted:
                         found.failures = verdict.failures
                         continue
-                found.offset = candidate
-                found.advisories = report.advisories
+                if not accepted:
+                    found.advisories = report.advisories
+                accepted.append(candidate)
+                if len(accepted) >= wanted:
+                    break
+            if accepted:
+                found.offset = accepted[0]
+                found.survivors = len(accepted)
+                found.thin = len(accepted) < wanted
                 return found
     return found
 
@@ -531,6 +565,48 @@ def _note_weak_offset(
                 f"the {role.value} dates moved {offset:+d} days, short of the "
                 f"policy floor of {floor}: no larger offset preserved what "
                 "this case's dates say about each other"
+            ),
+        )
+    )
+
+
+def _note_thin_pool(
+    transform: CaseTransform,
+    policy: PublicationPolicy,
+    search: _OffsetSearch,
+    role: DateRole,
+) -> None:
+    """Say so when the accepted offset came from a set a reader can enumerate.
+
+    Advisory, like :func:`_note_weak_offset`: the offset is sound and nothing
+    has leaked. What a reviewer is being told is that the *secret* did less
+    work than the policy intends. The salt chooses within the surviving set;
+    it does nothing to hide the set itself, which anyone holding this source
+    and the published page can recompute by running the invariants over the
+    published dates. A case with two survivors is a coin toss at the real
+    timeline however good the salt is.
+
+    This is the cost of publishing the method, booked where the rest of the
+    layer books its weaknesses — in a finding a human has to clear, rather
+    than in a paragraph of documentation nobody reads at review time.
+    """
+    if not search.thin or policy.date_offset_min_survivors <= 0:
+        return
+    transform.findings.append(
+        DisclosureFinding(
+            code=DisclosureCode.DATE_OFFSET_POOL_THIN,
+            example_id=transform.example_id,
+            message=(
+                f"only {search.survivors} candidate offset(s) preserved what "
+                f"this case's {role.value} dates say about each other, against "
+                f"a policy threshold of {policy.date_offset_min_survivors}. "
+                "The set is small enough to enumerate from the published page, "
+                "so the real timeline is one of a few; weigh that before "
+                "publishing this case"
+            ),
+            detail=(
+                f"{search.survivors} survivor(s) of "
+                f"{search.tried} candidate(s) tried"
             ),
         )
     )
@@ -645,12 +721,18 @@ def _solve_date_offsets(
             if clinical.offset is not None:
                 transform.advisories = reports.advisories + clinical.advisories
                 transform.date_candidates_tried = tried
+                if reports.thin:
+                    transform.report_offset_survivors = reports.survivors
+                if clinical.thin:
+                    transform.clinical_offset_survivors = clinical.survivors
                 _note_weak_offset(
                     transform, policy, reports.offset, DateRole.REPORT
                 )
                 _note_weak_offset(
                     transform, policy, clinical.offset, DateRole.CLINICAL
                 )
+                _note_thin_pool(transform, policy, reports, DateRole.REPORT)
+                _note_thin_pool(transform, policy, clinical, DateRole.CLINICAL)
                 return reports.offset, clinical.offset
             split_failures = clinical.failures
 
@@ -665,7 +747,13 @@ def _solve_date_offsets(
     transform.date_candidates_tried = tried
     if single.offset is not None:
         transform.advisories = single.advisories
+        if single.thin:
+            # One offset governs both blocks, so the surviving set is the same
+            # set for each and is recorded against both.
+            transform.report_offset_survivors = single.survivors
+            transform.clinical_offset_survivors = single.survivors
         _note_weak_offset(transform, policy, single.offset, DateRole.REPORT)
+        _note_thin_pool(transform, policy, single, DateRole.REPORT)
         return single.offset, single.offset
 
     transform.findings.append(
@@ -950,6 +1038,78 @@ def _transform_sources(
                     else "retained: mask_source_identifiers is off"
                 ),
             )
+
+
+def _parse_count(text: str) -> int | None:
+    """``"1,234"`` as an int, or ``None`` where the cell holds no figure.
+
+    The frequency table's counts are pre-formatted by the builder, so this
+    reverses exactly that formatting and nothing else: anything it does not
+    recognise is left for a human rather than guessed at.
+    """
+    value = text.strip().replace(",", "")
+    return int(value) if value.isdigit() else None
+
+
+def _note_retained_country_small_count(
+    case: EvidenceCaseVM, policy: PublicationPolicy, transform: CaseTransform
+) -> None:
+    """Block where a real country is shown beside a tiny contextual count.
+
+    The counts are retained by instruction and the country is retained by
+    default, so neither value is a defect and no transform here will touch
+    them. What makes the pair of them a disclosure question is that **the
+    counts include the two reports under review**: a co-occurrence count of
+    two in a named country and calendar year is this pair and nobody else,
+    and someone with database access can work back from it.
+
+    Only scopes that *name a country* are considered — the global row is
+    judged in a population the page does not identify, and
+    :func:`~.aliases.parse_country_scope` is what tells the two apart, the
+    same function the country transform uses. A case whose countries were
+    masked is not reported at all: the aliases have already removed the half
+    of the combination that narrows it.
+    """
+    if policy.min_contextual_count <= 0 or transform.countries_masked:
+        return
+    worst: tuple[int, str, str] | None = None
+    for row in case.freq_rows:
+        scope = parse_country_scope(row.scope_label)
+        if scope is None or not scope.country:
+            continue
+        for column, text in (
+            ("drugs", row.n_drugs),
+            ("AEs", row.n_aes),
+            ("both", row.n_both),
+        ):
+            count = _parse_count(text)
+            if count is None or count > policy.min_contextual_count:
+                continue
+            if worst is None or count < worst[0]:
+                worst = (count, row.scope_label, column)
+    if worst is None:
+        return
+    count, scope_label, column = worst
+    transform.findings.append(
+        DisclosureFinding(
+            code=DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT,
+            example_id=transform.example_id,
+            message=(
+                f"the {scope_label!r} scope is shown as reported and its "
+                f"{column} count is {count}, at or below the policy's "
+                f"threshold of {policy.min_contextual_count}. The counts "
+                "include the two reports under review, so this names a "
+                "population of a few people in a real country and year. "
+                "Mask this example's country with a CountryMaskingOverride, "
+                "or resolve this finding with a reason the population is "
+                "wide enough"
+            ),
+            detail=(
+                f"scope {scope_label!r}, {column} count {count}, threshold "
+                f"{policy.min_contextual_count}"
+            ),
+        )
+    )
 
 
 def _transform_identifiers(
@@ -1257,6 +1417,11 @@ def _scramble_case(
         case, book, mask=transform.sources_masked, transform=transform
     )
     _transform_identifiers(case, book, transform)
+    # Before the text pass, which rewrites the scope labels: read as the
+    # internal page shows them. It makes no difference while the finding is
+    # confined to unmasked cases, and it keeps the check independent of
+    # whether a later pass happens to have run.
+    _note_retained_country_small_count(case, policy, transform)
 
     transform.findings.extend(
         transform.table.conflict_findings(transform.example_id)

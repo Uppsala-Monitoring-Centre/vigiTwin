@@ -2,10 +2,10 @@
 
 The secure key record holds the offsets and the full original → published
 table, which is to say it holds real ages, dates, countries and identifiers.
-The public manifest holds the policy, the offset *bounds* and per-class
-counts. Neither holds the salt. The tests that matter are the negative ones:
-nothing in the publication directory may carry a seed, a salt, an offset or
-an original value.
+The public manifest holds the policy and the offset *bounds*, and nothing
+that varies with the values themselves. Neither holds the salt. The tests
+that matter are the negative ones: nothing in the publication directory may
+carry a seed, a salt, an offset or an original value.
 """
 
 from __future__ import annotations
@@ -122,9 +122,46 @@ class TestThePublicManifest:
         assert offset is not None
         assert f'"{offset}"' not in payload
 
-    def test_it_counts_values_transformed_and_not_values_moved(self):
-        """A count of what *moved* would say, in a case where nothing did,
-        that every date on the page is the real one."""
+    def test_the_key_record_carries_the_survivor_counts(self):
+        """Secure-side, because the number says how much the salt was
+        actually doing for this case — which is an audit question."""
+        from llm_dup_dev.review_html.evidence.publication.key import (
+            build_key_record,
+        )
+
+        thin = build_key_record(
+            scramble(
+                publication_page(worked_example_case()),
+                policy=PublicationPolicy(
+                    date_offset_min_days=0,
+                    date_offset_max_days=0,
+                    decouple_clinical_dates=False,
+                ),
+            )
+        )
+        assert thin.cases[0].report_offset_survivors == 1
+        wide = build_key_record(scramble(publication_page(worked_example_case())))
+        assert wide.cases[0].report_offset_survivors is None
+
+    def test_it_carries_no_per_kind_value_profile(self):
+        """The counts are gone, and the reasoning is worth keeping here.
+
+        They were the one field that gave a reader of the *manifest alone*
+        something the supplement did not already give them: anyone holding the
+        pages can see every transformed value and very nearly count them. For
+        a single-case supplement the run-level aggregate is that case's own
+        profile, and ``date:day -> 16`` is close to a fingerprint.
+        """
+        result = scramble(publication_page(worked_example_case()))
+        manifest = build_publication_manifest(result)
+        assert not hasattr(manifest, "counts")
+        payload = manifest.model_dump_json()
+        assert "values_transformed" not in payload
+        assert "date:day" not in payload
+
+    def test_it_says_nothing_about_whether_a_value_moved(self):
+        """A published value may equal its original, and the manifest must not
+        be the thing that tells a reader which case that was."""
         unmoved = scramble(
             publication_page(worked_example_case()),
             policy=PublicationPolicy(
@@ -133,19 +170,17 @@ class TestThePublicManifest:
                 decouple_clinical_dates=False,
             ),
         )
-        moved = scramble(publication_page(worked_example_case()))
         assert unmoved.transforms[0].dates_changed == 0
-        dates = lambda m: next(  # noqa: E731 - a one-line reader
-            c.values_transformed for c in m.counts if c.kind == "date:day"
-        )
-        assert dates(build_publication_manifest(unmoved)) == dates(
-            build_publication_manifest(moved)
-        )
+        assert unmoved.transforms[0].date_pattern_unchanged
+        payload = build_publication_manifest(unmoved).model_dump_json()
+        # The advisory that says so is secure-side; the public manifest
+        # reports only that the review cleared.
+        assert "date_pattern_unchanged" not in payload
+        assert "unchanged" not in payload
 
     def test_it_names_no_value(self):
         result = scramble(publication_page(worked_example_case()))
         manifest = build_publication_manifest(result)
-        assert {c.kind for c in manifest.counts} >= {"country", "age"}
         payload = manifest.model_dump_json()
         for original in ("SE", "2023-11-13", "81 years", "R1"):
             assert original not in payload

@@ -17,24 +17,6 @@
   ],
   "age_offset_bound_years": 3,
   "measurement_offset_bound_kg": 3.0,
-  "counts": [
-    {
-      "kind": "age",
-      "values_transformed": 1
-    },
-    {
-      "kind": "country",
-      "values_transformed": 2
-    },
-    {
-      "kind": "date:day",
-      "values_transformed": 3
-    },
-    {
-      "kind": "date:year",
-      "values_transformed": 2
-    }
-  ],
   "country_masking": {
     "default_masked": false,
     "cases_masked": 0,

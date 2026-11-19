@@ -233,6 +233,78 @@ def _zero_only(**kw) -> PublicationPolicy:
     )
 
 
+class TestTheThinPoolAdvisory:
+    """What a reader can work out once the method itself is public.
+
+    The salt chooses *within* the set of offsets the invariants accept; it
+    does nothing to hide the set. Anyone holding the source and the published
+    page can run the invariants over the published dates and recover that
+    set, so a case with two survivors narrows the real timeline to one of two
+    however good the salt is. The layer's answer is the one it gives to every
+    other weakness it cannot fix: report it and make a human clear it.
+    """
+
+    def test_a_wide_pool_raises_nothing(self):
+        result = scramble(publication_page(worked_example_case()))
+        codes = {f.code for f in result.report.advisories}
+        assert DisclosureCode.DATE_OFFSET_POOL_THIN not in codes
+
+    def test_a_wide_pool_records_no_survivor_count(self):
+        """The search stops at the threshold, so a large set is never counted
+        out in full and the record says nothing rather than guessing."""
+        transform = scramble(
+            publication_page(worked_example_case())
+        ).transforms[0]
+        assert transform.report_offset_survivors is None
+        assert transform.clinical_offset_survivors is None
+
+    def test_a_pinned_pool_is_reported_as_thin(self):
+        result = scramble(
+            publication_page(worked_example_case()), policy=_zero_only()
+        )
+        thin = next(
+            f
+            for f in result.report.advisories
+            if f.code is DisclosureCode.DATE_OFFSET_POOL_THIN
+        )
+        assert "only 1 candidate offset(s)" in thin.message
+        assert "small enough to enumerate" in thin.message
+
+    def test_a_pinned_pool_records_the_survivor_count(self):
+        transform = scramble(
+            publication_page(worked_example_case()), policy=_zero_only()
+        ).transforms[0]
+        assert transform.report_offset_survivors == 1
+        assert transform.clinical_offset_survivors == 1
+
+    def test_it_does_not_block(self):
+        """Nothing identifying has been left in the output; what is thin is
+        the obfuscation, which is a judgement rather than a defect."""
+        result = scramble(
+            publication_page(worked_example_case()), policy=_zero_only()
+        )
+        assert not result.blocked
+
+    def test_a_threshold_of_zero_switches_it_off(self):
+        result = scramble(
+            publication_page(worked_example_case()),
+            policy=_zero_only(date_offset_min_survivors=0),
+        )
+        codes = {f.code for f in result.report.advisories}
+        assert DisclosureCode.DATE_OFFSET_POOL_THIN not in codes
+
+    def test_the_threshold_does_not_change_the_chosen_offset(self):
+        """The accepted candidate is still the first in trial order; counting
+        survivors only continues the scan past it."""
+        page = publication_page(worked_example_case())
+        counted = scramble(page).transforms[0]
+        uncounted = scramble(
+            page, policy=PublicationPolicy(date_offset_min_survivors=0)
+        ).transforms[0]
+        assert counted.date_offset_days == uncounted.date_offset_days
+        assert counted.clinical_offset_days == uncounted.clinical_offset_days
+
+
 class TestTheExportGate:
     def test_a_blocked_candidate_is_not_written(self, tmp_path):
         result = scramble(publication_page(case_with_human_text()))
@@ -256,13 +328,19 @@ class TestTheExportGate:
 
     def test_an_advisory_alone_does_not_block(self, tmp_path):
         """A case whose dates all came out as reported is an allowed outcome
-        with a re-identification question attached, not a defect."""
+        with a re-identification question attached, not a defect.
+
+        A pool pinned to a single candidate is also, truthfully, a pool a
+        reader can enumerate, so this policy raises both date advisories. Both
+        are disclosure judgements and neither blocks.
+        """
         result = scramble(
             publication_page(worked_example_case()), policy=_zero_only()
         )
-        assert [f.code for f in result.report.advisories] == [
-            DisclosureCode.DATE_PATTERN_UNCHANGED
-        ]
+        assert {f.code for f in result.report.advisories} == {
+            DisclosureCode.DATE_PATTERN_UNCHANGED,
+            DisclosureCode.DATE_OFFSET_POOL_THIN,
+        }
         assert not result.blocked
         write_publication_evidence(result, tmp_path / "publication")
 
@@ -278,7 +356,11 @@ class TestTheExportGate:
         result = scramble(
             publication_page(worked_example_case()), policy=_zero_only()
         )
-        advisory = result.report.advisories[0]
+        advisory = next(
+            f
+            for f in result.report.advisories
+            if f.code is DisclosureCode.DATE_PATTERN_UNCHANGED
+        )
         assert "published as reported" in advisory.message
         assert "date value(s)" in advisory.detail
 

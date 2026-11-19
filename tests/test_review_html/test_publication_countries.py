@@ -15,6 +15,7 @@ reader could check.
 
 from __future__ import annotations
 
+from llm_dup_dev.review_html.evidence.models import FreqRowVM
 from llm_dup_dev.review_html.evidence.publication import (
     CountryMaskingOverride,
     DisclosureCode,
@@ -255,3 +256,142 @@ class TestTheManifestRecordsThePolicy:
                 scramble(_case(), policy=policy)
             )
             assert "SE" not in manifest.model_dump_json()
+
+
+class TestARetainedCountryBesideASmallCount:
+    """The one combination on the page a reviewer must decide about.
+
+    The counts are retained by instruction and the country is retained by
+    default, so neither value is a defect and no transform touches them. What
+    makes the pair of them a disclosure question is that the counts *include
+    the two reports under review*: a co-occurrence count of two in a named
+    country and year is this pair and nobody else. Until this check existed,
+    the only place that was written down was a paragraph in the limitations
+    section, which nobody reads at review time.
+    """
+
+    @staticmethod
+    def _with_counts(*rows, **kw):
+        case = worked_example_case()
+        case.freq_rows = [
+            FreqRowVM(
+                scope_label=label,
+                n_drugs=drugs,
+                n_aes="",
+                n_both=both,
+            )
+            for label, drugs, both in rows
+        ]
+        return scramble(publication_page(case), **kw)
+
+    def _codes(self, result):
+        return {f.code for f in result.report.findings}
+
+    def test_a_small_count_in_a_named_country_blocks(self):
+        result = self._with_counts(("SE, 2024", "40", "2"))
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT in self._codes(result)
+        assert result.blocked
+
+    def test_it_is_not_advisory(self):
+        """There is a remedy — mask this example, or sign for it — and that is
+        the line between a blocking finding and an advisory here."""
+        result = self._with_counts(("SE, 2024", "40", "2"))
+        advisory = {f.code for f in result.report.advisories}
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in advisory
+
+    def test_it_names_the_scope_the_count_and_the_remedy(self):
+        result = self._with_counts(("SE, 2024", "40", "2"))
+        finding = next(
+            f
+            for f in result.report.findings
+            if f.code is DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT
+        )
+        assert "'SE, 2024'" in finding.message
+        assert "both count is 2" in finding.message
+        assert "include the two reports under review" in finding.message
+        assert "CountryMaskingOverride" in finding.message
+
+    def test_it_reports_the_smallest_count_on_the_page(self):
+        result = self._with_counts(
+            ("SE, 2024", "4", "3"), ("SE", "900", "2")
+        )
+        finding = next(
+            f
+            for f in result.report.findings
+            if f.code is DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT
+        )
+        assert "both count is 2" in finding.message
+        assert "'SE'" in finding.message
+
+    def test_a_wide_population_passes(self):
+        result = self._with_counts(("SE, 2024", "900", "40"))
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )
+        assert not result.blocked
+
+    def test_a_small_global_count_is_not_this_finding(self):
+        """The global row is judged in a population the page does not name, so
+        the country half of the combination is absent."""
+        result = self._with_counts(("Global", "3", "2"))
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )
+
+    def test_masking_the_country_clears_it(self):
+        """The alias removes the half of the combination that narrows it, so
+        the remedy the finding recommends actually works."""
+        result = self._with_counts(
+            ("SE, 2024", "40", "2"), policy=masking_policy()
+        )
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )
+
+    def test_a_per_example_override_clears_it_too(self):
+        case = worked_example_case()
+        case.freq_rows = [
+            FreqRowVM(scope_label="SE, 2024", n_drugs="40", n_aes="", n_both="2")
+        ]
+        result = scramble(
+            publication_page(case),
+            approvals=PublicationApprovals(
+                country_masking=[
+                    CountryMaskingOverride(
+                        example_id=case.example_id,
+                        mask=True,
+                        decided_by="reviewer",
+                        decided_at="2026-11-19",
+                        rationale="a count of two in one country-year",
+                    )
+                ]
+            ),
+        )
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )
+
+    def test_a_threshold_of_zero_switches_it_off(self):
+        result = self._with_counts(
+            ("SE, 2024", "1", "1"),
+            policy=PublicationPolicy(min_contextual_count=0),
+        )
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )
+
+    def test_a_formatted_count_is_read_as_a_number(self):
+        """The builder writes ``1,234``; a check that could not read its own
+        page's formatting would pass everything."""
+        result = self._with_counts(("SE, 2024", "1,234", "1,000"))
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )
+
+    def test_an_unreadable_count_is_left_alone(self):
+        """Not guessed at, and not reported as small: a figure this check does
+        not recognise is a question for the residual scan, not this one."""
+        result = self._with_counts(("SE, 2024", "fewer than 5", ""))
+        assert DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT not in self._codes(
+            result
+        )

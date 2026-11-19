@@ -3,9 +3,17 @@
 This travels with the supplement, and so is written against one rule — a
 reader must be able to tell what class of transformation was applied without
 being able to reverse any of it. So it records the policy, the version that
-produced it, the *bounds* the offsets were drawn from, and how many values of
-each class moved. It records no offset, no mapping, no original value and no
-salt.
+produced it, and the *bounds* the offsets were drawn from. It records no
+offset, no mapping, no original value and no salt.
+
+It used to record per-kind counts of the values transformed, aggregated over
+the run. They are gone, on the grounds that they were the one field here that
+gave a reader of the *manifest alone* something they could not already get
+from the supplement: a reader holding the pages can see every transformed
+value and very nearly count them, so the counts added nothing for them, while
+for a single-case supplement the aggregate is that case's own profile and
+``date:day → 16`` is close to a fingerprint. A field that is derivable where
+it is useful and identifying where it is not is a field worth losing.
 
 Recording the seed verbatim is the right thing to do for a sampling draw —
 :class:`llm_dup_dev.study_eval.records.SamplingRecord` does exactly that,
@@ -20,7 +28,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from llm_dup_dev.run_manifest._git import try_dev_git_commit
 from llm_dup_dev.run_manifest.builder import _detect_package_version
@@ -29,23 +37,6 @@ from ..models import PresentationMode
 from .scramble import ScrambleResult
 
 SCHEMA_VERSION = "1.0"
-
-
-class TransformCounts(BaseModel):
-    """How many distinct values of each class the transform was applied to.
-
-    A count, never a value. **Applied to, not changed by:** a published value
-    is allowed to equal its original, so a count of values that *moved* would
-    tell a reader of this manifest that some value did not — and in a case
-    where none moved, that every date on the page is the real one. The count
-    of values put through the transform says the same useful thing to a
-    methods reader and says nothing about any of them.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: str
-    values_transformed: int
 
 
 class CountryMaskingSummary(BaseModel):
@@ -135,7 +126,6 @@ class PublicationTransformManifest(BaseModel):
     clinical_offset_bound_days: tuple[int, int] | None = None
     age_offset_bound_years: int
     measurement_offset_bound_kg: float
-    counts: list[TransformCounts] = Field(default_factory=list)
     #: The effective country-masking policy for this run.
     country_masking: CountryMaskingSummary
     #: The effective source-identifier policy, decided independently of it.
@@ -202,10 +192,6 @@ def build_publication_manifest(
     result: ScrambleResult,
 ) -> PublicationTransformManifest:
     """The public manifest for one :class:`~.scramble.ScrambleResult`."""
-    counts: dict[str, int] = {}
-    for transform in result.transforms:
-        for entry in transform.table.entries.values():
-            counts[entry.kind] = counts.get(entry.kind, 0) + 1
     report = result.report
     total = len(report.findings) + len(report.resolved)
     return PublicationTransformManifest(
@@ -229,10 +215,6 @@ def build_publication_manifest(
         ),
         age_offset_bound_years=result.policy.age_offset_max_years,
         measurement_offset_bound_kg=result.policy.measurement_offset_max_kg,
-        counts=[
-            TransformCounts(kind=kind, values_transformed=number)
-            for kind, number in sorted(counts.items())
-        ],
         country_masking=_country_masking(result),
         source_masking=_source_masking(result),
         transform_note=result.page.transform_note,
@@ -251,6 +233,5 @@ __all__ = [
     "DisclosureStatus",
     "SourceMaskingSummary",
     "PublicationTransformManifest",
-    "TransformCounts",
     "build_publication_manifest",
 ]

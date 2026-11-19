@@ -102,6 +102,14 @@ class CaseKeyRecord(BaseModel):
     #: transform, and the reason this record belongs in the key store.
     clinical_offset_days: int | None = None
     date_candidates_tried: int = 0
+    #: How many candidate offsets survived the invariants, per block, where
+    #: the surviving set was smaller than the policy's threshold. ``None``
+    #: means the threshold was met and the set was not counted out — see
+    #: ``PublicationPolicy.date_offset_min_survivors``. A small number here is
+    #: what ``date_offset_pool_thin`` reports, and it belongs in the key store
+    #: because it says how much the salt was actually doing for this case.
+    report_offset_survivors: int | None = None
+    clinical_offset_survivors: int | None = None
     #: Keyed ``"age:years"``, ``"weight:kg"`` — one per kind and unit.
     numeric_offsets: dict[str, str] = Field(default_factory=dict)
     substitutions: list[SubstitutionRecord] = Field(default_factory=list)
@@ -166,6 +174,8 @@ def build_key_record(result: ScrambleResult) -> ScramblingKeyRecord:
                 date_offset_days=transform.date_offset_days,
                 clinical_offset_days=transform.clinical_offset_days,
                 date_candidates_tried=transform.date_candidates_tried,
+                report_offset_survivors=transform.report_offset_survivors,
+                clinical_offset_survivors=transform.clinical_offset_survivors,
                 numeric_offsets={
                     name: offset.describe()
                     for name, offset in sorted(transform.numeric_offsets.items())

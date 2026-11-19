@@ -57,6 +57,147 @@ and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 One consequence worth stating: the planned package rename no longer requires a
 2.0.0, and the README no longer promises one.
 
+## [1.2.5] - 2026-11-19
+
+A hardening pass on the publication layer, taken before the evidence
+presentation and its masking go out on the public mirror. Publishing the
+algorithm is the right call — the scheme was built with the salt as its only
+secret, and most of what an adversary wants is either in the manifest or
+implied by the artifact's own semantics — but it changes what a reader can
+work out, and two of the three changes here are the answer to that.
+
+A patch: a bug fix, two new checks and a documented threat model, with no new
+capability. **It is nonetheless breaking in three ways** — a run that cleared
+before may now block, a policy that constructed before may now raise, and the
+public manifest loses a field. The number is not the warning; this entry and
+`docs/migration_notes_publication_disclosure_checks.md` are. Read the note
+before the next secure-side run.
+
+### Fixed — the candidate offset pool was sampled, not searched
+
+`date_offset_candidates` was 2048, documented as exceeding the size of every
+band so that the offset search would be exhaustive. The clinical band is 3594
+candidates — 30 days to five years, over two signs — so it was **sampled**,
+and a sample drops whole-year multiples. Those matter more than their number
+suggests: a history mixing year-, month- and day-precision dates is frequently
+solvable only at a whole year, because nothing else leaves a bare `2006` in
+place against a `2006-12-05`. Measured over twenty seeds the sample lost four
+of the ten whole-year offsets on average and eight at worst.
+
+The consequence was a disclosure one. A case left with none of its viable
+offsets falls through the below-floor band, which holds no year-shaped offset
+either, and lands on zero — publishing the pair's real timeline for want of a
+candidate that was in the band and got shuffled out. The number existed to
+prevent exactly that, and was set below the band it was protecting.
+
+The default is now 3600, and the guarantee is enforced instead of asserted:
+`PublicationPolicy.offset_band_sizes` computes every band the policy produces
+and the validator **refuses a cap that would truncate one**, naming the band
+and the size it needs. `dates._bounds` now delegates to the policy, so the
+arithmetic the validator trusts is the arithmetic the pool uses — the two
+disagreeing is what let this ship.
+
+**Breaking:** a policy with `date_offset_candidates` below the largest band it
+produces no longer constructs. `PublicationPolicy(date_offset_candidates=2048)`
+on the default ranges now raises `ValidationError`. See
+`docs/migration_notes_publication_disclosure_checks.md`.
+
+### Added — `date_offset_pool_thin`, for an offset drawn from a small set
+
+Publishing the masking algorithm changes what a reader can work out, and this
+reports the part the salt does not cover. The salt chooses *within* the set of
+offsets the invariants accept; it does nothing to hide the set. Anyone holding
+the source and a published page can run the invariants over the published
+dates and recover it, so a case with three survivors narrows the real timeline
+to one of three however good the salt is.
+
+The search therefore no longer stops at the winner. It continues until it has
+seen `date_offset_min_survivors` survivors — four by default — and a case that
+runs out first takes a `date_offset_pool_thin` advisory naming the count. It
+stops at the threshold rather than counting the set out, because the question
+is only whether the pool is wide enough to be worth anything. The threshold is
+deliberately low: almost every real pair is solvable only at whole-year
+multiples, of which the clinical band holds ten, so a threshold near ten would
+fire on nearly every case and tell a reviewer nothing. Zero switches it off.
+
+The accepted offset is unchanged — still the first candidate in trial order —
+so no supplement's dates move because of this.
+
+`CaseKeyRecord` gains `report_offset_survivors` and
+`clinical_offset_survivors`, populated only where the set was thin. They are
+secure-side, because the number says how much the salt was actually doing for
+that case.
+
+### Added — `retained_country_small_count`, which blocks
+
+A scope that names a real country, showing a contextual count at or below
+`min_contextual_count` (five by default), now blocks the export. This is the
+combination this layer's own documentation has called "the main thing a
+disclosure reviewer should be weighing", and until now the only place it was
+written down was that paragraph — which is not where a reviewer is looking
+when they clear a case. The counts are retained by instruction and the country
+is retained by default, so nothing objected to a page showing a real country,
+a real calendar year and a co-occurrence count of two. The counts **include
+the two reports under review**, so a displayed two is this pair and nobody
+else.
+
+It blocks rather than advises because there is a remedy, which is the line
+between the two kinds of finding here: mask this one example's country with a
+`CountryMaskingOverride`, or sign a `FindingResolution` saying why the
+population is wide enough. The finding names both.
+
+The global scope is deliberately not reported — the population a global count
+narrows is one the page never names — and § Known limitations now says what
+that leaves open, since a global count of two is still two reports worldwide.
+
+**Breaking:** a page that cleared before may now block.
+`PublicationPolicy.min_contextual_count = 0` switches the check off. See
+`docs/migration_notes_publication_disclosure_checks.md`.
+
+### Added — a threat model for the publication layer
+
+`docs/evidence_publication_mode.md` gains a § Threat model stating the salt as
+the only secret, what the scheme resists and what it does not, and the four
+readers it is written against — in particular that a reader holding the
+comparison database is not defended against *by construction*, because the
+interval preservation they would exploit is the property that makes the page
+evidence at all. It also says plainly that this is disclosure-risk reduction
+applied to data already held to be non-identifying, not anonymisation.
+
+A § For anyone adopting this on their own data names the two defaults tuned
+for a large multi-national database — `mask_countries` off and
+`min_contextual_count` at five — and why a national centre should revisit
+both. The gate does not know how large your database is.
+
+A § Retaining the country collects the country-masking reasoning that was
+previously spread between the policy docstrings and the limitations list.
+
+### Changed — the public manifest no longer carries per-class counts
+
+`PublicationTransformManifest.counts` and `TransformCounts` are removed. They
+were the one field in the public manifest that gave a reader of the *manifest
+alone* something the supplement did not already give them: a reader holding
+the pages can see every transformed value and very nearly count them, so the
+counts added nothing for them — while for a single-case supplement the
+run-level aggregate is that case's own profile, and `date:day → 16` is close
+to a fingerprint. A field that is derivable where it is useful and identifying
+where it is not is a field worth losing. Exact per-kind counts remain in the
+secure `ScramblingKeyRecord.substitutions`.
+
+**Breaking:** `schemas/evidence_publication_manifest.schema.json` loses
+`counts`. A consumer reading it should read the key record instead.
+
+### Changed — the review page's advisory block said the wrong thing
+
+It was headed "Advisory — fidelity, not disclosure" and explained that a
+relationship the page never states had moved. That is true of
+`unasserted_relation_changed` and false of the other three:
+`date_pattern_unchanged`, `date_offset_below_floor` and the new
+`date_offset_pool_thin` are disclosure judgements, and two of them predate
+this change. The block now says which kind is which, and renders each
+finding's `message` as well as its `detail` — advisory messages were being
+dropped from the page a reviewer works from.
+
 ## [1.2.4] - 2026-11-19
 
 ### Changed — the assessment summary names the population, not the level

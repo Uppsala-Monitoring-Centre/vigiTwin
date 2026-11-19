@@ -14,14 +14,20 @@ The codes fall into four groups:
 * **Residual** — something recognisably original still present in the output
   after every transform has run. This is the backstop: it does not trust the
   transforms to have been complete.
-* **Advisory** — something a reviewer should weigh that is not a defect: a
-  relationship that moved which the page never asserts, or a case whose dates
-  all came out as reported. These are recorded and reported, and by default they do **not**
-  block: nothing has leaked, so there is no disclosure risk to be
-  fail-closed about. What has changed is a reading the page does not offer,
-  which is a question of evidential fidelity rather than confidentiality. A
-  run that wants them treated as blockers sets
+* **Advisory** — something a reviewer should weigh that no transform can
+  fix. These are recorded and reported, and by default they do **not** block:
+  nothing identifying has been left in the output, so there is nothing to be
+  fail-closed about. A run that wants them treated as blockers sets
   ``PublicationPolicy.advisories_block``.
+
+  Two kinds sit here, and the distinction is worth keeping straight because
+  only the first is about fidelity. ``unasserted_relation_changed`` says a
+  reading the page never offers has moved. The others —
+  ``date_pattern_unchanged``, ``date_offset_below_floor`` and
+  ``date_offset_pool_thin`` — are disclosure questions: they say the
+  obfuscation on this case is weaker than the policy asks for, which is a
+  judgement for a reviewer rather than a defect in the transform. Advisory
+  means "no transform can fix this", not "this is harmless".
 """
 
 from __future__ import annotations
@@ -47,6 +53,12 @@ class DisclosureCode(str, Enum):
     UNSUPPORTED_VALUE_KIND = "unsupported_value_kind"
     UNSUPPORTED_TEXT_FIELD = "unsupported_text_field"
     SUBSTITUTION_CONFLICT = "substitution_conflict"
+    #: A scope naming a real country shows a contextual count small enough to
+    #: narrow the population to a handful of people. Not a failed transform —
+    #: both values are retained deliberately — but the one combination on the
+    #: page that a reviewer has to decide about rather than read. Blocking,
+    #: because there is a remedy: mask this example's country, or sign for it.
+    RETAINED_COUNTRY_SMALL_COUNT = "retained_country_small_count"
 
     # --- needs a human ----------------------------------------------------
     HUMAN_TEXT_REVIEW_REQUIRED = "human_text_review_required"
@@ -73,15 +85,25 @@ class DisclosureCode(str, Enum):
     #: than the policy's floor. The dates did move, so the page does not
     #: carry the real timeline, but it carries one close to it.
     DATE_OFFSET_BELOW_FLOOR = "date_offset_below_floor"
+    #: Few candidate offsets survived this case's invariants. The accepted
+    #: one is sound, but the set it was drawn from is small enough to
+    #: enumerate: anyone holding this source and the published page can work
+    #: out which offsets the invariants would have accepted, so a case with
+    #: three survivors narrows the real timeline to one of three. The salt
+    #: does not help here — it chooses *within* the surviving set, and a
+    #: reader who can compute the set does not need to know the choice.
+    DATE_OFFSET_POOL_THIN = "date_offset_pool_thin"
 
 
-#: Findings that record a relationship the page never stated, rather than
-#: something identifying left in the output.
+#: Findings a reviewer must weigh and no transform can fix, rather than
+#: something identifying left in the output. See the module docstring: some of
+#: these are fidelity notes and some are disclosure judgements.
 ADVISORY_CODES: frozenset[DisclosureCode] = frozenset(
     {
         DisclosureCode.UNASSERTED_RELATION_CHANGED,
         DisclosureCode.DATE_PATTERN_UNCHANGED,
         DisclosureCode.DATE_OFFSET_BELOW_FLOOR,
+        DisclosureCode.DATE_OFFSET_POOL_THIN,
     }
 )
 

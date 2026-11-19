@@ -72,6 +72,30 @@
           "title": "Date Candidates Tried",
           "type": "integer"
         },
+        "report_offset_survivors": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Report Offset Survivors"
+        },
+        "clinical_offset_survivors": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clinical Offset Survivors"
+        },
         "numeric_offsets": {
           "additionalProperties": {
             "type": "string"
@@ -196,6 +220,7 @@
         "unsupported_value_kind",
         "unsupported_text_field",
         "substitution_conflict",
+        "retained_country_small_count",
         "human_text_review_required",
         "narrative_snippet_review_required",
         "curator_text_review_required",
@@ -205,7 +230,8 @@
         "residual_digit_run",
         "unasserted_relation_changed",
         "date_pattern_unchanged",
-        "date_offset_below_floor"
+        "date_offset_below_floor",
+        "date_offset_pool_thin"
       ],
       "title": "DisclosureCode",
       "type": "string"
@@ -282,9 +308,15 @@
           "type": "integer"
         },
         "date_offset_candidates": {
-          "default": 2048,
+          "default": 3600,
           "minimum": 1,
           "title": "Date Offset Candidates",
+          "type": "integer"
+        },
+        "date_offset_min_survivors": {
+          "default": 4,
+          "minimum": 0,
+          "title": "Date Offset Min Survivors",
           "type": "integer"
         },
         "decouple_clinical_dates": {
@@ -418,6 +450,12 @@
           "default": false,
           "title": "Mask Countries",
           "type": "boolean"
+        },
+        "min_contextual_count": {
+          "default": 5,
+          "minimum": 0,
+          "title": "Min Contextual Count",
+          "type": "integer"
         },
         "country_alias_template": {
           "default": "Country {n}",
