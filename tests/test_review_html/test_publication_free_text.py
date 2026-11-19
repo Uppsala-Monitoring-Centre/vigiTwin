@@ -130,15 +130,16 @@ class TestApprovedReplacements:
         try:
             _approval("title", replacement="x", withhold=True)
         except ValueError as exc:
-            assert "choose one" in str(exc)
+            assert "exactly one decision" in str(exc)
         else:  # pragma: no cover - the validator must fire
             raise AssertionError("expected a validation error")
 
-    def test_an_empty_replacement_without_withhold_is_rejected(self):
+    def test_an_entry_deciding_nothing_is_rejected(self):
+        """Neither replacement, withhold, nor approve_as_written."""
         try:
             _approval("title", replacement="  ")
         except ValueError as exc:
-            assert "non-empty" in str(exc)
+            assert "exactly one decision" in str(exc)
         else:  # pragma: no cover
             raise AssertionError("expected a validation error")
 

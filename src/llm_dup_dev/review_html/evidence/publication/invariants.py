@@ -208,6 +208,41 @@ def _relation(a: PartialDate, b: PartialDate) -> DateRelation:
     )
 
 
+def coarse_anchor_held(
+    a: PartialDate,
+    moved_a: PartialDate,
+    b: PartialDate,
+    moved_b: PartialDate,
+) -> bool:
+    """Whether one of this pair is a coarse date that stayed where it was.
+
+    A year-only or month-only value does not move under a shift smaller than
+    its own precision: thirty days from 1 January 2006 is still 2006. So in a
+    history mixing precisions, a modest offset moves the day-level dates and
+    leaves the coarse ones, which changes where a day-level date sits inside
+    a coarse one's span.
+
+    That is the condition this names. What a reader loses is a relationship
+    between a date known to the day and one known only to the year; what they
+    would otherwise lose is any shift at all except a whole year, because
+    nothing else leaves a bare ``2006`` in place against a ``2006-12-05``.
+    An unmoved year is close to no disclosure on its own — it is the precise
+    dates beside it that identify — so the trade is worth making, and
+    ``PublicationPolicy.allow_coarse_date_drift`` is where it is made.
+    """
+    for coarse, shifted_coarse, other, shifted_other in (
+        (a, moved_a, b, moved_b),
+        (b, moved_b, a, moved_a),
+    ):
+        if (
+            coarse.resolution != "day"
+            and coarse.value == shifted_coarse.value
+            and other.value != shifted_other.value
+        ):
+            return True
+    return False
+
+
 def date_relations(dates: Sequence[PartialDate]) -> DateRelations:
     """The relational fingerprint of *dates*, in the order given.
 
@@ -223,6 +258,67 @@ def date_relations(dates: Sequence[PartialDate]) -> DateRelations:
             for j in range(i + 1, len(dates))
         ),
     )
+
+
+#: What a cross-block pair must keep. The gap between an event and the report
+#: that describes it is expected to move — that is what separate offsets are
+#: for — but which came first is not negotiable, and neither is an equality
+#: the page shows.
+_ORDERING_FACTS = ("equal", "match_resolution", "strictly_before", "strictly_after")
+
+
+def check_cross_block(
+    clinical: Sequence[PartialDate],
+    report: Sequence[PartialDate],
+    clinical_offset: int,
+    report_offset: int,
+    *,
+    label: str = "",
+) -> InvariantReport:
+    """Whether two offsets keep what the page says *across* the two blocks.
+
+    Called per report, with that report's own clinical dates and its own
+    report dates, so the rule it enforces is the one that means something: an
+    event stays before the report that describes it. This is what makes a
+    *forward* clinical shift safe — the direction that could otherwise carry
+    an event past its own report — so the direction itself needs no
+    restricting.
+
+    Every clinical/report pair of one report keeps its ordering facts: an
+    event that preceded that report still precedes it, and two dates the
+    pipeline would call equal are still equal. Dates belonging to the other
+    report are checked against that report, not this one; their relationship
+    to this one is not something the page states.
+
+    The *gap* between them is expected to change. That is the point of
+    separate offsets and the one thing the split gives up, so it is not
+    reported per case: it would fire on every case that took two offsets and
+    say nothing a reader cannot see from the two offsets themselves, which
+    the key record holds. The transform manifest states the scheme and the
+    footer says it on the page.
+    """
+    if not clinical or not report or clinical_offset == report_offset:
+        return InvariantReport()
+    shifted_clinical = [shift_partial_date(d, clinical_offset) for d in clinical]
+    shifted_report = [shift_partial_date(d, report_offset) for d in report]
+
+    failures: list[InvariantFailure] = []
+    for i, left in enumerate(clinical):
+        for j, right in enumerate(report):
+            before = _relation(left, right)
+            after = _relation(shifted_clinical[i], shifted_report[j])
+            for fact in _ORDERING_FACTS:
+                if getattr(before, fact) != getattr(after, fact):
+                    whose = f" of {label}" if label else ""
+                    failures.append(
+                        InvariantFailure(
+                            "clinical_before_report",
+                            f"{left.value} and the report date {right.value}"
+                            f"{whose} are {fact.replace('_', ' ')} as "
+                            "reported, and would not be after these offsets",
+                        )
+                    )
+    return InvariantReport(failures=tuple(failures))
 
 
 def dedupe_dates(dates: Sequence[PartialDate]) -> list[PartialDate]:
@@ -312,14 +408,21 @@ def check_date_offset(
                         f"{'equal' if was.equal else 'unequal'}",
                     )
                 )
+            drifted = policy.allow_coarse_date_drift and coarse_anchor_held(
+                dates[i], shifted[i], dates[j], shifted[j]
+            )
             if was.match_resolution != now.match_resolution:
-                failures.append(
-                    InvariantFailure(
-                        "match_verdict",
-                        f"{pair} became {became}: match verdict moved from "
-                        f"{was.match_resolution!r} to {now.match_resolution!r}",
-                    )
+                entry = InvariantFailure(
+                    "match_verdict",
+                    f"{pair} became {became}: match verdict moved from "
+                    f"{was.match_resolution!r} to {now.match_resolution!r}",
                 )
+                if (i, j) in asserted_pairs or not drifted:
+                    failures.append(entry)
+                else:
+                    advisories.append(
+                        InvariantFailure("coarse_date_drift", entry.detail)
+                    )
             if was.exact_diff != now.exact_diff:
                 failures.append(
                     InvariantFailure(
@@ -334,17 +437,17 @@ def check_date_offset(
                 complete = (
                     dates[i].resolution == "day" and dates[j].resolution == "day"
                 )
-                entry = InvariantFailure(
+                gap = InvariantFailure(
                     "separation",
                     f"{pair} became {became}: separation moved from "
                     f"{was.min_gap} to {now.min_gap} days, outside the "
                     f"tolerance or into another severity band",
                 )
                 if (i, j) in asserted_pairs or complete:
-                    failures.append(entry)
+                    failures.append(gap)
                 else:
                     advisories.append(
-                        InvariantFailure("unasserted_separation", entry.detail)
+                        InvariantFailure("unasserted_separation", gap.detail)
                     )
             if (
                 was.lower_order != now.lower_order
@@ -352,12 +455,16 @@ def check_date_offset(
                 or was.strictly_before != now.strictly_before
                 or was.strictly_after != now.strictly_after
             ):
-                failures.append(
-                    InvariantFailure(
-                        "interval_order",
-                        f"{pair} became {became}: their ordering changed",
-                    )
+                order = InvariantFailure(
+                    "interval_order",
+                    f"{pair} became {became}: their ordering changed",
                 )
+                if (i, j) in asserted_pairs or not drifted:
+                    failures.append(order)
+                else:
+                    advisories.append(
+                        InvariantFailure("coarse_date_drift", order.detail)
+                    )
 
     if not policy.allow_unchanged_values and all(
         a.value == b.value for a, b in zip(dates, shifted, strict=True)
@@ -388,6 +495,8 @@ __all__ = [
     "DateRelations",
     "InvariantFailure",
     "InvariantReport",
+    "check_cross_block",
+    "coarse_anchor_held",
     "check_date_offset",
     "date_relations",
     "dedupe_dates",

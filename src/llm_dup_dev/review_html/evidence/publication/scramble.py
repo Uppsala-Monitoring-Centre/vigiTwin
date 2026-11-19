@@ -27,6 +27,7 @@ never sees the evidence a verdict was made from.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from llm_dup_dev.feature_generation.clinical_date_alignment import (
@@ -44,8 +45,11 @@ from ..models import (
     ValueKind,
 )
 from .aliases import AliasBook, case_aliases, case_slug, parse_country_scope
+from .approvals import is_generated_summary
 from .dates import (
-    offset_candidates,
+    DateRole,
+    offset_floor,
+    offset_tiers,
     parse_partial_date,
     shift_partial_date,
 )
@@ -55,7 +59,13 @@ from .findings import (
     DisclosureReport,
     partition,
 )
-from .invariants import InvariantFailure, check_date_offset, dedupe_dates
+from .invariants import (
+    InvariantFailure,
+    InvariantReport,
+    check_cross_block,
+    check_date_offset,
+    dedupe_dates,
+)
 from .numbers import (
     NumericOffset,
     format_quantity,
@@ -70,6 +80,7 @@ from .policy import (
     PublicationPolicy,
     PublicationSecrets,
     ValuePolicy,
+    digest_text,
 )
 from .substitute import (
     MULTI_VALUE_SEPARATOR,
@@ -121,7 +132,14 @@ class CaseTransform:
     position: int
     published_example_id: str
     published_example_label: str
+    #: The offset applied to the report dates. ``None`` where no offset
+    #: satisfied the invariants, in which case no date was transformed.
     date_offset_days: int | None = None
+    #: The offset applied to the clinical history — drug start and end dates
+    #: and onsets. Equal to :attr:`date_offset_days` where the two blocks
+    #: were solved together, which is what a policy with
+    #: ``decouple_clinical_dates`` off always does.
+    clinical_offset_days: int | None = None
     date_candidates_tried: int = 0
     #: Whether this case's countries were replaced by aliases. The policy's
     #: default unless an override decided otherwise, and recorded either way:
@@ -137,6 +155,11 @@ class CaseTransform:
     advisories: tuple[InvariantFailure, ...] = ()
     withheld_paths: list[str] = field(default_factory=list)
     replaced_paths: list[str] = field(default_factory=list)
+    #: Fields published as the manifest wrote them, on a reviewer's
+    #: signature. Recorded apart from ``replaced_paths`` because the two say
+    #: different things: one is a reviewer's own words, the other is the
+    #: curator's, approved and then rewritten through the substitution table.
+    approved_as_written_paths: list[str] = field(default_factory=list)
     #: Every cell the transform touched, with what it came out as.
     cells: list[CellOutcome] = field(default_factory=list)
     #: Separations the page quotes, recomputed from the transformed dates.
@@ -269,8 +292,23 @@ class _DateSet:
     """Every date in a case, with the subsets the invariants need."""
 
     dates: list[PartialDate] = field(default_factory=list)
+    #: The same dates, split by what they record. A report date says when a
+    #: report reached the centre and is pinned near its context year; a
+    #: clinical date says when something happened to the patient and is not.
+    report_dates: list[PartialDate] = field(default_factory=list)
+    clinical_dates: list[PartialDate] = field(default_factory=list)
+    #: The clinical dates again, keyed by whose column they are shown in —
+    #: ``"left"``, ``"right"``, or ``""`` for a cell shown once. The guard
+    #: that lets the clinical block move forwards is per report: an event
+    #: stays before the report date of *its own* report.
+    clinical_by_side: dict[str, list[PartialDate]] = field(default_factory=dict)
     #: Pairs a finding states a numeric separation between.
     asserted: list[tuple[PartialDate, PartialDate]] = field(default_factory=list)
+    #: True when a finding asserts a separation *between* the two blocks. Its
+    #: figure has to survive exactly, which only one shared offset can
+    #: promise, so such a case takes a single offset however the policy is
+    #: set.
+    coupled: bool = False
     #: Reporting-context years. Frozen, so they are kept out of the
     #: relational set entirely and checked by :class:`_ContextGuard` instead.
     context_years: list[int] = field(default_factory=list)
@@ -280,12 +318,23 @@ class _DateSet:
 def _collect_dates(case: EvidenceCaseVM, transform: CaseTransform) -> _DateSet:
     """Every displayed date, and the pairs a finding asserts a gap between."""
     dates: list[PartialDate] = []
+    report_dates: list[PartialDate] = []
+    clinical_dates: list[PartialDate] = []
+    clinical_by_side: dict[str, list[PartialDate]] = {}
     context_years: list[int] = []
     for path, cell in walk_cells(case):
         if cell.kind not in _DATE_KINDS or not _transformable(cell):
             continue
         for component in _components(cell.text):
             parsed = parse_partial_date(component)
+            if parsed is not None:
+                if cell.kind is ValueKind.REPORT_DATE:
+                    report_dates.append(parsed)
+                else:
+                    clinical_dates.append(parsed)
+                    clinical_by_side.setdefault(_side_of(path), []).append(
+                        parsed
+                    )
             if parsed is None:
                 transform.findings.append(
                     DisclosureFinding(
@@ -313,6 +362,7 @@ def _collect_dates(case: EvidenceCaseVM, transform: CaseTransform) -> _DateSet:
                 context_years.append(scope.year)
 
     asserted: list[tuple[PartialDate, PartialDate]] = []
+    coupled = False
     for discrepancy in case.discrepancies:
         left, right = discrepancy.left, discrepancy.right
         if left is None or right is None:
@@ -323,10 +373,21 @@ def _collect_dates(case: EvidenceCaseVM, transform: CaseTransform) -> _DateSet:
         b = parse_partial_date(right.text)
         if a is not None and b is not None:
             asserted.append((a, b))
+            if (left.kind is ValueKind.REPORT_DATE) != (
+                right.kind is ValueKind.REPORT_DATE
+            ):
+                coupled = True
 
     left_dates, right_dates = _report_date_values(case)
     return _DateSet(
         dates=dedupe_dates(dates),
+        report_dates=dedupe_dates(report_dates),
+        clinical_dates=dedupe_dates(clinical_dates),
+        clinical_by_side={
+            side: dedupe_dates(values)
+            for side, values in clinical_by_side.items()
+        },
+        coupled=coupled,
         asserted=asserted,
         context_years=list(dict.fromkeys(context_years)),
         guard=_ContextGuard(
@@ -335,6 +396,24 @@ def _collect_dates(case: EvidenceCaseVM, transform: CaseTransform) -> _DateSet:
             right_report_dates=right_dates,
         ),
     )
+
+
+def _side_of(path: str) -> str:
+    """``"left"``, ``"right"``, or ``""`` for a cell shown once.
+
+    The view model names a report's own column in the field that holds it —
+    ``left_entries``, ``right_term``, ``left`` — so the path a cell was
+    reached by says which report it belongs to. A cell outside any column
+    (a drug named once, shared by both) has no side, and is checked against
+    both reports rather than neither.
+    """
+    for segment in path.split("."):
+        name = segment.split("[")[0]
+        if name == "left" or name.startswith("left_"):
+            return "left"
+        if name == "right" or name.startswith("right_"):
+            return "right"
+    return ""
 
 
 def _report_date_values(
@@ -358,74 +437,252 @@ def _report_date_values(
     return (), ()
 
 
-def _solve_date_offset(
+@dataclass
+class _OffsetSearch:
+    """What one search over one block's candidates came back with."""
+
+    offset: int | None = None
+    advisories: tuple[InvariantFailure, ...] = ()
+    failures: tuple[InvariantFailure, ...] = ()
+    tried: int = 0
+
+
+def _context_year_failure(guard: _ContextGuard) -> InvariantFailure:
+    return InvariantFailure(
+        "country_year_population",
+        f"the reporting context names {guard.year}, and this offset carries a "
+        "report date into another calendar year, so the page would attribute "
+        "real contextual counts to a country-year its own dates do not "
+        "support",
+    )
+
+
+def _search_offset(
+    dates: list[PartialDate],
+    tiers: list[list[int]],
+    policy: PublicationPolicy,
+    *,
+    asserted: Sequence[tuple[PartialDate, PartialDate]] = (),
+    guard: _ContextGuard | None = None,
+    cross: Callable[[int], InvariantReport] | None = None,
+) -> _OffsetSearch:
+    """The first candidate that preserves everything this block says.
+
+    Two passes over the same candidate order. The first accepts only an
+    offset that raises no advisory within the block; the second accepts any
+    offset that passes the invariants. So an offset that leaves every
+    relationship intact is preferred to one that merely leaves the stated
+    ones intact, without either becoming a requirement, and the order is the
+    same in both passes so the choice stays reproducible from the seed.
+
+    The passes run *within* each band of :func:`~.dates.offset_tiers`, so a
+    stronger offset that moves an unstated relationship is preferred to a
+    weaker one that moves nothing. Obfuscation first, fidelity second: the
+    other order would answer a disclosure question with a presentational
+    preference.
+    """
+    found = _OffsetSearch()
+    for tier in tiers:
+        for clean_only in (True, False):
+            for candidate in tier:
+                found.tried += 1
+                report = check_date_offset(
+                    dates, candidate, policy, asserted=asserted
+                )
+                if not report.accepted:
+                    found.failures = report.failures
+                    continue
+                if clean_only and report.advisories:
+                    continue
+                if guard is not None and not guard.holds_after(candidate):
+                    found.failures = (_context_year_failure(guard),)
+                    continue
+                if cross is not None:
+                    verdict = cross(candidate)
+                    if not verdict.accepted:
+                        found.failures = verdict.failures
+                        continue
+                found.offset = candidate
+                found.advisories = report.advisories
+                return found
+    return found
+
+
+def _note_weak_offset(
+    transform: CaseTransform,
+    policy: PublicationPolicy,
+    offset: int,
+    role: DateRole,
+) -> None:
+    """Say so when the only offsets that worked were below the floor.
+
+    Advisory, not blocking: the dates did move, so the page does not carry
+    the real timeline. What it carries is one close to it, and a reviewer
+    looking at a case with a long history should know which.
+    """
+    floor = offset_floor(policy, role)
+    if offset == 0 or floor <= 1 or abs(offset) >= floor:
+        return
+    transform.findings.append(
+        DisclosureFinding(
+            code=DisclosureCode.DATE_OFFSET_BELOW_FLOOR,
+            example_id=transform.example_id,
+            message=(
+                f"the {role.value} dates moved {offset:+d} days, short of the "
+                f"policy floor of {floor}: no larger offset preserved what "
+                "this case's dates say about each other"
+            ),
+        )
+    )
+
+
+def _cross_block_check(
+    date_set: _DateSet, clinical_offset: int, report_offset: int
+) -> InvariantReport:
+    """Each report's clinical dates against that report's own report dates.
+
+    Per report, because that is the relationship the page states and the one
+    a reader would act on: this event happened, and then this report
+    described it. A clinical date from the other report has no stated
+    relationship to this report's date, and holding it to one would reject
+    offsets for no reader's benefit.
+
+    A date shown in neither column — a drug named once because both reports
+    carry it — is checked against both reports, not neither.
+    """
+    failures: list[InvariantFailure] = []
+    for side, own in (
+        ("left", date_set.guard.left_report_dates),
+        ("right", date_set.guard.right_report_dates),
+    ):
+        clinical = date_set.clinical_by_side.get(side, [])
+        if not clinical:
+            continue
+        failures.extend(
+            check_cross_block(
+                clinical,
+                list(own) or date_set.report_dates,
+                clinical_offset,
+                report_offset,
+                label=f"the {side} report",
+            ).failures
+        )
+    shared = date_set.clinical_by_side.get("", [])
+    if shared:
+        failures.extend(
+            check_cross_block(
+                shared,
+                date_set.report_dates,
+                clinical_offset,
+                report_offset,
+                label="either report",
+            ).failures
+        )
+    return InvariantReport(failures=tuple(failures))
+
+
+def _solve_date_offsets(
     case: EvidenceCaseVM,
     date_set: _DateSet,
     policy: PublicationPolicy,
     secrets: PublicationSecrets,
     transform: CaseTransform,
-) -> int | None:
-    """The first offset that preserves everything the page says, or ``None``.
+) -> tuple[int | None, int | None]:
+    """An offset for the report dates and one for the clinical history.
 
-    Two passes over the same candidate order. The first accepts only an
-    offset that raises no advisory at all; the second accepts any offset that
-    passes the invariants. So an offset that leaves every relationship intact
-    is always preferred to one that merely leaves the stated ones intact,
-    without either becoming a requirement — and the order is the same in both
-    passes, so the choice stays reproducible from the seed.
+    The two are solved separately because they are independent in the source
+    and differently constrained in the page. A report date is pinned near the
+    reporting context's year; a clinical date is not pinned at all, and a case
+    mixing year-, month- and day-precision clinical dates can usually only
+    move by whole years. Asking one offset to be both a few days and a whole
+    year is how a sixteen-date history came to be published exactly as
+    reported: zero was the only value that satisfied both.
+
+    Falls back to a single offset for everything when the policy says so,
+    when a finding asserts a separation across the two blocks, when the case
+    has only one kind of date, or when the split search finds nothing — the
+    single search is the broader one, so trying it after a failed split
+    costs a case nothing.
     """
-    dates = date_set.dates
-    if not dates:
-        return None
-    seed = secrets.seed(policy.policy_version, "dates", case.pair_id)
-    candidates = offset_candidates(policy, seed)
-    last_failures: tuple[InvariantFailure, ...] = ()
-    tried = 0
+    if not date_set.dates:
+        return None, None
 
-    for clean_only in (True, False):
-        for candidate in candidates:
-            tried += 1
-            report = check_date_offset(
-                dates,
-                candidate,
+    def seed(role: str) -> str:
+        return secrets.seed(policy.policy_version, "dates", role, case.pair_id)
+
+    tried = 0
+    split_failures: tuple[InvariantFailure, ...] = ()
+    if (
+        policy.decouple_clinical_dates
+        and not date_set.coupled
+        and date_set.report_dates
+        and date_set.clinical_dates
+    ):
+        reports = _search_offset(
+            date_set.report_dates,
+            offset_tiers(policy, seed("report"), role=DateRole.REPORT),
+            policy,
+            asserted=date_set.asserted,
+            guard=date_set.guard,
+        )
+        tried += reports.tried
+        if reports.offset is None:
+            split_failures = reports.failures
+        else:
+            chosen = reports.offset
+            clinical = _search_offset(
+                date_set.clinical_dates,
+                offset_tiers(
+                    policy, seed("clinical"), role=DateRole.CLINICAL
+                ),
                 policy,
                 asserted=date_set.asserted,
+                cross=lambda candidate: _cross_block_check(
+                    date_set, candidate, chosen
+                ),
             )
-            if not report.accepted:
-                last_failures = report.failures
-                continue
-            if clean_only and report.advisories:
-                continue
-            if not date_set.guard.holds_after(candidate):
-                last_failures = (
-                    InvariantFailure(
-                        "country_year_population",
-                        f"the reporting context names "
-                        f"{date_set.guard.year}, and this offset carries a "
-                        "report date into another calendar year, so the page "
-                        "would attribute real contextual counts to a "
-                        "country-year its own dates do not support",
-                    ),
+            tried += clinical.tried
+            if clinical.offset is not None:
+                transform.advisories = reports.advisories + clinical.advisories
+                transform.date_candidates_tried = tried
+                _note_weak_offset(
+                    transform, policy, reports.offset, DateRole.REPORT
                 )
-                continue
-            transform.advisories = report.advisories
-            transform.date_candidates_tried = tried
-            return candidate
+                _note_weak_offset(
+                    transform, policy, clinical.offset, DateRole.CLINICAL
+                )
+                return reports.offset, clinical.offset
+            split_failures = clinical.failures
 
+    single = _search_offset(
+        date_set.dates,
+        offset_tiers(policy, seed("all"), role=DateRole.REPORT),
+        policy,
+        asserted=date_set.asserted,
+        guard=date_set.guard,
+    )
+    tried += single.tried
     transform.date_candidates_tried = tried
+    if single.offset is not None:
+        transform.advisories = single.advisories
+        _note_weak_offset(transform, policy, single.offset, DateRole.REPORT)
+        return single.offset, single.offset
+
     transform.findings.append(
         DisclosureFinding(
             code=DisclosureCode.DATE_TRANSFORM_REJECTED,
             example_id=transform.example_id,
             message=(
-                f"no offset among {len(candidates)} candidates preserved the "
-                "relationships this case's dates carry; the example needs "
-                "manual handling"
+                "no offset preserved the relationships this case's dates "
+                "carry, with the report dates and the clinical history "
+                "solved together or apart; the example needs manual handling"
             ),
-            detail="; ".join(f.detail for f in last_failures),
+            detail="; ".join(
+                f.detail for f in (single.failures or split_failures)
+            ),
         )
     )
-    return None
+    return None, None
 
 
 #: ``", at least 796 days apart"`` as ``build._date_finding_tail`` writes it.
@@ -864,10 +1121,10 @@ def _apply_review(
 ) -> None:
     """A field no transform may touch: approve it, withhold it, or block.
 
-    The deterministic summary is the one exception that needs no decision: it
-    is generated from the assessment and holds no human's words, so it is
-    rewritten through the table like any other derived prose. A block flagged
-    ``is_human`` never is.
+    The deterministic summary is the one exception that needs no decision --
+    see :func:`~.approvals.is_generated_summary`, which the form generator
+    reads from too, so the two cannot drift into disagreeing about which
+    fields a reviewer owes a signature on.
     """
     from .substitute import TextSlot
 
@@ -876,10 +1133,7 @@ def _apply_review(
     if value is None or (isinstance(value, list) and not value) or value == "":
         return
 
-    owner = slot.owner
-    if slot.key == "EvidenceTextVM.paragraphs" and not getattr(
-        owner, "is_human", False
-    ):
+    if is_generated_summary(slot):
         items = value if isinstance(value, list) else [value]
         slot.write([transform.table.rewrite(item) for item in items])
         return
@@ -904,6 +1158,33 @@ def _apply_review(
                 ),
             )
         )
+        return
+
+    if approved.approve_as_written:
+        pinned = digest_text(value)
+        if pinned != approved.text_sha256:
+            transform.findings.append(
+                DisclosureFinding(
+                    code=DisclosureCode.APPROVAL_DIGEST_MISMATCH,
+                    example_id=transform.example_id,
+                    field_path=slot.path,
+                    message=(
+                        f"{slot.key} was approved as written, but the text "
+                        "has changed since. Re-read it and update "
+                        "text_sha256, or decide again"
+                    ),
+                    detail=(
+                        f"approval pins {approved.text_sha256}; the text now "
+                        f"digests to {pinned}"
+                    ),
+                )
+            )
+            return
+        if isinstance(value, list):
+            slot.write([transform.table.rewrite(item) for item in value])
+        else:
+            slot.write(transform.table.rewrite(value))
+        transform.approved_as_written_paths.append(slot.path)
         return
 
     if approved.withhold:
@@ -953,10 +1234,19 @@ def _scramble_case(
         pass
 
     date_set = _collect_dates(case, transform)
-    offset = _solve_date_offset(case, date_set, policy, secrets, transform)
-    if offset is not None:
-        transform.date_offset_days = offset
-        _register_dates(date_set.dates, offset, transform.table)
+    report_offset, clinical_offset = _solve_date_offsets(
+        case, date_set, policy, secrets, transform
+    )
+    if report_offset is not None and clinical_offset is not None:
+        transform.date_offset_days = report_offset
+        transform.clinical_offset_days = clinical_offset
+        if report_offset == clinical_offset:
+            _register_dates(date_set.dates, report_offset, transform.table)
+        else:
+            _register_dates(date_set.report_dates, report_offset, transform.table)
+            _register_dates(
+                date_set.clinical_dates, clinical_offset, transform.table
+            )
 
     for kind in (ValueKind.AGE, ValueKind.HEIGHT, ValueKind.WEIGHT):
         _transform_numeric(case, kind, policy, secrets, transform)
@@ -1060,10 +1350,23 @@ def _transform_note(
     sentence = f"{_join(transformed).capitalize()} have been transformed"
     if retained:
         sentence += f"; {_join(retained)} are shown as reported"
-    return (
+    split = any(
+        t.clinical_offset_days is not None
+        and t.clinical_offset_days != t.date_offset_days
+        for t in transforms
+    )
+    note = (
         f"{sentence}. The assessments, scores, contributions and penalties "
         "are those of the original reports."
     )
+    if split:
+        note += (
+            " Clinical dates and report dates were shifted by different "
+            "amounts, so the interval between an event and the report "
+            "describing it is not the reported interval; intervals within "
+            "each of the two are."
+        )
+    return note
 
 
 def _join(items: list[str]) -> str:

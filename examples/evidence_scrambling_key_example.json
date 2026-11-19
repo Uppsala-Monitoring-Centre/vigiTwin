@@ -2,13 +2,18 @@
   "schema_version": "1.0",
   "created_at": "2026-01-01T00:00:00+00:00",
   "key_id": "8b55a166f630871d",
-  "policy_version": "1.0",
+  "policy_version": "2.0",
   "policy": {
-    "policy_version": "1.0",
+    "policy_version": "2.0",
     "allow_unchanged_values": true,
-    "date_offset_min_days": 0,
+    "date_offset_min_days": 30,
     "date_offset_max_days": 400,
-    "date_offset_candidates": 1024,
+    "date_offset_candidates": 2048,
+    "decouple_clinical_dates": true,
+    "clinical_offset_min_days": 30,
+    "clinical_offset_max_days": 1826,
+    "clinical_offset_backward_only": false,
+    "allow_coarse_date_drift": true,
     "date_year_floor": 1960,
     "date_year_ceiling": 2100,
     "separation_exact_days": 7,
@@ -71,38 +76,39 @@
       "position": 1,
       "published_example_id": "pair-01",
       "published_example_label": "Pair 1",
-      "date_offset_days": 5,
-      "date_candidates_tried": 155,
+      "date_offset_days": 182,
+      "clinical_offset_days": 46,
+      "date_candidates_tried": 18,
       "numeric_offsets": {
         "age:years": "+3 years"
       },
       "substitutions": [
         {
           "original": "2024-02-20",
-          "published": "2024-02-25",
+          "published": "2024-08-20",
           "kind": "date:day",
-          "note": "+5 days",
+          "note": "+182 days",
           "changed": true
         },
         {
           "original": "2023-11-13",
-          "published": "2023-11-18",
+          "published": "2023-12-29",
           "kind": "date:day",
-          "note": "+5 days",
+          "note": "+46 days",
           "changed": true
         },
         {
           "original": "2023-11-12",
-          "published": "2023-11-17",
+          "published": "2023-12-28",
           "kind": "date:day",
-          "note": "+5 days",
+          "note": "+46 days",
           "changed": true
         },
         {
           "original": "2023",
           "published": "2023",
           "kind": "date:year",
-          "note": "+5 days",
+          "note": "+46 days",
           "changed": false
         },
         {
@@ -174,28 +180,28 @@
           "path": "characteristics[3].left",
           "kind": "report_date",
           "original": "2024-02-20",
-          "published": "2024-02-25",
+          "published": "2024-08-20",
           "changed": true
         },
         {
           "path": "characteristics[3].right",
           "kind": "report_date",
           "original": "2024-02-20",
-          "published": "2024-02-25",
+          "published": "2024-08-20",
           "changed": true
         },
         {
           "path": "characteristics[4].left",
           "kind": "ae_onset_date",
           "original": "2023-11-13",
-          "published": "2023-11-18",
+          "published": "2023-12-29",
           "changed": true
         },
         {
           "path": "characteristics[4].right",
           "kind": "ae_onset_date",
           "original": "2023-11-12",
-          "published": "2023-11-17",
+          "published": "2023-12-28",
           "changed": true
         },
         {
@@ -216,14 +222,14 @@
           "path": "adverse_events[0].left_onsets[0]",
           "kind": "ae_onset_date",
           "original": "2023-11-13",
-          "published": "2023-11-18",
+          "published": "2023-12-29",
           "changed": true
         },
         {
           "path": "adverse_events[0].right_onsets[0]",
           "kind": "ae_onset_date",
           "original": "2023-11-12",
-          "published": "2023-11-17",
+          "published": "2023-12-28",
           "changed": true
         }
       ],
@@ -234,6 +240,7 @@
         "example_id",
         "example_label"
       ],
+      "approved_as_written_paths": [],
       "dates_total": 5,
       "dates_changed": 3,
       "date_pattern_unchanged": false

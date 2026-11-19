@@ -16,6 +16,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     DisclosureCode,
     PublicationPolicy,
     check_date_offset,
+    date_relations,
     offset_candidates,
     parse_partial_date,
     resolution_of,
@@ -24,6 +25,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     shift_partial_date,
 )
 from llm_dup_dev.review_html.evidence.publication.dates import (
+    offset_tiers,
     within_plausible_window,
 )
 from tests.test_review_html.conftest import (
@@ -172,12 +174,37 @@ class TestWhatAnOffsetMayNotChange:
         ).accepted
 
     def test_an_offset_that_reorders_two_dates_is_refused(self):
+        """Two complete dates swapping places changes what the page says."""
+        dates = [_d("2024-01-10", "day"), _d("2024-01-20", "day")]
+        shifted = [_d("2024-01-10", "day"), _d("2024-01-05", "day")]
+        assert date_relations(dates) != date_relations(shifted)
+
+    def test_a_date_leaving_a_coarse_span_is_an_advisory_by_default(self):
         """A complete date pushed out of a year-only date's span changes
-        whether one could have preceded the other."""
+        whether one could have preceded the other — but the year-only date
+        is the one that did not move, and the alternative is a history that
+        can only shift by whole years."""
         dates = [_d("2024", "year"), _d("2024-12-20", "day")]
         report = check_date_offset(dates, 30, PublicationPolicy())
+        assert report.accepted
+        assert "coarse_date_drift" in {a.rule for a in report.advisories}
+
+    def test_and_a_hard_failure_where_the_policy_forbids_the_drift(self):
+        dates = [_d("2024", "year"), _d("2024-12-20", "day")]
+        report = check_date_offset(
+            dates, 30, PublicationPolicy(allow_coarse_date_drift=False)
+        )
         assert not report.accepted
         assert "interval_order" in {f.rule for f in report.failures}
+
+    def test_a_finding_that_states_the_gap_still_forbids_it(self):
+        """An asserted separation is a figure on the page, so it holds
+        whatever the drift policy says."""
+        dates = [_d("2024", "year"), _d("2024-12-20", "day")]
+        report = check_date_offset(
+            dates, 30, PublicationPolicy(), asserted=[(dates[0], dates[1])]
+        )
+        assert not report.accepted
 
     def test_an_offset_outside_the_era_window_is_refused(self):
         dates = [_d("1960-01-10", "day")]
@@ -232,9 +259,26 @@ class TestCandidateOffsets:
         policy = PublicationPolicy()
         assert offset_candidates(policy, "a") != offset_candidates(policy, "b")
 
-    def test_no_candidate_is_smaller_than_the_floor(self):
+    def test_the_first_band_holds_nothing_smaller_than_the_floor(self):
         policy = PublicationPolicy(date_offset_min_days=30)
-        assert all(abs(o) >= 30 for o in offset_candidates(policy, "s"))
+        first, *rest = offset_tiers(policy, "s")
+        assert all(abs(o) >= 30 for o in first)
+        assert rest, "a floor is a preference, so the smaller band follows it"
+
+    def test_the_bands_below_the_floor_come_after_it(self):
+        """A floor that refused a case outright would turn every hard
+        history into manual handling; the case that prompted the floor
+        carried sixteen dates."""
+        policy = PublicationPolicy(date_offset_min_days=30)
+        bands = offset_tiers(policy, "s")
+        assert {abs(o) for o in bands[1]} == set(range(1, 30))
+        assert bands[-1] == [0]
+
+    def test_a_floor_of_zero_is_one_band_and_then_zero(self):
+        policy = PublicationPolicy(date_offset_min_days=0)
+        bands = offset_tiers(policy, "s")
+        assert len(bands) == 2
+        assert bands[-1] == [0]
 
     def test_zero_is_a_candidate(self):
         """Not a fallback: a draw like any other. An offset the pool excludes
@@ -314,8 +358,10 @@ class TestSolvingAWholeCase:
             for f in result.report.findings
             if f.code is DisclosureCode.DATE_TRANSFORM_REJECTED
         )
-        assert "candidates" in rejection.message
-        assert result.transforms[0].date_candidates_tried == 8
+        assert "solved together or apart" in rejection.message
+        # Both schemes, both passes, every band: the count is the work done,
+        # and the point of recording it is that nothing was left untried.
+        assert result.transforms[0].date_candidates_tried > 8
 
     def test_the_same_salt_gives_the_same_offset(self):
         first = scramble(publication_page(worked_example_case()))

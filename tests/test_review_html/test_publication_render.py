@@ -214,7 +214,9 @@ class TestSideBySide:
         result = scramble(
             page,
             policy=PublicationPolicy(
-                date_offset_min_days=0, date_offset_max_days=0
+                date_offset_min_days=0,
+                date_offset_max_days=0,
+                decouple_clinical_dates=False,
             ),
         )
         out = write_side_by_side(page, result, tmp_path / "review")

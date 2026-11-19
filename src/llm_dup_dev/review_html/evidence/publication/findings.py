@@ -52,6 +52,10 @@ class DisclosureCode(str, Enum):
     HUMAN_TEXT_REVIEW_REQUIRED = "human_text_review_required"
     NARRATIVE_SNIPPET_REVIEW_REQUIRED = "narrative_snippet_review_required"
     CURATOR_TEXT_REVIEW_REQUIRED = "curator_text_review_required"
+    #: An ``approve_as_written`` entry whose digest no longer matches the
+    #: text. The approval was given for something else, so it does not carry
+    #: to what the manifest says now.
+    APPROVAL_DIGEST_MISMATCH = "approval_digest_mismatch"
 
     # --- residual ---------------------------------------------------------
     RESIDUAL_ORIGINAL_VALUE = "residual_original_value"
@@ -65,6 +69,10 @@ class DisclosureCode(str, Enum):
     #: pair's real timeline, which is a re-identification question for a
     #: human rather than a defect for the transform to fix.
     DATE_PATTERN_UNCHANGED = "date_pattern_unchanged"
+    #: The only offsets that preserved this case's relationships were smaller
+    #: than the policy's floor. The dates did move, so the page does not
+    #: carry the real timeline, but it carries one close to it.
+    DATE_OFFSET_BELOW_FLOOR = "date_offset_below_floor"
 
 
 #: Findings that record a relationship the page never stated, rather than
@@ -73,6 +81,7 @@ ADVISORY_CODES: frozenset[DisclosureCode] = frozenset(
     {
         DisclosureCode.UNASSERTED_RELATION_CHANGED,
         DisclosureCode.DATE_PATTERN_UNCHANGED,
+        DisclosureCode.DATE_OFFSET_BELOW_FLOOR,
     }
 )
 

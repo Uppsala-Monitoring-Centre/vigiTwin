@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from collections.abc import Mapping
+import json
+from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import NamedTuple
 
@@ -256,7 +257,7 @@ class PublicationPolicy(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    policy_version: str = "1.0"
+    policy_version: str = "2.0"
 
     #: Whether a transform may leave a value as reported. **On by default,
     #: and the default is the point.** A transform obliged to move every
@@ -268,25 +269,86 @@ class PublicationPolicy(BaseModel):
     #: Turning it off restores a transform that must move something, and with
     #: it the possibility that no candidate satisfies the invariants — which
     #: is why the rejection paths exist. The cost is the inference above.
+    #:
+    #: Keeping zero in the pool is not the same as letting it win: it is
+    #: tried last, after every other candidate has failed. See
+    #: :func:`~.dates.offset_candidates`. With the default floors above, zero
+    #: is out of the pool entirely and this setting only matters to a policy
+    #: that lowers a floor back to zero.
     allow_unchanged_values: bool = True
 
     # --- dates -------------------------------------------------------------
-    #: Smallest candidate offset. **Zero by default, and zero is a candidate
-    #: like any other.** What an observer is left with is the *width* of the
-    #: range, and every offset excluded from it is one they can rule out: a
-    #: floor of 21 days told anyone holding this policy that the published
-    #: date is at least three weeks from the true one, which is information
-    #: about the true one.
-    date_offset_min_days: int = Field(default=0, ge=0)
-    #: Widest candidate offset. Equal to the floor it pins the offset to one
-    #: value, which a test uses to reach the all-unchanged state on purpose.
+    #: Smallest candidate offset for report dates. **Thirty days, where it
+    #: was zero.** The argument for zero was that excluding an offset tells
+    #: anyone holding this policy where the true date is not, so a floor is
+    #: information about the true date; what that argument leaves out is the
+    #: size of the two leaks. A floor of 30 removes a 59-day window from a
+    #: range some 800 days wide, uniformly, for every case. A zero offset
+    #: publishes the pair's real timeline — and for a case carrying sixteen
+    #: dates that is close to a unique key into the source database.
+    #:
+    #: The two are not comparable, and they are not evenly distributed: zero
+    #: satisfies every invariant trivially, so it survived most often in
+    #: exactly the date-rich cases whose timelines identify best.
+    date_offset_min_days: int = Field(default=30, ge=0)
+    #: Widest candidate offset for report dates. Equal to the floor it pins
+    #: the offset to one value, which a test uses to reach the all-unchanged
+    #: state on purpose.
     date_offset_max_days: int = Field(default=400, ge=0)
-    #: How many candidate offsets to try before giving up on a case and
-    #: flagging it for manual handling. The default exceeds the size of the
-    #: pool, so the search is exhaustive and a case is never flagged merely
-    #: because a sample missed the one offset that would have worked. The
-    #: whole pool costs well under a tenth of a second per case.
-    date_offset_candidates: int = Field(default=1024, ge=1)
+    #: How many candidate offsets to try per band before giving up on a case
+    #: and flagging it for manual handling. The default exceeds the size of
+    #: every band, so the search is exhaustive and a case is never flagged
+    #: merely because a sample missed the one offset that would have worked.
+    #: That property is the reason it is 2048 and not 1024: the clinical
+    #: band runs to five years, and a mixed-precision history is often
+    #: solvable only at whole-year multiples, so a band that sampled would
+    #: drop the handful of offsets that work.
+    date_offset_candidates: int = Field(default=2048, ge=1)
+    #: Whether clinical dates take an offset of their own, independent of the
+    #: report dates. **On by default.** A report date records when a report
+    #: reached the centre; a drug start, drug end or onset date records when
+    #: something happened to the patient, and reports routinely arrive years
+    #: after the event. They are independent in the source, and tying them to
+    #: one offset let the tighter constraint govern both: a report date is
+    #: pinned near its reporting-context year, while a case mixing year-,
+    #: month- and day-precision clinical dates can usually only move by whole
+    #: years. The one offset satisfying both is frequently zero.
+    #:
+    #: What the split costs is the *absolute* interval between an event and
+    #: its report, which is no longer the true interval. What it preserves is
+    #: every interval the adjudication reads: both reports' clinical dates
+    #: move together and both reports' dates move together, so each report's
+    #: own latency changes by the same amount and the difference between them
+    #: — which is the duplicate signal — survives exactly.
+    decouple_clinical_dates: bool = True
+    #: Smallest and widest candidate offsets for the clinical block. The
+    #: ceiling is five years because whole-year multiples are usually the
+    #: only offsets a mixed-precision history admits, and a range of ±400
+    #: days holds exactly one of them.
+    clinical_offset_min_days: int = Field(default=30, ge=0)
+    clinical_offset_max_days: int = Field(default=1826, ge=0)
+    #: Whether the clinical block may only move *backwards*. **Off**: a
+    #: forward shift is safe because the guard that makes it safe is checked
+    #: directly — every clinical date stays before the report date of its own
+    #: report (:func:`~.invariants.check_cross_block`). Restricting direction
+    #: as well would halve the pool for a case that may have little room in
+    #: it, and buy nothing the guard does not already promise.
+    clinical_offset_backward_only: bool = False
+    #: Whether a coarse date may stay where it is while precise dates beside
+    #: it move. **On by default.** A year-only value does not move under a
+    #: shift smaller than a year, so with this off, a history mixing
+    #: precisions can only take whole-year offsets — nothing else leaves a
+    #: bare ``2006`` in place against a ``2006-12-05``. An unmoved year is
+    #: close to no disclosure on its own; it is the dates beside it, known to
+    #: the day, that identify, and those do move. What it costs is a
+    #: relationship between a date known to the day and one known only to the
+    #: year, which is reported as a ``coarse_date_drift`` advisory and, where
+    #: a finding states the separation, is still a hard failure.
+    #:
+    #: Offsets that avoid the drift entirely are still preferred: the search
+    #: takes an advisory-free candidate over one that raises this, so a whole
+    #: year wins where a whole year is available.
+    allow_coarse_date_drift: bool = True
     date_year_floor: int = Field(default=1960, ge=1)
     date_year_ceiling: int = Field(default=2100, ge=1)
     #: Separations at or below this many days are preserved to the day. The
@@ -439,35 +501,93 @@ class PublicationSecrets(BaseModel):
         return ":".join((self.salt.get_secret_value(), *parts))
 
 
+def digest_text(value: str | Sequence[str]) -> str:
+    """Pin one field's text, exactly as the reviewer read it.
+
+    Unsalted and unkeyed on purpose: this is not a secret, it is an identity.
+    Anyone holding the manifest must be able to recompute it, and the digest
+    never reaches a publication artifact — it lives in the approvals file,
+    which is secure-side, and in the key record beside it.
+
+    A string and a one-item list digest differently, so a field that changes
+    between the two cannot keep an approval it was not given.
+    """
+    payload = json.dumps(
+        value if isinstance(value, str) else list(value), ensure_ascii=False
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class ApprovedText(BaseModel):
-    """Replacement text a reviewer has approved for one free-text field.
+    """One reviewer's decision about one free-text field.
 
     The only way human-authored or verbatim narrative text reaches a
     publication page. ``field_path`` is the dotted path the transform reports
     in its finding, so a reviewer can copy it straight across.
+
+    Exactly one of three decisions, because the three differ in what they
+    publish and a silent default would publish the wrong one:
+
+    * ``replacement`` — publish this text instead. Written verbatim, *not*
+      through the case's substitution table: a replacement is a reviewer's
+      own words, and rewriting them would make the published page say
+      something nobody approved. So a replacement that quotes a report value
+      publishes that value, and the residual scan is what catches it.
+    * ``withhold`` — publish nothing, and say so on the page.
+    * ``approve_as_written`` — publish the text the manifest already holds,
+      rewritten through the substitution table like any other derived prose,
+      so a date or a country it quotes comes out transformed. Valid only
+      while ``text_sha256`` still matches that text.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     example_id: str
     field_path: str
-    #: The approved text. Empty means "withhold": the block is dropped and the
-    #: page says so, which is different from the field having been empty.
+    #: Reviewer-supplied text to publish in place of the original.
     replacement: str = ""
+    #: Publish nothing: the block is dropped and the page says so, which is
+    #: different from the field having been empty.
     withhold: bool = False
+    #: Approve what the manifest says, rather than restating it here. Needs
+    #: ``text_sha256``, which is what keeps the approval attached to the text
+    #: it was given for instead of to the path.
+    approve_as_written: bool = False
+    #: :func:`digest_text` of the value this approval was given for. Edit the
+    #: manifest and the digest stops matching, so the case blocks again
+    #: rather than publishing text no one reviewed.
+    text_sha256: str = ""
     approved_by: str
     approved_at: str
     rationale: str = ""
 
     @model_validator(mode="after")
     def _check_decision(self) -> ApprovedText:
-        if self.withhold and self.replacement:
+        decisions = (
+            bool(self.replacement.strip()),
+            self.withhold,
+            self.approve_as_written,
+        )
+        if sum(decisions) != 1:
             raise ValueError(
-                "a withheld field has no replacement text; choose one"
+                "exactly one decision per entry: replacement text, "
+                "withhold, or approve_as_written"
             )
-        if not self.withhold and not self.replacement.strip():
+        if self.approve_as_written and not self.text_sha256.strip():
             raise ValueError(
-                "replacement must be non-empty unless withhold is set"
+                "approve_as_written needs text_sha256 pinning the text that "
+                "was read; without it the approval would outlive an edit to "
+                "the manifest"
+            )
+        if self.text_sha256 and not self.approve_as_written:
+            raise ValueError(
+                "text_sha256 pins text approved as written; it says nothing "
+                "about a replacement or a withheld field"
+            )
+        if not self.approved_by.strip() or not self.approved_at.strip():
+            raise ValueError(
+                "approved_by and approved_at are the audit record; an "
+                "unsigned entry is a form, not an approval"
             )
         return self
 
@@ -560,4 +680,5 @@ __all__ = [
     "PublicationPolicy",
     "PublicationSecrets",
     "ValuePolicy",
+    "digest_text",
 ]

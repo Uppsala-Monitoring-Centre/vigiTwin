@@ -42,8 +42,12 @@ from __future__ import annotations
 
 from ..models import PresentationMode
 from .aliases import AliasBook, CountryScope, parse_country_scope
+from .approvals import export_approvals_form, write_approvals_form
 from .dates import (
+    DateRole,
     offset_candidates,
+    offset_floor,
+    offset_tiers,
     parse_partial_date,
     resolution_of,
     shift_partial_date,
@@ -67,6 +71,7 @@ from .invariants import (
     DateRelations,
     InvariantFailure,
     InvariantReport,
+    check_cross_block,
     check_date_offset,
     date_relations,
     separation_preserved,
@@ -100,6 +105,7 @@ from .policy import (
     PublicationPolicy,
     PublicationSecrets,
     ValuePolicy,
+    digest_text,
 )
 from .scramble import (
     CaseTransform,
@@ -128,6 +134,7 @@ __all__ = [
     "CaseTransform",
     "CellOutcome",
     "CountryMaskingOverride",
+    "DateRole",
     "CountryMaskingSummary",
     "CountryScope",
     "DateRelations",
@@ -154,11 +161,14 @@ __all__ = [
     "ValuePolicy",
     "build_key_record",
     "build_publication_manifest",
+    "check_cross_block",
     "check_date_offset",
     "date_relations",
     "format_quantity",
     "imperial_amount",
     "offset_candidates",
+    "offset_floor",
+    "offset_tiers",
     "parse_country_scope",
     "parse_partial_date",
     "parse_quantity",
@@ -170,9 +180,12 @@ __all__ = [
     "severity_band",
     "shift_partial_date",
     "solve_numeric_offset",
+    "digest_text",
+    "export_approvals_form",
     "verify_rendered_output",
     "walk_cells",
     "write_publication_evidence",
+    "write_approvals_form",
     "write_scrambling_key",
     "write_side_by_side",
 ]

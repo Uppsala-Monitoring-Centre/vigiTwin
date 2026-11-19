@@ -55,6 +55,18 @@
           "default": null,
           "title": "Date Offset Days"
         },
+        "clinical_offset_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clinical Offset Days"
+        },
         "date_candidates_tried": {
           "default": 0,
           "title": "Date Candidates Tried",
@@ -100,6 +112,13 @@
             "type": "string"
           },
           "title": "Replaced Paths",
+          "type": "array"
+        },
+        "approved_as_written_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Approved As Written Paths",
           "type": "array"
         },
         "dates_total": {
@@ -180,11 +199,13 @@
         "human_text_review_required",
         "narrative_snippet_review_required",
         "curator_text_review_required",
+        "approval_digest_mismatch",
         "residual_original_value",
         "residual_date_token",
         "residual_digit_run",
         "unasserted_relation_changed",
-        "date_pattern_unchanged"
+        "date_pattern_unchanged",
+        "date_offset_below_floor"
       ],
       "title": "DisclosureCode",
       "type": "string"
@@ -239,7 +260,7 @@
       "description": "Numeric and naming settings for the publication transform.\n\nVersioned, and the version is recorded in both emitted artifacts: two\nsupplements produced under different policies are not comparable, and a\nreader has no other way to tell.",
       "properties": {
         "policy_version": {
-          "default": "1.0",
+          "default": "2.0",
           "title": "Policy Version",
           "type": "string"
         },
@@ -249,7 +270,7 @@
           "type": "boolean"
         },
         "date_offset_min_days": {
-          "default": 0,
+          "default": 30,
           "minimum": 0,
           "title": "Date Offset Min Days",
           "type": "integer"
@@ -261,10 +282,37 @@
           "type": "integer"
         },
         "date_offset_candidates": {
-          "default": 1024,
+          "default": 2048,
           "minimum": 1,
           "title": "Date Offset Candidates",
           "type": "integer"
+        },
+        "decouple_clinical_dates": {
+          "default": true,
+          "title": "Decouple Clinical Dates",
+          "type": "boolean"
+        },
+        "clinical_offset_min_days": {
+          "default": 30,
+          "minimum": 0,
+          "title": "Clinical Offset Min Days",
+          "type": "integer"
+        },
+        "clinical_offset_max_days": {
+          "default": 1826,
+          "minimum": 0,
+          "title": "Clinical Offset Max Days",
+          "type": "integer"
+        },
+        "clinical_offset_backward_only": {
+          "default": false,
+          "title": "Clinical Offset Backward Only",
+          "type": "boolean"
+        },
+        "allow_coarse_date_drift": {
+          "default": true,
+          "title": "Allow Coarse Date Drift",
+          "type": "boolean"
         },
         "date_year_floor": {
           "default": 1960,

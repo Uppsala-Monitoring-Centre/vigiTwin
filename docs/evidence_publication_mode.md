@@ -75,8 +75,10 @@ Cell values are multi-valued where a report carried several candidates
 
 ## Dates: the hard case
 
-A single whole-day offset applies to the pair. For complete dates that is the
-whole story. For partial dates the shift is defined on the timeline and
+Two whole-day offsets apply to the pair — one to its **report dates**, one to
+its **clinical history** (drug start and end dates, adverse-event onsets).
+See § Two offsets, not one for why they are separate. Within each block the
+offset is uniform, so for complete dates that is the whole story. For partial dates the shift is defined on the timeline and
 written back at the date's **original precision**:
 
 ```
@@ -104,31 +106,97 @@ start stays `2023` because thirty days from 1 January 2023 is still 2023.
 **The rule guarantees representability and nothing else.** Whether the
 evidential meaning survives is checked separately, offset by offset.
 
-### An offset of zero is a legitimate draw
+### Two offsets, not one
 
-Nothing in the transform requires a value to move, and that is deliberate.
+A report date and a clinical date are independent in the source. The first
+says when a report reached the centre; the second says when something
+happened to a patient, and reports routinely arrive years after the event.
+They are also differently constrained in the page:
 
-A transform obliged to change every value tells anyone who holds the policy
-something about the values it changed: that the published one is *not* the
-true one. The displayed date can then be struck off the list of candidates,
-and every excluded offset narrows that list further. A floor of three weeks
-on the date offset said "the true date is at least 21 days from this one",
-which is information about the true date.
+- a **report date** is pinned near its reporting-context year, because the
+  contextual counts are real and belong to that country-year (§ What an
+  offset must preserve);
+- a **clinical history** mixing year-, month- and day-precision dates can
+  usually only move by *whole years*, because anything else moves a bare
+  `2006` relative to a `2006-05-30` and changes what the page says about
+  their order.
 
-So zero is in the candidate pool, whole years are in the candidate pool, and
-a published value is allowed to equal a value the pair reported. "It looks
-unshifted" and "it is unshifted" have to be states an observer cannot tell
-apart, which means the first must be possible.
+Under one offset those two demands met, for a long history, only at zero. A
+real pair carrying sixteen dates across twelve years had exactly three
+offsets that satisfied its invariants — `-365`, `0`, `+365` — and its
+published supplement therefore carried the patient's real timeline. Solved
+separately, the same pair takes a report offset of a few weeks and a clinical
+offset of four years.
 
-The cost is that a case can come out with its whole timeline as reported. The
-transform allows it and the **review reports it**: the case carries a
-`date_pattern_unchanged` advisory, the disclosure review page says so above
-the tables, and the key record counts dates moved against dates total. The
-judgement is a reviewer's; the obligation of this layer is to put it to them
-rather than to prevent it by narrowing the draw. Setting
-`allow_unchanged_values` to false restores a transform that must move
-something — the flag exists so the cost of that choice is visible, not
-because it is the right one.
+**What the split gives up is the absolute interval between an event and its
+report.** That interval is no longer the real one, the footer says so, and
+the key record holds both offsets. **What it preserves is every interval the
+adjudication reads**: both reports' clinical dates move together and both
+reports' report dates move together, so each report's own latency changes by
+the same amount and the difference between them — the duplicate signal —
+survives exactly. Where a finding states a separation *across* the two
+blocks, its figure has to survive exactly, which only a shared offset can
+promise, so such a case takes one offset however the policy is set.
+
+The clinical block moves in **either** direction. The thing a forward shift
+could break — carrying an event past the report that describes it — is
+checked directly rather than avoided by rule: every clinical date keeps its
+ordering against the report date of **its own report**. Per report, because a
+relationship between one report's event and the other report's arrival date
+is not something the page states, and holding an offset to it would reject
+candidates for no reader's benefit. A date shown in neither column, such as a
+drug both reports carry, is held to both.
+
+### A coarse date may stay where it is
+
+A year-only value does not move under a shift smaller than a year: thirty
+days from 1 January 2006 is still 2006. So in a history mixing precisions, a
+modest offset moves the day-level dates and leaves the year-only ones, and
+where a day-level date then leaves a year's span — `2006-12-05` becoming
+`2007-01-04` beside a bare `2006` — their order has changed.
+
+Treated as a hard failure, that left whole-year offsets as the only ones a
+mixed-precision history could take. It is an advisory instead,
+`coarse_date_drift`, because an unmoved year is close to no disclosure on its
+own: it is the dates beside it, known to the day, that identify, and those do
+move. Two things keep the relaxation narrow — where a finding *states* the
+separation it is still a hard failure, and an offset that avoids the drift
+entirely is still preferred, since the first pass takes an advisory-free
+candidate. A whole year therefore wins wherever a whole year is available.
+`allow_coarse_date_drift` turns it off.
+
+### Zero is a last resort, not a preference
+
+Zero stays in the candidate pool wherever the policy allows it. A transform
+obliged to change every value tells anyone holding the policy that the
+published date is *not* the true one, and every excluded offset narrows the
+list further; "it looks unshifted" and "it is unshifted" have to be states an
+observer cannot tell apart, which means the first must be possible.
+
+But keeping zero in the pool is not the same as letting it win, and for a
+long time it won far more often than the design believed. Zero is the one
+offset guaranteed to raise no advisory — nothing moves, so no relationship
+can move — and the search's first pass accepted only advisory-free offsets.
+In any date-rich case where few offsets are advisory-free, zero took the
+case by construction, which is precisely the population whose real timeline
+identifies best. It is now **tried last**, after every other candidate in
+every band has failed. The pool is unchanged, so an observer learns nothing
+new.
+
+The floors are the other half. `date_offset_min_days` and
+`clinical_offset_min_days` default to 30 days, and they are **preferences,
+not refusals**: the search walks bands, strongest first, so a case whose
+relationships survive nothing larger than four days is published four days
+out rather than refused, carrying a `date_offset_below_floor` advisory that
+says the obfuscation is weaker than the policy asks for. A floor that
+refused outright would turn every hard history into manual handling, and the
+case that motivated the floor carried sixteen dates.
+
+Where a case still comes out entirely as reported, the **review reports it**:
+a `date_pattern_unchanged` advisory, a line above the tables on the
+disclosure review page, and dates-moved against dates-total in the key
+record. The judgement is a reviewer's; the obligation of this layer is to put
+it to them.
 
 ### What an offset must preserve
 
@@ -284,9 +352,10 @@ fails the suite rather than reaching a page.
   label. Rewritten through the case's table, longest key first so a composite
   is replaced before one of its parts.
 - **Review** — human-authored interpretations, verbatim narrative snippets,
-  and curator-written titles, ledes and kickers. These need an approved
-  replacement text, an explicit decision to withhold, or they block.
-  Automatic redaction is never treated as sufficient.
+  and curator-written titles, ledes and kickers. These need a reviewer's
+  decision — replacement text, approval as written, or withholding — or they
+  block. Automatic redaction is never treated as sufficient. See § Three
+  decisions, and why the cheap one is not copying.
 
 A withheld block says so in the policy's own words rather than disappearing: a
 reader must be able to tell "nobody wrote this" from "this was not
@@ -294,13 +363,84 @@ published", and a silently empty section says the first. The same applies to
 `EvidenceCell.withheld`, which renders as `Withheld` and is distinct from a
 `missing` cell, which renders blank.
 
+## Three decisions, and why the cheap one is not copying
+
+The review gate is **categorical**: it fires on every field of its classes,
+not on evidence that one of them carries something. The policy cannot tell a
+safe curator title from one naming a clinician or a town, and "this one
+carries nothing identifying" is a conclusion a person reaches, not one the
+transform can reach for them. So a collection of ten worked examples blocks
+on twenty fields the curator wrote and, usually, nothing else.
+
+That makes the *cost* of a decision the thing to get right, because almost
+every one of them will be "this is fine". An `ApprovedText` offers three, and
+exactly one must be chosen:
+
+| | What is published | When |
+|---|---|---|
+| `replacement` | the reviewer's text, **verbatim** | the original cannot be published as it stands |
+| `withhold` | nothing, and the page says so | there is nothing publishable in it |
+| `approve_as_written` + `text_sha256` | the manifest's text, through the substitution table | it is already publishable |
+
+**Copying the manifest's own words into `replacement` is the wrong habit**,
+even though it is the obvious one. A replacement is published verbatim and
+deliberately bypasses the substitution table — it is the reviewer's own
+words, and rewriting them would make the page say something nobody approved.
+So a title that quotes a report date keeps the *real* date, and the residual
+scan is left to catch it as a `residual_original_value` finding. Approving
+that same title as written puts it through the table like any other derived
+prose, and the date comes out shifted.
+
+The digest is what makes the approval an approval rather than a standing
+permission on a path. Edit the manifest afterwards and `text_sha256` stops
+matching, so the case blocks again with `approval_digest_mismatch`. Without
+it, the stale approval would publish the text that *was* reviewed in place of
+the text that is now there, and neither artifact would say so.
+
+`--export-approvals` writes the form: one `approve_as_written` entry per
+field that blocks, digests filled in, before the salt is read — so a reviewer
+can be handed it before anyone opens the key store. It carries paths and
+digests and not the text, because the artifact for *reading* the text is the
+side-by-side review, which prints the originals and is written on every run.
+The form comes out unsigned, with `approved_by` and `approved_at` empty, and
+therefore does not load until somebody fills them in: a form that validated
+as generated would make the signature a formality, and the signature is the
+only thing the gate is actually asking for.
+
+What a rationale is worth writing in that case is the check, not a
+justification: which classes of material were looked for — dates, places,
+identifiers, ages, quoted narrative — and where the words came from. The
+field is read by no code, only by whoever asks later why human-authored text
+left the secure environment.
+
 ## Fail-closed export
 
 `write_publication_evidence` raises `PublicationBlocked` while any finding is
 unresolved, and writes nothing — a blocked run leaves no artifact to be
-mistaken for a cleared one. There is no `force` argument. The two ways past a
-finding are an `ApprovedText` supplying replacement text, or a
-`FindingResolution` naming a reviewer, a date and a rationale.
+mistaken for a cleared one. There is no `force` argument. The ways past a
+finding are an `ApprovedText` — replacement text, approval as written, or a
+withholding — or a `FindingResolution` naming a reviewer, a date and a
+rationale.
+
+The rendered scan reads the markup minus its static regions: the stylesheet,
+any script, and HTML comments. Attributes stay, because a value composed into
+an `id`, a class or a `data-` attribute is precisely the leak the model walk
+cannot see; the stylesheet goes, because no value reaches it and its own
+comments quote figures — one explains a spacing rule with *"2005 1.2" read as
+one number*, which a pair whose year-only date of 2005 moved matched. A test
+asserts the property rather than trusting it: every Jinja construct inside
+such a region must be an include of a partial carrying no Jinja.
+
+**A `FindingResolution` does not reach every finding.** `partition` is
+applied to the findings the transform raised; the rendered-HTML scan runs
+afterwards, in `verify_rendered_output`, and its findings are appended to the
+report without passing through it. A `residual_original_value` reported at
+`<rendered html>` therefore cannot be resolved by signature, only by the
+value genuinely leaving the page. That is deliberate — it is the last check
+before the supplement is written, and its whole value is that nothing can
+wave it through — but it means a reviewer reading
+`code [example_id at field_path]` has to look at the path to know whether a
+resolution is even an option.
 
 Finding codes fall into four groups: could-not-transform (a value that did not
 parse, or for which no offset satisfied the invariants), needs-a-human (free
@@ -416,14 +556,26 @@ The secure outputs are written first and unconditionally. The supplement is
 written last, and only if nothing is outstanding; otherwise the command
 reports each finding and exits non-zero.
 
+A first run on a fresh collection always blocks, because every curator-written
+field needs a decision. The intended shape is two passes — the first writes
+the form and the review page, the second publishes:
+
+```
+… --mode publication --export-approvals secure/approvals.json \
+    --side-by-side-dir secure/review/        # blocks; writes both
+# read secure/review/, fill in approved_by and approved_at
+… --mode publication --approvals secure/approvals.json      # publishes
+```
+
 ## Secure-side integration
 
 This repository holds the generic transformation logic and synthetic
 fixtures. The secure companion repository supplies, for a real study:
 
 - the salt, from its key store, and the directory the key record is written to;
-- the approvals file — the replacement texts for each case's human
-  interpretation, the resolutions for any finding a reviewer accepts, and any
+- the approvals file — the decision for each case's curator-written fields
+  (usually `approve_as_written`, generated by `--export-approvals` and then
+  signed), the resolutions for any finding a reviewer accepts, and any
   per-example country-masking overrides;
 - the policy file, where the defaults are not wanted — the two masking
   switches in particular, which are independent: countries off, sources on;
@@ -438,14 +590,20 @@ live here and are exercised against synthetic data.
   in a narrow country-year scope remains a residual disclosure consideration
   that no transform here addresses. The reviewer sees the counts in both
   presentations.
-- **Age and date offsets are drawn independently.** The layer validates the
-  relationships the presentation displays; a quantity derived from two of them
-  but not shown — an implied birth year, say — is not guaranteed coherent.
-- **A hard case is more likely to publish unchanged.** A zero offset satisfies
-  every invariant trivially, so where few offsets survive the checks, zero is
-  a larger share of what survives. The two-pass search does not favour it, and
-  the `date_pattern_unchanged` advisory names the outcome when it happens, but
-  the bias is real and worth knowing when reading a batch of reviews.
+- **Age, report-date and clinical-date offsets are drawn independently.** The
+  layer validates the relationships the presentation displays; a quantity
+  derived from two of them but not shown — an implied birth year, say — is not
+  guaranteed coherent. The interval between an event and the report describing
+  it is in this category by design, and the footer states it.
+- **A relationship between a precise date and a coarse one may move.** A
+  year-only value holds still under anything smaller than a year, so a
+  day-level date can leave its span; `coarse_date_drift` names it, and a
+  finding that states the separation still blocks.
+- **A hard case may still take a small offset.** Where few offsets survive the
+  invariants, the surviving ones can all be below the policy's floor; the
+  search prefers the floor and reports `date_offset_below_floor` when it
+  cannot reach it. Zero is tried last and is reported as
+  `date_pattern_unchanged` when nothing else worked at all.
 - **A separation may differ from the one the assessment computed**, by up to
   the configured tolerance and never across a severity boundary. The displayed
   figure is recomputed to match the published dates; a reader comparing a

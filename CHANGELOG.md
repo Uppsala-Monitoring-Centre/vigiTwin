@@ -57,6 +57,154 @@ and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 One consequence worth stating: the planned package rename no longer requires a
 2.0.0, and the README no longer promises one.
 
+## [1.2.3] - 2026-11-19
+
+Publication mode stops publishing real clinical timelines, and stops asking a
+curator to retype the manifest to clear a gate that blocks on all of it.
+
+The date change is the substantial one: clinical dates now move independently
+of report dates, which is what makes a floor on the offset satisfiable for a
+case with a long history. See `docs/migration_notes_clinical_date_offsets.md`
+— the default policy changed, `policy_version` is now `2.0`, and an earlier
+run's offsets are no longer reproducible from the same salt. **Also
+incompatible for approvals files**, in two small ways named below; no existing
+file is affected unless it left a decision or a signature blank.
+
+A patch, not a minor: the masking layer is still being tuned, and a version
+here says how far the method has moved rather than how large the diff was.
+
+### Changed — clinical dates take an offset of their own
+
+A report date says when a report reached the centre; a drug start, drug end or
+onset says when something happened to a patient, and reports routinely arrive
+years after the event. They were tied to one offset, which let the tighter
+constraint govern both: a report date is pinned near its reporting-context
+year, while a history mixing year-, month- and day-precision dates can
+usually only move by whole years. For a real pair carrying sixteen dates
+across twelve years, exactly three offsets satisfied the invariants — `-365`,
+`0` and `+365` — so the supplement carried the patient's real timeline.
+Solved separately, the same pair takes a report offset of a few weeks and a
+clinical offset of four years.
+
+The clinical block moves backwards by default, up to five years: a forward
+shift is the one direction that can carry an event past the report describing
+it. Its ordering against every report date is an invariant — an event that
+preceded a report still precedes it, and a displayed equality stays equal —
+and a case whose finding states a separation *across* the two blocks keeps
+one shared offset, because that figure has to survive exactly.
+
+What the split gives up is the absolute interval between an event and its
+report. The footer says so, the manifest records both bands and the key
+record both offsets. What it preserves is every interval the adjudication
+reads: both reports' clinical dates move together and both reports' report
+dates move together, so the difference between the two reports' latencies —
+the duplicate signal — survives exactly.
+
+### Changed — the clinical block may move forwards, under a named guard
+
+Restricting the direction was a proxy for the rule that actually matters, so
+the rule is now checked instead: every clinical date stays before the report
+date of **its own report**. That is enforced per report rather than against
+both, because a relationship between one report's event and the other
+report's arrival date is not something the page states, and holding offsets
+to it rejected them for no reader's benefit. With the guard explicit,
+`clinical_offset_backward_only` defaults to off and the pool is twice the
+size — which matters for a case that has little room in it.
+
+### Changed — a coarse date may stay put while precise dates move
+
+A year-only value does not move under a shift smaller than a year: thirty
+days from 1 January 2006 is still 2006. Treating the resulting drift as a
+hard failure meant a history mixing precisions could take *only* whole-year
+offsets, because nothing else leaves a bare `2006` in place against a
+`2006-12-05`. It is now an advisory, `coarse_date_drift`, under
+`allow_coarse_date_drift` (on by default).
+
+An unmoved year is close to no disclosure on its own — it is the dates beside
+it, known to the day, that identify, and those do move. Where a finding
+states the separation it is still a hard failure, and offsets that avoid the
+drift are still preferred: the search takes an advisory-free candidate over
+one that raises this, so a whole year wins wherever a whole year is
+available.
+
+### Fixed — zero is tried last, and a floor is a preference
+
+Zero is the one offset guaranteed to raise no advisory, since nothing moves,
+and the search's first pass accepted only advisory-free offsets. So zero took
+every date-rich case by construction — exactly the population whose real
+timeline identifies best. `dates.offset_candidates` claimed the search did
+not favour it and the limitations note blamed the bias on zero being a larger
+share of survivors; both were wrong. Zero is now tried after every other
+candidate, with the pool unchanged, so an observer learns nothing new.
+
+Both floors default to 30 days where the report-date floor was 0, and they
+are preferences rather than refusals: the search walks bands, strongest
+first, so a case whose relationships survive nothing larger than four days is
+published four days out with a `date_offset_below_floor` advisory rather than
+refused. A floor that refused outright would turn every hard history into
+manual handling, and the case that motivated the floor carried sixteen dates.
+`date_offset_candidates` rises to 2048 so every band is still searched
+exhaustively.
+
+### Added — an approval can point at the text instead of restating it
+
+`ApprovedText` takes `approve_as_written: true` with a `text_sha256`, in place
+of a `replacement`. The field publishes what the manifest already holds, and
+the digest is what keeps the approval attached to the text it was given for:
+edit the manifest afterwards and the case blocks again with
+`approval_digest_mismatch`, rather than quietly publishing the approved text
+in place of the edited text — which is what a path-keyed approval did.
+
+It is also the safer of the two decisions. A `replacement` is published
+verbatim, outside the case's substitution table, because it is the reviewer's
+own words and rewriting them would publish something nobody approved. Text
+approved as written is derived prose, so it goes through the table: a report
+date a curator quoted in a title comes out shifted. Copying that same title
+into a `replacement` publishes the real date and leaves the residual scan to
+catch it — the habit this entry exists to remove.
+
+The key record and the disclosure review page list these paths separately
+from `replaced_paths` (additive, so the key record's `schema_version` stays
+`1.0`): the published words are the curator's rather than the reviewer's, and
+they are not quite what the manifest says.
+
+### Added — `--export-approvals` writes the form to sign
+
+The CLI turns a blocked run into one `approve_as_written` entry per field that
+needs a decision, digests included, written before the salt is read so a
+reviewer can be handed the form before anyone opens the key store. It carries
+paths and digests and **not** the text: what a reviewer reads is the
+side-by-side disclosure review, which prints the originals. The form comes out
+*unsigned* and therefore does not validate — a form that loaded as generated
+would make the signature a formality.
+
+### Fixed — the rendered scan no longer reads the stylesheet
+
+`scan_rendered_html` now strips `<style>` and `<script>` blocks and HTML
+comments before searching. It was reading the whole rendered page, and the
+stylesheet carries a comment explaining why a penalty weight needs a space
+before its figure: *"2005 1.2" read as one number*. A pair whose year-only
+date of 2005 was moved by the offset matched that comment and blocked the
+export — a finding about four characters of CSS prose that no reader of the
+page ever sees, and an unresolvable one, because the rendered scan runs after
+`partition` and a `FindingResolution` cannot reach it.
+
+Attributes are still read, which is what the scan is for: a value composed
+into an `id`, a class or a `data-` attribute is exactly the leak the model
+walk cannot see. Only the regions that hold no report value by construction
+are skipped, and a test asserts that property of the templates rather than
+trusting it — every Jinja construct inside such a region must be an
+`{% include %}` of a partial that carries no Jinja itself.
+
+### Changed — an approvals entry decides exactly one thing, and is signed
+
+`ApprovedText` now requires exactly one of `replacement`, `withhold` and
+`approve_as_written`, and rejects an empty `approved_by` or `approved_at`.
+Both were already the intent: the old validator caught a withhold carrying
+replacement text, and an entry with nobody's name on it recorded an approval
+that cannot be traced to a person. The second is what makes an unsigned
+export safe to write.
+
 ## [1.2.2] - 2026-11-18
 
 A pass over what the evidence review puts in front of a reader: one thing

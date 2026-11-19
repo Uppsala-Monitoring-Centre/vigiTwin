@@ -303,6 +303,110 @@ def _with_an_interpretation(collection):
     return collection
 
 
+class TestTheApprovalsForm:
+    """``--export-approvals``: the blocked run hands back a form to sign.
+
+    The point is that a curator does not retype the manifest's own text to
+    clear a gate that blocks on all of it. The form carries paths and
+    digests; the text is read in the side-by-side review.
+    """
+
+    def _sign(self, path):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        for entry in data["approved_texts"]:
+            entry["approved_by"] = "reviewer"
+            entry["approved_at"] = "2026-01-01"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        return path
+
+    def test_it_is_written_although_the_run_blocks(
+        self, collection, salted  # noqa: F811
+    ):
+        form = collection / "form.json"
+        with pytest.raises(SystemExit) as exit_code:
+            main(
+                _argv(
+                    _with_an_interpretation(collection),
+                    collection / "publication",
+                    "--export-approvals",
+                    str(form),
+                )
+            )
+        assert exit_code.value.code == 2
+        data = json.loads(form.read_text(encoding="utf-8"))
+        paths = {(e["example_id"], e["field_path"]) for e in data["approved_texts"]}
+        assert ("S1", "title") in paths
+        assert ("S1", "narrative_blocks[1].paragraphs") in paths
+        assert all(e["approve_as_written"] for e in data["approved_texts"])
+
+    def test_it_does_not_need_the_salt(
+        self, collection, monkeypatch  # noqa: F811
+    ):
+        """A reviewer can be handed the form before anyone opens the key
+        store."""
+        monkeypatch.delenv(SALT_VAR, raising=False)
+        form = collection / "form.json"
+        with pytest.raises(ValueError, match=SALT_VAR):
+            main(
+                _argv(
+                    collection,
+                    collection / "publication",
+                    "--export-approvals",
+                    str(form),
+                )
+            )
+        assert form.exists()
+
+    def test_signed_it_clears_the_run_without_restating_the_text(
+        self, collection, salted  # noqa: F811
+    ):
+        blocked = _with_an_interpretation(collection)
+        form = collection / "form.json"
+        out = collection / "publication"
+        with pytest.raises(SystemExit):
+            main(_argv(blocked, out, "--export-approvals", str(form)))
+
+        main(_argv(blocked, out, approvals=self._sign(form)))
+
+        page = (out / "pair-01.html").read_text(encoding="utf-8")
+        assert "First example" in page  # the manifest's own title, published
+        assert "telephoned" in page  # and its interpretation, substituted
+
+    def test_an_unsigned_form_is_refused_as_an_approvals_file(
+        self, collection, salted  # noqa: F811
+    ):
+        blocked = _with_an_interpretation(collection)
+        form = collection / "form.json"
+        with pytest.raises(SystemExit):
+            main(
+                _argv(
+                    blocked,
+                    collection / "publication",
+                    "--export-approvals",
+                    str(form),
+                )
+            )
+        with pytest.raises(ValueError, match="unsigned entry is a form"):
+            main(_argv(blocked, collection / "publication", approvals=form))
+
+    def test_it_refuses_to_overwrite_without_force(
+        self, collection, salted  # noqa: F811
+    ):
+        form = collection / "form.json"
+        argv = _argv(
+            collection,
+            collection / "publication",
+            "--export-approvals",
+            str(form),
+        )
+        with pytest.raises(SystemExit):
+            main(argv)
+        with pytest.raises(FileExistsError, match="signed approvals"):
+            main(argv)
+        with pytest.raises(SystemExit):
+            main([*argv, "--force"])
+
+
 class TestCountryMaskingThroughTheCLI:
     """The policy and the per-example override, as files on disk."""
 

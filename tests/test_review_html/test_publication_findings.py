@@ -226,7 +226,10 @@ def _zero_only(**kw) -> PublicationPolicy:
     deliberately, which is otherwise a one-in-eight-hundred draw.
     """
     return PublicationPolicy(
-        date_offset_min_days=0, date_offset_max_days=0, **kw
+        date_offset_min_days=0,
+        date_offset_max_days=0,
+        decouple_clinical_dates=False,
+        **kw,
     )
 
 

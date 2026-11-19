@@ -43,6 +43,7 @@ from __future__ import annotations
 import random
 import re
 from datetime import date, timedelta
+from enum import Enum
 from typing import Literal
 
 from llm_dup_dev.feature_generation.clinical_date_alignment import (
@@ -140,8 +141,53 @@ def within_plausible_window(pd: PartialDate, policy: PublicationPolicy) -> bool:
     )
 
 
-def offset_candidates(policy: PublicationPolicy, seed: str) -> list[int]:
-    """Candidate offsets for one pair, in the order they should be tried.
+def _bounds(
+    policy: PublicationPolicy, role: DateRole
+) -> tuple[int, int, tuple[int, ...]]:
+    """The floor, the ceiling and the directions one block may move in."""
+    if role is DateRole.CLINICAL and policy.decouple_clinical_dates:
+        return (
+            policy.clinical_offset_min_days,
+            policy.clinical_offset_max_days,
+            (-1,) if policy.clinical_offset_backward_only else (-1, 1),
+        )
+    return policy.date_offset_min_days, policy.date_offset_max_days, (-1, 1)
+
+
+def offset_floor(policy: PublicationPolicy, role: DateRole) -> int:
+    """The smallest magnitude the policy asks for, for one block."""
+    return _bounds(policy, role)[0]
+
+
+class DateRole(str, Enum):
+    """Which block of a case's dates an offset applies to.
+
+    The two move independently because they are independent in the source: a
+    report date says when the report reached the centre, a clinical date says
+    when something happened to the patient, and reports routinely arrive
+    years after the event. Tying them to one offset made the tighter
+    constraint govern both — see :func:`offset_candidates`.
+    """
+
+    #: Report dates. Bounded by the reporting context's year, which is frozen.
+    REPORT = "report"
+    #: Drug start and end dates and adverse-event onsets. Free of the context
+    #: year, so these can move by whole years where the relations require it.
+    CLINICAL = "clinical"
+
+
+def offset_candidates(
+    policy: PublicationPolicy,
+    seed: str,
+    *,
+    role: DateRole = DateRole.REPORT,
+) -> list[int]:
+    """Candidate offsets for one block of one pair, in trial order.
+
+    :func:`offset_tiers` flattened. The search itself walks the tiers, so
+    that a stronger offset carrying an advisory is preferred to a weaker one
+    carrying none; this is the pool as one list, for callers that only need
+    to know what is in it.
 
     Built in the house determinism style of
     :mod:`llm_dup_dev.study_eval.sampling`: the pool is assembled in sorted
@@ -149,30 +195,76 @@ def offset_candidates(policy: PublicationPolicy, seed: str) -> list[int]:
     shuffle, and the seed is a string so one pair's draw cannot perturb
     another's.
 
-    **Zero is in the pool, and so is every whole number of years.** Nothing
-    is excluded for looking as though it had done nothing, because "it looks
-    unshifted" and "it is unshifted" are states an observer must not be able
-    to tell apart. An offset the policy forbids is an offset an observer can
-    subtract from the possibilities, and a pool that guaranteed movement
-    would let them rule out the displayed date as the true one — which is
-    exactly the inference the transform exists to prevent.
+    **Every whole number of years is in the pool**, and for a case mixing
+    year-, month- and day-precision dates those are usually the only offsets
+    that survive the relation invariants at all: anything else moves a bare
+    ``2006`` relative to a ``2006-05-30``. The clinical block's range is wide
+    enough to hold several of them, which is what makes a floor satisfiable
+    for a case with a long history.
+
+    **Zero is still in the pool where the policy allows it, but it is tried
+    last.** Keeping it is what stops "it looks unshifted" and "it is
+    unshifted" being distinguishable states; trying it last is what stops it
+    *winning*. Zero is the one offset guaranteed to raise no advisory — with
+    nothing moved, no relationship can move — so a first pass that preferred
+    advisory-free offsets handed it every date-rich case, which is exactly
+    the population whose real timeline is most identifying. Ordering it last
+    costs an observer nothing: the pool is the same.
     """
-    allows_zero = policy.allow_unchanged_values and policy.date_offset_min_days == 0
-    pool = [0] if allows_zero else []
-    pool += [
+    return [
         offset
-        for magnitude in range(
-            max(policy.date_offset_min_days, 1), policy.date_offset_max_days + 1
-        )
-        for offset in (-magnitude, magnitude)
+        for tier in offset_tiers(policy, seed, role=role)
+        for offset in tier
     ]
-    rng = random.Random(seed)
-    rng.shuffle(pool)
-    return pool[: policy.date_offset_candidates]
+
+
+def offset_tiers(
+    policy: PublicationPolicy,
+    seed: str,
+    *,
+    role: DateRole = DateRole.REPORT,
+) -> list[list[int]]:
+    """The candidate pool in bands, strongest obfuscation first.
+
+    Three bands, and the order is the whole point:
+
+    1. magnitudes at or above the policy's floor — what the policy asks for;
+    2. magnitudes below it, where they exist — not what the policy asks for,
+       but a case whose relationships only survive a four-day shift is
+       better published four days out than refused, and the shift is
+       reported as :attr:`~.findings.DisclosureCode.DATE_OFFSET_BELOW_FLOOR`
+       so a reviewer knows the obfuscation is weak;
+    3. zero, last, and only where the policy allows it at all.
+
+    A floor is therefore a preference rather than a refusal, while zero stays
+    a last resort. The alternative was a floor that turned every hard case
+    into a rejection — and the case that prompted this carried sixteen dates,
+    which is exactly the case a reviewer least wants to handle by hand.
+    """
+    floor, ceiling, signs = _bounds(policy, role)
+
+    def band(lowest: int, highest: int) -> list[int]:
+        pool = [
+            sign * magnitude
+            for magnitude in range(lowest, highest + 1)
+            for sign in signs
+        ]
+        random.Random(f"{seed}:{lowest}-{highest}").shuffle(pool)
+        return pool[: policy.date_offset_candidates]
+
+    tiers = [band(max(floor, 1), ceiling)]
+    if floor > 1:
+        tiers.append(band(1, floor - 1))
+    if policy.allow_unchanged_values:
+        tiers.append([0])
+    return [tier for tier in tiers if tier]
 
 
 __all__ = [
+    "DateRole",
     "DateShiftError",
+    "offset_floor",
+    "offset_tiers",
     "offset_candidates",
     "parse_partial_date",
     "resolution_of",

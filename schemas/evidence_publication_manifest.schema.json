@@ -192,6 +192,28 @@
       "title": "Date Offset Bound Days",
       "type": "array"
     },
+    "clinical_offset_bound_days": {
+      "anyOf": [
+        {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Clinical Offset Bound Days"
+    },
     "age_offset_bound_years": {
       "title": "Age Offset Bound Years",
       "type": "integer"

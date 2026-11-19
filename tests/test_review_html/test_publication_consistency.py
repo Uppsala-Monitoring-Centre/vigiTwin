@@ -260,7 +260,9 @@ class TestUnchangedValuesAreLegitimate:
         )
 
         return PublicationPolicy(
-            date_offset_min_days=0, date_offset_max_days=0
+            date_offset_min_days=0,
+                date_offset_max_days=0,
+                decouple_clinical_dates=False,
         )
 
     def test_a_case_whose_dates_all_held_still_publishes(self):

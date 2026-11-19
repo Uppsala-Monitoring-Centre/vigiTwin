@@ -37,7 +37,7 @@ from ..models import EvidencePageVM, PresentationMode, number_cases
 from .findings import DisclosureReport
 from .key import ScramblingKeyRecord, build_key_record
 from .manifest import PublicationTransformManifest, build_publication_manifest
-from .scramble import ScrambleResult
+from .scramble import CaseTransform, ScrambleResult
 from .substitute import SubstitutionTable, scan_rendered_html
 
 #: Filenames inside the publication output directory.
@@ -81,6 +81,21 @@ def _union_table(result: ScrambleResult) -> SubstitutionTable:
             )
             table.extra_published.add(entry.published)
     return table
+
+
+def _describe_offsets(transform: CaseTransform) -> str:
+    """The date offsets for the review page, as one phrase.
+
+    Names the two blocks separately only when they moved separately, so a
+    reviewer reading a run of coupled cases is not asked to parse a
+    distinction that did not arise.
+    """
+    report, clinical = transform.date_offset_days, transform.clinical_offset_days
+    if report is None:
+        return "not solved"
+    if clinical is None or clinical == report:
+        return f"{report:+d} days"
+    return f"report {report:+d} days, clinical history {clinical:+d} days"
 
 
 def verify_rendered_output(result: ScrambleResult) -> DisclosureReport:
@@ -226,11 +241,7 @@ def write_side_by_side(
                 "publication_href": (
                     f"publication/{_safe_filename(published.example_id)}.html"
                 ),
-                "date_offset": (
-                    "not solved"
-                    if transform.date_offset_days is None
-                    else f"{transform.date_offset_days:+d} days"
-                ),
+                "date_offset": _describe_offsets(transform),
                 "numeric_offsets": [
                     f"{name}: {offset.describe()}"
                     for name, offset in sorted(transform.numeric_offsets.items())
@@ -252,6 +263,9 @@ def write_side_by_side(
                 "separations": transform.recomputed_separations,
                 "withheld_paths": transform.withheld_paths,
                 "replaced_paths": transform.replaced_paths,
+                "approved_as_written_paths": (
+                    transform.approved_as_written_paths
+                ),
                 "findings": [
                     f
                     for f in result.report.findings

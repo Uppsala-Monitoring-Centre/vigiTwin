@@ -121,11 +121,18 @@ class PublicationTransformManifest(BaseModel):
     dev_package_version: str | None = None
     dev_git_commit: str | None = None
     cases: int = 0
-    #: The ranges the offsets were drawn from, for a methods section. Bounds,
-    #: not draws: an offset would be an invitation to subtract it. The lower
-    #: bound is normally zero, because an offset of zero has to be a possible
-    #: draw — see ``PublicationPolicy.date_offset_min_days``.
+    #: The range the report-date offset was drawn from, for a methods
+    #: section. Bounds, not draws: an offset would be an invitation to
+    #: subtract it. The lower bound is a preference rather than a guarantee —
+    #: a case whose relationships survive nothing larger takes a smaller
+    #: offset and says so in its findings.
     date_offset_bound_days: tuple[int, int]
+    #: The range the clinical history was drawn from, where it moved
+    #: independently of the report dates, and ``None`` where the two were
+    #: solved together. A reader needs this to know that the interval between
+    #: an event and the report describing it is not the real interval — the
+    #: one quantity this scheme gives up, and not one a page can show.
+    clinical_offset_bound_days: tuple[int, int] | None = None
     age_offset_bound_years: int
     measurement_offset_bound_kg: float
     counts: list[TransformCounts] = Field(default_factory=list)
@@ -211,6 +218,14 @@ def build_publication_manifest(
         date_offset_bound_days=(
             result.policy.date_offset_min_days,
             result.policy.date_offset_max_days,
+        ),
+        clinical_offset_bound_days=(
+            (
+                result.policy.clinical_offset_min_days,
+                result.policy.clinical_offset_max_days,
+            )
+            if result.policy.decouple_clinical_dates
+            else None
         ),
         age_offset_bound_years=result.policy.age_offset_max_years,
         measurement_offset_bound_kg=result.policy.measurement_offset_max_kg,

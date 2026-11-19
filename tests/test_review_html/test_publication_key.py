@@ -49,7 +49,9 @@ class TestTheSecureKeyRecord:
         result = scramble(
             publication_page(worked_example_case()),
             policy=PublicationPolicy(
-                date_offset_min_days=0, date_offset_max_days=0
+                date_offset_min_days=0,
+                date_offset_max_days=0,
+                decouple_clinical_dates=False,
             ),
         )
         record = build_key_record(result)
@@ -106,7 +108,7 @@ class TestThePublicManifest:
     def test_it_records_the_policy_version_and_the_key_id(self):
         result = scramble(publication_page(worked_example_case()))
         manifest = build_publication_manifest(result)
-        assert manifest.policy_version == "1.0"
+        assert manifest.policy_version == "2.0"
         assert manifest.key_id == secrets().key_id
 
     def test_it_records_bounds_and_not_offsets(self):
@@ -114,7 +116,8 @@ class TestThePublicManifest:
         result = scramble(publication_page(worked_example_case()))
         manifest = build_publication_manifest(result)
         payload = manifest.model_dump_json()
-        assert manifest.date_offset_bound_days == (0, 400)
+        assert manifest.date_offset_bound_days == (30, 400)
+        assert manifest.clinical_offset_bound_days == (30, 1826)
         offset = result.transforms[0].date_offset_days
         assert offset is not None
         assert f'"{offset}"' not in payload
@@ -125,7 +128,9 @@ class TestThePublicManifest:
         unmoved = scramble(
             publication_page(worked_example_case()),
             policy=PublicationPolicy(
-                date_offset_min_days=0, date_offset_max_days=0
+                date_offset_min_days=0,
+                date_offset_max_days=0,
+                decouple_clinical_dates=False,
             ),
         )
         moved = scramble(publication_page(worked_example_case()))

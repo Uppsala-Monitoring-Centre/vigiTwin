@@ -93,6 +93,21 @@ _DIGIT_RUN_RE = re.compile(r"\d{7,}")
 _SCAN_EXEMPT_PREFIXES = ("provenance.",)
 _SCAN_EXEMPT_PATHS = frozenset({"generated_at"})
 
+#: Regions of the rendered page that hold no report value by construction: the
+#: stylesheet, any script, and HTML comments. The templates compose none of
+#: them from the view model -- ``_evidence.css.j2`` contains no Jinja at all --
+#: and a test asserts that, so removing them cannot hide a leak.
+#:
+#: They are removed because the alternative is worse than noise. A stylesheet
+#: comment explaining a spacing rule reads ``"2005 1.2" read as one number``,
+#: and a case whose transform moved a year-only date of 2005 matched it -- an
+#: unresolvable finding, since the rendered scan runs after ``partition``,
+#: about four characters of CSS prose that no reader of the page ever sees.
+_STATIC_MARKUP_RE = re.compile(
+    r"<style\b[^>]*>.*?</style>|<script\b[^>]*>.*?</script>|<!--.*?-->",
+    re.DOTALL | re.IGNORECASE,
+)
+
 
 @dataclass(frozen=True)
 class Substitution:
@@ -465,11 +480,18 @@ def scan_rendered_html(
     Reading, never rewriting: the transform operates on the view model, and a
     page that only looks clean after its HTML has been edited is a page whose
     model was wrong. This exists to catch the case where a template composes
-    something the model walk never saw.
+    something the model walk never saw -- an ``id``, a class, an attribute, a
+    figure rendered from a non-string field.
+
+    What it reads is the markup minus its static regions
+    (:data:`_STATIC_MARKUP_RE`): attributes stay, because that is where a
+    composed value would show, while the stylesheet and any comment go,
+    because no value reaches them and their prose carries figures of its own.
     """
+    searchable = _STATIC_MARKUP_RE.sub(" ", html)
     findings: list[DisclosureFinding] = []
     for original in table.searchable_originals():
-        if _found(original, html):
+        if _found(original, searchable):
             findings.append(
                 DisclosureFinding(
                     code=DisclosureCode.RESIDUAL_ORIGINAL_VALUE,

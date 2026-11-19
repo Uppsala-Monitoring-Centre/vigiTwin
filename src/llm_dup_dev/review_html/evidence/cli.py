@@ -49,6 +49,7 @@ from .publication import (
     PublicationPolicy,
     PublicationSecrets,
     scramble_page,
+    write_approvals_form,
     write_publication_evidence,
     write_scrambling_key,
     write_side_by_side,
@@ -110,7 +111,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Allow --export-drafts to overwrite an existing drafts file.",
+        help=(
+            "Allow --export-drafts or --export-approvals to overwrite an "
+            "existing file. Both refuse by default: by the second run they "
+            "hold edited text or signatures."
+        ),
     )
     parser.add_argument(
         "--mode",
@@ -141,6 +146,19 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "Approved replacement texts and finding resolutions as JSON. A "
             "secure-side file: its rationales name real cases."
+        ),
+    )
+    parser.add_argument(
+        "--export-approvals",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write an unsigned approvals form to PATH: one approve-as-written "
+            "entry, with a digest, for every field that blocks. Fill in "
+            "approved_by and approved_at and pass it back as --approvals. "
+            "Read the text itself in the side-by-side review, which prints "
+            "the originals; the form carries paths and digests only."
         ),
     )
     parser.add_argument(
@@ -248,6 +266,15 @@ def _run_publication(args: argparse.Namespace, page) -> None:
     in order to clear a block. The supplement itself is written last and only
     if nothing is outstanding.
     """
+    if args.export_approvals:
+        form = write_approvals_form(
+            page, args.export_approvals, force=args.force
+        )
+        print(
+            f"Wrote approvals form to {form}. It is unsigned, so it will not "
+            "load until approved_by and approved_at are filled in."
+        )
+
     secrets = PublicationSecrets.from_env()
     policy = _load(args.policy, PublicationPolicy)
     approvals = _load(args.approvals, PublicationApprovals)

@@ -157,7 +157,8 @@
   </table>
   {% endif %}
 
-  {% if row.withheld_paths or row.replaced_paths %}
+  {% if row.withheld_paths or row.replaced_paths
+        or row.approved_as_written_paths %}
   <h3>Text decisions</h3>
   <ul class="subtle">
     {% for path in row.replaced_paths %}
@@ -165,6 +166,9 @@
     {% endfor %}
     {% for path in row.withheld_paths %}
     <li>withheld: <code>{{ path }}</code></li>
+    {% endfor %}
+    {% for path in row.approved_as_written_paths %}
+    <li>approved as written: <code>{{ path }}</code></li>
     {% endfor %}
   </ul>
   {% endif %}

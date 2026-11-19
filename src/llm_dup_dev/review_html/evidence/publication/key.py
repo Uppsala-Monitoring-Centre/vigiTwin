@@ -96,6 +96,11 @@ class CaseKeyRecord(BaseModel):
     #: case carries a ``date_transform_rejected`` finding and was not
     #: publishable.
     date_offset_days: int | None = None
+    #: The offset applied to the clinical history, where it moved
+    #: independently. Equal to ``date_offset_days`` when the two blocks were
+    #: solved together. The pair of them is what a reviewer needs to undo the
+    #: transform, and the reason this record belongs in the key store.
+    clinical_offset_days: int | None = None
     date_candidates_tried: int = 0
     #: Keyed ``"age:years"``, ``"weight:kg"`` — one per kind and unit.
     numeric_offsets: dict[str, str] = Field(default_factory=dict)
@@ -104,6 +109,11 @@ class CaseKeyRecord(BaseModel):
     separations: list[SeparationRecord] = Field(default_factory=list)
     withheld_paths: list[str] = Field(default_factory=list)
     replaced_paths: list[str] = Field(default_factory=list)
+    #: Fields a reviewer approved as the manifest wrote them. Apart from
+    #: ``replaced_paths`` because the published words are the curator's, not
+    #: the reviewer's -- and because these went through the substitution
+    #: table, so what the page shows is not quite what the manifest says.
+    approved_as_written_paths: list[str] = Field(default_factory=list)
     #: Date values in the case, and how many of them the offset moved. Equal
     #: counts mean the published page carries the pair's real timeline, which
     #: ``date_pattern_unchanged`` states outright.
@@ -154,6 +164,7 @@ def build_key_record(result: ScrambleResult) -> ScramblingKeyRecord:
                 published_example_id=transform.published_example_id,
                 published_example_label=transform.published_example_label,
                 date_offset_days=transform.date_offset_days,
+                clinical_offset_days=transform.clinical_offset_days,
                 date_candidates_tried=transform.date_candidates_tried,
                 numeric_offsets={
                     name: offset.describe()
@@ -194,6 +205,9 @@ def build_key_record(result: ScrambleResult) -> ScramblingKeyRecord:
                 date_pattern_unchanged=transform.date_pattern_unchanged,
                 withheld_paths=list(transform.withheld_paths),
                 replaced_paths=list(transform.replaced_paths),
+                approved_as_written_paths=list(
+                    transform.approved_as_written_paths
+                ),
             )
             for transform in result.transforms
         ],

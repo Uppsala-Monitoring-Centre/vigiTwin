@@ -2,14 +2,18 @@
   "schema_version": "1.0",
   "created_at": "2026-01-01T00:00:00+00:00",
   "mode": "publication",
-  "policy_version": "1.0",
+  "policy_version": "2.0",
   "key_id": "8b55a166f630871d",
   "dev_package_version": "1.2.0",
   "dev_git_commit": "0000000000000000000000000000000000000000",
   "cases": 1,
   "date_offset_bound_days": [
-    0,
+    30,
     400
+  ],
+  "clinical_offset_bound_days": [
+    30,
+    1826
   ],
   "age_offset_bound_years": 3,
   "measurement_offset_bound_kg": 3.0,
@@ -43,7 +47,7 @@
     "cases_retained": 0,
     "statement": "Shared source identifiers are replaced by aliases in their own series. Two reports that share a source still visibly share it, and the verdict says whether they describe the same case within it."
   },
-  "transform_note": "Ages, body measurements, dates, report identifiers and shared source identifiers have been transformed; countries are shown as reported. The assessments, scores, contributions and penalties are those of the original reports.",
+  "transform_note": "Ages, body measurements, dates, report identifiers and shared source identifiers have been transformed; countries are shown as reported. The assessments, scores, contributions and penalties are those of the original reports. Clinical dates and report dates were shifted by different amounts, so the interval between an event and the report describing it is not the reported interval; intervals within each of the two are.",
   "disclosure": {
     "cleared": true,
     "findings_total": 0,
