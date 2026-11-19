@@ -57,6 +57,39 @@ and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 One consequence worth stating: the planned package rename no longer requires a
 2.0.0, and the README no longer promises one.
 
+## [1.2.4] - 2026-11-19
+
+### Changed — the assessment summary names the population, not the level
+
+"The shared drug pattern defines an anchor population of two reports in the
+selected country context" now reads "...two reports in United States, all
+years", and a country-year context reads "...in United States in 2003". The
+level said how the population was chosen but not which one it was, and a
+count of two means something quite different in one country-year than in
+another — which is the whole point of quoting it.
+
+The country is **whatever the run recorded**, verbatim: an ISO code in most
+artifacts, a name in some. No code is expanded into a name and no article is
+invented, because "the Netherlands" against "Sweden" is a lexical fact about
+each name rather than something derivable from the value — the same reason
+`characterization.policy.resolve_country` and the context cell already show
+it as reported. A country-level context is qualified with "all years", and a
+context that recorded no country, or a country-year that recorded no year,
+falls back to the old level phrase: vague beats wrong.
+
+This reverses a deliberate decision, documented on the old `context_phrase`,
+to keep identities out of the sentences so that a publication export needed
+no different ones. That reasoning no longer holds: these sentences are
+`SUBSTITUTE` free text, the context cell registers the country with the alias
+book, and the substitution table rewrites the sentence and the cell
+together — so a masked run now says `Country 1` in both, which a test
+asserts in both directions.
+
+`context_phrase` moved from `evidence.build` to `evidence.summary`, where the
+sentences are built, and takes a `ReportingContext` rather than a
+`ReportingContextLevel`. It stays importable from `evidence.build`, and the
+duplicate phrase table the two modules were keeping is gone.
+
 ## [1.2.3] - 2026-11-19
 
 Publication mode stops publishing real clinical timelines, and stops asking a

@@ -18,6 +18,7 @@ from llm_dup_dev.review_html.evidence.publication import (
 )
 from tests.test_review_html.conftest import (
     case_with_human_text,
+    masking_policy,
     publication_page,
     scramble,
     worked_example_case,
@@ -154,11 +155,27 @@ class TestDerivedProseIsRewritten:
         )
         assert summary.paragraphs
 
-    def test_a_summary_quoting_a_country_quotes_the_published_one(self):
-        result = scramble(publication_page(worked_example_case()))
-        text = " ".join(
+    @staticmethod
+    def _summary_text(result) -> str:
+        return " ".join(
             p
             for b in result.page.cases[0].narrative_blocks
             for p in b.paragraphs
         )
+
+    def test_a_summary_naming_a_country_names_the_published_one(self):
+        """The sentence names the anchor population, so a masked run has to
+        rewrite it there as well as in the cell beside it."""
+        result = scramble(
+            publication_page(worked_example_case()), policy=masking_policy()
+        )
+        text = self._summary_text(result)
         assert "SE" not in text.split()
+        assert "Country 1" in text
+
+    def test_and_the_reported_one_where_countries_are_retained(self):
+        """The default. The sentence and the context cell agree either way."""
+        text = self._summary_text(
+            scramble(publication_page(worked_example_case()))
+        )
+        assert "SE" in text.split()

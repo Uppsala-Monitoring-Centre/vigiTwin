@@ -116,6 +116,7 @@ from .models import (
 from .settings import EvidenceRunSettings
 from .summary import (
     build_assessment_summary,
+    context_phrase,
     format_score,
     independence_clause,
     same_case_clause,
@@ -1179,12 +1180,6 @@ def _finalise_ae_rows(rows: list[AEEvidenceRow]) -> list[AEEvidenceRow]:
 # Context and matching evidence
 # ---------------------------------------------------------------------------
 
-_CONTEXT_PHRASE = {
-    ReportingContextLevel.COUNTRY_YEAR: "the selected country-year context",
-    ReportingContextLevel.COUNTRY: "the selected country context",
-    ReportingContextLevel.GLOBAL: "the global context",
-}
-
 #: What a scope is called when the artifact recorded no country to name it
 #: by. Named by level, which is all that is left to say.
 _SCOPE_LABEL = {
@@ -1229,19 +1224,6 @@ def _scope_label(attr: str, context: ReportingContext) -> str:
         # rows called "PL". The level is what is left to say.
         return f"{country}, {context.year}" if context.year else _SCOPE_LABEL[attr]
     return country
-
-
-def context_phrase(level: ReportingContextLevel) -> str:
-    """A reader-facing name for a reporting context.
-
-    Names the *level*, never the country or the year. This is about the
-    **prose**: the level is what makes a count interpretable, and keeping the
-    identity out of the sentences means a publication export needs no
-    different ones. The identity itself is reporting metadata, and the panel
-    shows it in a cell of its own — ``SE 2003`` — which that export masks or
-    substitutes like any other reported value.
-    """
-    return _CONTEXT_PHRASE.get(level, "the selected context")
 
 
 def _format_count(value: int) -> str:
@@ -1380,7 +1362,7 @@ def _anchor_note(features: PairFeatures) -> str:
     return (
         f"The {name} {verb} an anchor population of "
         f"{_format_count(anchor.N_anchor)} {reports} in "
-        f"{context_phrase(features.reporting_context.level)}. The matching "
+        f"{context_phrase(features.reporting_context)}. The matching "
         "score measures how surprising the observed matches would be within "
         "that population, so a larger anchor weakens the evidence from an "
         "identical match."

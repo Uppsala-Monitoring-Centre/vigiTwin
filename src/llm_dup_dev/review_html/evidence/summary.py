@@ -34,13 +34,14 @@ from llm_dup_dev.models.enums import (
     IndependenceAssessment,
     IndependenceReason,
     RelationshipAssessment,
+    ReportingContextLevel,
 )
 from llm_dup_dev.models.explicit_link import ExplicitLinkVerdict
 from llm_dup_dev.models.narrative_source_case import (
     SourceCaseVerdict,
     SourceIdentifierType,
 )
-from llm_dup_dev.models.pair_features import PairFeatures
+from llm_dup_dev.models.pair_features import PairFeatures, ReportingContext
 
 from ..attribution_maps import SEVERITY_ORDER
 from .models import EvidenceGap, EvidenceGapCode
@@ -183,11 +184,52 @@ _ANCHOR_PATTERN_NAME = {
     AnchorType.DRUGS_AES: "shared drug and adverse event pattern",
 }
 
-_CONTEXT_PHRASE = {
-    "country_year": "the selected country-year context",
-    "country": "the selected country context",
-    "global": "the global context",
+#: What a context is called when the artifact recorded no country to name it
+#: by. Named by level, which is all that is left to say.
+_CONTEXT_LEVEL_PHRASE = {
+    ReportingContextLevel.COUNTRY_YEAR: "the selected country-year context",
+    ReportingContextLevel.COUNTRY: "the selected country context",
+    ReportingContextLevel.GLOBAL: "the global context",
 }
+
+
+def context_phrase(context: ReportingContext) -> str:
+    """The population a count was judged in, as a reader would cite it.
+
+    ``the United States in 2003`` rather than ``the selected country-year
+    context``: the level says how the population was chosen but not which
+    population it is, and a reader weighing a count of two against a count
+    of two thousand wants the second.
+
+    The country is **whatever the run recorded**, verbatim and without an
+    article — an ISO code in most artifacts — because expanding a code into
+    a name, or deciding that one country takes a "the" and another does not,
+    is a mapping this module has no business owning. The same rule governs
+    the context cell and the scope labels, which is why a sentence and the
+    cell beside it name the population identically.
+
+    That identity reaches a publication page through the substitution table
+    like any other reported value: the context cell registers the country,
+    and these sentences are rewritten through that table, so a masked run
+    shows ``Country 1`` in both. Naming it here therefore costs the export
+    nothing, which it would have done when these sentences were written.
+    """
+    level = context.level
+    country = (context.country or "").strip()
+    if level is ReportingContextLevel.GLOBAL or not country:
+        return _CONTEXT_LEVEL_PHRASE.get(level, "the selected context")
+    if level is ReportingContextLevel.COUNTRY_YEAR:
+        # A country-year scope with no year recorded is not the country
+        # across all years, and saying so would be wrong rather than vague.
+        # The level stands in for it, as it does in ``build._scope_label``.
+        if not context.year:
+            return _CONTEXT_LEVEL_PHRASE[level]
+        return f"{country} in {context.year}"
+    if level is ReportingContextLevel.COUNTRY:
+        # Without this a country-level anchor reads like a country-year one,
+        # and the two differ by every other year in the database.
+        return f"{country}, all years"
+    return country
 
 
 def _shared_pattern_sentence(features: PairFeatures) -> str:
@@ -204,9 +246,7 @@ def _shared_pattern_sentence(features: PairFeatures) -> str:
 
 def _anchor_sentence(features: PairFeatures) -> str:
     anchor = features.anchor
-    context = _CONTEXT_PHRASE.get(
-        features.reporting_context.level.value, "the selected context"
-    )
+    context = context_phrase(features.reporting_context)
     pattern = _ANCHOR_PATTERN_NAME.get(anchor.type, "shared clinical pattern")
 
     if not features.matching_drugs and not features.matching_AEs:
@@ -746,6 +786,7 @@ def _total_findings(features: PairFeatures) -> int:
 
 __all__ = [
     "AssessmentSummary",
+    "context_phrase",
     "SummarySentence",
     "SummarySlot",
     "build_assessment_summary",

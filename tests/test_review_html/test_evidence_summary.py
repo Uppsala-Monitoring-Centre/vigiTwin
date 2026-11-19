@@ -44,6 +44,7 @@ from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
 from llm_dup_dev.review_html.evidence.summary import (
     SummarySlot,
     build_assessment_summary,
+    context_phrase,
 )
 
 
@@ -169,7 +170,7 @@ class TestWorkedExamples:
         assert build_assessment_summary(features, classification).as_text() == (
             "The reports share 17 drug terms and eight adverse event terms. "
             "The shared adverse event pattern defines an anchor population of "
-            "two reports in the selected country context. Additional matching "
+            "two reports in US, all years. Additional matching "
             "evidence includes the shared drug pattern, sex and four clinical "
             "dates. vigiTwin identified two moderate drug inconsistencies and "
             "one minor adverse event inconsistency. The matching score of 15.0 "
@@ -221,8 +222,8 @@ class TestWorkedExamples:
         )
         assert build_assessment_summary(features, classification).as_text() == (
             "The reports share one drug term and one adverse event term. This "
-            "combination occurs in 11 reports in the selected country-year "
-            "context and defines the anchor population. "
+            "combination occurs in 11 reports in US in 2010 and defines the "
+            "anchor population. "
             "The matching score of 0 did not support "
             "rejection of independence, and the reports were classified as "
             "unrelated. Two minor adverse event inconsistencies were "
@@ -399,8 +400,8 @@ class TestAnchorIsNotCreditedTwice:
         )
         text = build_assessment_summary(features, _classification()).as_text()
         assert (
-            "The shared drug pattern occurs in 4 reports in the selected "
-            "country context and defines the anchor population." in text
+            "The shared drug pattern occurs in 4 reports in US, all years and "
+            "defines the anchor population." in text
         )
         assert (
             "Additional matching evidence includes the shared adverse event "
@@ -534,3 +535,92 @@ class TestParagraphs:
         ).paragraphs(split_after=SummarySlot.ADDITIONAL)
         assert len(paragraphs) == 1
         assert "No additional matching evidence" not in paragraphs[0]
+
+
+class TestTheContextIsNamed:
+    """The population a count was judged in, named rather than described.
+
+    "The selected country-year context" told a reader how the population was
+    chosen but not which one it was, and a count of two means something quite
+    different in one country-year than in another.
+    """
+
+    @staticmethod
+    def _context(**kw) -> ReportingContext:
+        return ReportingContext(**kw)
+
+    def test_a_country_year_names_both(self):
+        assert (
+            context_phrase(
+                self._context(
+                    level=ReportingContextLevel.COUNTRY_YEAR,
+                    country="US",
+                    year=2010,
+                )
+            )
+            == "US in 2010"
+        )
+
+    def test_a_country_says_all_years(self):
+        """Without it the sentence reads like a country-year one, and the two
+        differ by every other year in the database."""
+        assert (
+            context_phrase(
+                self._context(
+                    level=ReportingContextLevel.COUNTRY, country="US"
+                )
+            )
+            == "US, all years"
+        )
+
+    def test_the_global_context_has_nothing_to_name(self):
+        assert (
+            context_phrase(self._context(level=ReportingContextLevel.GLOBAL))
+            == "the global context"
+        )
+
+    def test_a_recorded_country_is_shown_verbatim(self):
+        """Whatever the run recorded. Expanding a code into a name is a
+        mapping this package does not own — see
+        ``characterization.policy.resolve_country``."""
+        assert (
+            context_phrase(
+                self._context(
+                    level=ReportingContextLevel.COUNTRY_YEAR,
+                    country="United States",
+                    year=2003,
+                )
+            )
+            == "United States in 2003"
+        )
+
+    def test_no_article_is_invented_for_it(self):
+        """"the Netherlands" but "Sweden" is a lexical fact about each name,
+        not something derivable from the value."""
+        phrase = context_phrase(
+            self._context(
+                level=ReportingContextLevel.COUNTRY_YEAR,
+                country="Sweden",
+                year=2003,
+            )
+        )
+        assert phrase == "Sweden in 2003"
+        assert not phrase.startswith("the ")
+
+    def test_a_country_year_without_a_year_falls_back_to_the_level(self):
+        assert (
+            context_phrase(
+                self._context(
+                    level=ReportingContextLevel.COUNTRY_YEAR, country="US"
+                )
+            )
+            == "the selected country-year context"
+        )
+
+    def test_and_so_does_a_context_with_no_country(self):
+        assert (
+            context_phrase(
+                self._context(level=ReportingContextLevel.COUNTRY, year=2010)
+            )
+            == "the selected country context"
+        )
