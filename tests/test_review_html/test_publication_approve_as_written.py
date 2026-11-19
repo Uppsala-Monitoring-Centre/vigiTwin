@@ -18,20 +18,29 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
+from llm_dup_dev.review_html.evidence.models import FreqRowVM
 from llm_dup_dev.review_html.evidence.publication import (
     ApprovedText,
     DisclosureCode,
+    DisclosureFinding,
     PublicationApprovals,
     build_key_record,
     digest_text,
     export_approvals_form,
     write_approvals_form,
 )
+from llm_dup_dev.review_html.evidence.publication.approvals import (
+    RENDERED_SCAN_PATH,
+    merge_approvals_form,
+    resolvable,
+)
 from tests.test_review_html.conftest import (
     case_with_human_text,
     publication_page,
     scramble,
+    worked_example_case,
 )
 
 #: The four fields ``case_with_human_text`` leaves for a reviewer.
@@ -221,21 +230,273 @@ class TestTheValidatorKeepsTheDecisionExplicit:
 
 
 class TestWritingTheForm:
-    def test_it_refuses_to_overwrite_signatures(self, tmp_path):
+    def test_a_second_run_merges_instead_of_refusing(self, tmp_path):
+        """It used to raise. Findings change between runs, so needing a second
+        form is the normal case rather than the mistake."""
+        page = publication_page(case_with_human_text())
+        out = tmp_path / "approvals.json"
+        first = write_approvals_form(page, out)
+        assert first.added
+        second = write_approvals_form(page, out)
+        assert second.added == 0
+        assert second.refreshed == first.added
+
+    def test_force_still_regenerates_from_scratch(self, tmp_path):
         page = publication_page(case_with_human_text())
         out = tmp_path / "approvals.json"
         write_approvals_form(page, out)
-        with pytest.raises(FileExistsError, match="signed approvals"):
-            write_approvals_form(page, out)
-        write_approvals_form(page, out, force=True)
+        written = write_approvals_form(page, out, force=True)
+        assert written.refreshed == 0
+        assert written.added
 
     def test_it_writes_json_the_model_shape_recognises(self, tmp_path):
         page = publication_page(case_with_human_text())
-        out = write_approvals_form(page, tmp_path / "nested" / "form.json")
-        data = json.loads(out.read_text(encoding="utf-8"))
+        written = write_approvals_form(page, tmp_path / "nested" / "form.json")
+        data = json.loads(written.path.read_text(encoding="utf-8"))
         assert set(data) == {
             "approved_texts",
             "resolutions",
             "country_masking",
         }
         assert data["approved_texts"]
+
+
+class TestTheFormAnswersFindingsThatFired:
+    """``approved_texts`` is derivable from the page: every ``REVIEW`` field
+    blocks categorically. A resolution answers a finding a check actually
+    raised, so it needs the report — which is why the form was texts-only
+    until it was given one."""
+
+    @staticmethod
+    def _small_count_page():
+        case = worked_example_case()
+        case.freq_rows = [
+            FreqRowVM(
+                scope_label="SE, 2024", n_drugs="40", n_aes="", n_both="2"
+            )
+        ]
+        return publication_page(case)
+
+    def test_without_a_report_it_offers_no_resolutions(self, tmp_path):
+        """The pre-transform call, which is what lets a reviewer have the
+        free-text form before the key store is opened."""
+        page = publication_page(case_with_human_text())
+        written = write_approvals_form(page, tmp_path / "form.json")
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        assert data["approved_texts"]
+        assert data["resolutions"] == []
+
+    def test_a_blocking_finding_gets_an_entry_pinned_to_its_detail(
+        self, tmp_path
+    ):
+        page = self._small_count_page()
+        result = scramble(page)
+        written = write_approvals_form(
+            page, tmp_path / "form.json", report=result.report
+        )
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        entry = next(
+            e
+            for e in data["resolutions"]
+            if e["code"] == "retained_country_small_count"
+        )
+        finding = next(
+            f
+            for f in result.report.findings
+            if f.code is DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT
+        )
+        assert entry["detail_sha256"] == digest_text(finding.detail)
+
+    def test_signing_it_clears_the_run(self, tmp_path):
+        """End to end: the generated entry is the one the gate consults."""
+        page = self._small_count_page()
+        written = write_approvals_form(
+            page, tmp_path / "form.json", report=scramble(page).report
+        )
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        for entry in data["resolutions"]:
+            entry["approved_by"] = "reviewer"
+            entry["approved_at"] = "2026-01-01"
+        approvals = PublicationApprovals.model_validate(data)
+        assert not scramble(page, approvals=approvals).blocked
+
+    def test_the_entry_is_unsigned_and_so_does_not_validate(self, tmp_path):
+        """A form that loaded as it came out of the generator would approve
+        every finding in it."""
+        page = self._small_count_page()
+        written = write_approvals_form(
+            page, tmp_path / "form.json", report=scramble(page).report
+        )
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        with pytest.raises(ValidationError, match="unsigned entry is a form"):
+            PublicationApprovals.model_validate(data)
+
+    def test_it_names_both_remedies_for_a_retained_country(self, tmp_path):
+        """Generating only the signature arm would quietly recommend
+        publishing the country."""
+        page = self._small_count_page()
+        written = write_approvals_form(
+            page, tmp_path / "form.json", report=scramble(page).report
+        )
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        entry = next(
+            e
+            for e in data["resolutions"]
+            if e["code"] == "retained_country_small_count"
+        )
+        assert "country_masking" in entry["rationale"]
+        assert data["country_masking"] == []
+
+    def test_a_free_text_finding_gets_no_second_remedy(self, tmp_path):
+        """It already has an approved_texts entry, and a resolution would be
+        a weaker way past a field that must be decided on its actual words."""
+        page = publication_page(case_with_human_text())
+        written = write_approvals_form(
+            page, tmp_path / "form.json", report=scramble(page).report
+        )
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        assert data["approved_texts"]
+        assert data["resolutions"] == []
+
+    def test_a_rendered_scan_finding_gets_no_entry(self):
+        """Those are appended after partition has run, so a resolution
+        written against one would never be consulted."""
+        assert not resolvable(
+            DisclosureFinding(
+                code=DisclosureCode.RESIDUAL_ORIGINAL_VALUE,
+                example_id="R1__R2",
+                field_path=RENDERED_SCAN_PATH,
+                message="an original value survived into the markup",
+            )
+        )
+
+
+class TestMergingAFormThatIsAlreadySigned:
+    """One rule: a signed entry is a record and is never touched; an unsigned
+    entry is scaffolding and is regenerated."""
+
+    def _fresh(self, digest="new"):
+        return {
+            "approved_texts": [
+                {
+                    "example_id": "S1",
+                    "field_path": "title",
+                    "approve_as_written": True,
+                    "text_sha256": digest,
+                    "approved_by": "",
+                    "approved_at": "",
+                    "rationale": "",
+                }
+            ],
+            "resolutions": [],
+            "country_masking": [],
+        }
+
+    def _signed(self, digest="old"):
+        entry = dict(self._fresh(digest)["approved_texts"][0])
+        entry["approved_by"] = "reviewer"
+        entry["approved_at"] = "2026-01-01"
+        return {
+            "approved_texts": [entry],
+            "resolutions": [],
+            "country_masking": [],
+        }
+
+    def test_a_signed_entry_survives_verbatim(self):
+        merged, stats = merge_approvals_form(
+            self._signed(), self._fresh(), authoritative=["approved_texts"]
+        )
+        assert merged["approved_texts"] == self._signed()["approved_texts"]
+        assert stats["kept_signed"] == 1
+        assert stats["refreshed"] == 0
+
+    def test_an_unsigned_entry_is_regenerated(self):
+        """Keeping it would hand back a digest that no longer matches
+        anything, which is a form guaranteed to fail on load."""
+        stale = self._fresh("stale")
+        merged, stats = merge_approvals_form(
+            stale, self._fresh("current"), authoritative=["approved_texts"]
+        )
+        assert merged["approved_texts"][0]["text_sha256"] == "current"
+        assert stats["refreshed"] == 1
+
+    def test_a_signed_entry_the_run_no_longer_asks_for_is_kept(self):
+        """It may be the only trace of a decision about a case that was
+        removed from the manifest."""
+        empty: dict[str, list[dict[str, object]]] = {
+            "approved_texts": [],
+            "resolutions": [],
+            "country_masking": [],
+        }
+        merged, stats = merge_approvals_form(
+            self._signed(), empty, authoritative=["approved_texts"]
+        )
+        assert len(merged["approved_texts"]) == 1
+        assert stats["orphaned"] == 1
+
+    def test_a_listing_the_form_never_generates_passes_through(self):
+        """``country_masking`` is written by hand, because neither
+        ``mask: true`` nor ``mask: false`` is a neutral entry to generate. So
+        it is never compared, and never reported as orphaned."""
+        held: dict[str, list[dict[str, object]]] = {
+            "approved_texts": [],
+            "resolutions": [],
+            "country_masking": [
+                {
+                    "example_id": "S1",
+                    "mask": True,
+                    "decided_by": "reviewer",
+                    "decided_at": "2026-01-01",
+                    "rationale": "narrow population",
+                }
+            ],
+        }
+        merged, stats = merge_approvals_form(
+            held,
+            {"approved_texts": [], "resolutions": [], "country_masking": []},
+            authoritative=["approved_texts"],
+        )
+        assert stats["orphaned"] == 0
+        assert merged["country_masking"] == held["country_masking"]
+
+    def test_a_signed_resolution_survives_the_pre_transform_write(
+        self, tmp_path
+    ):
+        """That write has no report, so it generates no resolutions. Without
+        the distinction between "raised nothing" and "did not look", it would
+        report every signed resolution as orphaned on every run."""
+        page = publication_page(case_with_human_text())
+        out = tmp_path / "form.json"
+        out.write_text(
+            json.dumps(
+                {
+                    "approved_texts": [],
+                    "resolutions": [
+                        {
+                            "code": "retained_country_small_count",
+                            "example_id": "S1",
+                            "field_path": "",
+                            "detail_sha256": digest_text("SE, both count 2"),
+                            "approved_by": "reviewer",
+                            "approved_at": "2026-01-01",
+                            "rationale": "wide enough",
+                        }
+                    ],
+                    "country_masking": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        written = write_approvals_form(page, out)
+        assert written.orphaned == 0
+        data = json.loads(out.read_text(encoding="utf-8"))
+        assert len(data["resolutions"]) == 1
+
+    def test_a_malformed_file_is_not_overwritten(self, tmp_path):
+        """It may hold signatures; guessing at it is worse than stopping."""
+        out = tmp_path / "form.json"
+        out.write_text("{not json", encoding="utf-8")
+        page = publication_page(case_with_human_text())
+        with pytest.raises(ValueError, match="not readable as JSON"):
+            write_approvals_form(page, out)
+        assert out.read_text(encoding="utf-8") == "{not json"

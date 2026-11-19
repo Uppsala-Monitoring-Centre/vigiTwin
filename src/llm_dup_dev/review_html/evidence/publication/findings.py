@@ -93,6 +93,14 @@ class DisclosureCode(str, Enum):
     #: does not help here — it chooses *within* the surviving set, and a
     #: reader who can compute the set does not need to know the choice.
     DATE_OFFSET_POOL_THIN = "date_offset_pool_thin"
+    #: A :class:`~.policy.FindingResolution` was written against a finding
+    #: whose detail has changed since. The signature was given for a
+    #: different risk, so it does not carry, and the finding it was meant to
+    #: clear goes back to wherever it would have been unsigned. Advisory
+    #: rather than blocking on purpose: a voided signature withholds nothing
+    #: on its own, because a blocking finding it failed to clear is already
+    #: doing that, and an advisory it failed to clear should not start.
+    RESOLUTION_DIGEST_MISMATCH = "resolution_digest_mismatch"
 
 
 #: Findings a reviewer must weigh and no transform can fix, rather than
@@ -104,6 +112,7 @@ ADVISORY_CODES: frozenset[DisclosureCode] = frozenset(
         DisclosureCode.DATE_PATTERN_UNCHANGED,
         DisclosureCode.DATE_OFFSET_BELOW_FLOOR,
         DisclosureCode.DATE_OFFSET_POOL_THIN,
+        DisclosureCode.RESOLUTION_DIGEST_MISMATCH,
     }
 )
 
@@ -193,27 +202,70 @@ def partition(
 
     *resolver* is a :class:`~.policy.PublicationApprovals`; it is typed loosely
     here only to keep this module free of a dependency on the policy module,
-    which imports nothing from it either.
+    which imports nothing from it either. The entry it returns is duck-typed
+    for the same reason: ``pins`` is
+    :meth:`~.policy.FindingResolution.pins`, and asking the entry whether it
+    still pins the detail keeps the digest arithmetic on the side of the
+    import that owns :func:`~.policy.digest_text`.
+
+    A resolution found by key but no longer pinning the finding's detail is
+    treated as no resolution at all — the finding lands where it would have
+    landed unsigned — and one
+    :attr:`~DisclosureCode.RESOLUTION_DIGEST_MISMATCH` advisory is added
+    saying so. Silently honouring it would let a signature given for one risk
+    clear a different one; silently dropping it would re-raise the original
+    finding with no explanation of why a signed decision stopped counting.
     """
     unresolved: list[DisclosureFinding] = []
     resolved: list[DisclosureFinding] = []
     advisory: list[DisclosureFinding] = []
     lookup = getattr(resolver, "resolution_for", None)
     for finding in findings:
-        accepted = (
-            lookup is not None
-            and lookup(finding.code.value, finding.example_id, finding.field_path)
-            is not None
+        entry = (
+            lookup(finding.code.value, finding.example_id, finding.field_path)
+            if lookup is not None
+            else None
         )
-        if accepted:
+        stale = entry is not None and not entry.pins(finding.detail)
+        if entry is not None and not stale:
             resolved.append(finding)
         elif finding.is_advisory and not advisories_block:
             advisory.append(finding)
         else:
             unresolved.append(finding)
+        if stale:
+            assert entry is not None  # noqa: S101 - stale implies an entry
+            advisory.append(_stale_resolution(finding, entry))
     return DisclosureReport(
         findings=unresolved, resolved=resolved, advisories=advisory
     )
+
+
+def _stale_resolution(
+    finding: DisclosureFinding, entry: object
+) -> DisclosureFinding:
+    """The advisory that says a signature was given for something else."""
+    where = f" at {finding.field_path}" if finding.field_path else ""
+    return DisclosureFinding(
+        code=DisclosureCode.RESOLUTION_DIGEST_MISMATCH,
+        example_id=finding.example_id,
+        field_path=finding.field_path,
+        message=(
+            f"{finding.code.value}{where} carries a resolution signed by "
+            f"{getattr(entry, 'approved_by', '?')}, but the finding's detail "
+            "has changed since. Re-read it and update detail_sha256, or "
+            "decide again"
+        ),
+        detail=_pin_change(finding, entry),
+    )
+
+
+def _pin_change(finding: DisclosureFinding, entry: object) -> str:
+    """Both digests, so the reviewer can copy the one they now need."""
+    was = getattr(entry, "detail_sha256", "")
+    pin_for = getattr(entry, "pin_for", None)
+    now = pin_for(finding.detail) if callable(pin_for) else ""
+    return f"resolution pins {was}; the detail now digests to {now}"
 
 
 __all__ = [

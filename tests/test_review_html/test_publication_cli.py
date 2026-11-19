@@ -389,9 +389,11 @@ class TestTheApprovalsForm:
         with pytest.raises(ValueError, match="unsigned entry is a form"):
             main(_argv(blocked, collection / "publication", approvals=form))
 
-    def test_it_refuses_to_overwrite_without_force(
+    def test_a_second_run_keeps_the_signatures_in_it(
         self, collection, salted  # noqa: F811
     ):
+        """The form used to refuse a second run. That made the one workflow
+        it is for — sign some, re-run, see what is left — impossible."""
         form = collection / "form.json"
         argv = _argv(
             collection,
@@ -401,10 +403,40 @@ class TestTheApprovalsForm:
         )
         with pytest.raises(SystemExit):
             main(argv)
-        with pytest.raises(FileExistsError, match="signed approvals"):
+        data = json.loads(form.read_text(encoding="utf-8"))
+        data["approved_texts"][0]["approved_by"] = "reviewer"
+        data["approved_texts"][0]["approved_at"] = "2026-01-01"
+        signed = dict(data["approved_texts"][0])
+        form.write_text(json.dumps(data), encoding="utf-8")
+
+        with pytest.raises(SystemExit):
             main(argv)
+        after = json.loads(form.read_text(encoding="utf-8"))
+        assert signed in after["approved_texts"]
+
+    def test_force_discards_them_instead(
+        self, collection, salted  # noqa: F811
+    ):
+        """Still available, and now the only thing that drops a signature —
+        which is why it says so rather than being the way to re-run."""
+        form = collection / "form.json"
+        argv = _argv(
+            collection,
+            collection / "publication",
+            "--export-approvals",
+            str(form),
+        )
+        with pytest.raises(SystemExit):
+            main(argv)
+        data = json.loads(form.read_text(encoding="utf-8"))
+        data["approved_texts"][0]["approved_by"] = "reviewer"
+        form.write_text(json.dumps(data), encoding="utf-8")
         with pytest.raises(SystemExit):
             main([*argv, "--force"])
+        after = json.loads(form.read_text(encoding="utf-8"))
+        assert all(
+            not e["approved_by"] for e in after["approved_texts"]
+        )
 
 
 class TestCountryMaskingThroughTheCLI:

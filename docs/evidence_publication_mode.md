@@ -552,15 +552,61 @@ matching, so the case blocks again with `approval_digest_mismatch`. Without
 it, the stale approval would publish the text that *was* reviewed in place of
 the text that is now there, and neither artifact would say so.
 
-`--export-approvals` writes the form: one `approve_as_written` entry per
-field that blocks, digests filled in, before the salt is read — so a reviewer
-can be handed it before anyone opens the key store. It carries paths and
-digests and not the text, because the artifact for *reading* the text is the
-side-by-side review, which prints the originals and is written on every run.
-The form comes out unsigned, with `approved_by` and `approved_at` empty, and
-therefore does not load until somebody fills them in: a form that validated
-as generated would make the signature a formality, and the signature is the
-only thing the gate is actually asking for.
+`--export-approvals` writes the form. It carries paths and digests and not
+the text, because the artifact for *reading* the text is the side-by-side
+review, which prints the originals and is written on every run. The form
+comes out unsigned, with `approved_by` and `approved_at` empty, and therefore
+does not load until somebody fills them in: a form that validated as
+generated would make the signature a formality, and the signature is the only
+thing the gate is actually asking for.
+
+**Two lists, built at two different times**, because the two decisions become
+knowable at different points in the run:
+
+- `approved_texts` — one `approve_as_written` entry per free-text field that
+  blocks. Every `REVIEW` field blocks categorically, so this list is derivable
+  from the page alone and is written *before the salt is read*. A reviewer can
+  be handed it before anyone opens the key store, and a run that dies for want
+  of a salt still leaves it behind.
+- `resolutions` — one entry per finding a check actually raised, which is
+  knowable only after the transform. The form is written a second time once
+  the run has its report, and the two writes merge.
+
+`country_masking` is always empty, and that is not an omission: `mask: true`
+and `mask: false` are both decisions, so there is no neutral entry to
+generate. Pre-filling either arm would make the choice on the reviewer's
+behalf — and for `retained_country_small_count`, where masking is one of the
+two remedies, generating only the signature arm would quietly recommend
+publishing the country. The masking remedy is named in the generated entry's
+`rationale` instead.
+
+**Two findings get no resolution entry**, because for them a resolution is
+not a remedy. The free-text codes already have an `approved_texts` entry, and
+a resolution would be a second, weaker way past a field whose whole point is
+that it must be decided on its actual words. Anything reported at
+`<rendered html>` is appended after `partition` has run (§ Fail-closed
+export), so an entry written against one would never be consulted —
+generating it would read as an available remedy that silently does nothing.
+
+### Re-running the form
+
+A second run is the normal case rather than the mistake: findings change as
+approvals land and as the manifest is re-curated, so the form a reviewer
+needs is rarely the one generated first. Re-running merges, under one rule —
+**a signed entry is a record and is never touched; an unsigned entry is
+scaffolding and is regenerated.** Keeping an unsigned entry would hand back a
+digest that no longer matches anything, so the form would be guaranteed to
+fail on load; rewriting a signed one would move the subject out from under a
+signature. Entries the run no longer asks for are kept and counted as
+orphaned rather than dropped — a reviewer's record is not ours to discard
+because the manifest moved on, and it may be the only trace of a decision
+about a case that has since been removed.
+
+`--force` still regenerates from scratch, and now really does discard
+signatures. It is the deliberate reset, not the way to get a second form.
+Each run prints what it did (`3 new, 5 signed kept, 1 unsigned refreshed, 0
+orphaned`), because the exit code says nothing about whether the signatures
+survived, which is the only question a reviewer has about a merge.
 
 What a rationale is worth writing in that case is the check, not a
 justification: which classes of material were looked for — dates, places,
@@ -574,8 +620,25 @@ left the secure environment.
 unresolved, and writes nothing — a blocked run leaves no artifact to be
 mistaken for a cleared one. There is no `force` argument. The ways past a
 finding are an `ApprovedText` — replacement text, approval as written, or a
-withholding — or a `FindingResolution` naming a reviewer, a date and a
-rationale.
+withholding — or a `FindingResolution` naming a reviewer, a date, a rationale
+and a digest of the finding's detail.
+
+**A resolution is pinned the same way an approved text is, and for the same
+reason.** `code`, `example_id` and `field_path` all survive a re-curation
+that changes the risk: the signature given when a country sat beside a count
+of 5 would go on clearing the same finding when the count becomes 2. So
+`detail_sha256` pins what the reviewer actually weighed — the finding's
+`detail` carries the specifics — and a changed detail voids the signature,
+exactly as an edited manifest voids an `approve_as_written`. The finding then
+lands wherever it would have landed unsigned, and a
+`resolution_digest_mismatch` advisory says so and carries both digests, so
+re-signing does not mean computing a sha256 by hand.
+
+That advisory is deliberately advisory rather than blocking. A voided
+signature withholds nothing on its own: where it failed to clear a blocking
+finding, that finding is already doing the withholding, and where it failed
+to clear an advisory, a stale signature must not leave the run worse off than
+never having signed at all.
 
 The rendered scan reads the markup minus its static regions: the stylesheet,
 any script, and HTML comments. Attributes stay, because a value composed into
@@ -731,6 +794,11 @@ the form and the review page, the second publishes:
 … --mode publication --approvals secure/approvals.json      # publishes
 ```
 
+Pass both `--approvals` and `--export-approvals` at the same path to do it in
+one loop: the run reads the signed file, and writes back a merged form
+carrying whatever is still outstanding. That is the usual shape after the
+first pass, because clearing one finding routinely reveals the next.
+
 ## Secure-side integration
 
 This repository holds the generic transformation logic and synthetic
@@ -738,9 +806,10 @@ fixtures. The secure companion repository supplies, for a real study:
 
 - the salt, from its key store, and the directory the key record is written to;
 - the approvals file — the decision for each case's curator-written fields
-  (usually `approve_as_written`, generated by `--export-approvals` and then
-  signed), the resolutions for any finding a reviewer accepts, and any
-  per-example country-masking overrides;
+  (usually `approve_as_written`), the resolutions for any finding a reviewer
+  accepts, and any per-example country-masking overrides. The first two are
+  generated by `--export-approvals` and then signed; the third is written by
+  hand, because there is no neutral masking entry to generate;
 - the policy file, where the defaults are not wanted — the two masking
   switches in particular, which are independent: countries off, sources on;
 - the curated manifest pointing at the real run's artifacts.

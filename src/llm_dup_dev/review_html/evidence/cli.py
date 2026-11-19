@@ -112,9 +112,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--force",
         action="store_true",
         help=(
-            "Allow --export-drafts or --export-approvals to overwrite an "
-            "existing file. Both refuse by default: by the second run they "
-            "hold edited text or signatures."
+            "Allow --export-drafts to overwrite an existing file, and make "
+            "--export-approvals regenerate rather than merge. Both keep what "
+            "is there by default: by the second run they hold edited text or "
+            "signatures."
         ),
     )
     parser.add_argument(
@@ -155,10 +156,13 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="PATH",
         help=(
             "Write an unsigned approvals form to PATH: one approve-as-written "
-            "entry, with a digest, for every field that blocks. Fill in "
-            "approved_by and approved_at and pass it back as --approvals. "
-            "Read the text itself in the side-by-side review, which prints "
-            "the originals; the form carries paths and digests only."
+            "entry for every free-text field that blocks, and one resolution "
+            "entry for every other finding the run raised, each pinned by a "
+            "digest. Fill in approved_by and approved_at and pass it back as "
+            "--approvals. Re-running merges: signed entries are kept as they "
+            "are, unsigned ones are regenerated. Read the text itself in the "
+            "side-by-side review, which prints the originals; the form "
+            "carries paths and digests only."
         ),
     )
     parser.add_argument(
@@ -271,8 +275,9 @@ def _run_publication(args: argparse.Namespace, page) -> None:
             page, args.export_approvals, force=args.force
         )
         print(
-            f"Wrote approvals form to {form}. It is unsigned, so it will not "
-            "load until approved_by and approved_at are filled in."
+            f"Wrote approvals form to {form.path} ({form.summary()}). It is "
+            "unsigned, so it will not load until approved_by and approved_at "
+            "are filled in."
         )
 
     secrets = PublicationSecrets.from_env()
@@ -281,6 +286,21 @@ def _run_publication(args: argparse.Namespace, page) -> None:
     result = scramble_page(
         page, policy=policy, secrets=secrets, approvals=approvals
     )
+
+    if args.export_approvals:
+        # Twice, deliberately. The first write needs only the page, so a
+        # reviewer gets the free-text form even when the salt is not to hand
+        # and the run dies on the line above. Resolutions answer findings a
+        # check actually raised, which is knowable only now; merging them in
+        # keeps both without making the form wait for the key store. Never
+        # with force: that was the first write's to spend.
+        form = write_approvals_form(
+            page, args.export_approvals, report=result.report
+        )
+        if form.added or form.orphaned:
+            print(
+                f"Updated approvals form at {form.path} ({form.summary()})."
+            )
 
     if args.key_out:
         print(f"Wrote scrambling key to {write_scrambling_key(result, args.key_out)}")

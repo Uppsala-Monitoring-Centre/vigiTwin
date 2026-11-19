@@ -717,6 +717,21 @@ class FindingResolution(BaseModel):
 
     Keyed the same way the finding is reported. A resolution is an audit
     record, not a switch: it names who accepted the risk and why.
+
+    ``detail_sha256`` is what keeps it attached to the risk rather than to the
+    key. A finding's ``detail`` carries the specifics a reviewer actually
+    weighed — *Sweden, both count 2, threshold 5* — and those specifics move
+    when the manifest is re-curated while ``code``, ``example_id`` and
+    ``field_path`` stay exactly as they were. Without the digest a signature
+    given for a count of 5 goes on clearing a count of 2, which is the hazard
+    :class:`ApprovedText` pins ``text_sha256`` against. The same rule, for the
+    same reason: pin what was read, so an edit re-opens the decision instead
+    of inheriting it.
+
+    An empty ``detail`` is pinned too, as the digest of the empty string. That
+    looks like ceremony and is not: a check that later *gains* a detail has
+    become more specific about something, and the old blanket signature should
+    not survive that.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -724,9 +739,43 @@ class FindingResolution(BaseModel):
     code: str
     example_id: str
     field_path: str = ""
+    #: :func:`digest_text` of the finding's ``detail``, as the reviewer read
+    #: it. Required: an optional pin is no pin, because omitting it is the
+    #: cheapest path and would restore the behaviour this field exists to end.
+    detail_sha256: str
     approved_by: str
     approved_at: str
     rationale: str
+
+    def pins(self, detail: str) -> bool:
+        """Whether this resolution was given for *detail* as it stands now."""
+        return self.detail_sha256 == self.pin_for(detail)
+
+    @staticmethod
+    def pin_for(detail: str) -> str:
+        """What :attr:`detail_sha256` would have to be for *detail*.
+
+        On the entry because the entry is what knows how its own pin is
+        computed, which lets :func:`~.findings.partition` put the value a
+        reviewer needs to re-sign into the mismatch advisory without
+        importing this module.
+        """
+        return digest_text(detail)
+
+    @model_validator(mode="after")
+    def _check_signature(self) -> FindingResolution:
+        if not self.detail_sha256.strip():
+            raise ValueError(
+                "detail_sha256 pins the finding detail that was read; "
+                "without it the resolution would outlive the risk it "
+                "accepted. Generate the form with --export-approvals"
+            )
+        if not self.approved_by.strip() or not self.approved_at.strip():
+            raise ValueError(
+                "approved_by and approved_at are the audit record; an "
+                "unsigned entry is a form, not a resolution"
+            )
+        return self
 
 
 class PublicationApprovals(BaseModel):
@@ -758,6 +807,13 @@ class PublicationApprovals(BaseModel):
     def resolution_for(
         self, code: str, example_id: str, field_path: str
     ) -> FindingResolution | None:
+        """The entry written against this finding's key, matched or stale.
+
+        Deliberately not a verdict: it looks up by key and says nothing about
+        whether :attr:`FindingResolution.detail_sha256` still pins the
+        finding. :func:`~.findings.partition` makes that call, because a stale
+        signature and a missing one need different things said about them.
+        """
         for entry in self.resolutions:
             if entry.code != code or entry.example_id != example_id:
                 continue

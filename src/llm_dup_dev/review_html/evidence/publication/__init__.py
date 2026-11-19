@@ -42,7 +42,11 @@ from __future__ import annotations
 
 from ..models import PresentationMode
 from .aliases import AliasBook, CountryScope, parse_country_scope
-from .approvals import export_approvals_form, write_approvals_form
+from .approvals import (
+    ApprovalsFormWrite,
+    export_approvals_form,
+    write_approvals_form,
+)
 from .dates import (
     DateRole,
     offset_candidates,
@@ -181,6 +185,7 @@ __all__ = [
     "shift_partial_date",
     "solve_numeric_offset",
     "digest_text",
+    "ApprovalsFormWrite",
     "export_approvals_form",
     "verify_rendered_output",
     "walk_cells",

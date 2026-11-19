@@ -57,6 +57,105 @@ and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 One consequence worth stating: the planned package rename no longer requires a
 2.0.0, and the README no longer promises one.
 
+## [1.2.6] - 2026-11-19
+
+A patch: one latent hole closed, and the approvals form made usable for the
+workflow it was always for. **Breaking in three ways** — every existing
+`FindingResolution` stops validating, `write_approvals_form` returns a result
+object instead of a path, and it merges where it used to raise. The number is
+not the warning; this entry and `docs/migration_notes_resolution_pinning.md`
+are. Regenerate the approvals file before the next secure-side run.
+
+### Fixed — a resolution outlived the risk it accepted
+
+`FindingResolution` was keyed by `code`, `example_id` and `field_path` and
+pinned nothing. All three survive a re-curation that changes the risk, so a
+signature given when a country sat beside a contextual count of 5 went on
+clearing the same finding after the count became 2 — the page a reviewer
+signed for and the page about to be published were different pages, and
+nothing said so.
+
+`ApprovedText` has pinned its subject with `text_sha256` since it existed, and
+the asymmetry was not deliberate. Resolutions now carry `detail_sha256` over
+the finding's `detail`, which is where the specifics a reviewer actually
+weighed live. A changed detail voids the signature exactly as an edited
+manifest voids an `approve_as_written`: the finding lands wherever it would
+have landed unsigned.
+
+An empty detail is pinned too. That looks like ceremony and is not — a check
+that later *gains* a detail has become more specific about something, and a
+blanket signature should not survive that.
+
+### Fixed — an unsigned resolution cleared its finding
+
+`approved_by` and `approved_at` were required keys but `""` validated, so a
+resolution with no signature on it passed the gate. `ApprovedText` had refused
+this from the start. Found while building the generated form below, which
+would otherwise have approved every finding in it the moment it was written.
+
+### Added — `resolution_digest_mismatch`
+
+Advisory. Raised when a resolution is found by key but no longer pins the
+finding's detail, carrying both digests so re-signing does not mean computing
+a sha256 by hand. Silently honouring a stale signature would clear a risk
+nobody read; silently dropping it would re-raise the original finding with no
+explanation of why a signed decision stopped counting.
+
+Advisory rather than blocking, by the same rule the 1.2.5 findings follow: a
+voided signature withholds nothing on its own. Where it failed to clear a
+blocking finding, that finding is already doing the withholding; where it
+failed to clear an advisory, a stale signature must not leave the run worse
+off than never having signed at all.
+
+### Changed — the approvals form merges, and answers findings that fired
+
+Two changes to `--export-approvals`, which between them make the loop it was
+designed for actually run.
+
+**It merges.** It used to raise `FileExistsError` on a second run, so the one
+workflow the form exists for — sign some, re-run, see what is left — needed
+`--force`, which discarded the signatures just written. One rule now: a signed
+entry is a record and is never touched; an unsigned entry is scaffolding and
+is regenerated. Keeping an unsigned entry would hand back a digest matching
+nothing; rewriting a signed one would move the subject out from under a
+signature. Entries the run no longer asks for are kept and counted as orphaned
+rather than dropped. `--force` still regenerates from scratch and now really
+does discard signatures, so it is the deliberate reset rather than the way to
+get a second form.
+
+`write_approvals_form` returns `ApprovalsFormWrite` — `path` plus the four
+counts — because the exit code says nothing about whether a reviewer's
+signatures survived the merge, which is the only question they have about it.
+
+**It carries resolutions.** `export_approvals_form` takes an optional report
+and emits one unsigned entry per blocking finding raised, digest filled in.
+Before, `resolutions` was always `[]` and the entries for
+`retained_country_small_count` — new in 1.2.5 — had to be hand-written,
+including the code and ids. In `--mode publication` the form is now written
+twice: once before the salt is read, carrying the free-text entries, and once
+after the transform to merge in the resolutions. The first write is what keeps
+the form obtainable before anyone opens the key store.
+
+Two kinds of finding deliberately get none. The free-text codes already have
+an `approved_texts` entry, and a resolution would be a second, weaker way past
+a field that must be decided on its actual words; anything reported at
+`<rendered html>` is appended after `partition` has run, so an entry written
+against one would never be consulted. Generating a remedy that silently does
+nothing is worse than generating none.
+
+`country_masking` is still never generated, and that is not an omission:
+`mask: true` and `mask: false` are both decisions, so there is no neutral
+entry to write. For `retained_country_small_count`, where masking is one of
+the two remedies, generating only the signature arm would quietly recommend
+publishing the country — so the generated entry names both in its `rationale`.
+
+### Documentation
+
+`docs/evidence_publication_mode.md` gains § Re-running the form, says why a
+resolution is pinned and why the mismatch is advisory, and records that
+passing `--approvals` and `--export-approvals` at the same path runs the
+sign-and-re-run loop in one command.
+
 ## [1.2.5] - 2026-11-19
 
 A hardening pass on the publication layer, taken before the evidence

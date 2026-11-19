@@ -11,7 +11,7 @@ untransformed.
 from __future__ import annotations
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from llm_dup_dev.review_html.evidence.models import (
     EvidenceCaseVM,
@@ -24,13 +24,16 @@ from llm_dup_dev.review_html.evidence.publication import (
     FREE_TEXT_FIELDS,
     KIND_POLICIES,
     DisclosureCode,
+    DisclosureFinding,
     FindingResolution,
     PublicationApprovals,
     PublicationBlocked,
     PublicationPolicy,
     PublicationSecrets,
+    digest_text,
     write_publication_evidence,
 )
+from llm_dup_dev.review_html.evidence.publication.findings import partition
 from llm_dup_dev.review_html.evidence.publication.substitute import (
     SubstitutionTable,
     _text_shape,
@@ -373,6 +376,7 @@ class TestTheExportGate:
                     code=f.code.value,
                     example_id=f.example_id,
                     field_path=f.field_path,
+                    detail_sha256=digest_text(f.detail),
                     approved_by="reviewer",
                     approved_at="2026-01-01",
                     rationale="checked against the disclosure checklist",
@@ -432,3 +436,148 @@ class TestUnsupportedCellsFailClosed:
         cell is not shifted by accident."""
         cell = EvidenceCell(text="2023-11-13", kind=ValueKind.DRUG_SUBSTANCE)
         assert KIND_POLICIES[cell.kind].value == "keep"
+
+
+class TestAResolutionIsPinnedToWhatWasRead:
+    """``code`` + ``example_id`` + ``field_path`` survive a re-curation that
+    changes the risk. The digest is what does not, and that asymmetry is the
+    whole point of the field."""
+
+    def _finding(self, detail: str = "Sweden, both count 2, threshold 5"):
+        return DisclosureFinding(
+            code=DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT,
+            example_id="R1__R2",
+            field_path="",
+            message="a named country beside a small count",
+            detail=detail,
+        )
+
+    def _signed(self, detail: str) -> FindingResolution:
+        return FindingResolution(
+            code=DisclosureCode.RETAINED_COUNTRY_SMALL_COUNT.value,
+            example_id="R1__R2",
+            detail_sha256=digest_text(detail),
+            approved_by="reviewer",
+            approved_at="2026-01-01",
+            rationale="the population is wide enough",
+        )
+
+    def test_a_matching_pin_resolves_the_finding(self):
+        finding = self._finding()
+        report = partition(
+            [finding],
+            PublicationApprovals(resolutions=[self._signed(finding.detail)]),
+        )
+        assert report.resolved == [finding]
+        assert not report.blocked
+
+    def test_a_changed_detail_voids_the_signature(self):
+        """The signature was given for a count of 2. The count is now 1, and
+        the same three keys still name it."""
+        report = partition(
+            [self._finding("Sweden, both count 1, threshold 5")],
+            PublicationApprovals(
+                resolutions=[self._signed("Sweden, both count 2, threshold 5")]
+            ),
+        )
+        assert report.blocked
+        assert not report.resolved
+
+    def test_the_voided_signature_says_so_rather_than_vanishing(self):
+        report = partition(
+            [self._finding("Sweden, both count 1, threshold 5")],
+            PublicationApprovals(
+                resolutions=[self._signed("Sweden, both count 2, threshold 5")]
+            ),
+        )
+        advisory = next(
+            f
+            for f in report.advisories
+            if f.code is DisclosureCode.RESOLUTION_DIGEST_MISMATCH
+        )
+        assert "reviewer" in advisory.message
+        assert "retained_country_small_count" in advisory.message
+
+    def test_it_carries_the_digest_the_reviewer_now_needs(self):
+        """Otherwise re-signing means computing a sha256 by hand."""
+        finding = self._finding("Sweden, both count 1, threshold 5")
+        report = partition(
+            [finding],
+            PublicationApprovals(
+                resolutions=[self._signed("Sweden, both count 2, threshold 5")]
+            ),
+        )
+        advisory = next(
+            f
+            for f in report.advisories
+            if f.code is DisclosureCode.RESOLUTION_DIGEST_MISMATCH
+        )
+        assert digest_text(finding.detail) in advisory.detail
+
+    def test_a_stale_signature_on_an_advisory_does_not_start_blocking(self):
+        """An unsigned advisory does not block, so a voided signature on one
+        must not leave the run worse off than never having signed."""
+        advisory_finding = DisclosureFinding(
+            code=DisclosureCode.DATE_OFFSET_POOL_THIN,
+            example_id="R1__R2",
+            message="few offsets survived",
+            detail="3 of 742 candidates survived",
+        )
+        report = partition(
+            [advisory_finding],
+            PublicationApprovals(
+                resolutions=[
+                    FindingResolution(
+                        code=DisclosureCode.DATE_OFFSET_POOL_THIN.value,
+                        example_id="R1__R2",
+                        detail_sha256=digest_text("7 of 742 candidates survived"),
+                        approved_by="reviewer",
+                        approved_at="2026-01-01",
+                        rationale="accepted",
+                    )
+                ]
+            ),
+        )
+        assert not report.blocked
+        codes = {f.code for f in report.advisories}
+        assert codes == {
+            DisclosureCode.DATE_OFFSET_POOL_THIN,
+            DisclosureCode.RESOLUTION_DIGEST_MISMATCH,
+        }
+
+    def test_an_empty_detail_is_pinned_too(self):
+        """A check that later gains a detail has become more specific about
+        something; the old blanket signature should not survive that."""
+        blank = self._finding("")
+        cleared = partition(
+            [blank], PublicationApprovals(resolutions=[self._signed("")])
+        )
+        assert cleared.resolved == [blank]
+        later = partition(
+            [self._finding("Sweden, both count 2, threshold 5")],
+            PublicationApprovals(resolutions=[self._signed("")]),
+        )
+        assert later.blocked
+
+    def test_an_unsigned_entry_is_a_form_not_a_resolution(self):
+        """The generated form would otherwise approve everything in it."""
+        with pytest.raises(ValidationError, match="unsigned entry is a form"):
+            FindingResolution(
+                code="retained_country_small_count",
+                example_id="R1__R2",
+                detail_sha256=digest_text("x"),
+                approved_by="",
+                approved_at="",
+                rationale="",
+            )
+
+    def test_an_omitted_pin_is_refused_rather_than_waved_through(self):
+        with pytest.raises(ValidationError, match="detail_sha256"):
+            FindingResolution(
+                code="retained_country_small_count",
+                example_id="R1__R2",
+                detail_sha256="  ",
+                approved_by="reviewer",
+                approved_at="2026-01-01",
+                rationale="checked",
+            )

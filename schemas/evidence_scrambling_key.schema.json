@@ -231,7 +231,8 @@
         "unasserted_relation_changed",
         "date_pattern_unchanged",
         "date_offset_below_floor",
-        "date_offset_pool_thin"
+        "date_offset_pool_thin",
+        "resolution_digest_mismatch"
       ],
       "title": "DisclosureCode",
       "type": "string"
