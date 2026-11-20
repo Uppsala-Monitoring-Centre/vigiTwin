@@ -1085,15 +1085,20 @@ front matter gets a sheet of its own. Table headings repeat across sheets,
 rows and callouts are not split, and no print rule hides content — all four
 are asserted by tests rather than left as claims.
 
-**Check the footer band once, by hand, before the first real supplement.**
-Chrome positions a fixed element against the same box the document's content
-flows through, so a footer placed in that box would overlay the last line of
-every sheet; this one is pulled down into the margin instead. Print a
-two-case collection and look at sheet two: the last line of body text must be
-complete, and the footer band must sit below it. If the band is missing, the
-right answer is to drop the repetition and keep the single footer at the end
-— not to give the band an opaque background, which would quietly cover the
-bottom of every published sheet.
+**The footer band has been checked on paper, in Chrome on macOS, on
+2026-11-20.** It is recorded because it is the one property here that no test
+can hold: Chrome positions a fixed element against the same box the
+document's content flows through, so a footer placed in that box would
+overlay the last line of every sheet. This one is pulled down into the margin
+instead, and the margin is deepened to make room — which either works in a
+given engine or does not, and cannot be asserted from the markup.
+
+**Re-check it if you change print engine**, or if the `@page` margin or the
+band's offset moves. Print a two-case collection and look at sheet two: the
+last line of body text must be complete, and the band must sit below it. If
+the band is missing, the right answer is to drop the repetition and keep the
+single footer at the end — not to give the band an opaque background, which
+would quietly cover the bottom of every published sheet.
 
 ---
 

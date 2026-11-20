@@ -34,6 +34,16 @@ number.
 
 ## [Unreleased]
 
+### Documentation — the print layout is verified rather than pending
+
+No bump: documentation only. The repeating per-sheet footer introduced in
+1.2.7 came with a hand-check that could not be automated — whether a
+fixed-position band sits in the deepened page margin or overlays the last
+line of content is a property of the print engine, not of the markup. It has
+now been confirmed on paper in Chrome on macOS, so `docs/evidence_format.md`
+§ Printing and PDF records that instead of asking each reader to do it. The
+fallback stays, scoped to a change of engine, margin or offset.
+
 ### Changed — the version is a significance signal, not strict SemVer
 
 No bump: documentation and convention only, with no functional change. It is
