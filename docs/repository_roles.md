@@ -3,11 +3,15 @@ We will maintain two physically separate repositories with distinct roles:
 vigiTwin:	Prompt engineering, structured output design, evaluation logic
 llm_dup_pv_secure: Annotation support, evaluation on real data, Azure execution
 
-**Three names, one repository.** The repository and the method are **vigiTwin**;
-the Python package it installs as is `vigitwin`; the working directory on a
-given machine may still be `~/llm_dup_dev/`, the name it was created under.
-Only the first two are contracts — the directory name is incidental, and the
-paths below are written as they actually are on disk.
+**One name, everywhere.** The method is **vigiTwin**, both remotes are named
+for it — Azure DevOps `who-umc/Research/vigitwin` and the public mirror
+`Uppsala-Monitoring-Centre/vigiTwin` — and the Python package installs as
+`vigitwin`. Through 1.2.7 the package, the Azure repository and local
+checkouts all carried `llm_dup_dev`, the working name from before the method
+was named; the package was renamed in 1.3.0 and the repository and checkout
+followed. A checkout made before then may still sit at `~/llm_dup_dev/`, which
+is incidental rather than a contract. See
+`migration_notes_package_rename.md`.
 
 ## llm_dup_pv_secure (Secure Environment)
 
@@ -71,7 +75,7 @@ vigiTwin (Claude-assisted)
  
 ## Additional Safeguards
 <ul>
-<li>Physical directory separation (~/llm_dup_dev/ and ~/llm_dup_pv_secure/)</li>
+<li>Physical directory separation (~/vigitwin/ and ~/llm_dup_pv_secure/)</li>
 <li>No shared workspace roots</li>
 <li>No multi-root workspaces spanning both repositories</li>
 <li>.claudeignore files added to all folders in llm_dup_pv_secure</li>

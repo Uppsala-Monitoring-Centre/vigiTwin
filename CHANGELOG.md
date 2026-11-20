@@ -34,6 +34,24 @@ number.
 
 ## [Unreleased]
 
+### Documentation — the Azure repository is named vigitwin too
+
+No bump: documentation only, with no functional or contract change. Recorded
+because anyone holding a clone has a one-line change to make.
+
+1.3.0 renamed the package; the Azure DevOps repository and local checkouts
+have now followed, so the method, both remotes and the distribution all carry
+one name. Update an existing clone with:
+
+```bash
+git remote set-url origin git@ssh.dev.azure.com:v3/who-umc/Research/vigitwin
+```
+
+`docs/repository_roles.md` replaces its "three names" caveat accordingly — the
+only thing that may still carry the old name is a checkout directory created
+before the rename, which is incidental rather than a contract. Nothing about
+the public mirror, the tags or the DOIs is affected.
+
 ## [1.3.0] - 2026-11-20
 
 ### Changed — the package is `vigitwin`
