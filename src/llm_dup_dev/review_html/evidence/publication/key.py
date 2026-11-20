@@ -28,7 +28,7 @@ from llm_dup_dev.run_manifest._git import try_dev_git_commit
 from llm_dup_dev.run_manifest.builder import _detect_package_version
 
 from .findings import DisclosureFinding
-from .policy import PublicationPolicy
+from .policy import PublicationPolicy, ReleaseApproval
 from .scramble import ScrambleResult
 
 SCHEMA_VERSION = "1.0"
@@ -153,6 +153,18 @@ class ScramblingKeyRecord(BaseModel):
     #: shows what a reviewer was asked and what they decided.
     findings: list[DisclosureFinding] = Field(default_factory=list)
     resolved_findings: list[DisclosureFinding] = Field(default_factory=list)
+    #: The digest the candidate's content hashes to, which a release is
+    #: pinned against. Here rather than in the public manifest because it is
+    #: the audit side of the release, and because a published digest of the
+    #: published content buys a reader nothing.
+    candidate_digest: str = ""
+    #: The release in force, in full — the reviewer's name, the date, the
+    #: rationale and the pin. **This is where who released the document is
+    #: recorded.** The public manifest carries the fact and the date only:
+    #: the rationale may name real cases, exactly as a finding resolution's
+    #: does, and publishing an individual's name in an automated artifact is
+    #: a disclosure decision of its own.
+    release: ReleaseApproval | None = None
 
 
 def build_key_record(result: ScrambleResult) -> ScramblingKeyRecord:
@@ -164,6 +176,8 @@ def build_key_record(result: ScrambleResult) -> ScramblingKeyRecord:
         policy=result.policy,
         dev_package_version=_detect_package_version(),
         dev_git_commit=try_dev_git_commit(),
+        candidate_digest=result.candidate_digest,
+        release=result.release,
         cases=[
             CaseKeyRecord(
                 example_id=transform.example_id,

@@ -19,6 +19,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     ApprovedText,
     CountryMaskingOverride,
     PublicationApprovals,
+    ReleaseApproval,
     PublicationPolicy,
 )
 from tests.test_review_html.test_evidence_cli import collection  # noqa: F401
@@ -519,3 +520,57 @@ class TestCountryMaskingThroughTheCLI:
         page = (review / REVIEW_FILENAME).read_text(encoding="utf-8")
         assert "shown as reported" in page
         assert "override the policy for this example" in page
+
+
+class TestTheConsoleAgreesWithTheArtifacts:
+    """The pages and the manifest are held to the same phrase by a test in
+    `test_publication_key.py`. Standard output is a third place that says what
+    the run produced, and it used to call every run a candidate — including
+    one it had just released."""
+
+    def test_a_candidate_run_says_candidate(
+        self, collection, salted, approved, capsys  # noqa: F811
+    ):
+        main(_argv(collection, collection / "publication", approvals=approved))
+        assert "candidate for disclosure review" in capsys.readouterr().out
+
+    def test_a_released_run_says_cleared(
+        self, collection, salted, approved, capsys  # noqa: F811
+    ):
+        from llm_dup_dev.review_html.evidence.collection import build_collection
+        from llm_dup_dev.review_html.evidence.manifest import (
+            load_curated_manifest,
+        )
+        from llm_dup_dev.review_html.evidence.publication import (
+            PublicationSecrets,
+            scramble_page,
+        )
+
+        # The digest of the candidate this collection produces, which is what
+        # --export-approvals would have put in the form.
+        page = build_collection(load_curated_manifest(collection / "collection.yaml"))
+        candidate = scramble_page(
+            page,
+            secrets=PublicationSecrets.from_env(),
+            approvals=PublicationApprovals.model_validate_json(
+                approved.read_text(encoding="utf-8")
+            ),
+        )
+        signed = PublicationApprovals.model_validate_json(
+            approved.read_text(encoding="utf-8")
+        )
+        approved.write_text(
+            signed.model_copy(
+                update={
+                    "release": ReleaseApproval(
+                        released_by="A. Reviewer",
+                        released_at="2026-11-19",
+                        candidate_sha256=candidate.candidate_digest,
+                    )
+                }
+            ).model_dump_json()
+        )
+        main(_argv(collection, collection / "publication", approvals=approved))
+        out = capsys.readouterr().out
+        assert "cleared for public sharing" in out
+        assert "candidate for disclosure review" not in out

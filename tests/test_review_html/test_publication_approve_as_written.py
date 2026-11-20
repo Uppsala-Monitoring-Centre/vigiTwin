@@ -25,7 +25,9 @@ from llm_dup_dev.review_html.evidence.publication import (
     ApprovedText,
     DisclosureCode,
     DisclosureFinding,
+    FindingResolution,
     PublicationApprovals,
+    PublicationPolicy,
     build_key_record,
     digest_text,
     export_approvals_form,
@@ -128,6 +130,28 @@ class TestThePinHoldsTheApprovalToTheText:
         )
         assert mismatch.field_path == "title"
         assert "digests to" in mismatch.detail
+
+    def test_the_message_carries_the_digest_to_put_in_the_file(self):
+        """The remedy is a sha256, and the only way to get one by hand is to
+        reimplement digest_text and remember that a list and a string digest
+        differently. So the finding names the value — in the *message*, which
+        is what the CLI prints to stderr, and not only in the detail, which
+        until now was the one place it appeared."""
+        page = publication_page(case_with_human_text())
+        approvals = _signed(export_approvals_form(page))
+        edited = publication_page(case_with_human_text())
+        edited.cases[0].title = "Two reports from the Uppsala clinic"
+        result = scramble(edited, approvals=approvals)
+
+        mismatch = next(
+            f
+            for f in result.report.findings
+            if f.code is DisclosureCode.APPROVAL_DIGEST_MISMATCH
+        )
+        assert digest_text("Two reports from the Uppsala clinic") in (
+            mismatch.message
+        )
+        assert "set text_sha256 to" in mismatch.message
 
     def test_the_edited_text_is_not_published_in_the_meantime(self):
         """The old approval does not carry, and neither does the old text."""
@@ -500,3 +524,338 @@ class TestMergingAFormThatIsAlreadySigned:
         with pytest.raises(ValueError, match="not readable as JSON"):
             write_approvals_form(page, out)
         assert out.read_text(encoding="utf-8") == "{not json"
+
+
+class TestTheSignedRelease:
+    """The one document-level decision, and the only thing that removes the
+    candidate caveat from a published page.
+
+    A command-line flag would have been cheaper to use and would have
+    recorded nobody; set once in a script it would keep the candidate wording
+    from ever appearing again. So it is a record like every other decision in
+    this layer — a name, a date, a reason, and a pin on the document that was
+    actually read.
+    """
+
+    @staticmethod
+    def _clear_page():
+        """A page with nothing outstanding, which is when a release is
+        offered: the form holds the release back until it is the decision
+        that remains."""
+        return publication_page(worked_example_case())
+
+    def _form(self, tmp_path, page=None):
+        page = page or self._clear_page()
+        result = scramble(page)
+        written = write_approvals_form(
+            page,
+            tmp_path / "form.json",
+            report=result.report,
+            candidate_digest=result.candidate_digest,
+        )
+        return page, result, json.loads(
+            written.path.read_text(encoding="utf-8")
+        )
+
+    def test_the_form_scaffolds_it_with_the_digest_filled_in(self, tmp_path):
+        """The signer types a name and a date. They never type a sha256."""
+        _, result, data = self._form(tmp_path)
+        assert data["release"]["candidate_sha256"] == result.candidate_digest
+        assert data["release"]["released_by"] == ""
+
+    def test_it_is_not_offered_while_anything_is_outstanding(self, tmp_path):
+        """Signing a release for a candidate that is about to change would
+        pin a document nobody will publish."""
+        page = publication_page(case_with_human_text())
+        result = scramble(page)
+        written = write_approvals_form(
+            page,
+            tmp_path / "form.json",
+            report=result.report,
+            candidate_digest=result.candidate_digest,
+        )
+        data = json.loads(written.path.read_text(encoding="utf-8"))
+        assert "release" not in data
+        assert data["approved_texts"]
+
+    def test_unsigned_it_loads_as_no_release_at_all(self, tmp_path):
+        """Not as an error. A candidate is the ordinary state, so a form
+        offering a release has to stay loadable while nobody has signed it —
+        otherwise the sign-then-re-run loop stops the moment it is offered."""
+        _, _, data = self._form(tmp_path)
+        approvals = PublicationApprovals.model_validate(data)
+        assert approvals.release is None
+
+    def test_a_half_made_decision_still_raises(self):
+        """A name with no date is not a candidate state, it is a mistake."""
+        with pytest.raises(ValidationError, match="unsigned entry is a form"):
+            PublicationApprovals.model_validate(
+                {
+                    "release": {
+                        "released_by": "A. Reviewer",
+                        "released_at": "",
+                        "candidate_sha256": digest_text("x"),
+                    }
+                }
+            )
+
+    def test_signed_it_clears_the_candidate_caveat(self, tmp_path):
+        page, _, data = self._form(tmp_path)
+        data["release"]["released_by"] = "A. Reviewer"
+        data["release"]["released_at"] = "2026-11-19"
+        released = scramble(
+            page, approvals=PublicationApprovals.model_validate(data)
+        )
+        assert released.page.approved_for_release
+        assert not released.release_is_stale
+
+    def test_a_stale_pin_does_not_release(self, tmp_path):
+        """The signature was given for a document this no longer is."""
+        page, _, data = self._form(tmp_path)
+        data["release"].update(
+            released_by="A. Reviewer",
+            released_at="2026-11-19",
+            candidate_sha256=digest_text("some other document"),
+        )
+        result = scramble(
+            page, approvals=PublicationApprovals.model_validate(data)
+        )
+        assert not result.page.approved_for_release
+        assert result.release_is_stale
+
+    def test_a_signed_release_survives_a_form_regeneration(self, tmp_path):
+        page, _, data = self._form(tmp_path)
+        data["release"]["released_by"] = "A. Reviewer"
+        data["release"]["released_at"] = "2026-11-19"
+        out = tmp_path / "form.json"
+        out.write_text(json.dumps(data), encoding="utf-8")
+        result = scramble(
+            page, approvals=PublicationApprovals.model_validate(data)
+        )
+        written = write_approvals_form(
+            page,
+            out,
+            report=result.report,
+            candidate_digest=result.candidate_digest,
+        )
+        assert written.kept_signed
+        after = json.loads(out.read_text(encoding="utf-8"))
+        assert after["release"]["released_by"] == "A. Reviewer"
+
+    def test_an_unsigned_release_is_refreshed_with_the_current_digest(
+        self, tmp_path
+    ):
+        """Keeping a stale digest on an unsigned entry would hand back a form
+        guaranteed to fail the gate."""
+        page, result, _ = self._form(tmp_path)
+        out = tmp_path / "form.json"
+        data = json.loads(out.read_text(encoding="utf-8"))
+        data["release"]["candidate_sha256"] = "stale"
+        out.write_text(json.dumps(data), encoding="utf-8")
+        write_approvals_form(
+            page,
+            out,
+            report=result.report,
+            candidate_digest=result.candidate_digest,
+        )
+        after = json.loads(out.read_text(encoding="utf-8"))
+        assert after["release"]["candidate_sha256"] == result.candidate_digest
+
+    def test_the_pre_transform_write_leaves_a_signed_release_alone(
+        self, tmp_path
+    ):
+        """It has no digest, so it did not look at the release."""
+        page, _, data = self._form(tmp_path)
+        data["release"]["released_by"] = "A. Reviewer"
+        data["release"]["released_at"] = "2026-11-19"
+        out = tmp_path / "form.json"
+        out.write_text(json.dumps(data), encoding="utf-8")
+        written = write_approvals_form(page, out)
+        assert written.orphaned == 0
+        after = json.loads(out.read_text(encoding="utf-8"))
+        assert after["release"]["released_by"] == "A. Reviewer"
+
+
+class TestAVoidedReleaseIsResetNotLeftToBeEdited:
+    """The loop has to terminate.
+
+    A signed release whose pin no longer matches was kept by the merge, as
+    every signed entry is — so regenerating the form could not fix it, while
+    the refusal told the reviewer to regenerate the form. Running the
+    documented remedy produced the identical error, forever.
+    """
+
+    def _signed_release_for(self, page, digest):
+        return {
+            "approved_texts": [],
+            "resolutions": [],
+            "country_masking": [],
+            "release": {
+                "released_by": "A. Reviewer",
+                "released_at": "2026-11-19",
+                "rationale": "read in full",
+                "candidate_sha256": digest,
+            },
+        }
+
+    def _fresh(self, digest):
+        return {
+            "approved_texts": [],
+            "resolutions": [],
+            "country_masking": [],
+            "release": {
+                "released_by": "",
+                "released_at": "",
+                "rationale": "",
+                "candidate_sha256": digest,
+            },
+        }
+
+    def test_a_matching_release_is_kept(self):
+        merged, stats = merge_approvals_form(
+            self._signed_release_for(None, "same"),
+            self._fresh("same"),
+            authoritative=["release"],
+        )
+        assert merged["release"]["released_by"] == "A. Reviewer"
+        assert stats["kept_signed"] == 1
+
+    def test_a_voided_release_is_reset_to_an_unsigned_skeleton(self):
+        merged, stats = merge_approvals_form(
+            self._signed_release_for(None, "old"),
+            self._fresh("new"),
+            authoritative=["release"],
+        )
+        assert merged["release"]["candidate_sha256"] == "new"
+        assert merged["release"]["released_by"] == ""
+        assert stats["release_reset"] == 1
+
+    def test_the_reset_forces_a_fresh_date_not_just_a_new_digest(self):
+        """Editing the digest in place would leave a record saying the
+        reviewer read the new document on the day they read the old one."""
+        merged, _ = merge_approvals_form(
+            self._signed_release_for(None, "old"),
+            self._fresh("new"),
+            authoritative=["release"],
+        )
+        assert merged["release"]["released_at"] == ""
+
+    def test_a_call_that_generated_no_release_voids_nothing(self):
+        """Not looking is not grounds for voiding somebody's signature — the
+        pre-transform write has no digest to compare against."""
+        held = self._signed_release_for(None, "old")
+        merged, stats = merge_approvals_form(
+            held,
+            {"approved_texts": [], "resolutions": [], "country_masking": []},
+            authoritative=["approved_texts"],
+        )
+        assert merged["release"] == held["release"]
+        assert not stats.get("release_reset")
+
+    def test_the_write_reports_the_reset(self, tmp_path):
+        page = publication_page(worked_example_case())
+        result = scramble(page)
+        out = tmp_path / "form.json"
+        out.write_text(
+            json.dumps(self._signed_release_for(None, "a-different-document")),
+            encoding="utf-8",
+        )
+        written = write_approvals_form(
+            page,
+            out,
+            report=result.report,
+            candidate_digest=result.candidate_digest,
+        )
+        assert written.release_reset
+        after = json.loads(out.read_text(encoding="utf-8"))
+        assert after["release"]["candidate_sha256"] == result.candidate_digest
+
+
+class TestAWorkingResolutionIsNotReportedAsStray:
+    """"Orphaned" has to mean obsolete, or it means nothing.
+
+    A resolution that works moves its finding out of `report.findings` and
+    into `report.resolved`. A fresh form built from `findings` alone
+    therefore regenerated no entry for it, and the merge reported every
+    *working* resolution as orphaned on the next run — which reads as "tidy
+    me up", and deleting one re-blocks the run on the finding it was
+    clearing.
+    """
+
+    @staticmethod
+    def _page_with_a_small_count():
+        case = worked_example_case()
+        case.freq_rows = [
+            FreqRowVM(
+                scope_label="SE, 2024", n_drugs="40", n_aes="", n_both="2"
+            )
+        ]
+        return publication_page(case)
+
+    def _signed_for(self, page):
+        finding = scramble(page).report.findings[0]
+        return PublicationApprovals(
+            resolutions=[
+                FindingResolution(
+                    code=finding.code.value,
+                    example_id=finding.example_id,
+                    field_path=finding.field_path,
+                    detail_sha256=digest_text(finding.detail),
+                    approved_by="A. Reviewer",
+                    approved_at="2026-11-19",
+                    rationale="the population is wide enough",
+                )
+            ]
+        )
+
+    def test_it_is_kept_not_orphaned(self, tmp_path):
+        page = self._page_with_a_small_count()
+        approvals = self._signed_for(page)
+        result = scramble(page, approvals=approvals)
+        assert result.report.resolved and not result.report.findings
+
+        out = tmp_path / "form.json"
+        out.write_text(approvals.model_dump_json(), encoding="utf-8")
+        written = write_approvals_form(
+            page,
+            out,
+            report=result.report,
+            candidate_digest=result.candidate_digest,
+        )
+        assert written.kept_signed == 1
+        assert written.orphaned == 0
+
+    def test_the_entry_survives_the_regeneration(self, tmp_path):
+        """Which is what makes the next run still clear."""
+        page = self._page_with_a_small_count()
+        approvals = self._signed_for(page)
+        out = tmp_path / "form.json"
+        out.write_text(approvals.model_dump_json(), encoding="utf-8")
+        write_approvals_form(
+            page,
+            out,
+            report=scramble(page, approvals=approvals).report,
+            candidate_digest=scramble(page, approvals=approvals).candidate_digest,
+        )
+        reloaded = PublicationApprovals.model_validate_json(
+            out.read_text(encoding="utf-8")
+        )
+        assert len(reloaded.resolutions) == 1
+        assert not scramble(page, approvals=reloaded).blocked
+
+    def test_an_unsigned_advisory_still_gets_no_entry(self, tmp_path):
+        """Regenerating for resolved findings must not reintroduce the
+        advisory opt-in by the back door: an advisory nobody signed for is
+        still not offered one."""
+        page = publication_page(worked_example_case())
+        result = scramble(
+            page,
+            policy=PublicationPolicy(
+                date_offset_min_days=0,
+                date_offset_max_days=0,
+                decouple_clinical_dates=False,
+            ),
+        )
+        assert result.report.advisories
+        form = export_approvals_form(page, report=result.report)
+        assert form["resolutions"] == []

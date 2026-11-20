@@ -55,6 +55,39 @@
     candidate: the transform preserves what the page states, which is not
     the same as establishing that the result is anonymous.
   </p>
+  {#
+    The compiled document, both ways. A release is a decision about the whole
+    thing, and the published copy of it exists only after a run has cleared —
+    so this is where a reviewer reads what they are being asked to sign for.
+  #}
+  <h3>The compiled document</h3>
+  <p class="links">
+    <a href="internal/{{ document_filename }}">internal</a>
+    <a href="publication/{{ document_filename }}">publication candidate</a>
+    <span class="subtle">
+      every example and the collection's own introduction, in one file
+    </span>
+  </p>
+  {% if release_stale %}
+  <div class="banner blocked">
+    The signed release no longer matches this document. Read the publication
+    candidate above, then sign again with
+    <code>candidate_sha256</code> set to <code>{{ candidate_digest }}</code>.
+  </div>
+  {% elif release_pending %}
+  <p class="subtle">
+    No release is signed, so this is a candidate. Read the publication
+    candidate above before signing one; the pin it carries is
+    <code>{{ candidate_digest }}</code>.
+  </p>
+  {% else %}
+  <p class="subtle">
+    A release is signed for this document and still pins it, so the copies
+    above say they are cleared for public sharing — the same thing the
+    published supplement and its manifest say. Removing the release from the
+    approvals file returns all of them to a candidate.
+  </p>
+  {% endif %}
 
   {% for row in rows %}
   <h2>{{ row.published_label }} — <code>{{ row.example_id }}</code></h2>

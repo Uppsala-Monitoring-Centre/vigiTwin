@@ -251,5 +251,7 @@
     }
   ],
   "findings": [],
-  "resolved_findings": []
+  "resolved_findings": [],
+  "candidate_digest": "871630db44c5de75d5dff804f693aaf58987fc8eba9ed17331cd85dc2a700b3b",
+  "release": null
 }

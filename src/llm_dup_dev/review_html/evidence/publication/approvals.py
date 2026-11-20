@@ -107,16 +107,21 @@ def resolvable(finding: DisclosureFinding) -> bool:
 
 
 def export_approvals_form(
-    page: EvidencePageVM, *, report: DisclosureReport | None = None
-) -> dict[str, list[dict[str, object]]]:
-    """The entries a reviewer has to decide on, unsigned.
+    page: EvidencePageVM,
+    *,
+    report: DisclosureReport | None = None,
+    candidate_digest: str | None = None,
+) -> dict[str, object]:
+    """The decisions a reviewer has to make, unsigned.
 
-    Two lists, built two different ways, because the two decisions are known
-    at different times. Every ``REVIEW`` free-text field blocks categorically,
-    so ``approved_texts`` is derivable from the page alone and is complete
-    before the transform runs. A resolution answers a finding that a check
-    actually raised, so ``resolutions`` needs *report* and is empty without
-    it — which is what the first, pre-transform call produces.
+    Built in three parts, because they become knowable at three different
+    times. Every ``REVIEW`` free-text field blocks categorically, so
+    ``approved_texts`` follows from the page alone and is complete before the
+    transform runs. A resolution answers a finding a check actually raised,
+    so ``resolutions`` needs *report*. A release is about the finished
+    document, so it needs *candidate_digest* — the pin that makes it a record
+    of what was read rather than a standing permission. Each is omitted
+    without its input, which is what the first, pre-transform call produces.
 
     ``country_masking`` is always empty, and that is not an omission:
     ``mask: true`` and ``mask: false`` are both decisions, so there is no
@@ -144,7 +149,7 @@ def export_approvals_form(
                 }
             )
     resolutions: list[dict[str, object]] = []
-    for finding in report.findings if report is not None else ():
+    for finding in _needing_a_resolution(report):
         if not resolvable(finding):
             continue
         resolutions.append(
@@ -163,11 +168,19 @@ def export_approvals_form(
                 ),
             }
         )
-    return {
+    form: dict[str, object] = {
         "approved_texts": texts,
         "resolutions": resolutions,
         "country_masking": [],
     }
+    if candidate_digest is not None and _releasable(report):
+        form[_RELEASE] = {
+            "released_by": "",
+            "released_at": "",
+            "rationale": "",
+            "candidate_sha256": candidate_digest,
+        }
+    return form
 
 
 #: What identifies "the same entry" in each list, so a regenerated form can
@@ -178,6 +191,12 @@ _ENTRY_KEYS: dict[str, tuple[str, ...]] = {
     "country_masking": ("example_id",),
 }
 
+#: ``release`` is one object rather than a list, because it is the one
+#: decision about the whole document. Merged under the same rule as the
+#: lists: signed, it is a record and is kept; unsigned, it is scaffolding and
+#: is regenerated with the current digest.
+_RELEASE = "release"
+
 #: The two fields that turn a form entry into a record. ``country_masking``
 #: says ``decided_*`` rather than ``approved_*`` because it is a policy
 #: decision rather than an approval, but it is signed the same way.
@@ -185,7 +204,45 @@ _SIGNATURE_FIELDS: dict[str, tuple[str, str]] = {
     "approved_texts": ("approved_by", "approved_at"),
     "resolutions": ("approved_by", "approved_at"),
     "country_masking": ("decided_by", "decided_at"),
+    _RELEASE: ("released_by", "released_at"),
 }
+
+
+def _needing_a_resolution(
+    report: DisclosureReport | None,
+) -> tuple[DisclosureFinding, ...]:
+    """Findings a resolution entry should exist for: unresolved **and
+    resolved**.
+
+    The resolved half is not an oversight corrected late — it is the whole
+    difference between "orphaned" meaning something and meaning nothing. A
+    resolution that works moves its finding out of ``findings`` and into
+    ``resolved``, so a list built from ``findings`` alone regenerates no
+    entry for it, and the merge then reports every *working* resolution as
+    orphaned on the next run. That reads as "obsolete, tidy me up", and
+    deleting one re-blocks the run on the finding it was clearing.
+
+    Advisories are deliberately absent. An unsigned advisory gets no entry —
+    that remains a decision not to offer one — but an advisory a reviewer
+    *has* signed for sits in ``resolved`` like any other, so their signature
+    is regenerated rather than reported as stray.
+    """
+    if report is None:
+        return ()
+    return (*report.findings, *report.resolved)
+
+
+def _releasable(report: DisclosureReport | None) -> bool:
+    """Whether a release is the decision that remains.
+
+    Scaffolding one onto a run that still has findings or unsigned advisories
+    would invite signing something the gate must refuse, and would pin a
+    candidate that is about to change — so the entry would go stale before
+    anyone read it. The release is offered last because it is decided last.
+    """
+    if report is None:
+        return False
+    return not report.findings and not report.advisories
 
 
 def _key(entry: dict[str, object], fields: tuple[str, ...]) -> tuple[str, ...]:
@@ -222,6 +279,10 @@ class ApprovalsFormWrite:
     #: record is not ours to drop because the manifest moved on; it may also
     #: be the only trace of a decision about a case that was removed.
     orphaned: int
+    #: Whether a signed release was reset because the document changed under
+    #: it. Called out on its own because it is the one merge outcome that
+    #: needs the reviewer to do something before the run can publish.
+    release_reset: bool = False
 
     def summary(self) -> str:
         """One line for the CLI."""
@@ -231,7 +292,7 @@ class ApprovalsFormWrite:
         )
 
 
-def _load_existing(out: Path) -> dict[str, list[dict[str, object]]]:
+def _load_existing(out: Path) -> dict[str, object]:
     """The file as written, or a clear error rather than a guess.
 
     Read as raw JSON and not through :class:`~.policy.PublicationApprovals`,
@@ -251,7 +312,7 @@ def _load_existing(out: Path) -> dict[str, list[dict[str, object]]]:
             f"{out} does not hold an approvals form (expected an object with "
             f"approved_texts, resolutions and country_masking)."
         )
-    existing: dict[str, list[dict[str, object]]] = {}
+    existing: dict[str, object] = {}
     for listing in _ENTRY_KEYS:
         rows = loaded.get(listing, [])
         if not isinstance(rows, list) or not all(
@@ -262,15 +323,23 @@ def _load_existing(out: Path) -> dict[str, list[dict[str, object]]]:
                 f"not overwritten."
             )
         existing[listing] = list(rows)
+    held = loaded.get(_RELEASE)
+    if held is not None:
+        if not isinstance(held, dict):
+            raise ValueError(
+                f"{out} has a {_RELEASE} that is not an entry; it is not "
+                f"overwritten."
+            )
+        existing[_RELEASE] = dict(held)
     return existing
 
 
 def merge_approvals_form(
-    existing: dict[str, list[dict[str, object]]],
-    fresh: dict[str, list[dict[str, object]]],
+    existing: dict[str, object],
+    fresh: dict[str, object],
     *,
     authoritative: Collection[str] = (),
-) -> tuple[dict[str, list[dict[str, object]]], dict[str, int]]:
+) -> tuple[dict[str, object], dict[str, int]]:
     """Fold a freshly generated form into the file already on disk.
 
     One rule, applied per entry: **a signed entry is a record and is never
@@ -293,20 +362,20 @@ def merge_approvals_form(
     generated at all, so it is never authoritative and always passes through
     untouched.
     """
-    merged: dict[str, list[dict[str, object]]] = {}
+    merged: dict[str, object] = {}
     stats = {"added": 0, "kept_signed": 0, "refreshed": 0, "orphaned": 0}
     for listing, fields in _ENTRY_KEYS.items():
         if listing not in authoritative:
             merged[listing] = list(
-                existing.get(listing, []) or fresh.get(listing, [])
+                _rows(existing, listing) or _rows(fresh, listing)
             )
             continue
         held = {
-            _key(entry, fields): entry for entry in existing.get(listing, [])
+            _key(entry, fields): entry for entry in _rows(existing, listing)
         }
         seen: set[tuple[str, ...]] = set()
         rows: list[dict[str, object]] = []
-        for entry in fresh.get(listing, []):
+        for entry in _rows(fresh, listing):
             key = _key(entry, fields)
             seen.add(key)
             previous = held.get(key)
@@ -326,7 +395,56 @@ def merge_approvals_form(
                 stats["orphaned"] += 1
             rows.append(entry)
         merged[listing] = rows
+
+    # The release, under the same rule. Held as one object because it is the
+    # one decision about the whole document, so there is no key to match on:
+    # signed, it is kept; unsigned, it is replaced with the fresh skeleton
+    # and its digest. A call with no digest did not look at the release at
+    # all, so it passes whatever is there through untouched.
+    held_release = existing.get(_RELEASE)
+    fresh_release = fresh.get(_RELEASE)
+    if _RELEASE not in authoritative:
+        if held_release is not None:
+            merged[_RELEASE] = held_release
+    elif isinstance(held_release, dict) and _is_signed(held_release, _RELEASE):
+        if _still_pins(held_release, fresh_release):
+            stats["kept_signed"] += 1
+            merged[_RELEASE] = held_release
+        else:
+            # A signed release whose pin no longer matches is void, and
+            # unlike a stale text approval there is nothing partial to
+            # salvage: it speaks for the whole document, and the document is
+            # a different one. Keeping it would leave the reviewer editing a
+            # digest by hand beside a date that says they read something
+            # else — so it is reset to an unsigned skeleton, which forces a
+            # fresh name and a fresh date for what is a fresh decision. The
+            # previous run's key record keeps the superseded signature.
+            stats["refreshed"] += 1
+            stats["release_reset"] = 1
+            merged[_RELEASE] = fresh_release if fresh_release else {}
+    elif fresh_release is not None:
+        stats["refreshed" if held_release is not None else "added"] += 1
+        merged[_RELEASE] = fresh_release
     return merged, stats
+
+
+def _still_pins(held: dict[str, object], fresh: object) -> bool:
+    """Whether a signed release was given for the candidate now in hand.
+
+    ``True`` when there is no fresh release to compare against: a call that
+    generated none did not look, and not looking is not grounds for voiding
+    somebody's signature.
+    """
+    if not isinstance(fresh, dict):
+        return True
+    return held.get("candidate_sha256") == fresh.get("candidate_sha256")
+
+
+def _rows(form: dict[str, object], listing: str) -> list[dict[str, object]]:
+    """One of the three lists, typed for the merge."""
+    rows = form.get(listing, [])
+    assert isinstance(rows, list)  # noqa: S101 - _load_existing validates
+    return rows
 
 
 def write_approvals_form(
@@ -335,6 +453,7 @@ def write_approvals_form(
     *,
     force: bool = False,
     report: DisclosureReport | None = None,
+    candidate_digest: str | None = None,
 ) -> ApprovalsFormWrite:
     """Write the form, folding it into whatever is already there.
 
@@ -346,15 +465,24 @@ def write_approvals_form(
     way to get a second form at all.
     """
     out = Path(path)
-    fresh = export_approvals_form(page, report=report)
-    generated = {"approved_texts"} | ({"resolutions"} if report else set())
+    fresh = export_approvals_form(
+        page, report=report, candidate_digest=candidate_digest
+    )
+    generated = {"approved_texts"}
+    if report is not None:
+        generated.add("resolutions")
+    if candidate_digest is not None and _releasable(report):
+        generated.add(_RELEASE)
     if out.exists() and not force:
         merged, stats = merge_approvals_form(
             _load_existing(out), fresh, authoritative=generated
         )
     else:
         merged, stats = fresh, {
-            "added": sum(len(rows) for rows in fresh.values()),
+            "added": sum(
+                len(value) if isinstance(value, list) else 1
+                for value in fresh.values()
+            ),
             "kept_signed": 0,
             "refreshed": 0,
             "orphaned": 0,
@@ -364,7 +492,8 @@ def write_approvals_form(
         json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    return ApprovalsFormWrite(path=out, **stats)
+    reset = bool(stats.pop("release_reset", 0))
+    return ApprovalsFormWrite(path=out, release_reset=reset, **stats)
 
 
 __all__ = [

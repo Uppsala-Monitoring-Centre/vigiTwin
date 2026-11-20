@@ -12,6 +12,7 @@ import pytest
 
 from llm_dup_dev.pipeline.export import write_pair_results
 from llm_dup_dev.review_html.cli import main
+from llm_dup_dev.review_html.render import EVIDENCE_DOCUMENT_FILENAME
 
 from tests.test_review_html.test_render import _make_pair_result
 
@@ -307,3 +308,29 @@ class TestScreeningVerdictOnTheCLI:
             extra=("--screening-verdict-key", "vigiMatchHit"),
         )
         assert "Flagged" in (out / "R001__R002.html").read_text()
+
+
+class TestASavedRunWritesNoCombinedDocument:
+    """The combined document is a default of the *curated collection* entry
+    point and must stay one.
+
+    A saved run is a directory somebody navigates pair by pair, and for a run
+    of any size one file holding every pair is neither useful nor cheap. The
+    two entry points render the same format, so the distinction is a decision
+    rather than an accident, and it is pinned here because nothing in the
+    writer enforces it: `document_filename` simply defaults to None.
+    """
+
+    def test_the_directory_holds_only_pages_and_an_index(
+        self, artifacts, tmp_path
+    ):
+        out = tmp_path / "out"
+        main(_argv(artifacts, out, "--format", "evidence"))
+        assert not (out / EVIDENCE_DOCUMENT_FILENAME).exists()
+        assert (out / "index.html").exists()
+
+    def test_the_index_links_no_document(self, artifacts, tmp_path):
+        out = tmp_path / "out"
+        main(_argv(artifacts, out, "--format", "evidence"))
+        index = (out / "index.html").read_text(encoding="utf-8")
+        assert EVIDENCE_DOCUMENT_FILENAME not in index

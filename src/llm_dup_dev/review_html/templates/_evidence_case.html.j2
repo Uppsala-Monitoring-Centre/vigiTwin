@@ -91,6 +91,31 @@
 
 <section class="case" id="{{ case.example_id }}">
   {#
+    The band, once per example, in a collection only. Every example opens a
+    sheet, so this puts it at the top of each example's first sheet — where a
+    page-level band cannot reach, since breaking before every case would
+    leave it alone on the cover sheet.
+
+    Per example rather than per sheet because an example is the unit people
+    lift out, and one band per example costs a tenth of one per sheet in a
+    collection of any size. A single-case page draws its band in the page
+    shell instead, so that there it is the first element inside <main>.
+
+    The cover sheet therefore carries no band. Its intro and note go through
+    the substitution table and so may show transformed values; what says so
+    on that sheet is the per-sheet footer, in words rather than in colour.
+  #}
+  {% if vm.mode.value == 'publication' and vm.cases | length > 1 %}
+  <div class="masked-banner" role="note">
+    {#- Capitalised in the markup, not only by CSS, for the same reason as
+       the document-level band: a copy with its stylesheet stripped, or any
+       reader taking the text, must still carry it. -#}
+    <span class="masked-word">MASKED</span>
+    <span class="masked-detail">Select displayed values have been
+    transformed.</span>
+  </div>
+  {% endif %}
+  {#
     The label is the anchor in presentable form, so a reader who follows a
     reference to "S3" lands on a section that says S3. The position beside it
     is navigational only and is never a citation: it moves when the

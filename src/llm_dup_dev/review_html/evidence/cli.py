@@ -39,7 +39,11 @@ from typing import Sequence, TypeVar
 
 from pydantic import BaseModel
 
-from ..render import write_evidence_batch_html, write_evidence_document
+from ..render import (
+    EVIDENCE_DOCUMENT_FILENAME,
+    write_evidence_batch_html,
+    write_evidence_document,
+)
 from ..selection import MissingPairPolicy
 from .collection import build_collection, write_summary_drafts
 from .manifest import load_curated_manifest
@@ -92,9 +96,20 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Also write every example into one HTML file at PATH. This is an "
-            "internal review containing original identifiers and narratives, "
-            "not a publication-ready supplement."
+            "Also write every example into one HTML file at PATH, as well as "
+            "the copy inside --output-dir. In internal mode that file holds "
+            "original identifiers and narratives; in publication mode it is "
+            "the transformed supplement, written only if the disclosure "
+            "review is clear."
+        ),
+    )
+    parser.add_argument(
+        "--no-single-document",
+        action="store_true",
+        help=(
+            f"Skip the combined {EVIDENCE_DOCUMENT_FILENAME} written into "
+            "--output-dir. --single-document is unaffected, so pass both to "
+            "write the combined document only to PATH."
         ),
     )
     parser.add_argument(
@@ -219,6 +234,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         _run_publication(args, page)
         return
 
+    document = _document_filename(args)
     out = write_evidence_batch_html(
         page.cases,
         args.output_dir,
@@ -227,10 +243,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         collection_intro=page.intro,
         collection_note=page.note,
         provenance=page.provenance,
+        document_filename=document,
     )
     print(
         f"Wrote {len(page.cases)} evidence review(s) to {out}"
         + (" (with index.html)" if not args.no_index else "")
+        + (f" and {document}" if document else "")
     )
 
     if args.single_document:
@@ -250,6 +268,19 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     for gap in page.gaps:
         print(f"NOTE: {gap.message}", file=sys.stderr)
+
+
+def _document_filename(args: argparse.Namespace) -> str | None:
+    """The combined document's name inside ``--output-dir``, or ``None``.
+
+    A curated collection is read as one piece — ordered by hand, with its own
+    intro and note — so the combined document is the artifact and the
+    per-example pages are the way round it. That makes it a default rather
+    than a flag, and ``--no-single-document`` the escape.
+    """
+    if args.no_single_document:
+        return None
+    return EVIDENCE_DOCUMENT_FILENAME
 
 
 _Settings = TypeVar("_Settings", bound=BaseModel)
@@ -295,11 +326,23 @@ def _run_publication(args: argparse.Namespace, page) -> None:
         # keeps both without making the form wait for the key store. Never
         # with force: that was the first write's to spend.
         form = write_approvals_form(
-            page, args.export_approvals, report=result.report
+            page,
+            args.export_approvals,
+            report=result.report,
+            candidate_digest=result.candidate_digest,
         )
-        if form.added or form.orphaned:
+        if form.added or form.orphaned or form.release_reset:
             print(
                 f"Updated approvals form at {form.path} ({form.summary()})."
+            )
+        if form.release_reset:
+            # The one merge outcome that needs the reviewer to act, and it
+            # would otherwise be a single digit inside the summary line.
+            print(
+                "NOTE: the signed release was reset — the document changed "
+                "under it, so releasing it again is a fresh decision and "
+                "needs a fresh name and date.",
+                file=sys.stderr,
             )
 
     if args.key_out:
@@ -315,10 +358,8 @@ def _run_publication(args: argparse.Namespace, page) -> None:
         out = write_publication_evidence(
             result,
             args.output_dir,
-            index_title=page.title,
-            collection_intro=page.intro,
-            collection_note=page.note,
             single_document=args.single_document,
+            document_filename=_document_filename(args),
         )
     except PublicationBlocked as blocked:
         print(f"BLOCKED: {blocked}", file=sys.stderr)
@@ -331,7 +372,15 @@ def _run_publication(args: argparse.Namespace, page) -> None:
             )
         sys.exit(2)
 
+    # Said the same way the pages and the manifest say it. The console used
+    # to call every run a candidate, which after a signed release was the
+    # one place still contradicting the artifacts it had just written.
+    standing = (
+        "They are cleared for public sharing."
+        if result.page.approved_for_release
+        else "Treat them as a candidate for disclosure review."
+    )
     print(
         f"Wrote {len(result.page.cases)} publication review(s) to {out}. "
-        "Treat them as a candidate for disclosure review."
+        f"{standing}"
     )

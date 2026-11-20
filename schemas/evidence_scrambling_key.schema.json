@@ -524,6 +524,36 @@
       "title": "PublicationPolicy",
       "type": "object"
     },
+    "ReleaseApproval": {
+      "additionalProperties": false,
+      "description": "A reviewer's decision that the whole document may be published.\n\nThe one document-level decision in this module; the other three are\nper-field or per-example. It is what removes the candidate caveat from\nboth footers and from the manifest, so it is the most consequential\nsignature in the file and the one with the least to say: a name, a date,\na reason, and the content it was given for.\n\n``candidate_sha256`` is that last part, and it is why this is a record\nrather than a switch. A command-line flag would name nobody and, set once\nin a script, would keep the candidate wording from ever appearing again;\na name and date alone would keep clearing a document that had since been\nre-curated, which is the hazard :attr:`FindingResolution.detail_sha256`\nexists to end. Pinned, a release means *this* document, read by *this*\nperson, on *this* date.",
+      "properties": {
+        "released_by": {
+          "title": "Released By",
+          "type": "string"
+        },
+        "released_at": {
+          "title": "Released At",
+          "type": "string"
+        },
+        "rationale": {
+          "default": "",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "candidate_sha256": {
+          "title": "Candidate Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "released_by",
+        "released_at",
+        "candidate_sha256"
+      ],
+      "title": "ReleaseApproval",
+      "type": "object"
+    },
     "SeparationRecord": {
       "additionalProperties": false,
       "description": "A day-count the page quotes, as computed and as now displayed.\n\nPresentation only. The finding's severity, its weight and the penalty it\ncontributed to are the pipeline's and are untouched; this records that the\n*figure beside the two dates* was brought into line with them.",
@@ -652,6 +682,22 @@
       },
       "title": "Resolved Findings",
       "type": "array"
+    },
+    "candidate_digest": {
+      "default": "",
+      "title": "Candidate Digest",
+      "type": "string"
+    },
+    "release": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReleaseApproval"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

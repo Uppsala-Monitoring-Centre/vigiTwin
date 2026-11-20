@@ -25,7 +25,14 @@ from collections.abc import Mapping, Sequence
 from enum import Enum
 from typing import NamedTuple
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from ..models import ValueKind
 
@@ -778,6 +785,54 @@ class FindingResolution(BaseModel):
         return self
 
 
+class ReleaseApproval(BaseModel):
+    """A reviewer's decision that the whole document may be published.
+
+    The one document-level decision in this module; the other three are
+    per-field or per-example. It is what removes the candidate caveat from
+    both footers and from the manifest, so it is the most consequential
+    signature in the file and the one with the least to say: a name, a date,
+    a reason, and the content it was given for.
+
+    ``candidate_sha256`` is that last part, and it is why this is a record
+    rather than a switch. A command-line flag would name nobody and, set once
+    in a script, would keep the candidate wording from ever appearing again;
+    a name and date alone would keep clearing a document that had since been
+    re-curated, which is the hazard :attr:`FindingResolution.detail_sha256`
+    exists to end. Pinned, a release means *this* document, read by *this*
+    person, on *this* date.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    released_by: str
+    released_at: str
+    rationale: str = ""
+    #: :func:`digest_text` of the candidate's content, as
+    #: ``digest_candidate`` computes it. Generated into the form by
+    #: ``--export-approvals``, so the signer never types it.
+    candidate_sha256: str
+
+    def pins(self, digest: str) -> bool:
+        """Whether this release was given for the candidate now in hand."""
+        return self.candidate_sha256 == digest
+
+    @model_validator(mode="after")
+    def _check_signature(self) -> ReleaseApproval:
+        if not self.candidate_sha256.strip():
+            raise ValueError(
+                "candidate_sha256 pins the document that was read; without "
+                "it the release would outlive any later edit to it. "
+                "Generate the form with --export-approvals"
+            )
+        if not self.released_by.strip() or not self.released_at.strip():
+            raise ValueError(
+                "released_by and released_at are the audit record; an "
+                "unsigned entry is a form, not a release"
+            )
+        return self
+
+
 class PublicationApprovals(BaseModel):
     """Everything a reviewer has signed off for one publication run.
 
@@ -790,6 +845,31 @@ class PublicationApprovals(BaseModel):
     approved_texts: list[ApprovedText] = Field(default_factory=list)
     resolutions: list[FindingResolution] = Field(default_factory=list)
     country_masking: list[CountryMaskingOverride] = Field(default_factory=list)
+    #: The document-level release, where a reviewer has signed one. ``None``
+    #: is the candidate state, and the safe one: everything this layer writes
+    #: calls itself a candidate until a signed, pinned release says otherwise.
+    release: ReleaseApproval | None = None
+
+    @field_validator("release", mode="before")
+    @classmethod
+    def _blank_release_is_none(cls, value: object) -> object:
+        """A scaffolded release nobody signed means no release.
+
+        Unlike an unsigned :class:`ApprovedText`, which refuses to load
+        because the field it names blocks either way, an unsigned release has
+        a legitimate meaning: this is a candidate. Refusing the file instead
+        would make the form unloadable the moment it offered a release, and
+        the sign-some-then-re-run loop is the only way the form is used.
+
+        Only a *wholly* blank entry is dropped. One with a name and no date,
+        or a date and no name, is a half-made decision and still raises.
+        """
+        if isinstance(value, dict) and not any(
+            str(value.get(field, "")).strip()
+            for field in ("released_by", "released_at", "rationale")
+        ):
+            return None
+        return value
 
     def text_for(self, example_id: str, field_path: str) -> ApprovedText | None:
         for entry in self.approved_texts:
@@ -837,6 +917,7 @@ __all__ = [
     "PublicationApprovals",
     "PublicationPolicy",
     "PublicationSecrets",
+    "ReleaseApproval",
     "ValuePolicy",
     "digest_text",
 ]

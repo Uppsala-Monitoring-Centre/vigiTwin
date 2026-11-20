@@ -462,6 +462,30 @@ limitations says what that leaves open.
 
 ## The residual scan
 
+### What is scanned
+
+Three renders, because a page written is a page that must be read back.
+
+Each case is rendered as the writer renders it — with the collection's title,
+intro, note and transform note, which the probe page used to leave out while
+the writer put them on every page — and scanned with that case's own table.
+
+The combined document is then rendered once and scanned in slices: each
+case's `<section>` with that case's table, and the shared front matter and
+footers with the union of every case's table. Never one merged table over the
+whole document: cases disagree by construction, each pair having its own
+offset, so a value case B published is routinely a value case A reported, and
+a merged table would report B's legitimate published date as a leak of A's.
+The union is safe for the shared regions only because it drops any original
+that is also somebody's published value — the same compromise the page-level
+scan already lives with.
+
+If the document's case-section count ever disagrees with the transform count,
+the scan raises rather than carrying on: a misaligned slice would quietly
+check the wrong case.
+
+### What it looks for
+
 After every transform has run, the output is searched for anything
 recognisably original. It assumes the transforms were incomplete, which is the
 only safe assumption to make about them — and it has to do that without
@@ -518,7 +542,7 @@ published", and a silently empty section says the first. The same applies to
 `EvidenceCell.withheld`, which renders as `Withheld` and is distinct from a
 `missing` cell, which renders blank.
 
-## Three decisions, and why the cheap one is not copying
+## Three decisions per field, and why the cheap one is not copying
 
 The review gate is **categorical**: it fires on every field of its classes,
 not on evidence that one of them carries something. The policy cannot tell a
@@ -552,6 +576,19 @@ matching, so the case blocks again with `approval_digest_mismatch`. Without
 it, the stale approval would publish the text that *was* reviewed in place of
 the text that is now there, and neither artifact would say so.
 
+**The finding names the digest to put back**, because the remedy is a sha256
+and the alternative is reimplementing `digest_text` by hand — including the
+part where a string and a one-item list digest differently, so a
+`paragraphs` field is a *list* and digesting the joined text gives the wrong
+answer. Re-run and the message says `set text_sha256 to <value>`; the
+side-by-side review page carries it as well, beside the old pin.
+
+Regenerating the form does **not** refresh it, and that is the point: the
+merge keeps signed entries untouched, so an edited field needs a human to
+look at the new text and either repin it or decide again. An automatic
+refresh would re-approve prose nobody had read, which is the hazard the
+digest exists to create friction against.
+
 `--export-approvals` writes the form. It carries paths and digests and not
 the text, because the artifact for *reading* the text is the side-by-side
 review, which prints the originals and is written on every run. The form
@@ -570,7 +607,19 @@ knowable at different points in the run:
   of a salt still leaves it behind.
 - `resolutions` — one entry per finding a check actually raised, which is
   knowable only after the transform. The form is written a second time once
-  the run has its report, and the two writes merge.
+  the run has its report, and the two writes merge. Entries are regenerated
+  for findings a reviewer has **already resolved** as well as for outstanding
+  ones: a working resolution moves its finding out of the unresolved list, so
+  a form built from that list alone would report every resolution that is
+  doing its job as orphaned — which reads as "obsolete, delete me", and
+  deleting one re-blocks the run on the finding it was clearing.
+- `release` — the one decision about the whole document (§ Releasing the
+  document). Scaffolded with its digest filled in, and only once nothing else
+  is outstanding, because a release signed over a candidate that is about to
+  change would pin a document nobody will publish. Left unsigned it loads as
+  *no release*, rather than as an error: a candidate is the ordinary state,
+  and a form that became unloadable the moment it offered a release would
+  stop the sign-then-re-run loop dead.
 
 `country_masking` is always empty, and that is not an omission: `mask: true`
 and `mask: false` are both decisions, so there is no neutral entry to
@@ -600,7 +649,15 @@ fail on load; rewriting a signed one would move the subject out from under a
 signature. Entries the run no longer asks for are kept and counted as
 orphaned rather than dropped — a reviewer's record is not ours to discard
 because the manifest moved on, and it may be the only trace of a decision
-about a case that has since been removed.
+about a case that has since been removed. An orphaned count therefore means
+something specific: a field path moved, or an example left the collection.
+It is worth looking into rather than tidying away.
+
+The release merges under the same rule, as a single object rather than a
+list: signed, it is kept; unsigned, it is replaced along with its digest. A
+write that was given no digest did not look at the release at all, so it
+passes whatever is there through untouched — which is what the pre-transform
+write does, and why it does not report a signed release as orphaned.
 
 `--force` still regenerates from scratch, and now really does discard
 signatures. It is the deliberate reset, not the way to get a second form.
@@ -665,6 +722,75 @@ parse, or for which no offset satisfied the invariants), needs-a-human (free
 text), residual (something recognisably original still in the output after
 every transform ran), and advisory.
 
+### Releasing the document
+
+Everything above is about one field or one case. The release is about the
+whole document, and it is the only thing that removes the candidate caveat
+from a published page — the footer stops saying *"a candidate for disclosure
+review, not a document certified as anonymised"* and the manifest's statement
+changes with it.
+
+It is a `ReleaseApproval` in the approvals file: a name, a date, a reason,
+and `candidate_sha256`. There is no command-line flag for it, and the reason
+is worth stating because the flag is the obvious design. A flag records
+nobody — and every other decision in this layer carries who decided and when
+— and a flag set once in a deployment script would keep the candidate wording
+from ever appearing again. The pin earns its place the same way
+`FindingResolution.detail_sha256` does: without it, a signature given for one
+document goes on clearing a later, different one.
+
+It costs the signer almost nothing. They are already in that file putting a
+name and a date onto every text approval, and `--export-approvals` scaffolds
+the release with the digest already computed, so the two fields they fill are
+the two they are filling anyway. The form holds it back until nothing else is
+outstanding, because a release signed over a candidate that is about to
+change would pin a document nobody will publish.
+
+**Two refusals, and both raise rather than quietly falling back to the
+candidate wording** — which would hand a signer a candidate document they had
+asked to release:
+
+- **A stale pin.** The document changed after it was read, so the signature
+  was given for something else. The refusal names the digest the current
+  candidate hashes to, so the value is readable from the terminal, and
+  passing `--export-approvals` **resets the release block** to an unsigned
+  skeleton carrying it.
+
+  That reset is the one place a signed entry is not kept, and the asymmetry
+  with an edited text approval is deliberate. A text approval covers one
+  field, so a stale one leaves a reviewer something to compare against and
+  re-pin. A release covers the whole document, and a changed document is a
+  different one — repinning in place would leave a record saying the reviewer
+  read the new document on the day they read the old one. So releasing again
+  is a fresh decision, and it needs a fresh name and date. The superseded
+  signature stays in the previous run's key record.
+- **An unsigned advisory.** `date_pattern_unchanged` is advisory, so a run
+  can publish a pair's real timeline, print one line to stderr and succeed —
+  and a release would then call that *cleared for public sharing*. Advisories
+  do not block the ordinary gate, by design: reporting a weakness beats
+  hiding it, and these are inferences rather than leaks. A release is
+  different, because it is a person asserting the document may go out, and
+  nobody can assert that about a weakness they have not seen. An advisory a
+  reviewer *has* accepted is no longer an advisory — it moves to
+  `report.resolved` through a signed `FindingResolution` — so the requirement
+  is not "no weaknesses" but "a signature on each one".
+
+The digest covers the transformed content with `generated_at`, `provenance`,
+`mode` and `approved_for_release` left out. The first is a wall-clock stamp
+and would void every release on the next run; the second would void one on
+any commit between signing and re-running, which is not a change to the
+document; the last two are what the release itself decides, so pinning them
+would make signing change the thing signed. The first two are exactly what
+the residual scan already exempts, so the pin covers precisely what this
+layer already treats as content.
+
+**Who released it is recorded in the key record, not in the supplement.**
+The public manifest carries `approved_for_release` and `released_at`. The
+reviewer's name and their rationale stay secure-side: a rationale may name
+real cases, exactly as a finding resolution's may, and publishing an
+individual's name in an automated artifact is a disclosure decision of its
+own that belongs in the manuscript.
+
 ## Reproducibility, and what is deliberately not recorded
 
 The salt comes from `VIGITWIN_PUBLICATION_SALT` or the secure key store.
@@ -701,6 +827,28 @@ it would be the opposite: the published record would carry the means to
 reverse its own transform.
 
 ## Side-by-side review
+
+`internal/` and `publication/` each hold the **combined document** as well as
+the per-case pages, with the collection's own intro and note. That is not a
+convenience. A release is a decision about the whole compiled document, and
+the published copy of that document is written only by a run that has
+already cleared — so before the decision is made, which is every run that
+matters, it exists nowhere else. This directory is written unconditionally,
+blocked run or not, which is why the document a reviewer signs for lives
+here.
+
+The review page links both copies at the top and names the digest the pin
+must carry, so the two things a reviewer needs — the document, and the value
+that attaches their signature to it — are in the artifact they already work
+from. If a signed release has gone stale, the page says so there too.
+
+The `publication/` subtree states whatever is true of the run — candidate
+before a release is signed, cleared after. It once showed the candidate
+footer always, on the reasoning that somebody deciding whether to release
+should not be shown a document claiming to have been released; that cannot
+arise, because the footer says released only when a signed release pins this
+candidate, and by then the decision has been made. What it did instead was
+put two artifacts on disk making contradictory claims about one document.
 
 `write_side_by_side` writes `internal/`, `publication/` and
 `disclosure_review.html`: per case, the two renderings to open together, and
@@ -745,6 +893,38 @@ who never scrolls — and in every one of those a footnote at the bottom is
 gone while the transformed values are still on show. The band is at the top
 for that reason.
 
+### Once per page, or once per example
+
+A single page carries one band, the first element inside `<main>`, which is
+what makes it survive a screenshot or a crop.
+
+A **collection** carries one at the top of each example and none on its cover
+sheet, which follows from how it paginates: every example opens a fresh
+sheet, so a page-level band would sit alone with the title, intro and note,
+above no example at all. One per example puts it where a reader of any
+example meets it.
+
+Per example rather than per sheet, deliberately. An example is the unit
+somebody lifts out of a supplement, and one band per example costs a tenth of
+what one per sheet would cost in a collection of any size. A band repeated on
+every sheet would also have to be a fixed-position element, like the
+per-sheet footer, which means another ~12mm off every sheet's content area
+and a coloured wash across a document that has been cleared for publication
+— which reads as a draft, and a page of warnings is a page nobody reads.
+
+**The cover sheet has no band, and its prose is not untransformed.** The
+collection's intro and note go through the substitution table like any other
+derived text, so they may carry transformed values. What says so on that
+sheet is the per-sheet footer, in words rather than in colour. Keeping a band
+there for the screen and hiding it in print is not available: no rule inside
+the print block may hide content, and a test holds that line.
+
+The per-sheet footer is what covers the sheets inside a long example as well.
+In the candidate state it says so outright; once released it carries the
+collection's title *and* that displayed values were transformed — because
+clearing a document settles the disclosure question and leaves the
+interpretive one, and a reader must not take a shifted date for a real one.
+
 It is a band and not a tint behind the text. A diagonal wash over a page of
 tables is what a print engine is free to drop and what a screen reader never
 had, and this is the one claim on the page that must not be lost; the word is
@@ -779,6 +959,13 @@ VIGITWIN_PUBLICATION_SALT=… python -m llm_dup_dev.review_html.evidence \
     --key-out secure/scrambling_key.json
 ```
 
+The supplement directory holds a page per pair, an `index.html` linking them,
+the combined `combined.html` — written by default, and named by the manifest
+so the two cannot drift — and the manifest itself. `--no-single-document`
+skips the combined document; `--single-document PATH` writes an extra copy
+wherever you point it, which the manifest deliberately does *not* record,
+because a public manifest should name no filesystem location.
+
 The secure outputs are written first and unconditionally. The supplement is
 written last, and only if nothing is outstanding; otherwise the command
 reports each finding and exits non-zero.
@@ -799,6 +986,19 @@ one loop: the run reads the signed file, and writes back a merged form
 carrying whatever is still outstanding. That is the usual shape after the
 first pass, because clearing one finding routinely reveals the next.
 
+**Drop `--export-approvals` on the final run.** By then it can add nothing —
+anything still missing would have blocked the run rather than let it be the
+final one — and leaving it off means the run that produced the supplement
+read the signed file without rewriting it. That file is the record of who
+decided what, so the archived copy is better left exactly as the reviewer
+saved it; the form writer reformats what it merges, which is harmless and
+still a change to a file worth being able to diff against itself. Keeping the
+flag on is safe, and the summary line it prints —
+`0 new, N signed kept, 0 unsigned refreshed, 0 orphaned` — is a last check
+that nothing was outstanding and no signature was voided. Either is
+defensible; the published supplement is identical either way, bar the render
+timestamp in its footer.
+
 ## Secure-side integration
 
 This repository holds the generic transformation logic and synthetic
@@ -807,9 +1007,10 @@ fixtures. The secure companion repository supplies, for a real study:
 - the salt, from its key store, and the directory the key record is written to;
 - the approvals file — the decision for each case's curator-written fields
   (usually `approve_as_written`), the resolutions for any finding a reviewer
-  accepts, and any per-example country-masking overrides. The first two are
-  generated by `--export-approvals` and then signed; the third is written by
-  hand, because there is no neutral masking entry to generate;
+  accepts, any per-example country-masking overrides, and the document-level
+  release once a reviewer signs one. Three of the four are generated by
+  `--export-approvals` and then signed; the country-masking overrides are
+  written by hand, because there is no neutral masking entry to generate;
 - the policy file, where the defaults are not wanted — the two masking
   switches in particular, which are independent: countries off, sources on;
 - the curated manifest pointing at the real run's artifacts.
@@ -818,6 +1019,12 @@ Nothing in that list is code. The transform, its validation and its gate all
 live here and are exercised against synthetic data.
 
 ## Known limitations
+
+- **The per-sheet footer carries static text and no page number.** It is a
+  fixed-position element, which is the only thing a browser repeats on every
+  printed sheet; `@page` margin boxes and `counter(page)` are not reachable
+  from one. A long collection title is clipped to the single line the band
+  allows.
 
 - **Contextual frequencies are retained** as instructed, so no transform here
   addresses a small count. A small count in a scope that *names a country* now

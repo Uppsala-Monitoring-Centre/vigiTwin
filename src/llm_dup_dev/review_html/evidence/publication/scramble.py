@@ -79,6 +79,7 @@ from .policy import (
     PublicationApprovals,
     PublicationPolicy,
     PublicationSecrets,
+    ReleaseApproval,
     ValuePolicy,
     digest_text,
 )
@@ -217,10 +218,25 @@ class ScrambleResult:
     transforms: list[CaseTransform]
     key_id: str
     policy: PublicationPolicy
+    #: The digest this candidate's content hashes to, which a
+    #: :class:`~.policy.ReleaseApproval` is pinned against.
+    candidate_digest: str = ""
+    #: The release in force, where one was supplied *and* still pins this
+    #: candidate. A release that no longer pins is held here as well, with
+    #: :attr:`page.approved_for_release` left false, so the writers can
+    #: refuse rather than quietly produce a candidate.
+    release: ReleaseApproval | None = None
 
     @property
     def blocked(self) -> bool:
         return self.report.blocked
+
+    @property
+    def release_is_stale(self) -> bool:
+        """A release was signed, for a document this is no longer."""
+        return self.release is not None and not self.release.pins(
+            self.candidate_digest
+        )
 
 
 def _components(text: str) -> list[str]:
@@ -1330,8 +1346,9 @@ def _apply_review(
                     field_path=slot.path,
                     message=(
                         f"{slot.key} was approved as written, but the text "
-                        "has changed since. Re-read it and update "
-                        "text_sha256, or decide again"
+                        "has changed since. Re-read it in the side-by-side "
+                        f"review and set text_sha256 to {pinned}, or decide "
+                        "again"
                     ),
                     detail=(
                         f"approval pins {approved.text_sha256}; the text now "
@@ -1585,6 +1602,10 @@ def scramble_page(
     findings = [f for transform in transforms for f in transform.findings]
     findings.extend(_scramble_page_level(published, union, settings))
 
+    digest = digest_candidate(published)
+    release = decisions.release
+    published.approved_for_release = release is not None and release.pins(digest)
+
     return ScrambleResult(
         page=published,
         report=partition(
@@ -1593,6 +1614,34 @@ def scramble_page(
         transforms=transforms,
         key_id=secrets.key_id,
         policy=settings,
+        candidate_digest=digest,
+        release=release,
+    )
+
+
+#: Excluded from the digest a release is pinned against. ``generated_at`` is
+#: stamped at render time, so including it would void every release on the
+#: next run; ``provenance`` would void one on any commit between signing and
+#: re-running, which is not a change to the document; ``mode`` and
+#: ``approved_for_release`` are what the release itself decides, so pinning
+#: them would make signing change the thing signed. The first two are what
+#: :func:`~.substitute.scan_residual` already exempts, so the pin covers
+#: exactly what this layer already treats as content.
+_DIGEST_EXCLUDES = frozenset(
+    {"generated_at", "provenance", "mode", "approved_for_release"}
+)
+
+
+def digest_candidate(page: EvidencePageVM) -> str:
+    """Pin one publication candidate's content, as a reviewer reads it.
+
+    Over the transformed view model rather than the rendered HTML, which
+    carries a wall-clock timestamp and would therefore digest differently on
+    every run. Deterministic given the salt, which is the property the
+    reproducibility tests already hold the transform to.
+    """
+    return digest_text(
+        page.model_dump_json(exclude=set(_DIGEST_EXCLUDES))
     )
 
 
@@ -1620,6 +1669,11 @@ def _scramble_page_level(
         intro=page.intro,
         note=page.note,
         generated_at=page.generated_at,
+        # Rendered into the publication footer, and until now read by neither
+        # this scan nor the rendered one. Built from the policy, so the live
+        # risk was small; "scanned by nothing" is not a property any string
+        # on a published page should have.
+        transform_note=page.transform_note,
         provenance=page.provenance,
         mode=page.mode,
     )
@@ -1636,5 +1690,6 @@ __all__ = [
     "CaseTransform",
     "PresentationMode",
     "ScrambleResult",
+    "digest_candidate",
     "scramble_page",
 ]

@@ -14,6 +14,7 @@ import pytest
 
 from llm_dup_dev.pipeline.export import write_pair_results
 from llm_dup_dev.review_html.evidence.cli import main
+from llm_dup_dev.review_html.render import EVIDENCE_DOCUMENT_FILENAME
 
 from tests.test_review_html.test_render import _make_pair_result
 
@@ -265,6 +266,25 @@ class TestCollectionCLIMissingPairs:
         assert (out / "S2.html").exists()
         assert not (out / "S3.html").exists()
 
+    def test_the_combined_document_holds_what_was_rendered(
+        self, with_unloadable_pair
+    ):
+        """Not what was asked for, so the document is never a longer claim
+        than the directory it sits in."""
+        out = with_unloadable_pair / "out"
+        main(
+            [
+                "--manifest",
+                str(with_unloadable_pair / "collection.yaml"),
+                "--output-dir",
+                str(out),
+                "--skip-missing",
+            ]
+        )
+        html = (out / EVIDENCE_DOCUMENT_FILENAME).read_text(encoding="utf-8")
+        assert html.count('<section class="case"') == 2
+        assert "S3" not in html
+
     def test_unknown_pair_id_always_fails(self, collection):
         """An id matching no pair is a mistake in the request, not the data."""
         (collection / "stale.yaml").write_text(
@@ -280,3 +300,85 @@ class TestCollectionCLIMissingPairs:
                     "--skip-missing",
                 ]
             )
+
+
+class TestTheCombinedDocumentIsTheDefault:
+    """A curated collection is read as one piece — hand-ordered, with its own
+    intro and note — so the combined document is the artifact and the
+    per-example pages are the way round it."""
+
+    @staticmethod
+    def _argv(collection, out, *extra):
+        return [
+            "--manifest",
+            str(collection / "collection.yaml"),
+            "--output-dir",
+            str(out),
+            *extra,
+        ]
+
+    def test_it_is_written_without_being_asked_for(self, collection):
+        out = collection / "out"
+        main(self._argv(collection, out))
+        html = (out / EVIDENCE_DOCUMENT_FILENAME).read_text(encoding="utf-8")
+        assert html.count('<section class="case"') == 2
+        assert "First example" in html and "Second example" in html
+
+    def test_it_carries_the_collections_own_front_matter(self, collection):
+        """Which is the thing a per-example page cannot carry: the intro and
+        note belong to the set, not to any one pair."""
+        out = collection / "out"
+        main(self._argv(collection, out))
+        html = (out / EVIDENCE_DOCUMENT_FILENAME).read_text(encoding="utf-8")
+        assert "Synthetic collection" in html
+
+    def test_the_index_links_it(self, collection):
+        out = collection / "out"
+        main(self._argv(collection, out))
+        index = (out / "index.html").read_text(encoding="utf-8")
+        assert f'href="{EVIDENCE_DOCUMENT_FILENAME}"' in index
+
+    def test_the_manifest_order_is_preserved_in_it(self, collection):
+        out = collection / "out"
+        main(self._argv(collection, out))
+        html = (out / EVIDENCE_DOCUMENT_FILENAME).read_text(encoding="utf-8")
+        assert html.index("First example") < html.index("Second example")
+
+    def test_no_single_document_skips_it(self, collection):
+        out = collection / "out"
+        main(self._argv(collection, out, "--no-single-document"))
+        assert not (out / EVIDENCE_DOCUMENT_FILENAME).exists()
+        assert (out / "S1.html").exists()
+
+    def test_the_index_is_a_separate_switch(self, collection):
+        out = collection / "out"
+        main(self._argv(collection, out, "--no-index"))
+        assert not (out / "index.html").exists()
+        assert (out / EVIDENCE_DOCUMENT_FILENAME).exists()
+
+    def test_single_document_writes_a_further_copy(self, collection):
+        out = collection / "out"
+        elsewhere = collection / "elsewhere" / "supplement.html"
+        main(
+            self._argv(collection, out, "--single-document", str(elsewhere))
+        )
+        assert (out / EVIDENCE_DOCUMENT_FILENAME).exists()
+        assert elsewhere.exists()
+
+    def test_both_flags_put_it_only_where_asked(self, collection):
+        """The explicit way to move the combined document out of the output
+        directory, rather than redirecting silently."""
+        out = collection / "out"
+        elsewhere = collection / "elsewhere" / "supplement.html"
+        main(
+            self._argv(
+                collection,
+                out,
+                "--no-single-document",
+                "--single-document",
+                str(elsewhere),
+            )
+        )
+        assert not (out / EVIDENCE_DOCUMENT_FILENAME).exists()
+        assert elsewhere.exists()
+

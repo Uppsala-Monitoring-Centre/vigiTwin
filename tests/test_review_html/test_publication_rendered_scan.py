@@ -16,6 +16,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from llm_dup_dev.review_html.evidence.models import (
     EvidencePageVM,
     PresentationMode,
@@ -24,8 +26,17 @@ from llm_dup_dev.review_html.evidence.publication.substitute import (
     SubstitutionTable,
     scan_rendered_html,
 )
+from llm_dup_dev.review_html.evidence.publication import (
+    verify_combined_document,
+    verify_rendered_output,
+    write_publication_evidence,
+)
 from llm_dup_dev.review_html.render import render_evidence_page
-from tests.test_review_html.conftest import publication_page, worked_example_case
+from tests.test_review_html.conftest import (
+    publication_page,
+    scramble,
+    worked_example_case,
+)
 
 TEMPLATES = (
     Path(__file__).resolve().parents[2]
@@ -147,3 +158,90 @@ class TestStrippingThoseRegionsCannotHideALeak:
                         f"{included.group(1)} is included into a static "
                         "region and now carries Jinja of its own"
                     )
+
+
+class TestTheScanReadsWhatIsWritten:
+    """The premise of the whole pass, and it was not holding.
+
+    The probe page carried the title and the cases alone, so the collection
+    intro, the note, the transform note and the per-sheet footer were never
+    read — while `write_publication_evidence` rendered all of them. Worse,
+    the CLI handed the writer the *pre-transform* intro, so a collection
+    introduction naming a date or a country reached every published page
+    unrewritten and nothing looked at it.
+    """
+
+    @staticmethod
+    def _page_with_intro(intro: str) -> EvidencePageVM:
+        page = publication_page(worked_example_case())
+        page.intro = intro
+        return page
+
+    def test_a_value_in_the_collection_intro_is_rewritten(self):
+        """It goes through the union table like any other derived prose."""
+        result = scramble(self._page_with_intro("Both describe 2023-11-13."))
+        assert "2023-11-13" not in result.page.intro
+
+    def test_an_original_left_in_the_intro_is_a_finding(self):
+        """Belt as well as braces: if a value survived the rewrite, the
+        rendered scan has to be the thing that notices."""
+        result = scramble(self._page_with_intro("Both describe 2023-11-13."))
+        result.page.intro = "Both describe 2023-11-13."  # as if unrewritten
+        report = verify_rendered_output(result)
+        assert report.blocked
+        assert any(
+            "2023-11-13" in f.detail or "2023-11-13" in f.message
+            for f in report.findings
+        )
+
+    def test_the_writer_takes_the_intro_from_the_result(self, tmp_path):
+        """Not from its caller. The caller had the untransformed copy, and
+        there was no caller for which that was the right text."""
+        import inspect
+
+        signature = inspect.signature(write_publication_evidence)
+        for gone in ("index_title", "collection_intro", "collection_note"):
+            assert gone not in signature.parameters
+
+    def test_the_published_pages_carry_the_rewritten_intro(self, tmp_path):
+        result = scramble(self._page_with_intro("Both describe 2023-11-13."))
+        out = write_publication_evidence(result, tmp_path / "publication")
+        for path in out.rglob("*.html"):
+            assert "2023-11-13" not in path.read_text(encoding="utf-8")
+
+
+class TestTheCombinedDocumentIsScanned:
+    """One render, each case's slice with its own table."""
+
+    def test_a_planted_original_is_found_in_its_own_slice(self):
+        page = publication_page(worked_example_case(), worked_example_case())
+        result = scramble(page)
+        # Put one case's original back into its own published markup.
+        original = next(
+            s.original
+            for s in result.transforms[0].table.entries.values()
+            if s.original != s.published
+        )
+        result.page.cases[0].title = f"Leaked {original}"
+        findings = verify_combined_document(result)
+        assert findings
+        assert {f.example_id for f in findings} == {
+            result.transforms[0].example_id
+        }
+
+    def test_one_cases_published_value_is_not_a_leak_in_another(self):
+        """The merged-table regression guard. Each pair has its own offset,
+        so a value case B published is routinely a value case A reported —
+        and a single merged table would call that a leak."""
+        page = publication_page(worked_example_case(), worked_example_case())
+        result = scramble(page)
+        assert verify_combined_document(result) == []
+
+    def test_the_slice_count_must_match_the_transforms(self):
+        """A misaligned slice would quietly check the wrong case, so it fails
+        loudly instead."""
+        page = publication_page(worked_example_case(), worked_example_case())
+        result = scramble(page)
+        result.page.cases.pop()
+        with pytest.raises(AssertionError, match="case section"):
+            verify_combined_document(result)

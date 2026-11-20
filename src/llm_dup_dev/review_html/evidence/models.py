@@ -1250,6 +1250,12 @@ class EvidencePageVM(BaseModel):
     #: configurable: a footer naming every attribute category would be wrong
     #: for any run that left one of them as reported.
     transform_note: str = ""
+    #: Whether a disclosure reviewer signed this document off for public
+    #: sharing. Both footers branch on it, and nothing else does. Set by the
+    #: publication layer from a ``ReleaseApproval`` that still pins the
+    #: candidate — never by hand, and deliberately excluded from the digest
+    #: that release is pinned to, or signing would change the thing signed.
+    approved_for_release: bool = False
     #: Always present, so the footer can state the rendering version even for
     #: a hand-built page; the run fields fill in when a manifest was supplied.
     provenance: ProvenanceVM = Field(default_factory=ProvenanceVM)
@@ -1286,6 +1292,18 @@ class EvidenceIndexVM(BaseModel):
     title: str
     generated_at: str = ""
     items: list[EvidenceIndexItem] = Field(default_factory=list)
+    #: Filename of the combined document beside this index, linked above the
+    #: table when set. Empty when the run wrote none.
+    document_filename: str = ""
+    #: The presentation the footer states, as on :class:`EvidencePageVM`.
+    #: Carried here because the index used to assert it was an internal
+    #: review whatever directory it sat in — so every publication output
+    #: directory held one file contradicting its own manifest and every page
+    #: beside it.
+    mode: PresentationMode = PresentationMode.INTERNAL
+    #: Whether a disclosure reviewer signed the set off for public sharing,
+    #: so the index agrees with the pages rather than merely not clashing.
+    approved_for_release: bool = False
 
 
 def number_cases(cases: Sequence[EvidenceCaseVM]) -> list[EvidenceCaseVM]:

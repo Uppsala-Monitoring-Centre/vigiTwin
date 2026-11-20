@@ -26,10 +26,12 @@ from llm_dup_dev.review_html.evidence.publication import (
     DisclosureCode,
     DisclosureFinding,
     FindingResolution,
+    NotClearedForRelease,
     PublicationApprovals,
     PublicationBlocked,
     PublicationPolicy,
     PublicationSecrets,
+    ReleaseApproval,
     digest_text,
     write_publication_evidence,
 )
@@ -581,3 +583,127 @@ class TestAResolutionIsPinnedToWhatWasRead:
                 approved_at="2026-01-01",
                 rationale="checked",
             )
+
+
+class TestAReleaseIsRefusedRatherThanDowngraded:
+    """Both refusals raise. Falling back to the candidate wording would hand
+    a signer a candidate document they had asked to release, and the quiet
+    version of that is the one nobody notices."""
+
+    def _released(self, page, *, digest=None, policy=None):
+        candidate = scramble(page, policy=policy)
+        return scramble(
+            page,
+            policy=policy,
+            approvals=PublicationApprovals(
+                release=ReleaseApproval(
+                    released_by="A. Reviewer",
+                    released_at="2026-11-19",
+                    candidate_sha256=digest or candidate.candidate_digest,
+                )
+            ),
+        )
+
+    def test_a_clear_release_is_written(self, tmp_path):
+        result = self._released(publication_page(worked_example_case()))
+        out = write_publication_evidence(result, tmp_path / "publication")
+        assert (out / "index.html").exists()
+
+    def test_a_stale_pin_is_refused(self, tmp_path):
+        result = self._released(
+            publication_page(worked_example_case()), digest="not this document"
+        )
+        with pytest.raises(NotClearedForRelease, match="has changed since"):
+            write_publication_evidence(result, tmp_path / "publication")
+
+    def test_the_refusal_names_the_digest_to_sign(self, tmp_path):
+        """Without it the remedy is a sha256 nobody can obtain from the
+        terminal — and the message used to say to regenerate the form, which
+        could not help, because the merge kept the signed entry as it was."""
+        page = publication_page(worked_example_case())
+        result = self._released(page, digest="not this document")
+        with pytest.raises(NotClearedForRelease) as refused:
+            write_publication_evidence(result, tmp_path / "publication")
+        assert result.candidate_digest in str(refused.value)
+
+    def test_an_unsigned_advisory_is_refused(self, tmp_path):
+        """`date_pattern_unchanged` is advisory, so without this a run can
+        publish a pair's real timeline, print one line to stderr, and have
+        the release call it cleared for public sharing."""
+        policy = PublicationPolicy(
+            date_offset_min_days=0,
+            date_offset_max_days=0,
+            decouple_clinical_dates=False,
+        )
+        result = self._released(
+            publication_page(worked_example_case()), policy=policy
+        )
+        assert result.report.advisories
+        with pytest.raises(NotClearedForRelease, match="every advisory"):
+            write_publication_evidence(result, tmp_path / "publication")
+
+    def test_the_refusal_names_the_outstanding_codes(self, tmp_path):
+        policy = PublicationPolicy(
+            date_offset_min_days=0,
+            date_offset_max_days=0,
+            decouple_clinical_dates=False,
+        )
+        result = self._released(
+            publication_page(worked_example_case()), policy=policy
+        )
+        with pytest.raises(NotClearedForRelease) as refused:
+            write_publication_evidence(result, tmp_path / "publication")
+        assert "date_pattern_unchanged" in str(refused.value)
+
+    def test_an_advisory_alone_still_publishes_without_a_release(
+        self, tmp_path
+    ):
+        """The ordinary gate is unchanged: an advisory reports a weakness and
+        does not withhold the candidate. It is only a *release* that has to
+        speak for them."""
+        result = scramble(
+            publication_page(worked_example_case()),
+            policy=PublicationPolicy(
+                date_offset_min_days=0,
+                date_offset_max_days=0,
+                decouple_clinical_dates=False,
+            ),
+        )
+        assert result.report.advisories
+        out = write_publication_evidence(result, tmp_path / "publication")
+        assert (out / "index.html").exists()
+
+    def test_a_signed_resolution_lets_the_release_stand(self, tmp_path):
+        """An advisory a reviewer accepted is no longer an advisory: it moves
+        to report.resolved through a signed resolution, which is the
+        machinery the requirement leans on rather than a new one."""
+        page = publication_page(worked_example_case())
+        policy = PublicationPolicy(
+            date_offset_min_days=0,
+            date_offset_max_days=0,
+            decouple_clinical_dates=False,
+        )
+        candidate = scramble(page, policy=policy)
+        approvals = PublicationApprovals(
+            resolutions=[
+                FindingResolution(
+                    code=f.code.value,
+                    example_id=f.example_id,
+                    field_path=f.field_path,
+                    detail_sha256=digest_text(f.detail),
+                    approved_by="A. Reviewer",
+                    approved_at="2026-11-19",
+                    rationale="accepted; the pair is old and widely reported",
+                )
+                for f in candidate.report.advisories
+            ],
+            release=ReleaseApproval(
+                released_by="A. Reviewer",
+                released_at="2026-11-19",
+                candidate_sha256=candidate.candidate_digest,
+            ),
+        )
+        result = scramble(page, policy=policy, approvals=approvals)
+        assert not result.report.advisories
+        out = write_publication_evidence(result, tmp_path / "publication")
+        assert (out / "index.html").exists()

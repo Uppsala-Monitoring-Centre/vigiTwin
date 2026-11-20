@@ -1032,6 +1032,69 @@ rather than attributing the page to whichever came first;
 records it. The footer also keeps the statement that this is an internal
 review and not a publication-safe document.
 
+### And once per sheet, on paper
+
+That footer appears once, at the end. So does the MASKED band, at the start.
+A sheet lifted out of a printed bundle carries neither, which is the one way
+a reader can end up holding a page of transformed values with nothing on it
+saying so. A second, print-only footer repeats on every sheet: the internal
+warning, the publication candidate's caveat, or — once the document has been
+signed off for release — the collection's own title, like a journal's running
+head — and, once released, the fact that displayed values were transformed,
+which is the one claim a cleared supplement's loose sheet must not lose.
+
+It carries static text and no page number. The mechanism is a fixed-position
+element, which Chrome paints once per sheet; the `@page` margin boxes and the
+`counter(page)` that would give a page number are not reachable from one. It
+sits in a deepened bottom margin so it cannot cover a line of the document,
+and it is hidden on screen by a rule outside the print block — deliberately
+outside, because no rule inside that block may hide content and the test
+holding that line cannot tell one `display:none` from another.
+
+A long collection title is clipped to the one line the band allows, so keep
+it under about 110 characters if the document will be released.
+
+---
+
+## Printing and PDF
+
+A journal asking for supplementary material usually wants a PDF. Nothing
+here generates one, and that is deliberate: a PDF engine means either a
+headless browser or a stack of system libraries, in a package that has to
+stay installable by anyone and whose checks run with no network. The format
+is instead *written* to print well, and the browser already on the machine
+does the conversion faithfully, because it is the engine the HTML was built
+for.
+
+Open `combined.html` in Chrome or Chromium and print it:
+
+- **Destination** — Save as PDF.
+- **Paper size** — A4, which is what `@page` declares.
+- **Scale** — 100%. "Fit to printable area" rescales the 10pt print type and
+  throws away the A4 geometry the stylesheet sets up.
+- **Headers and footers** — **off**. Chrome's own footer prints the `file://`
+  path and a page count; a filesystem path can name a study, a drive or a
+  person, and it would print beside a disclosure warning.
+- **Background graphics** — **on**. The MASKED band is a background wash, and
+  a page that loses it loses the one element whose absence changes what the
+  document claims. The print rules force `print-color-adjust: exact` for the
+  same reason, but the checkbox still governs.
+
+Every example starts a fresh sheet, including the first, so the collection's
+front matter gets a sheet of its own. Table headings repeat across sheets,
+rows and callouts are not split, and no print rule hides content — all four
+are asserted by tests rather than left as claims.
+
+**Check the footer band once, by hand, before the first real supplement.**
+Chrome positions a fixed element against the same box the document's content
+flows through, so a footer placed in that box would overlay the last line of
+every sheet; this one is pulled down into the margin instead. Print a
+two-case collection and look at sheet two: the last line of body text must be
+complete, and the footer band must sit below it. If the band is missing, the
+right answer is to drop the repetition and keep the single footer at the end
+— not to give the band an opaque background, which would quietly cover the
+bottom of every published sheet.
+
 ---
 
 ## What this format is not
@@ -1121,7 +1184,21 @@ page the same way, so one directory cannot hold both.
     --output-dir outputs/supplement/
 ```
 
-Also takes `--no-index`, `--single-document PATH` (every example in one file),
-`--export-drafts PATH` with `--force`, and `--skip-missing` (off by default:
-a curated collection quietly missing an example is worse than one that does
-not build). Recorded gaps print to stderr.
+**The combined document is written by default**, as `combined.html` inside
+`--output-dir`, and the index links it above its table. A curated collection
+is read as one piece — ordered by hand, with its own intro and note — so the
+combined document is the artifact and the per-example pages are the way round
+it. That is the opposite of a saved run, where a directory someone navigates
+pair by pair is the point, so the other entry point (`--format evidence`)
+writes no combined document and is unchanged.
+
+`--no-single-document` skips it. `--single-document PATH` writes *another*
+copy at PATH, so `--no-single-document --single-document PATH` puts the
+combined document somewhere else entirely and leaves the directory without
+one. A case whose example id would resolve to `combined.html` or `index.html`
+is refused rather than silently overwritten.
+
+Also takes `--no-index`, `--export-drafts PATH` with `--force`, and
+`--skip-missing` (off by default: a curated collection quietly missing an
+example is worse than one that does not build). Recorded gaps print to
+stderr.

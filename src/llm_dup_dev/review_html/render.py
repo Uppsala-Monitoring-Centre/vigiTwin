@@ -231,6 +231,19 @@ def _utc_now() -> str:
     return datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 
+#: Filename of the combined document inside an evidence output directory.
+#: Fixed rather than derived from the collection's title: a reader has to be
+#: able to be told the name in advance, and an editorial title moves. Called
+#: ``combined`` rather than ``supplement`` because the same name is written
+#: in internal mode, where calling it a supplement would claim something this
+#: format is careful not to claim.
+EVIDENCE_DOCUMENT_FILENAME = "combined.html"
+
+#: Filenames the directory writes for itself. A case whose id resolves to one
+#: of them would be silently overwritten, so it is refused instead.
+_RESERVED_FILENAMES = frozenset({EVIDENCE_DOCUMENT_FILENAME, "index.html"})
+
+
 def evidence_filename(case: "EvidenceCaseVM") -> str:
     """The HTML filename for one case, from its example id.
 
@@ -250,6 +263,7 @@ def write_evidence_html(
     note: str = "",
     provenance: "ProvenanceVM | None" = None,
     mode: "PresentationMode | None" = None,
+    approved_for_release: bool = False,
 ) -> Path:
     """Render and write one case as its own evidence document.
 
@@ -274,6 +288,7 @@ def write_evidence_html(
         note=note,
         generated_at=_utc_now(),
         mode=mode or PresentationMode.INTERNAL,
+        approved_for_release=approved_for_release,
         cases=[case],
         provenance=provenance or ProvenanceVM(),
     )
@@ -292,17 +307,43 @@ def write_evidence_batch_html(
     collection_note: str = "",
     provenance: "ProvenanceVM | None" = None,
     mode: "PresentationMode | None" = None,
+    document_filename: str | None = None,
+    approved_for_release: bool = False,
 ) -> Path:
     """Write one evidence document per case, plus an optional index.
 
     Case order is preserved: a curated collection's order is a deliberate
     choice by whoever assembled it. The index links only the files written.
+
+    *document_filename* also writes every case into one combined document of
+    that name inside *output_dir*, and links it from the index. It defaults
+    to ``None`` so a saved run's output is unchanged: the combined document
+    is the shape a *curated collection* wants, where the order and the front
+    matter are editorial, and not the shape of a directory someone navigates
+    pair by pair.
     """
     from .evidence.models import (
         EvidenceIndexItem,
         EvidenceIndexVM,
+        PresentationMode,
         number_cases,
     )
+
+    if document_filename is not None:
+        clash = sorted(
+            {
+                case.example_id
+                for case in cases
+                if evidence_filename(case) in _RESERVED_FILENAMES
+            }
+        )
+        if clash:
+            raise ValueError(
+                f"example id(s) {', '.join(repr(c) for c in clash)} resolve "
+                f"to a filename this directory writes for itself "
+                f"({', '.join(sorted(_RESERVED_FILENAMES))}); rename them in "
+                f"the collection manifest"
+            )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     # Each case is written into its own file, so its place in the set has to
@@ -319,6 +360,7 @@ def write_evidence_batch_html(
             note=collection_note,
             provenance=provenance,
             mode=mode,
+            approved_for_release=approved_for_release,
         )
         label = next(
             (
@@ -345,9 +387,26 @@ def write_evidence_batch_html(
             )
         )
 
+    if document_filename is not None:
+        write_evidence_document(
+            cases,
+            output_dir / document_filename,
+            title=index_title,
+            intro=collection_intro,
+            note=collection_note,
+            provenance=provenance,
+            mode=mode,
+            approved_for_release=approved_for_release,
+        )
+
     if write_index and items:
         index = EvidenceIndexVM(
-            title=index_title, generated_at=_utc_now(), items=items
+            title=index_title,
+            generated_at=_utc_now(),
+            items=items,
+            document_filename=document_filename or "",
+            mode=mode or PresentationMode.INTERNAL,
+            approved_for_release=approved_for_release,
         )
         (output_dir / "index.html").write_text(
             render_evidence_index(index), encoding="utf-8"
@@ -364,6 +423,7 @@ def write_evidence_document(
     note: str = "",
     provenance: "ProvenanceVM | None" = None,
     mode: "PresentationMode | None" = None,
+    approved_for_release: bool = False,
 ) -> Path:
     """Write every case into one document.
 
@@ -385,6 +445,7 @@ def write_evidence_document(
         note=note,
         generated_at=_utc_now(),
         mode=mode or PresentationMode.INTERNAL,
+        approved_for_release=approved_for_release,
         cases=number_cases(cases),
         provenance=provenance or ProvenanceVM(),
     )

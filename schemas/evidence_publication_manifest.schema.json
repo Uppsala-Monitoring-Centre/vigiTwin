@@ -38,6 +38,23 @@
           "title": "Cleared",
           "type": "boolean"
         },
+        "approved_for_release": {
+          "default": false,
+          "title": "Approved For Release",
+          "type": "boolean"
+        },
+        "released_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Released At"
+        },
         "findings_total": {
           "default": 0,
           "title": "Findings Total",
@@ -215,6 +232,18 @@
     },
     "disclosure": {
       "$ref": "#/$defs/DisclosureStatus"
+    },
+    "combined_document": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Combined Document"
     }
   },
   "required": [

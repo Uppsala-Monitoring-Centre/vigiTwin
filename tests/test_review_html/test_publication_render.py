@@ -8,6 +8,8 @@ works from, and it is secure-side: it prints the originals.
 
 from __future__ import annotations
 
+import re
+
 from llm_dup_dev.review_html.evidence.models import (
     EvidenceCell,
     EvidencePageVM,
@@ -53,6 +55,48 @@ class TestTheMaskedBand:
         assert html.index('<div class="masked-banner"') < html.index(
             "<section class="
         )
+
+    def test_a_collection_carries_one_per_example_and_no_more(self):
+        """Every example opens a sheet, so a page-level band would sit alone
+        on the cover sheet, above no example at all. One per example puts it
+        where a reader of any example meets it."""
+        result = scramble(
+            publication_page(worked_example_case(), worked_example_case())
+        )
+        assert _html(result.page).count('<div class="masked-banner"') == 2
+
+    def test_a_collections_cover_sheet_carries_none(self):
+        """What says so there is the per-sheet footer, in words rather than
+        in colour. The cover sheet's intro and note do go through the
+        substitution table, so they may show transformed values."""
+        result = scramble(
+            publication_page(worked_example_case(), worked_example_case())
+        )
+        html = _html(result.page)
+        assert html.index('<div class="masked-banner"') > html.index(
+            '<section class="case"'
+        )
+
+    def test_each_example_opens_with_one(self):
+        result = scramble(
+            publication_page(worked_example_case(), worked_example_case())
+        )
+        html = _html(result.page)
+        for start in [
+            m.start() for m in re.finditer(r'<section class="case"', html)
+        ]:
+            section = html[start : start + 600]
+            assert '<div class="masked-banner"' in section
+
+    def test_a_single_case_page_carries_exactly_one(self):
+        """The document-level band is already at the top of it, and two in a
+        row would say the same thing twice."""
+        result = scramble(publication_page(worked_example_case()))
+        assert _html(result.page).count('<div class="masked-banner"') == 1
+
+    def test_an_internal_collection_carries_none(self):
+        page = publication_page(worked_example_case(), worked_example_case())
+        assert '<div class="masked-banner"' not in _html(page)
 
     def test_it_says_select_values_and_leaves_the_rest_to_the_footer(self):
         """One line under the word, and it does not overstate the transform.

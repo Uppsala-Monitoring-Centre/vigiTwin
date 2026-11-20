@@ -386,8 +386,10 @@ from .evidence import (  # noqa: E402  (same cycle: evidence reaches back here)
 )
 from .formats import ReviewFormat  # noqa: E402
 from .render import (  # noqa: E402
+    EVIDENCE_DOCUMENT_FILENAME,
     render_evidence_page,
     write_evidence_batch_html,
+    write_evidence_document,
     write_evidence_html,
 )
 from .selection import MissingPairPolicy, PairSelection  # noqa: E402
@@ -441,6 +443,8 @@ __all__ = [
     "render_result_html",
     "render_results_html",
     "render_saved_run",
+    "EVIDENCE_DOCUMENT_FILENAME",
     "write_evidence_batch_html",
+    "write_evidence_document",
     "write_evidence_html",
 ]

@@ -84,6 +84,19 @@ class DisclosureStatus(BaseModel):
     #: should always carry ``True``; the field exists because the manifest can
     #: also be written for a blocked candidate under review.
     cleared: bool
+    #: Whether a disclosure reviewer signed this document off for public
+    #: sharing. **Not** :attr:`cleared`, which says only that the automated
+    #: gate left no finding unresolved: a document is routinely ``cleared``
+    #: and not ``approved_for_release``, which is every candidate under
+    #: review. The reverse is refused — a release needs a clear gate and
+    #: every advisory signed.
+    approved_for_release: bool = False
+    #: The date on the release, where there is one. The reviewer's *name* and
+    #: rationale stay in the secure key record: the rationale may name real
+    #: cases, exactly as a finding resolution's does, and publishing an
+    #: individual's name in an automated artifact is a disclosure decision
+    #: of its own that belongs in the manuscript.
+    released_at: str | None = None
     findings_total: int = 0
     findings_resolved: int = 0
     findings_unresolved: int = 0
@@ -133,6 +146,12 @@ class PublicationTransformManifest(BaseModel):
     #: What the run actually transformed, in the words the footer uses.
     transform_note: str = ""
     disclosure: DisclosureStatus
+    #: Filename of the combined document inside this directory, or ``None``
+    #: when the run was asked not to write one. A filename and not a path:
+    #: the manifest describes the directory it sits in, and the copy a run
+    #: may also write elsewhere could be anywhere on disk — the reason
+    #: ``ProvenanceVM.source`` is aliased rather than published.
+    combined_document: str | None = None
 
 
 def _country_masking(result: ScrambleResult) -> CountryMaskingSummary:
@@ -188,12 +207,29 @@ def _source_masking(result: ScrambleResult) -> SourceMaskingSummary:
     )
 
 
+#: Said instead, once a reviewer has signed the document off. The candidate
+#: wording is the default because the candidate state is the safe one: a
+#: manifest reaches this wording only through a signed, pinned release.
+RELEASED_STATEMENT = (
+    "Displayed values were transformed for publication. This document was "
+    "cleared for public sharing by the study's disclosure reviewer."
+)
+
+
 def build_publication_manifest(
     result: ScrambleResult,
+    *,
+    combined_document: str | None = None,
 ) -> PublicationTransformManifest:
-    """The public manifest for one :class:`~.scramble.ScrambleResult`."""
+    """The public manifest for one :class:`~.scramble.ScrambleResult`.
+
+    *combined_document* is passed by the writer that wrote it, so the
+    manifest names the file that call produced and the two cannot drift.
+    """
     report = result.report
     total = len(report.findings) + len(report.resolved)
+    release = result.release
+    released = result.page.approved_for_release
     return PublicationTransformManifest(
         created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         policy_version=result.policy.policy_version,
@@ -218,16 +254,21 @@ def build_publication_manifest(
         country_masking=_country_masking(result),
         source_masking=_source_masking(result),
         transform_note=result.page.transform_note,
+        combined_document=combined_document,
         disclosure=DisclosureStatus(
             cleared=not report.blocked,
+            approved_for_release=released,
+            released_at=release.released_at if released and release else None,
             findings_total=total,
             findings_resolved=len(report.resolved),
             findings_unresolved=len(report.findings),
+            **({"statement": RELEASED_STATEMENT} if released else {}),
         ),
     )
 
 
 __all__ = [
+    "RELEASED_STATEMENT",
     "SCHEMA_VERSION",
     "CountryMaskingSummary",
     "DisclosureStatus",

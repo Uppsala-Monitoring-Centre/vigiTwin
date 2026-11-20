@@ -8,6 +8,8 @@ stylesheet that silently regresses.
 
 from __future__ import annotations
 
+import pytest
+
 from llm_dup_dev.review_html.evidence.build import (
     ExamplePresentation,
     build_evidence_case,
@@ -16,8 +18,12 @@ from llm_dup_dev.review_html.evidence.build import (
     SCLEState,
     build_evidence_case,
 )
-from llm_dup_dev.review_html.evidence.models import EvidencePageVM
+from llm_dup_dev.review_html.evidence.models import (
+    EvidencePageVM,
+    PresentationMode,
+)
 from llm_dup_dev.review_html.render import (
+    EVIDENCE_DOCUMENT_FILENAME,
     evidence_filename,
     render_evidence_page,
     write_evidence_batch_html,
@@ -74,6 +80,28 @@ def _case(**kwargs):
 def _html(**kwargs) -> str:
     page = EvidencePageVM(title="Evidence review", cases=[_case(**kwargs)])
     return render_evidence_page(page)
+
+
+def _print_block(html: str) -> str:
+    """The whole ``@media print`` block, found by matching its brace.
+
+    This was a fixed 1200-character window from ``@media print``, which the
+    block has since outgrown — every rule added past the window weakened the
+    assertion without failing it. Keyed on ``@media print{`` rather than
+    ``@media print`` so a comment mentioning the block by name is not mistaken
+    for the block itself.
+    """
+    start = html.index("@media print{")
+    opened = html.index("{", start)
+    depth = 0
+    for index in range(opened, len(html)):
+        if html[index] == "{":
+            depth += 1
+        elif html[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return html[opened : index + 1]
+    raise AssertionError("the @media print block is never closed")
 
 
 class TestEvidenceColouring:
@@ -316,7 +344,9 @@ class TestPrintStylesheet:
     """The format is meant to become a PDF."""
 
     def test_a4_page_rule(self):
-        assert "@page{size:A4;margin:16mm}" in _html()
+        """The bottom margin is deeper than the rest: it is the band the
+        repeating per-sheet footer sits in."""
+        assert "@page{size:A4;margin:16mm 16mm 28mm}" in _html()
 
     def test_table_headings_repeat_across_pages(self):
         assert "thead{display:table-header-group}" in _html()
@@ -325,13 +355,124 @@ class TestPrintStylesheet:
         assert "tr{break-inside:avoid}" in _html()
 
     def test_each_case_starts_a_page(self):
-        assert ".case+.case{break-before:page}" in _html()
+        """Every example, the first included, so a collection's front matter
+        gets a sheet of its own."""
+        assert ".case:not(:only-of-type){break-before:page}" in _html()
+
+    def test_a_lone_case_does_not_open_a_sheet(self):
+        """A per-pair page holds exactly one case, and breaking before it
+        would print a near-empty first sheet. The old rule is asserted absent
+        so it cannot creep back under a passing suite."""
+        assert ".case+.case{break-before:page}" not in _html()
 
     def test_long_terms_wrap(self):
         assert "overflow-wrap:anywhere" in _html()
 
     def test_narratives_are_not_clipped(self):
         assert ".callout p,.narrative-text{overflow:visible" in _html()
+
+    def test_the_running_footer_is_hidden_by_a_rule_outside_the_print_block(
+        self,
+    ):
+        """It must be, because no rule inside the print block may hide
+        content — the assertion that holds that line cannot distinguish one
+        display:none from another."""
+        html = _html()
+        assert ".page-footer{display:none}" in html
+        assert html.index(".page-footer{display:none}") < html.index(
+            "@media print{"
+        )
+
+    def test_the_running_footer_is_fixed_so_it_repeats(self):
+        """Chrome paints a fixed element once per sheet. That is the only
+        mechanism available here: @page margin boxes are out of reach."""
+        block = _print_block(_html())
+        assert "position:fixed" in block
+        assert "bottom:-14mm" in block
+
+    def test_a_case_opening_a_sheet_drops_its_top_rule(self):
+        assert (
+            ".case:not(:only-of-type){margin-top:0;border-top:none;"
+            "padding-top:0}" in _html()
+        )
+
+
+class TestTheOnlySectionsInMainAreCases:
+    """What ``.case:not(:only-of-type)`` rests on.
+
+    The selector is scoped to the element type, not to the class, so it
+    behaves as intended only while every ``<section>`` inside ``<main>`` is a
+    case and none is nested in another. That is true today and nothing in the
+    templates says it must stay true, so it is asserted rather than assumed:
+    add a ``<section class="front-matter">`` to the shell and a per-pair page
+    silently regains the near-empty first sheet this rule exists to avoid.
+    """
+
+    @staticmethod
+    def _two_case_html() -> str:
+        return render_evidence_page(
+            EvidencePageVM(
+                title="Evidence review",
+                cases=[_case(), _case()],
+            )
+        )
+
+    def test_every_section_is_a_case(self):
+        import re
+
+        html = self._two_case_html()
+        opens = re.findall(r"<section\b[^>]*>", html)
+        assert len(opens) == 2
+        assert all('class="case"' in tag for tag in opens)
+
+    def test_no_section_is_nested_in_another(self):
+        import re
+
+        html = self._two_case_html()
+        depth = 0
+        for tag in re.findall(r"<section\b[^>]*>|</section>", html):
+            if tag == "</section>":
+                depth -= 1
+            else:
+                assert depth == 0, "a <section> opened inside another"
+                depth += 1
+        assert depth == 0
+
+
+class TestTheRepeatingFooterText:
+    """Three states, because a sheet on its own must say which it is."""
+
+    @staticmethod
+    def _footer(**kwargs) -> str:
+        html = render_evidence_page(
+            EvidencePageVM(title="A curated collection", cases=[_case()], **kwargs)
+        )
+        start = html.index('<div class="page-footer">')
+        return html[start : html.index("</div>", start)]
+
+    def test_an_internal_page_says_it_is_not_publication_safe(self):
+        assert "Not publication-safe" in self._footer()
+
+    def test_a_candidate_says_it_is_not_certified(self):
+        footer = self._footer(mode=PresentationMode.PUBLICATION)
+        assert "Candidate for disclosure review" in footer
+        assert "not" in footer and "certified as anonymised" in footer
+
+    def test_a_released_document_carries_its_title_instead(self):
+        footer = self._footer(
+            mode=PresentationMode.PUBLICATION, approved_for_release=True
+        )
+        assert "A curated collection" in footer
+        assert "Candidate for disclosure review" not in footer
+
+    def test_a_released_sheet_still_says_the_values_moved(self):
+        """Being cleared for publication settles the disclosure question and
+        leaves the interpretive one. A loose sheet of a released supplement
+        has only this to stop a reader taking a shifted date for a real one."""
+        footer = self._footer(
+            mode=PresentationMode.PUBLICATION, approved_for_release=True
+        )
+        assert "displayed values transformed" in footer
 
 
 class TestDocumentAssembly:
@@ -404,6 +545,52 @@ class TestFilesAndIndex:
             [_case()], tmp_path, write_index=False
         )
         assert not (tmp_path / "index.html").exists()
+
+    def test_the_combined_document_is_off_unless_asked_for(self, tmp_path):
+        """A saved run's directory is unchanged. The combined document is the
+        shape a curated collection wants, not the shape of a directory
+        someone navigates pair by pair."""
+        write_evidence_batch_html([_case()], tmp_path)
+        assert not (tmp_path / EVIDENCE_DOCUMENT_FILENAME).exists()
+
+    def test_a_batch_can_write_the_combined_document_too(self, tmp_path):
+        cases = [
+            _case(presentation=ExamplePresentation(example_id="S1")),
+            _case(presentation=ExamplePresentation(example_id="S2")),
+        ]
+        write_evidence_batch_html(
+            cases, tmp_path, document_filename=EVIDENCE_DOCUMENT_FILENAME
+        )
+        combined = (tmp_path / EVIDENCE_DOCUMENT_FILENAME).read_text(
+            encoding="utf-8"
+        )
+        assert combined.count('<section class="case"') == 2
+        index = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert f'href="{EVIDENCE_DOCUMENT_FILENAME}"' in index
+
+    def test_an_example_id_that_would_clobber_the_document_is_refused(
+        self, tmp_path
+    ):
+        """Silently overwriting the combined document with a case page is
+        worse than not building."""
+        with pytest.raises(ValueError, match="combined.html"):
+            write_evidence_batch_html(
+                [_case(presentation=ExamplePresentation(example_id="combined"))],
+                tmp_path,
+                document_filename=EVIDENCE_DOCUMENT_FILENAME,
+            )
+
+    def test_an_example_id_that_would_clobber_the_index_is_refused(
+        self, tmp_path
+    ):
+        """The same hole, and it predates the combined document: the index is
+        written last, so a case called `index` was already being lost."""
+        with pytest.raises(ValueError, match="index.html"):
+            write_evidence_batch_html(
+                [_case(presentation=ExamplePresentation(example_id="index"))],
+                tmp_path,
+                document_filename=EVIDENCE_DOCUMENT_FILENAME,
+            )
 
 
 class TestGapsAreRecordedAndNotPrinted:
@@ -834,9 +1021,7 @@ class TestTooltipsAreNotLoadBearing:
 
     def test_no_print_rule_hides_content(self):
         """A print stylesheet that hides a section would defeat the claim."""
-        html = _html()
-        start = html.index("@media print")
-        assert "display:none" not in html[start : start + 1200]
+        assert "display:none" not in _print_block(_html())
 
 
 class TestTheInconclusiveTileIsAVerdict:

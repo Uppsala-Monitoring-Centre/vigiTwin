@@ -57,6 +57,264 @@ and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 One consequence worth stating: the planned package rename no longer requires a
 2.0.0, and the README no longer promises one.
 
+## [1.2.7] - 2026-11-19
+
+A patch, and a continuation of the masking work rather than a milestone in
+it: the same scheme gains a default artifact, a print path and a release
+record. **It is nonetheless breaking in three ways** — a public function
+loses three parameters, the output directory gains a file, and two
+`extra="forbid"` models gain fields. The number is not the warning; this
+entry and `docs/migration_notes_publication_combined_document.md` are. One
+item below is a disclosure advisory about supplements already produced, so
+read the note before the next secure-side run.
+
+### Fixed — the published collection intro was never transformed
+
+`scramble_page` works on a deep copy, so the caller keeps the curator's
+original page while `result.page` holds the rewritten one. The CLI passed
+`page.title`, `page.intro` and `page.note` — the originals — and
+`write_publication_evidence` preferred its arguments over `result.page`. So a
+collection intro or note naming a report date, a country or a case
+identifier reached **every published page unrewritten**.
+
+Nothing caught it. `verify_rendered_output` built its probe page from the
+title and the cases alone, so the intro, the note and the transform note were
+never read, while the writer rendered all three; and because `single_titled`
+suppresses the `<h1>` on a one-case page, the collection title was not read
+either. The scan's whole premise is that it reads the markup that ships, and
+it was not.
+
+The three parameters are gone rather than defaulted — there was no caller for
+which the pre-transform text was right — and the probe page is now built from
+everything the writer renders. **Check any supplement already produced**: the
+per-case content was never affected, but the collection's own front matter
+was. `transform_note` is also now included in the page-level residual scan,
+which it had escaped as well.
+
+### Fixed — the index contradicted the directory it sat in
+
+`evidence_index.html.j2` hardcoded "Internal evidence review; not a
+publication-safe document", and `EvidenceIndexVM` had no mode to branch on.
+Every publication output directory therefore held one file asserting the
+opposite of its own manifest and of every page beside it. The index now
+carries the mode and says what the pages say.
+
+### Added — the combined document is written by default
+
+A curated collection is read as one piece: ordered by hand, with its own
+intro and note, and usually destined for a journal supplement. So
+`combined.html` is now written into `--output-dir` in both modes, linked from
+the index and named by the manifest's new `combined_document` field, so the
+file and the record of it cannot drift. `--no-single-document` skips it;
+`--single-document PATH` still writes an extra copy, which the manifest
+deliberately does not name, because a public manifest should record no
+filesystem location.
+
+The saved-run entry point (`--format evidence`) is untouched: a directory
+someone navigates pair by pair is the right shape for a run, and the wrong
+shape for a supplement.
+
+An `example_id` resolving to `combined.html` or `index.html` is now refused
+instead of silently overwritten. The `index.html` half of that hole predated
+this change.
+
+### Added — the combined document is scanned, in slices
+
+Per-case verification covers a case's own markup and nothing else, which
+leaves the shared front matter, the multi-case heading branch and the
+per-sheet footer unread — exactly where the two defects above lived. The
+combined document is now rendered once and scanned per case slice with that
+case's own table, and its shared regions with the union.
+
+Never one merged table over the whole document: each pair has its own offset,
+so a value case B published is routinely a value case A reported, and a
+merged table would report B's legitimate published date as a leak of A's.
+`_union_table` was written for precisely this problem and had never had a
+caller; now it has the one it was for.
+
+### Added — a signed release, instead of a flag
+
+A `ReleaseApproval` in the approvals file — name, date, rationale, and
+`candidate_sha256` — is what makes a document stop calling itself a
+candidate, in both footers and in the manifest's statement together.
+
+There is no `--final` flag, and the reason is worth recording because the
+flag was the obvious design. A flag records nobody, while every other
+decision in this layer carries who decided and when; and a flag set once in a
+deployment script would keep the candidate wording from ever appearing again.
+The pin earns its place the way `FindingResolution.detail_sha256` did in
+1.2.6: without it a signature given for one document goes on clearing a
+later, different one.
+
+It costs the signer two fields they are already filling elsewhere in that
+file. `--export-approvals` scaffolds the entry with the digest computed, and
+holds it back until nothing else is outstanding, since a release signed over
+a candidate about to change would pin a document nobody will publish. Left
+unsigned it loads as *no release* rather than as an error — a candidate is
+the ordinary state, and a form that became unloadable the moment it offered a
+release would stop the sign-then-re-run loop dead.
+
+Two refusals, both raising the new `NotClearedForRelease` rather than quietly
+falling back to the candidate wording, which would hand a signer a candidate
+document they had asked to release:
+
+- a **stale pin**, meaning the document changed after it was read;
+- an **unsigned advisory**. `date_pattern_unchanged` is advisory, so a run can
+  publish a pair's real timeline, print one line to stderr and succeed — and
+  a release would then call that cleared for public sharing. Advisories
+  rightly do not block the ordinary gate; a release is a person asserting the
+  document may go out, and nobody can assert that about a weakness they have
+  not seen. A signed `FindingResolution` moves an advisory to
+  `report.resolved`, so the requirement is a signature on each one rather
+  than the absence of weaknesses.
+
+Who released it is recorded in the **key record**, in full. The public
+manifest carries `approved_for_release` and `released_at` only: a rationale
+may name real cases, and publishing an individual's name in an automated
+artifact is a disclosure decision of its own that belongs in the manuscript.
+`DisclosureStatus.cleared` is unchanged and still means the automated gate
+left nothing unresolved — a candidate is routinely cleared and not released.
+
+### Changed — every example starts a fresh sheet
+
+`.case+.case{break-before:page}` becomes
+`.case:not(:only-of-type){break-before:page}`, so the first example opens a
+sheet too and the collection's front matter gets one of its own. Scoped that
+way rather than as a bare `.case` rule because a per-pair page holds exactly
+one case, and breaking before it would print a near-empty first sheet. The
+premise that selector rests on — that every `<section>` inside `<main>` is a
+case — is now a test rather than an assumption.
+
+The MASKED band follows the pagination. A collection now carries one at the
+top of each example and none on its cover sheet: breaking before every case
+would leave a page-level band sitting there above no example at all. Per
+example rather than per sheet — an example is the unit somebody lifts out,
+and one band per example costs a tenth of one per sheet. A single-case page
+is unchanged, with its band still the first element inside `<main>`, which is
+what makes it survive a crop.
+
+The cover sheet's intro and note do go through the substitution table, so
+that sheet can show transformed values with no band on it; the per-sheet
+footer is what says so there, in words. Keeping a band for the screen and
+hiding it in print was not an option — no rule inside the print block may
+hide content, and a test holds that line.
+
+A print-only footer repeats on every sheet: the internal warning, the
+candidate caveat, or — once released — the collection title *and* that
+displayed values were transformed. The title alone would have left a cleared
+supplement's loose sheet with nothing to stop a reader taking a shifted date
+for a real one; clearing a document settles the disclosure question and
+leaves the interpretive one. A sheet lifted out
+of a printed bundle carried neither the MASKED band nor the final footer,
+both of which appear once per document. It carries static text and no page
+number, because a fixed-position element is the only thing a browser repeats
+per sheet and `@page` margin boxes are unreachable from one.
+
+`test_no_print_rule_hides_content` was a fixed 1200-character window from
+`@media print`, which the block had outgrown — every rule added past it
+weakened the assertion without failing it. It now brace-matches the whole
+block.
+
+### Fixed — the digest-mismatch finding now says which digest to use
+
+`approval_digest_mismatch` told a reviewer to update `text_sha256` without
+naming the value, and the value appeared only in the finding's `detail` —
+which the side-by-side review page shows but the CLI does not print. From a
+terminal the remedy was therefore to reimplement `digest_text` by hand,
+including the part where a string and a one-item list digest differently, so
+a `paragraphs` field digested as joined text gives the wrong answer. The
+message now carries it.
+
+Regenerating the form still does not refresh a signed entry, which is
+deliberate: an edited field needs a human to read the new text and either
+repin it or decide again.
+
+### Fixed — a voided release could not be cleared
+
+A signed release whose pin no longer matched was kept by the merge, as every
+signed entry is, so regenerating the form could not replace it — while the
+refusal told the reviewer to do exactly that. Running the documented remedy
+reproduced the identical error indefinitely, and the digest needed to fix it
+by hand appeared in no message at all.
+
+Two changes. The refusal now names the digest the current candidate hashes
+to. And `--export-approvals` resets a voided release to an unsigned skeleton
+carrying that digest, reported on its own line because it is the one merge
+outcome needing the reviewer to act.
+
+The reset is the single place a signed entry is not kept, and the asymmetry
+with an edited text approval is the point: a text approval covers one field,
+while a release covers the whole document, so a changed document makes it a
+different decision. Repinning in place would have left a record saying the
+reviewer read the new document on the day they read the old one, so a fresh
+name and date are required. The superseded signature stays in the previous
+run's key record.
+
+### Fixed — a working resolution was reported as orphaned
+
+The generated `resolutions` list was built from unresolved findings only. A
+resolution that works moves its finding into `report.resolved`, so no entry
+was regenerated for it and the merge reported every resolution that was doing
+its job as orphaned — on every subsequent run, for as long as it kept
+working.
+
+The label invites a tidy-up, and acting on it would re-block the run on the
+findings those entries were clearing. Entries are now regenerated for
+resolved findings as well, so they come back as `signed kept`, and an
+orphaned count once again means what it says: a field path moved, or an
+example left the collection.
+
+Advisories are still not offered an entry. One a reviewer *has* signed for
+sits in `resolved` like anything else, so their signature is preserved rather
+than reported as stray; an unsigned advisory gets nothing, which keeps that
+decision where it was.
+
+### Fixed — the document a release is signed for was unreadable
+
+A release is a decision about the whole compiled document, and nothing wrote
+that document anywhere a reviewer could read it before deciding. The
+published copy appears only when a run has cleared, and a run with an
+outstanding finding writes no output directory at all — so for every run
+before the decision, and every run a stale release blocked, there was nothing
+to open. The side-by-side review held per-case pages and, having been given
+no intro or note, not even the collection's introduction.
+
+Both subtrees now hold the combined document with the collection's front
+matter, and the review page links them at the top beside the digest the pin
+must carry. The review directory is written unconditionally, which is the
+property that makes it the right home: a reviewer can read what they are
+signing for while findings are still outstanding.
+
+The internal copy's introduction is the untransformed one and the publication
+copy's has been through the substitution table, which is the comparison the
+rest of that directory exists to support.
+
+### Fixed — the review copies called a released document a candidate
+
+The side-by-side review's `publication/` subtree rendered the candidate
+footer whatever the run's state, so after a release the review directory
+called the document *a candidate for disclosure review, not a document
+certified as anonymised* while the supplement beside it said it was cleared
+for public sharing — on the combined document, the index and every pair
+page.
+
+It was deliberate, and the reasoning was wrong: a reviewer deciding whether
+to release cannot be shown a released footer, because the footer says
+released only when a signed release pins the candidate in hand, and by then
+they have decided. The subtree now states what is true, and its index title
+follows. Two artifacts contradicting each other about one document is the
+failure this layer polices everywhere else.
+
+### Documentation
+
+`docs/evidence_format.md` gains § Printing and PDF, with the exact browser
+export settings and one check to do by hand before the first real supplement:
+Chrome positions a fixed element against the box content flows through, so
+the footer band's placement in the margin has to be confirmed on paper once.
+No PDF is generated and none will be — a PDF engine means a headless browser
+or a stack of system libraries, in a package that must stay installable by
+anyone and whose checks run with no network.
+
 ## [1.2.6] - 2026-11-19
 
 A patch: one latent hole closed, and the approvals form made usable for the
