@@ -2,14 +2,14 @@
 
 import pytest
 
-from llm_dup_dev.models.report import (
+from vigitwin.models.report import (
     AdverseEvent,
     DateValue,
     Drug,
     PartialDate,
     Report,
 )
-from llm_dup_dev.feature_generation.matching import (
+from vigitwin.feature_generation.matching import (
     _compare_partial_dates,
     _match_age,
     _match_measurement,
@@ -20,7 +20,7 @@ from llm_dup_dev.feature_generation.matching import (
     compute_matching_drugs,
     compute_matches,
 )
-from llm_dup_dev.models.report import AgeValue, MeasurementValue
+from vigitwin.models.report import AgeValue, MeasurementValue
 
 
 def _mv(v, unit="cm"):

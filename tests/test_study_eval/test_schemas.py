@@ -13,13 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from llm_dup_dev.study_eval.manifest import EvaluationRunManifest
-from llm_dup_dev.study_eval.records import SamplingRecord
-from llm_dup_dev.study_eval.sampling import SCLESample
-from llm_dup_dev.study_eval.schemas import PredictionSet, ReferenceSet
-from llm_dup_dev.study_eval.scle.agreement import AgreementReport
-from llm_dup_dev.study_eval.scle.consensus import SCLEConsensusResult
-from llm_dup_dev.study_eval.scle.form import ReviewerSubmission
+from vigitwin.study_eval.manifest import EvaluationRunManifest
+from vigitwin.study_eval.records import SamplingRecord
+from vigitwin.study_eval.sampling import SCLESample
+from vigitwin.study_eval.schemas import PredictionSet, ReferenceSet
+from vigitwin.study_eval.scle.agreement import AgreementReport
+from vigitwin.study_eval.scle.consensus import SCLEConsensusResult
+from vigitwin.study_eval.scle.form import ReviewerSubmission
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 SCHEMAS_DIR = REPO_ROOT / "schemas"

@@ -5,13 +5,13 @@ from __future__ import annotations
 import openpyxl
 import pytest
 
-from llm_dup_dev.study_eval import workflow
-from llm_dup_dev.study_eval.aggregate import ABSTAIN_POSITIVE
-from llm_dup_dev.study_eval.scle.vocabularies import (
+from vigitwin.study_eval import workflow
+from vigitwin.study_eval.aggregate import ABSTAIN_POSITIVE
+from vigitwin.study_eval.scle.vocabularies import (
     ERROR_STAGES_SHEET,
     FEATURE_DOMAINS_SHEET,
 )
-from llm_dup_dev.study_eval.scle.workbook import (
+from vigitwin.study_eval.scle.workbook import (
     DOMAIN_HEADER_PREFIX,
     STAGE_HEADER_PREFIX,
     workbook_vocabularies,
@@ -52,7 +52,7 @@ def _combined_inputs():
     rsets, rpreds = make_recall(
         {"fda_gold": [(True, "Duplicates"), (False, "Unrelated"), (True, "Unrelated")]}
     )
-    from llm_dup_dev.study_eval.schemas import PredictionSet
+    from vigitwin.study_eval.schemas import PredictionSet
 
     predictions = PredictionSet(
         predictions={**ppreds.predictions, **rpreds.predictions}
@@ -171,7 +171,7 @@ def test_recall_only_bundle_runs_all_four_steps(tmp_path):
 
 def test_run_analysis_rejects_an_empty_bundle(tmp_path):
     """A run that measured nothing must not look like a run that succeeded."""
-    from llm_dup_dev.study_eval.schemas import PredictionSet
+    from vigitwin.study_eval.schemas import PredictionSet
 
     with pytest.raises(ValueError, match="no reference sets supplied"):
         workflow.run_analysis(
@@ -187,7 +187,7 @@ def _mixed_mode_inputs():
         {"manual": [(None, "Duplicates")] * 3 + [(None, "Unrelated")] * 3},
         modes={"manual": "not_evaluated"},
     )
-    from llm_dup_dev.study_eval.schemas import PredictionSet
+    from vigitwin.study_eval.schemas import PredictionSet
 
     return [*reference_sets, *manual], PredictionSet(
         predictions={**predictions.predictions, **mpreds.predictions}

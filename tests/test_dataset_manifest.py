@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import pytest
 import yaml
 
-from llm_dup_dev.dataset_manifest import (
+from vigitwin.dataset_manifest import (
     JSON_FILENAME,
     SCHEMA_VERSION,
     YAML_FILENAME,
@@ -19,7 +19,7 @@ from llm_dup_dev.dataset_manifest import (
     build_dataset_manifest,
     write_dataset_manifest,
 )
-from llm_dup_dev.run_manifest._redaction import REDACTED
+from vigitwin.run_manifest._redaction import REDACTED
 
 
 def _snapshot() -> DatasetSnapshot:
@@ -181,7 +181,7 @@ def test_llm_config_passthrough_and_roundtrip(tmp_path) -> None:
 
 
 def test_llm_config_accepts_llm_info() -> None:
-    from llm_dup_dev.llm.models import LLMInfo
+    from vigitwin.llm.models import LLMInfo
 
     manifest = build_dataset_manifest(
         dataset_snapshot=_snapshot(),

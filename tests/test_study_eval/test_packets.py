@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from llm_dup_dev.data.offline import ScreeningDetails
-from llm_dup_dev.study_eval.scle.packets import (
+from vigitwin.data.offline import ScreeningDetails
+from vigitwin.study_eval.scle.packets import (
     PacketContent,
     generate_packets,
     packet_filename,

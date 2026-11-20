@@ -13,12 +13,12 @@ shown, which is the cell it is about.
 
 from __future__ import annotations
 
-from llm_dup_dev.models.enums import InconsistencySeverity
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.enums import InconsistencySeverity
+from vigitwin.models.pair_features import (
     ClinicalDateFindingSummary,
     InconsistencyCounts,
 )
-from llm_dup_dev.models.report import AdverseEvent, Drug, PartialDate
+from vigitwin.models.report import AdverseEvent, Drug, PartialDate
 
 from tests.test_review_html.test_evidence_build import (
     _ae_row,
@@ -27,7 +27,7 @@ from tests.test_review_html.test_evidence_build import (
     _features,
     _report,
 )
-from llm_dup_dev.review_html.evidence.models import EvidenceRole
+from vigitwin.review_html.evidence.models import EvidenceRole
 
 
 def _drug(substance: str, start: str | None = None) -> Drug:
@@ -133,7 +133,7 @@ class TestAMatchedAdverseEventWithDifferingOnsets:
 class TestWhatDidNotChange:
     def test_a_flagged_substance_still_reddens_its_row(self):
         """The entity itself carries the finding, so the row is about it."""
-        from llm_dup_dev.models.pair_features import Inconsistency
+        from vigitwin.models.pair_features import Inconsistency
 
         case = _case(
             _report("R1", drugs=[_drug("aspirin")]),
@@ -224,8 +224,8 @@ class TestAClinicalDateFindingShowsItsDatesInRed:
         )
 
     def test_the_findings_table_colours_them(self):
-        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
-        from llm_dup_dev.review_html.render import render_evidence_page
+        from vigitwin.review_html.evidence.models import EvidencePageVM
+        from vigitwin.review_html.render import render_evidence_page
 
         html = " ".join(
             render_evidence_page(
@@ -239,8 +239,8 @@ class TestAClinicalDateFindingShowsItsDatesInRed:
         assert "at least 91 days apart." in findings
 
     def test_the_panel_chip_still_shows_the_bare_pair(self):
-        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
-        from llm_dup_dev.review_html.render import render_evidence_page
+        from vigitwin.review_html.evidence.models import EvidencePageVM
+        from vigitwin.review_html.render import render_evidence_page
 
         html = " ".join(
             render_evidence_page(
@@ -255,7 +255,7 @@ class TestAClinicalDateFindingShowsItsDatesInRed:
         assert finding.chip_text == "2020-01-01 vs 2020-04-01"
 
     def test_a_downgrade_reason_stays_in_the_tail(self):
-        from llm_dup_dev.models.pair_features import ClinicalDateFindingSummary
+        from vigitwin.models.pair_features import ClinicalDateFindingSummary
 
         case = _case(
             _report("R1", drugs=[_drug("aspirin", "2020-01-01")]),

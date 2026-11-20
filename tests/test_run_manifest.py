@@ -9,17 +9,17 @@ from datetime import datetime, timezone
 import pytest
 import yaml
 
-from llm_dup_dev.classifier.config import (
+from vigitwin.classifier.config import (
     AnchorConfig,
     DecisionThresholds,
     PipelineConfig,
 )
-from llm_dup_dev.data.synthetic import (
+from vigitwin.data.synthetic import (
     SyntheticReportLoader,
     SyntheticStatsProvider,
 )
-from llm_dup_dev.pipeline.runner import PipelineRunner
-from llm_dup_dev.run_manifest import (
+from vigitwin.pipeline.runner import PipelineRunner
+from vigitwin.run_manifest import (
     JSON_FILENAME,
     SCHEMA_VERSION,
     YAML_FILENAME,
@@ -28,7 +28,7 @@ from llm_dup_dev.run_manifest import (
     build_run_manifest,
     write_run_manifest,
 )
-from llm_dup_dev.run_manifest._redaction import REDACTED
+from vigitwin.run_manifest._redaction import REDACTED
 
 
 def test_build_run_manifest_minimal_inputs() -> None:
@@ -145,23 +145,38 @@ def test_missing_git_metadata_does_not_fail(tmp_path) -> None:
 
 
 def test_missing_package_metadata_does_not_fail(monkeypatch) -> None:
-    from importlib.metadata import PackageNotFoundError
+    """An uninstalled package nulls the version without nulling the name."""
+    from vigitwin.run_manifest import builder
 
-    from llm_dup_dev.run_manifest import builder
-
-    def _raise(_name: str) -> str:
-        raise PackageNotFoundError("not installed")
-
-    monkeypatch.setattr(builder, "version", _raise)
+    monkeypatch.setattr(builder, "installed_version", lambda: None)
     manifest = build_run_manifest()
-    assert manifest.dev_package.name == "llm-dup-dev"
+    assert manifest.dev_package.name == "vigitwin"
     assert manifest.dev_package.version is None
+
+
+def test_dev_package_identifies_the_installed_distribution() -> None:
+    """The recorded name and version must both resolve the real distribution.
+
+    Every lookup behind these two fields swallows ``PackageNotFoundError`` and
+    returns ``None``, so a wrong distribution name produces a manifest with no
+    version and no error — and on a wheel install ``dev_git_commit`` is
+    ``None`` by design, leaving a manifest with no provenance at all. This
+    pins both halves against ``importlib.metadata`` so the rename of 1.3.0,
+    or any future one, cannot pass silently.
+    """
+    from importlib.metadata import version
+
+    from vigitwin._distribution import DISTRIBUTION_NAME
+
+    manifest = build_run_manifest()
+    assert manifest.dev_package.name == DISTRIBUTION_NAME
+    assert manifest.dev_package.version == version(DISTRIBUTION_NAME)
 
 
 def test_llm_config_auto_pulled_from_runner_client() -> None:
     """When ``llm_config=`` is omitted, the builder duck-types
     ``runner._llm_client.info()`` to populate the field."""
-    from llm_dup_dev.llm.fake import FakeLLMClient
+    from vigitwin.llm.fake import FakeLLMClient
 
     runner = PipelineRunner(
         report_loader=SyntheticReportLoader({}),
@@ -181,7 +196,7 @@ def test_llm_config_auto_pulled_from_runner_client() -> None:
 
 def test_explicit_llm_config_overrides_runner_client_info() -> None:
     """An explicit ``llm_config=`` supersedes whatever ``info()`` would return."""
-    from llm_dup_dev.llm.fake import FakeLLMClient
+    from vigitwin.llm.fake import FakeLLMClient
 
     runner = PipelineRunner(
         report_loader=SyntheticReportLoader({}),
@@ -323,7 +338,7 @@ def test_dataset_ref_round_trip(tmp_path) -> None:
 
 
 def _runner_with_live_client(model_name: str) -> PipelineRunner:
-    from llm_dup_dev.llm.fake import FakeLLMClient
+    from vigitwin.llm.fake import FakeLLMClient
 
     return PipelineRunner(
         report_loader=SyntheticReportLoader({}),
@@ -370,7 +385,7 @@ def test_dataset_ref_llm_config_does_not_backfill_top_level() -> None:
 
 def test_explicit_llm_config_accepts_llm_info() -> None:
     """An explicit LLMInfo dataclass is normalised to a dict."""
-    from llm_dup_dev.llm.models import LLMInfo
+    from vigitwin.llm.models import LLMInfo
 
     manifest = build_run_manifest(
         llm_config=LLMInfo(provider="azure_openai", model="gpt-5.4", deployment="dep-1")
@@ -395,7 +410,7 @@ def test_dataset_ref_llm_config_secrets_redacted() -> None:
 
 def test_dataset_ref_from_manifest_copies_extraction_model() -> None:
     """DatasetRef.from_manifest carries the dataset's provenance + llm_config."""
-    from llm_dup_dev.dataset_manifest import DatasetSnapshot, build_dataset_manifest
+    from vigitwin.dataset_manifest import DatasetSnapshot, build_dataset_manifest
 
     dataset = build_dataset_manifest(
         dataset_snapshot=DatasetSnapshot(
@@ -425,7 +440,7 @@ def test_manifest_records_requested_temperature_when_omitted() -> None:
     backend default" from "we asked for 0.0 and got it" — i.e. the only
     way to tell a reproducible run from a non-reproducible one later.
     """
-    from llm_dup_dev.llm.fake import FakeLLMClient
+    from vigitwin.llm.fake import FakeLLMClient
 
     runner = PipelineRunner(
         report_loader=SyntheticReportLoader({}),
@@ -439,7 +454,7 @@ def test_manifest_records_requested_temperature_when_omitted() -> None:
 
 
 def test_manifest_records_explicit_requested_temperature() -> None:
-    from llm_dup_dev.llm.fake import FakeLLMClient
+    from vigitwin.llm.fake import FakeLLMClient
 
     runner = PipelineRunner(
         report_loader=SyntheticReportLoader({}),

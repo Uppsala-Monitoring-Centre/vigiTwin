@@ -1,7 +1,13 @@
 # Repository Roles and Controls
 We will maintain two physically separate repositories with distinct roles:
-llm_dup_dev:	Prompt engineering, structured output design, evaluation logic
+vigiTwin:	Prompt engineering, structured output design, evaluation logic
 llm_dup_pv_secure: Annotation support, evaluation on real data, Azure execution
+
+**Three names, one repository.** The repository and the method are **vigiTwin**;
+the Python package it installs as is `vigitwin`; the working directory on a
+given machine may still be `~/llm_dup_dev/`, the name it was created under.
+Only the first two are contracts — the directory name is incidental, and the
+paths below are written as they actually are on disk.
 
 ## llm_dup_pv_secure (Secure Environment)
 
@@ -24,7 +30,7 @@ llm_dup_pv_secure: Annotation support, evaluation on real data, Azure execution
 <li>.claudeignore file added as an additional precautionary safeguard, not the primary security control</li>
 </ul>
 
-## llm_dup_dev (AI-Assisted Development Environment)
+## vigiTwin (AI-Assisted Development Environment)
 **Purpose**
 <ul>
 <li>Prompt design and iteration</li>
@@ -47,12 +53,12 @@ llm_dup_pv_secure: Annotation support, evaluation on real data, Azure execution
 
 ## Derived narrative signals
 
-The secure side provides **plain narrative text** as part of the Report contract. Turning that text into structured signals (source identifiers, case labels, and — in the future — patient age/sex/height/weight) is a dev-side responsibility: the prompt, the Pydantic schema, the post-parse normalization, and the deterministic downstream pair-level comparison all live in `llm_dup_dev`. The secure side only supplies narratives and an `LLMClient` implementation; extracted outputs are *derived narrative signals*, not raw source data, and can be frozen to JSON for offline reuse. See `docs/data_contracts.md § Derived Narrative Signals`.
+The secure side provides **plain narrative text** as part of the Report contract. Turning that text into structured signals (source identifiers, case labels, and — in the future — patient age/sex/height/weight) is a dev-side responsibility: the prompt, the Pydantic schema, the post-parse normalization, and the deterministic downstream pair-level comparison all live in `vigitwin`. The secure side only supplies narratives and an `LLMClient` implementation; extracted outputs are *derived narrative signals*, not raw source data, and can be frozen to JSON for offline reuse. See `docs/data_contracts.md § Derived Narrative Signals`.
 
 Downstream pair-level reasoning over extracted fields is deliberately deterministic (no pair-level LLM step).
 
 ## Data Flow Model
-llm_dup_dev (Claude-assisted)
+vigiTwin (Claude-assisted)
         ↓
 Code / prompt updates
         ↓
@@ -61,7 +67,7 @@ llm_dup_pv_secure (no AI)
 Results of Azure execution on real data
 (aggregated, non-identifiable metrics only)
         ↓
-llm_dup_dev (Claude-assisted)
+vigiTwin (Claude-assisted)
  
 ## Additional Safeguards
 <ul>
@@ -70,5 +76,5 @@ llm_dup_dev (Claude-assisted)
 <li>No multi-root workspaces spanning both repositories</li>
 <li>.claudeignore files added to all folders in llm_dup_pv_secure</li>
 <li>No symlinks or mounts between repositories</li>
-<li>No copy-paste of real case text into llm_dup_dev</li>
+<li>No copy-paste of real case text into vigiTwin</li>
 </ul>

@@ -3,8 +3,8 @@
 import pytest
 from pydantic import BaseModel
 
-from llm_dup_dev.llm import LLMClient, LLMInfo, LLMRequest, LLMResponse, TokenUsage
-from llm_dup_dev.llm.fake import FakeLLMClient
+from vigitwin.llm import LLMClient, LLMInfo, LLMRequest, LLMResponse, TokenUsage
+from vigitwin.llm.fake import FakeLLMClient
 
 
 # ------------------------------------------------------------------

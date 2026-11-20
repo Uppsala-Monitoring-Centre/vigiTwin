@@ -13,20 +13,20 @@ import json
 
 import pytest
 
-from llm_dup_dev.review_html.evidence.build import ExamplePresentation
-from llm_dup_dev.review_html.evidence.collection import build_collection
-from llm_dup_dev.review_html.evidence.manifest import load_curated_manifest
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.build import ExamplePresentation
+from vigitwin.review_html.evidence.collection import build_collection
+from vigitwin.review_html.evidence.manifest import load_curated_manifest
+from vigitwin.review_html.evidence.models import (
     EvidenceCaseVM,
     EvidencePageVM,
     number_cases,
 )
-from llm_dup_dev.review_html.render import (
+from vigitwin.review_html.render import (
     render_evidence_page,
     write_evidence_batch_html,
     write_evidence_document,
 )
-from llm_dup_dev.review_html.selection import MissingPairPolicy
+from vigitwin.review_html.selection import MissingPairPolicy
 
 from tests.test_review_html.test_evidence_build import _case, _features, _report
 from tests.test_review_html.test_evidence_manifest import (  # noqa: F401

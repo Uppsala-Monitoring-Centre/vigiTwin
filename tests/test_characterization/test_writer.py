@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from llm_dup_dev.characterization import (
+from vigitwin.characterization import (
     CSV_FILENAME,
     JSON_FILENAME,
     MARKDOWN_FILENAME,
@@ -16,7 +16,7 @@ from llm_dup_dev.characterization import (
     characterization_to_markdown,
     write_characterization_report,
 )
-from llm_dup_dev.characterization.writer import CSV_HEADER
+from vigitwin.characterization.writer import CSV_HEADER
 
 from .conftest import drug, make_reference_set, make_report, sourced
 

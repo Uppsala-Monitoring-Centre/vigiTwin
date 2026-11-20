@@ -14,17 +14,17 @@ loadable.
 
 import pytest
 
-from llm_dup_dev.feature_generation.inconsistencies import detect_inconsistencies
-from llm_dup_dev.classifier.config import InconsistencyThresholds
-from llm_dup_dev.feature_generation.narrative_demographics import (
+from vigitwin.feature_generation.inconsistencies import detect_inconsistencies
+from vigitwin.classifier.config import InconsistencyThresholds
+from vigitwin.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
 )
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.narrative_demographics import (
     NarrativeDemographics,
     NarrativeSex,
     NarrativeSexValue,
 )
-from llm_dup_dev.models.report import Report, SourcedValue
+from vigitwin.models.report import Report, SourcedValue
 
 
 def _sex(r: Report) -> list[tuple[str, list[str]]]:

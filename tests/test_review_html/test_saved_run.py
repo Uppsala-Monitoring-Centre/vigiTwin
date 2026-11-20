@@ -1,4 +1,4 @@
-"""Tests for llm_dup_dev.review_html.saved_run.
+"""Tests for vigitwin.review_html.saved_run.
 
 All reports and artifacts use synthetic data only.
 """
@@ -7,22 +7,22 @@ import json
 
 import pytest
 
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenNarrativeDemographics,
     FrozenPairBundle,
     FrozenScopeStats,
 )
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
 )
-from llm_dup_dev.models.report_pair import ReportPair
-from llm_dup_dev.pipeline.export import (
+from vigitwin.models.report_pair import ReportPair
+from vigitwin.pipeline.export import (
     write_classifications,
     write_pair_features,
     write_pair_results,
 )
-from llm_dup_dev.review_html import (
+from vigitwin.review_html import (
     SavedRunSkip,
     SavedRunSummary,
     SkipReason,

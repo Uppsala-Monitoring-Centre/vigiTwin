@@ -1,10 +1,10 @@
-"""Tests for llm_dup_dev.review_html.compare."""
+"""Tests for vigitwin.review_html.compare."""
 
 import pytest
 
-from llm_dup_dev.feature_generation.pipeline import generate_pair_features
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.models.report import (
+from vigitwin.feature_generation.pipeline import generate_pair_features
+from vigitwin.feature_generation.probability import FrequencyStats
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -14,13 +14,13 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.models.classification import (
+from vigitwin.models.classification import (
     InconsistencyPenalty,
     PenaltyTerm,
 )
-from llm_dup_dev.models.enums import InconsistencySeverity
-from llm_dup_dev.models.pair_features import Inconsistency
-from llm_dup_dev.review_html.compare import (
+from vigitwin.models.enums import InconsistencySeverity
+from vigitwin.models.pair_features import Inconsistency
+from vigitwin.review_html.compare import (
     _anchor_penalty,
     _apply_demographic_severity,
     _build_ae_rows,
@@ -37,7 +37,7 @@ from llm_dup_dev.review_html.compare import (
     _format_screening_value,
     build_pair_view_model,
 )
-from llm_dup_dev.review_html.models import (
+from vigitwin.review_html.models import (
     ComparisonStatus,
     FeatureContributionVM,
     FeaturesSummaryVM,
@@ -473,7 +473,7 @@ class TestBuildPairViewModel:
     def test_narrative_demographics_merged_into_view_model(self):
         """Narrative-only weight should appear in the demographics table,
         wrapped in <em> tags to indicate narrative provenance."""
-        from llm_dup_dev.models.narrative_demographics import (
+        from vigitwin.models.narrative_demographics import (
             NarrativeDemographics,
             NarrativeMeasurementValue,
         )
@@ -544,7 +544,7 @@ class TestNarrativeEvidence:
     """
 
     def test_evidence_lands_on_correct_row_and_side(self):
-        from llm_dup_dev.models.narrative_demographics import (
+        from vigitwin.models.narrative_demographics import (
             NarrativeAgeValue,
             NarrativeDemographics,
         )
@@ -569,7 +569,7 @@ class TestNarrativeEvidence:
     def test_multiple_candidates_yield_multiple_snippets(self):
         """The narrative may legitimately state more than one value for a
         field (e.g. weight on admission vs discharge); show every snippet."""
-        from llm_dup_dev.models.narrative_demographics import (
+        from vigitwin.models.narrative_demographics import (
             NarrativeDemographics,
             NarrativeMeasurementValue,
         )
@@ -597,7 +597,7 @@ class TestNarrativeEvidence:
         ]
 
     def test_both_sides_annotated_independently(self):
-        from llm_dup_dev.models.narrative_demographics import (
+        from vigitwin.models.narrative_demographics import (
             NarrativeAgeValue,
             NarrativeDemographics,
         )
@@ -630,7 +630,7 @@ class TestNarrativeEvidence:
     def test_blank_evidence_is_skipped(self):
         """A candidate the extractor left unquoted contributes no snippet
         rather than an empty italic line."""
-        from llm_dup_dev.models.narrative_demographics import (
+        from vigitwin.models.narrative_demographics import (
             NarrativeAgeValue,
             NarrativeDemographics,
         )
@@ -651,7 +651,7 @@ class TestNarrativeEvidence:
         assert age.left_evidence == ["aged 55"]
 
     def test_notes_surface_on_view_model(self):
-        from llm_dup_dev.models.narrative_demographics import (
+        from vigitwin.models.narrative_demographics import (
             NarrativeDemographics,
         )
 
@@ -699,8 +699,8 @@ class TestClinicalDateCountsInViewModels:
         self, report_a, report_b, features_ab
     ):
         """features_summary.clinical_date_counts must be populated."""
-        from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.classification import ClassificationResult
+        from vigitwin.models.enums import (
             RelationshipAssessment,
             IndependenceAssessment,
         )
@@ -730,8 +730,8 @@ class TestClinicalDateCountsInViewModels:
         self, report_a, report_b, features_ab
     ):
         """decision_summary.clinical_date_counts must be populated."""
-        from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.classification import ClassificationResult
+        from vigitwin.models.enums import (
             RelationshipAssessment,
             IndependenceAssessment,
         )
@@ -766,8 +766,8 @@ class TestDecisionSummarySourceCase:
     classifier consumes it via the source-context zones)."""
 
     def _classification(self):
-        from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.classification import ClassificationResult
+        from vigitwin.models.enums import (
             RelationshipAssessment,
             IndependenceAssessment,
         )
@@ -790,7 +790,7 @@ class TestDecisionSummarySourceCase:
     def test_source_case_populated_when_assessment_present(
         self, report_a, report_b,
     ):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseAssessment, SourceCaseVerdict, SourceIdentifierType,
         )
         asm = SourceCaseAssessment(
@@ -815,7 +815,7 @@ class TestDecisionSummarySourceCase:
         self, report_a, report_b,
     ):
         """NOT_ASSESSED suppresses the panel row entirely."""
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseAssessment, SourceCaseVerdict,
         )
         asm = SourceCaseAssessment(
@@ -834,7 +834,7 @@ class TestDecisionSummarySourceCase:
     ):
         """A comparator pass that found nothing actionable is still useful
         information for reviewers, so the row is shown."""
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseAssessment, SourceCaseVerdict,
         )
         asm = SourceCaseAssessment(
@@ -1159,15 +1159,15 @@ class TestFormatMatchingFeatures:
 def _penalty_features(L_match, minor=0, moderate=0, strong=0, verdict=None,
                       contributions=None):
     """A PairFeatures shaped for the penalty regressions."""
-    from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
-    from llm_dup_dev.models.narrative_source_case import (
+    from vigitwin.models.enums import AnchorType, ReportingContextLevel
+    from vigitwin.models.narrative_source_case import (
         SourceCaseAssessment, SourceIdentifierType,
     )
-    from llm_dup_dev.models.pair_features import (
+    from vigitwin.models.pair_features import (
         AnchorPopulation, InconsistencyCounts, PairFeatures,
         ProbabilityEstimate, ReportingContext,
     )
-    from llm_dup_dev.feature_generation.probability import compute_l_patient
+    from vigitwin.feature_generation.probability import compute_l_patient
 
     contributions = contributions or []
     assessment = None
@@ -1207,8 +1207,8 @@ class TestPenaltyAgreesWithClassifier:
 
     def test_custom_weights_are_respected(self):
         """A run with w_strong=5.0 must not be rendered with the default 3.0."""
-        from llm_dup_dev.classifier.config import DecisionThresholds
-        from llm_dup_dev.classifier.decision_logic import classify
+        from vigitwin.classifier.config import DecisionThresholds
+        from vigitwin.classifier.decision_logic import classify
 
         thresholds = DecisionThresholds(w_strong=5.0, w_tot_compelling_zone=6.0)
         features = _penalty_features(L_match=4.0, strong=1)
@@ -1223,8 +1223,8 @@ class TestPenaltyAgreesWithClassifier:
 
     def test_rendered_total_always_matches_the_recorded_w_tot(self):
         """Across weight settings, the displayed total is the classifier's."""
-        from llm_dup_dev.classifier.config import DecisionThresholds
-        from llm_dup_dev.classifier.decision_logic import classify
+        from vigitwin.classifier.config import DecisionThresholds
+        from vigitwin.classifier.decision_logic import classify
 
         for w_moderate in (1.0, 2.0, 7.5):
             thresholds = DecisionThresholds(w_moderate=w_moderate)
@@ -1245,9 +1245,9 @@ class TestPenaltyIsRecordedOnEveryBranch:
         so the old regex missed it and the row silently disappeared from both
         the pair page and the index.
         """
-        from llm_dup_dev.classifier.decision_logic import classify
-        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
-        from llm_dup_dev.models.pair_features import FeatureContribution
+        from vigitwin.classifier.decision_logic import classify
+        from vigitwin.models.narrative_source_case import SourceCaseVerdict
+        from vigitwin.models.pair_features import FeatureContribution
 
         features = _penalty_features(
             L_match=0.5,
@@ -1265,7 +1265,7 @@ class TestPenaltyIsRecordedOnEveryBranch:
 
     def test_below_limited_records_no_comparison(self):
         """L_match decides here; w_tot is never consulted."""
-        from llm_dup_dev.classifier.decision_logic import classify
+        from vigitwin.classifier.decision_logic import classify
 
         features = _penalty_features(L_match=0.5, minor=2)
         result = classify(features)
@@ -1276,8 +1276,8 @@ class TestPenaltyIsRecordedOnEveryBranch:
 
     def test_different_case_records_no_comparison(self):
         """SAME_SOURCE_DIFFERENT_CASE is pinned regardless of w_tot."""
-        from llm_dup_dev.classifier.decision_logic import classify
-        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+        from vigitwin.classifier.decision_logic import classify
+        from vigitwin.models.narrative_source_case import SourceCaseVerdict
 
         features = _penalty_features(
             L_match=4.0, moderate=1,
@@ -1290,8 +1290,8 @@ class TestPenaltyIsRecordedOnEveryBranch:
 
     def test_every_branch_records_a_score(self):
         """No classification may lose its w_tot."""
-        from llm_dup_dev.classifier.decision_logic import classify
-        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+        from vigitwin.classifier.decision_logic import classify
+        from vigitwin.models.narrative_source_case import SourceCaseVerdict
 
         cases = [
             _penalty_features(L_match=4.0),                       # compelling

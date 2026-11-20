@@ -5,17 +5,17 @@ Drug-date inconsistencies are tested in ``test_clinical_date_inconsistencies.py`
 
 import pytest
 
-from llm_dup_dev.classifier.config import InconsistencyThresholds
-from llm_dup_dev.models.enums import InconsistencySeverity
-from llm_dup_dev.models.enums import DrugRole
-from llm_dup_dev.models.report import (
+from vigitwin.classifier.config import InconsistencyThresholds
+from vigitwin.models.enums import InconsistencySeverity
+from vigitwin.models.enums import DrugRole
+from vigitwin.models.report import (
     AgeValue,
     Drug,
     MeasurementValue,
     Report,
     SourcedValue,
 )
-from llm_dup_dev.feature_generation.inconsistencies import detect_inconsistencies
+from vigitwin.feature_generation.inconsistencies import detect_inconsistencies
 
 
 @pytest.fixture

@@ -12,13 +12,13 @@ import json
 
 import pytest
 
-from llm_dup_dev.review_html.evidence import screening_verdict
-from llm_dup_dev.review_html.evidence.build import (
+from vigitwin.review_html.evidence import screening_verdict
+from vigitwin.review_html.evidence.build import (
     ReferenceInfo,
     build_evidence_case,
 )
-from llm_dup_dev.review_html.evidence.collection import build_collection
-from llm_dup_dev.review_html.evidence.manifest import load_curated_manifest
+from vigitwin.review_html.evidence.collection import build_collection
+from vigitwin.review_html.evidence.manifest import load_curated_manifest
 
 from tests.test_review_html.test_evidence_manifest import (  # noqa: F401
     _manifest_body,
@@ -32,7 +32,7 @@ def _screening_tile(case):
 
 
 def _case(reference: ReferenceInfo | None = None, **kw):
-    from llm_dup_dev.models.report import Report
+    from vigitwin.models.report import Report
 
     return build_evidence_case(
         report_1=Report(report_id="R001"),

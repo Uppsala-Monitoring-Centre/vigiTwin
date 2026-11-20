@@ -9,14 +9,14 @@ converted imperial weight into a figure no scale ever produced.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.publication import (
     PublicationPolicy,
     format_quantity,
     imperial_amount,
     parse_quantity,
     solve_numeric_offset,
 )
-from llm_dup_dev.review_html.evidence.publication.numbers import (
+from vigitwin.review_html.evidence.publication.numbers import (
     check_numeric_offset,
 )
 from tests.test_review_html.conftest import (

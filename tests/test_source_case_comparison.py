@@ -2,7 +2,7 @@
 
 import pytest
 
-from llm_dup_dev.feature_generation.source_case_comparison import (
+from vigitwin.feature_generation.source_case_comparison import (
     are_case_identifiers_comparable,
     are_source_identifiers_comparable,
     compare_source_case,
@@ -14,7 +14,7 @@ from llm_dup_dev.feature_generation.source_case_comparison import (
     normalize_study_name,
     normalize_trial_registration,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
     SourceCaseVerdict,
@@ -525,7 +525,7 @@ class TestCompareSourceCase:
         )
         # Surface forms differ; the post-parse normalizer collapses both to
         # 'epcoreal' so the comparator sees the shared identifier.
-        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        from vigitwin.llm.tasks.narrative_source_case import _post_normalize
         result = compare_source_case(_post_normalize(a), _post_normalize(b))
         assert result.verdict == SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE
         assert result.shared_source_identifier == "epcoreal"
@@ -534,7 +534,7 @@ class TestCompareSourceCase:
     def test_match_on_one_of_several_identifiers(self):
         """A carries DOI + study_name; B carries only study_name. They share
         the study_name and the comparator surfaces it."""
-        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        from vigitwin.llm.tasks.narrative_source_case import _post_normalize
         a = _post_normalize(NarrativeSourceCase(
             source_type=SourceType.LITERATURE,
             multi_patient_source=True,
@@ -563,7 +563,7 @@ class TestCompareSourceCase:
 
     def test_preference_order_doi_wins_over_study_name(self):
         """When both DOI and study_name match, DOI is surfaced."""
-        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        from vigitwin.llm.tasks.narrative_source_case import _post_normalize
         a = _post_normalize(NarrativeSourceCase(
             source_type=SourceType.LITERATURE,
             multi_patient_source=True,
@@ -594,7 +594,7 @@ class TestCompareSourceCase:
         """Two reports each have a study_name, but they differ — no shared
         source. With both multi-patient flags set, falls back to
         MULTI_PATIENT_CONTEXT_NO_LINK."""
-        from llm_dup_dev.llm.tasks.narrative_source_case import _post_normalize
+        from vigitwin.llm.tasks.narrative_source_case import _post_normalize
         a = _post_normalize(NarrativeSourceCase(
             multi_patient_source=True,
             source_identifiers=[

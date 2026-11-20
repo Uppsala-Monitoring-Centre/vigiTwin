@@ -51,7 +51,7 @@ def test_demo_runs_all_four_steps_and_writes_final_artifacts(demo, tmp_path):
 
 def test_demo_inputs_are_valid_and_use_both_label_vocabularies(demo):
     """The spec mixes the two vocabularies; a swap would be an easy mistake."""
-    from llm_dup_dev.study_eval import ADJUDICATOR_LABELS
+    from vigitwin.study_eval import ADJUDICATOR_LABELS
 
     reference_sets, predictions = demo.build_inputs()
     (reference_set,) = reference_sets
@@ -69,7 +69,7 @@ def test_demo_inputs_are_valid_and_use_both_label_vocabularies(demo):
 
 def test_demo_produces_exactly_one_structured_disagreement(demo, tmp_path):
     """The dissent is deliberate: without it step 3 has nothing to arbitrate."""
-    from llm_dup_dev.study_eval import workflow
+    from vigitwin.study_eval import workflow
 
     reference_sets, predictions = demo.build_inputs()
     analysis = workflow.run_analysis(

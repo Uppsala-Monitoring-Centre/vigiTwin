@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.characterization import policy
-from llm_dup_dev.feature_generation.reporting_context import _extract_years
-from llm_dup_dev.models.enums import DrugRole
+from vigitwin.characterization import policy
+from vigitwin.feature_generation.reporting_context import _extract_years
+from vigitwin.models.enums import DrugRole
 
 from .conftest import age, date, drug, event, make_report, sourced
 

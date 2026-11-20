@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from llm_dup_dev.characterization.builder import build_reference_set_characteristics
-from llm_dup_dev.feature_generation.matching import (
+from vigitwin.characterization.builder import build_reference_set_characteristics
+from vigitwin.feature_generation.matching import (
     compute_matching_aes,
     compute_matching_drugs,
 )

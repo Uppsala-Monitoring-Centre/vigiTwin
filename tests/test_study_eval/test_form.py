@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.study_eval.scle.form import (
+from vigitwin.study_eval.scle.form import (
     CaseDifficulty,
     ReferenceLabelIssue,
     SCLEAutoContext,

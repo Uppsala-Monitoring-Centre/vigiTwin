@@ -123,7 +123,7 @@
       "type": "string"
     },
     "PairPrediction": {
-      "description": "The frozen prediction for one pair.\n\n``adjudicator_label`` is the evaluated method's decided outcome.\n``screening_retrieved`` is whether the upstream screening method flagged the\npair as a candidate; ``None`` means no screening result was supplied. The\nfield is read only for sets with ``screening_mode: observed``, where\n:mod:`llm_dup_dev.study_eval.preflight` requires it \u2014 a\n``not_evaluated`` set neither needs it nor reads it, so the same prediction\nrecord can serve a pair belonging to sets of both modes.\n``classification`` is the optional full decision trace (the same\n``ClassificationResult`` the pipeline produces); when present it is checked\nfor consistency with ``adjudicator_label`` and ``pair_id``.",
+      "description": "The frozen prediction for one pair.\n\n``adjudicator_label`` is the evaluated method's decided outcome.\n``screening_retrieved`` is whether the upstream screening method flagged the\npair as a candidate; ``None`` means no screening result was supplied. The\nfield is read only for sets with ``screening_mode: observed``, where\n:mod:`vigitwin.study_eval.preflight` requires it \u2014 a\n``not_evaluated`` set neither needs it nor reads it, so the same prediction\nrecord can serve a pair belonging to sets of both modes.\n``classification`` is the optional full decision trace (the same\n``ClassificationResult`` the pipeline produces); when present it is checked\nfor consistency with ``adjudicator_label`` and ``pair_id``.",
       "properties": {
         "pair_id": {
           "title": "Pair Id",
@@ -198,7 +198,7 @@
       "type": "string"
     }
   },
-  "description": "A frozen bundle of per-pair predictions from one method configuration.\n\nOne bundle corresponds to one frozen run/configuration. The abstain- and\notherwise-related-positive *re-interpretation* secondary analyses do not need\na new bundle \u2014 they re-read this one under a different positivity rule (see\n:mod:`llm_dup_dev.study_eval.aggregate`). A configuration that produces\ngenuinely different classifications (e.g. an LLM-based component swap) arrives\nas a second bundle with a distinct ``configuration_id``.\n\n``predictions`` is keyed by ``pair_id``.",
+  "description": "A frozen bundle of per-pair predictions from one method configuration.\n\nOne bundle corresponds to one frozen run/configuration. The abstain- and\notherwise-related-positive *re-interpretation* secondary analyses do not need\na new bundle \u2014 they re-read this one under a different positivity rule (see\n:mod:`vigitwin.study_eval.aggregate`). A configuration that produces\ngenuinely different classifications (e.g. an LLM-based component swap) arrives\nas a second bundle with a distinct ``configuration_id``.\n\n``predictions`` is keyed by ``pair_id``.",
   "properties": {
     "configuration_id": {
       "default": "primary",

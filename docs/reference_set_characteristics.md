@@ -1,6 +1,6 @@
 # Reference-set characteristics ("Table 1")
 
-`llm_dup_dev.characterization` describes **what is in a reference set** —
+`vigitwin.characterization` describes **what is in a reference set** —
 reporting years, countries, patient age and sex, the commonest drugs and adverse
 events, and how often the two reports of a pair agree on country, year and sex.
 It answers the question a reader of a performance evaluation asks first: *which
@@ -14,7 +14,7 @@ It runs at two points, and the artifact is the same both times:
    a check that the sets are what the protocol says they are.
 
 The package is generic. It takes a
-[`ReferenceSet`](../src/llm_dup_dev/study_eval/schemas.py) plus access to the
+[`ReferenceSet`](../src/vigitwin/study_eval/schemas.py) plus access to the
 `Report` objects it names, and returns an aggregate-only artifact containing no
 report content. All the arithmetic is dev-side and unit-tested against synthetic
 reports; the secure side supplies the reports through the `ReportLoader`
@@ -30,7 +30,7 @@ rather than a sample drawn from a population. Performance estimation is
 ### Freeze time, secure side
 
 ```python
-from llm_dup_dev.characterization import (
+from vigitwin.characterization import (
     build_characterization_report, write_characterization_report,
 )
 
@@ -50,7 +50,7 @@ report rather than one per set.
 ### Before the analysis
 
 ```
-python -m llm_dup_dev.characterization \
+python -m vigitwin.characterization \
     --reference-set precision.json --reference-set fda_gold.json \
     --reports reports.json \
     --output-dir results/characteristics
@@ -61,7 +61,7 @@ python -m llm_dup_dev.characterization \
 **either frozen shape** — a JSON array of `Report` objects
 (`reports.json`, what the secure-side runner writes) or an object
 keyed by `report_id` (what `review_html` writes); see
-`llm_dup_dev.data.offline.load_reports`. Other flags: `--top-n` (default 10),
+`vigitwin.data.offline.load_reports`. Other flags: `--top-n` (default 10),
 `--dataset-id`, `--format` (repeatable; `json` and `md` by default, `csv` on
 request), `--allow-missing-reports`, `--notes`.
 
@@ -77,11 +77,11 @@ into a `ReferenceSet` (the two pair models spell their id fields differently —
 ```python
 import pathlib
 from IPython.display import Markdown
-from llm_dup_dev.characterization import (
+from vigitwin.characterization import (
     build_characterization_report, characterization_to_markdown,
 )
-from llm_dup_dev.data.offline import load_reports
-from llm_dup_dev.study_eval import load_report_pairs, reference_set_from_report_pairs
+from vigitwin.data.offline import load_reports
+from vigitwin.study_eval import load_report_pairs, reference_set_from_report_pairs
 
 FROZEN = pathlib.Path("validation_sets/vs_2026Q1")
 
@@ -119,7 +119,7 @@ cannot characterise anything; the reports file is required.
 contract is pair ids, labels and predictions. Adding a `reports=` parameter to
 `run_analysis`, or a subcommand to its CLI, would put report content into the
 signature of the performance analysis and make `study_eval` import this package.
-Nothing in `llm_dup_dev` imports `characterization`; a test
+Nothing in `vigitwin` imports `characterization`; a test
 (`tests/test_characterization/test_no_inbound_imports.py`) keeps it that way.
 
 The artifact carries its own provenance (`created_at`, `characterization_id`,
@@ -132,7 +132,7 @@ A `Report` deliberately preserves **every** candidate value per demographic — 
 report may carry age 54 from the structured database and 55 from narrative
 extraction, and the pipeline compares whole candidate sets (`v1 ∩ v2 ≠ ∅`).
 Tabulation needs one row per report, so the reduction happens in
-[`policy.py`](../src/llm_dup_dev/characterization/policy.py) and the rule it
+[`policy.py`](../src/vigitwin/characterization/policy.py) and the rule it
 applied is recorded in the artifact itself, as `policy`.
 
 1. **Empty list is missing.** Uncertainty sentinels were already dropped by the
@@ -179,8 +179,8 @@ choice moves coverage, not existing values. Nothing in the artifact can detect
 which you passed, so record it in `notes=`:
 
 ```python
-from llm_dup_dev.data.offline import load_frozen_narrative_demographics
-from llm_dup_dev.feature_generation.narrative_demographics import (
+from vigitwin.data.offline import load_frozen_narrative_demographics
+from vigitwin.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
 )
 

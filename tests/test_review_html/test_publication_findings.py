@@ -13,14 +13,14 @@ from __future__ import annotations
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     EvidenceCaseVM,
     EvidenceCell,
     EvidencePageVM,
     FreqRowVM,
     ValueKind,
 )
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.publication import (
     FREE_TEXT_FIELDS,
     KIND_POLICIES,
     DisclosureCode,
@@ -35,8 +35,8 @@ from llm_dup_dev.review_html.evidence.publication import (
     digest_text,
     write_publication_evidence,
 )
-from llm_dup_dev.review_html.evidence.publication.findings import partition
-from llm_dup_dev.review_html.evidence.publication.substitute import (
+from vigitwin.review_html.evidence.publication.findings import partition
+from vigitwin.review_html.evidence.publication.substitute import (
     SubstitutionTable,
     _text_shape,
     scan_residual,
@@ -421,7 +421,7 @@ class TestUnsupportedCellsFailClosed:
     def test_a_cell_whose_kind_has_no_policy_is_reported(self, monkeypatch):
         """With a kind removed from the dispatch table, the value is reported
         rather than published as it stands."""
-        import llm_dup_dev.review_html.evidence.publication.scramble as module
+        import vigitwin.review_html.evidence.publication.scramble as module
 
         page = publication_page(worked_example_case())
         trimmed = {

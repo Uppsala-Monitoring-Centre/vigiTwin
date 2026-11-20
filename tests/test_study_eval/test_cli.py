@@ -1,4 +1,4 @@
-"""Tests for the `python -m llm_dup_dev.study_eval` command line.
+"""Tests for the `python -m vigitwin.study_eval` command line.
 
 The CLI had no tests at all — 0% coverage over 78 statements — while being a
 documented, user-facing entry point. Nothing exercised it, so a rename in
@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from llm_dup_dev.study_eval.cli import build_parser, main
+from vigitwin.study_eval.cli import build_parser, main
 
 SUBCOMMANDS = ("analyze", "workbooks", "arbitrate", "finalize")
 
@@ -68,7 +68,7 @@ def test_unknown_variant_is_rejected_with_a_useful_message():
         "--variant", "not_a_rule",
     ]
     args = build_parser().parse_args(argv)
-    from llm_dup_dev.study_eval.cli import _resolve_positive_class
+    from vigitwin.study_eval.cli import _resolve_positive_class
 
     with pytest.raises(SystemExit) as exc:
         _resolve_positive_class(args)
@@ -88,7 +88,7 @@ def test_positive_label_defines_an_ad_hoc_rule():
             "--positive-label", "Abstain",
         ]
     )
-    from llm_dup_dev.study_eval.cli import _resolve_positive_class
+    from vigitwin.study_eval.cli import _resolve_positive_class
 
     rule = _resolve_positive_class(args)
     assert rule.name == "my_rule"

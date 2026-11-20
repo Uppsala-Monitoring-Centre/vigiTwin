@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.models.enums import InconsistencySeverity
-from llm_dup_dev.models.pair_features import FeatureContribution, Inconsistency
-from llm_dup_dev.review_html.evidence.legacy import (
+from vigitwin.models.enums import InconsistencySeverity
+from vigitwin.models.pair_features import FeatureContribution, Inconsistency
+from vigitwin.review_html.evidence.legacy import (
     recover_clinical_date,
     recover_drug_set_terms,
     resolved_clinical_date,

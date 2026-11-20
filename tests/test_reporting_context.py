@@ -1,8 +1,8 @@
 """Tests for reporting context determination."""
 
-from llm_dup_dev.models.enums import ReportingContextLevel
-from llm_dup_dev.models.report import DateValue, Report, SourcedValue
-from llm_dup_dev.feature_generation.reporting_context import (
+from vigitwin.models.enums import ReportingContextLevel
+from vigitwin.models.report import DateValue, Report, SourcedValue
+from vigitwin.feature_generation.reporting_context import (
     determine_reporting_context,
 )
 

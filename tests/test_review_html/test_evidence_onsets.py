@@ -12,14 +12,14 @@ another row, which the drug table never asks of them.
 
 from __future__ import annotations
 
-from llm_dup_dev.models.enums import InconsistencySeverity
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.enums import InconsistencySeverity
+from vigitwin.models.pair_features import (
     ClinicalDateFindingSummary,
     InconsistencyCounts,
 )
-from llm_dup_dev.models.report import AdverseEvent, Drug, PartialDate
-from llm_dup_dev.review_html.evidence.build import AE_ONSET_LABEL
-from llm_dup_dev.review_html.evidence.models import EvidenceRole
+from vigitwin.models.report import AdverseEvent, Drug, PartialDate
+from vigitwin.review_html.evidence.build import AE_ONSET_LABEL
+from vigitwin.review_html.evidence.models import EvidenceRole
 
 from tests.test_review_html.test_evidence_build import _features, _report
 from tests.test_review_html.test_evidence_render import _case, _html

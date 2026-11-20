@@ -17,15 +17,15 @@ from __future__ import annotations
 
 import math
 
-from llm_dup_dev.models.enums import AnchorType
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.enums import AnchorType
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     ProbabilityEstimate,
 )
-from llm_dup_dev.review_html.evidence.models import EvidencePageVM
-from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
-from llm_dup_dev.review_html.render import render_evidence_page
+from vigitwin.review_html.evidence.models import EvidencePageVM
+from vigitwin.review_html.evidence.settings import EvidenceRunSettings
+from vigitwin.review_html.render import render_evidence_page
 
 from tests.test_review_html.test_evidence_build import _case, _features, _report
 

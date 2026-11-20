@@ -9,8 +9,8 @@ of these tests are about what it must *not* omit.
 
 from __future__ import annotations
 
-from llm_dup_dev.models.classification import InconsistencyPenalty, PenaltyTerm
-from llm_dup_dev.models.enums import (
+from vigitwin.models.classification import InconsistencyPenalty, PenaltyTerm
+from vigitwin.models.enums import (
     AnchorType,
     IndependenceAssessment,
     IndependenceReason,
@@ -18,7 +18,7 @@ from llm_dup_dev.models.enums import (
     RelationshipAssessment,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     ClinicalDateFindingSummary,
     FeatureContribution,
@@ -26,10 +26,10 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.review_html.evidence.models import EvidenceRole, ValueKind
-from llm_dup_dev.review_html.evidence.build import shown_score
-from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
-from llm_dup_dev.review_html.evidence.summary import (
+from vigitwin.review_html.evidence.models import EvidenceRole, ValueKind
+from vigitwin.review_html.evidence.build import shown_score
+from vigitwin.review_html.evidence.settings import EvidenceRunSettings
+from vigitwin.review_html.evidence.summary import (
     format_score,
     independence_clause,
     same_case_clause,

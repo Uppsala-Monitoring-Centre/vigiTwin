@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `llm-dup-dev` are recorded here.
+All notable changes to `vigitwin` are recorded here.
 
 **The version is a significance signal, and deliberately not strict
 [SemVer](https://semver.org).** It says how far the method has moved, not what
@@ -34,9 +34,153 @@ number.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-20
+
+### Changed — the package is `vigitwin`
+
+The distribution and the import path are renamed, and the hyphen/underscore
+split goes with them:
+
+| | Through 1.2.7 | From 1.3.0 |
+|---|---|---|
+| distribution | `llm-dup-dev` | `vigitwin` |
+| import path | `llm_dup_dev` | `vigitwin` |
+
+The method, the repository, `NOTICE` and `CITATION.cff` have all said vigiTwin
+since 1.0.0. Only the package still carried the working name it had before the
+method was named, and now it does not.
+
+**This breaks every consumer, and the number is not the warning.** A minor is
+what the convention prescribes — `agents.md` § Versioning reserves a major for
+a substantial new generation of the method and says breaking API or schema
+changes alone do not earn one, "however many names move", while a minor "may
+carry backward-incompatible API or schema changes, including package
+restructuring or renaming". That is this change exactly. The 1.0.0 entry below
+deferred the rename to 2.0.0 under the strict-SemVer rule in force then; that
+rule was replaced on 2026-11-18, and the README's promise of a 2.0.0 went with
+it. There is **no compatibility shim**: `import llm_dup_dev` raises
+`ModuleNotFoundError`, per the convention's "No deprecation window".
+
+What a consumer has to do is in
+`docs/migration_notes_package_rename.md`. Four items there deserve naming here:
+
+- **The logger name moved** — `llm_dup_dev.pipeline.runner` →
+  `vigitwin.pipeline.runner`. Loggers are named from `__name__`, so any
+  `dictConfig` or `getLogger` call keyed on the old string stops matching
+  silently, and what it stops delivering is the `WARNING` that says
+  source-context evidence has been silently disabled. A warning about a silent
+  failure, silently lost. This is the item most likely to pass unnoticed.
+- **`dev_package.name` now emits `"vigitwin"`** in the run manifest, dataset
+  manifest, characterization report and study evaluation run manifest.
+  Artifacts from 1.2.7 and earlier say `"llm-dup-dev"` and remain correct for
+  those runs: the field records the distribution name at the time of the run.
+  Anything filtering or joining archived runs on it must accept both values.
+- **Two schemas change a `default`** — `characterization_report` and
+  `study_evaluation_run_manifest`. `SCHEMA_VERSION` is deliberately *not*
+  bumped: a changed default is not a changed shape, every document valid
+  before is valid now, and bumping would force consumers to branch for
+  nothing.
+- **Reinstalling is not optional, and the uninstall is the part that matters.**
+  A stale `llm_dup_dev` left importable keeps satisfying imports you have not
+  migrated; stale `llm-dup-dev` metadata keeps resolving a version, so
+  provenance looks right locally and goes null in production. The note has a
+  snippet that asserts both negatives.
+
+Nothing about the method moved: no decision, score, label or threshold
+changed, no schema shape changed, and the publication layer's key derivation
+is untouched — `VIGITWIN_PUBLICATION_SALT` keeps its name and previously
+derived key ids still reproduce.
+
+### Added — the package is ready to publish on PyPI, and not yet published
+
+`README.md` has promised since 1.0.0 that a PyPI release would accompany the
+rename. Everything needed is now in place; **nothing has been uploaded.**
+
+- **Packaging metadata that was simply absent.** `pyproject.toml` had no
+  `license`, no `classifiers`, no `[project.urls]`, no `authors` and no
+  `keywords`, and its `description` still read "LLM duplicate detection
+  development utilities". Licensing is now declared PEP 639 style —
+  `license = "Apache-2.0"` with `license-files = ["LICENSE", "NOTICE"]`, which
+  is not decoration: Apache-2.0 § 4(d) requires redistributing `NOTICE`, and
+  the wheel previously shipped neither file. The hatchling floor is pinned to
+  `>=1.27` accordingly, since an older backend reads `license` under the
+  legacy rules and emits different metadata.
+- **`src/vigitwin/py.typed`.** mypy has blocked in CI since 1.0.1, yet without
+  a PEP 561 marker every consumer got "module is installed, but missing
+  library stubs or py.typed" — the secure repository has been type-checking
+  against nothing. The annotations are now part of the published contract,
+  hence the `Typing :: Typed` classifier.
+- **A fail-closed sdist allowlist.** There was no sdist configuration at all,
+  so its contents were whatever `.gitignore` happened to exclude. For a public
+  upload that is the wrong default twice over: `_reference_secure_side/` holds
+  secure-side material, and `dist/` was ignored only by its own nested
+  `.gitignore`, which hatchling does not read — a stale wheel there was a
+  plausible member of a public sdist. `only-include` inverts it, so a new
+  top-level directory is excluded by default rather than included by accident.
+  `dist/`, `build/` and `*.egg-info/` are now in `.gitignore` too.
+- **`.github/workflows/release.yml`**, publishing by PyPI trusted publishing
+  on a `v*` tag. No token exists in this repository. Because Azure DevOps does
+  not read `.github/workflows` and PyPI has no Azure DevOps provider, **the
+  mirroring gate is now the publishing gate structurally**, not by
+  convention. The workflow asserts the tag matches `pyproject.toml`, runs
+  `twine check --strict`, and audits the built sdist in both directions —
+  failing if it contains a forbidden path or data-file extension, *and*
+  failing if it is missing a file it must ship. The `pypi` environment is
+  meant to be protected, so the upload waits for a human after every check
+  passes.
+
+The first upload still requires what `agents.md` requires of any public
+version: exercised against the secure companion repository, and judged stable
+and of value to the broader community. Until then the README says it is not on
+PyPI, and the install line still pins a tag.
+
+### Changed — one lookup for the distribution name, not nine
+
+The string `"llm-dup-dev"` was hardcoded at nine runtime sites across five
+modules, every one wrapped in `except PackageNotFoundError: return None`. A
+missed site would not raise — it would silently null `dev_package.version` in
+a manifest, and on a wheel install, where `dev_git_commit` is `None` by
+design, that leaves a manifest with no provenance at all. Renaming nine copies
+of a string that must never disagree is not a thing to do twice, so they are
+now one leaf module, `vigitwin._distribution`, holding `DISTRIBUTION_NAME` and
+`installed_version()`.
+
+Internal, so not a contract change — but it removes the one failure mode of
+this rename that no existing test would have caught, and a new test pins both
+halves of `dev_package` against `importlib.metadata` so a future rename cannot
+pass silently either.
+
+### Removed — `main.py`
+
+Leftover `uv init` scaffolding that printed `Hello from llm_dup_dev!`. Nothing
+imported it and nothing referenced it but the directory listing in
+`agents.md`. It was not worth shipping to a public index.
+
+### Documentation
+
+- **`docs/migration_notes_package_rename.md`** — the migration path, in the
+  detail `agents.md` requires of a break that the version number no longer
+  announces.
+- **`README.md`** — the "On names" note no longer promises a 2.0.0 that the
+  versioning convention retracted, and the install section states the PyPI
+  position accurately. Its relative links are now absolute: this file is the
+  PyPI long description, and PyPI does not rewrite relative links, so every
+  one of them would have 404'd on the project page.
+- **`docs/repository_roles.md`** — the oldest doc here, and the only one that
+  never used the method name. It now distinguishes the three names explicitly:
+  the repository and method are vigiTwin, the package is `vigitwin`, and the
+  working directory on a given machine may still be `~/llm_dup_dev/`, which is
+  incidental rather than a contract.
+- **`docs/study_eval.md`** dropped a reference to a `[study]` extra that
+  stopped existing in 1.0.0, rather than renaming a dead extra.
+- **`agents.md`** § Tags, GitHub Releases and DOIs now covers four decoupled
+  things rather than three, PyPI being the fourth and the only one that is
+  irrevocable on upload.
+
 ### Documentation — the print layout is verified rather than pending
 
-No bump: documentation only. The repeating per-sheet footer introduced in
+No bump in itself: documentation only. The repeating per-sheet footer
+introduced in
 1.2.7 came with a hand-check that could not be automated — whether a
 fixed-position band sits in the deepened page margin or overlays the last
 line of content is a property of the print engine, not of the markup. It has
@@ -46,7 +190,8 @@ fallback stays, scoped to a change of engine, margin or offset.
 
 ### Changed — the version is a significance signal, not strict SemVer
 
-No bump: documentation and convention only, with no functional change. It is
+No bump in itself: documentation and convention only, with no functional
+change. It is
 recorded here because it changes how a consumer should *read* every number in
 this file.
 
@@ -65,7 +210,8 @@ hashes, and what a consumer has to remap:
 and everything before it, both Zenodo DOIs and `CITATION.cff` are untouched.
 
 One consequence worth stating: the planned package rename no longer requires a
-2.0.0, and the README no longer promises one.
+2.0.0 — which is what let it ship as the 1.3.0 above — and the README, which
+had gone on promising one, no longer does.
 
 ## [1.2.7] - 2026-11-19
 

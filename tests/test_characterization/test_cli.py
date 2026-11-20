@@ -1,4 +1,4 @@
-"""``python -m llm_dup_dev.characterization`` end to end over temp files."""
+"""``python -m vigitwin.characterization`` end to end over temp files."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import json
 
 import pytest
 
-from llm_dup_dev.characterization import (
+from vigitwin.characterization import (
     JSON_FILENAME,
     MARKDOWN_FILENAME,
     CharacterizationReport,
 )
-from llm_dup_dev.characterization.cli import main
+from vigitwin.characterization.cli import main
 
 from .conftest import make_reference_set, sourced
 
@@ -54,7 +54,7 @@ def test_writes_json_and_markdown(workspace):
 def test_reads_the_same_reference_set_files_study_eval_reads(workspace):
     """No separate export: the CLI consumes study_reference_set.schema.json."""
     tmp_path, set_path, reports_path = workspace
-    from llm_dup_dev.study_eval.loading import load_reference_set
+    from vigitwin.study_eval.loading import load_reference_set
 
     assert load_reference_set(set_path).set_id == "precision_primary"
 

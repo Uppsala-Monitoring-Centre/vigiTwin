@@ -6,12 +6,14 @@
 A **duplicate adjudication pipeline** for pharmacovigilance adverse event
 reports, plus the evaluation framework used to measure its performance.
 
-> **On names.** The method is **vigiTwin**. The Python package is still
-> `llm_dup_dev`, the working name it carried before the method was named.
-> Renaming the package changes two JSON schemas and every import in the
-> companion repository, so it is deliberately held back to 2.0.0 where it can
-> ship with a migration note — see [`CHANGELOG.md`](CHANGELOG.md). Until then:
-> the repository is `vigiTwin`, the import is `llm_dup_dev`.
+> **On names.** The method, the repository and the package are all
+> **vigiTwin** — the distribution is `vigitwin` and so is the import path,
+> with no hyphen/underscore split to remember. Through 1.2.7 the
+> package was `llm_dup_dev`, the working name it carried before the method was
+> named; 1.3.0 renamed it. Artifacts written by those earlier versions record
+> `dev_package.name: "llm-dup-dev"` and still correctly name the release that
+> produced them. Migrating a consumer takes a few steps — see
+> [`docs/migration_notes_package_rename.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/docs/migration_notes_package_rename.md).
 
 Report pairs that an upstream candidate-generation method (e.g. [vigiMatch
 2025](https://doi.org/10.48550/arXiv.2504.03729)) has flagged as suspected
@@ -47,8 +49,8 @@ for non-independent pairs, a **relationship assessment** (same case, different
 case, or insufficient evidence). The pair of internal answers maps to the four
 user-facing labels above.
 
-Full detail: [`docs/duplicate_adjudication_spec.md`](docs/duplicate_adjudication_spec.md).
-Shorter tour: [`docs/pipeline_overview.md`](docs/pipeline_overview.md).
+Full detail: [`docs/duplicate_adjudication_spec.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/docs/duplicate_adjudication_spec.md).
+Shorter tour: [`docs/pipeline_overview.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/docs/pipeline_overview.md).
 
 ## Install
 
@@ -57,9 +59,15 @@ pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.0.2
 ```
 
 Python 3.11 or 3.12. The package is pure Python with four dependencies
-(`pydantic`, `jinja2`, `pyyaml`, `openpyxl`) and installs anywhere. It is not
-on PyPI yet; a PyPI release is planned to accompany the package rename, which
-will be announced in `CHANGELOG.md` with a migration note.
+(`pydantic`, `jinja2`, `pyyaml`, `openpyxl`) and installs anywhere.
+
+**Not yet on PyPI.** The project is packaged and ready for it as of 1.3.0 —
+metadata, licence files, a typing marker and a trusted-publishing release
+workflow are all in place — but nothing has been uploaded. The first upload
+follows a version being exercised against the secure companion repository and
+mirrored here, as `agents.md` § Tags, GitHub Releases and DOIs requires. Until
+then, install from a tag; this line and the pinned tag above both change in
+the same release that publishes.
 
 ## What you can run without database access
 
@@ -70,7 +78,7 @@ data**, so the full test suite runs on a clean install:
 pip install -e ".[dev]" && python -m pytest
 ```
 
-`llm_dup_dev.study_eval` — the performance-evaluation package, including
+`vigitwin.study_eval` — the performance-evaluation package, including
 sampling, precision/recall estimation, and the two-reviewer structured
 case-level examination (SCLE) with arbitration — is entirely deterministic and
 runs end-to-end on synthetic input. To watch all four steps execute:
@@ -81,7 +89,7 @@ python scripts/study_eval_demo.py
 
 The script builds its own synthetic reference and prediction sets, and fills
 the reviewer and arbitration workbooks that a human would fill in a real study,
-so the whole chain runs unattended. [`docs/study_eval.md`](docs/study_eval.md)
+so the whole chain runs unattended. [`docs/study_eval.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/docs/study_eval.md)
 explains what each step does; the script is the executable version of it.
 
 What you **cannot** run here is the pipeline against real reports. That needs a
@@ -101,8 +109,8 @@ credentials, or database connection strings exist in this repository or anywhere
 in its history.
 
 Integration detail, including the offline "frozen validation" mode used on
-locked-down compute: [`docs/integration_guide.md`](docs/integration_guide.md).
-Rationale for the split: [`docs/repository_roles.md`](docs/repository_roles.md).
+locked-down compute: [`docs/integration_guide.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/docs/integration_guide.md).
+Rationale for the split: [`docs/repository_roles.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/docs/repository_roles.md).
 
 ## Repository layout
 
@@ -123,7 +131,7 @@ The version number is a **significance** signal — how far the method has moved
 new generation of vigiTwin, a minor marks meaningful new functionality, and a
 patch covers fixes and smaller adjustments. Breaking API or schema changes
 alone do not earn a major, so an incompatible change is announced in
-[`CHANGELOG.md`](CHANGELOG.md) — with a `docs/migration_notes_*.md` where
+[`CHANGELOG.md`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/CHANGELOG.md) — with a `docs/migration_notes_*.md` where
 updating takes steps — rather than signalled by the number alone.
 
 The version is never a per-commit identifier. Every artifact the pipeline emits
@@ -134,7 +142,7 @@ Versioning for the full convention.
 ## Citation
 
 Every GitHub Release is archived on Zenodo. Citation metadata — including
-author ORCID and the DOI — is in [`CITATION.cff`](CITATION.cff), which GitHub
+author ORCID and the DOI — is in [`CITATION.cff`](https://github.com/Uppsala-Monitoring-Centre/vigiTwin/blob/main/CITATION.cff), which GitHub
 reads to populate the *Cite this repository* sidebar.
 
 Cite the **concept DOI** when you mean the software in general; it always

@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import json
 
-from llm_dup_dev.review_html.evidence.models import ValueKind
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.models import ValueKind
+from vigitwin.review_html.evidence.publication import (
     ApprovedText,
     DisclosureCode,
     PublicationApprovals,
@@ -28,7 +28,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     write_publication_evidence,
     write_scrambling_key,
 )
-from llm_dup_dev.review_html.render import render_evidence_page
+from vigitwin.review_html.render import render_evidence_page
 from tests.test_review_html.conftest import (
     probabilistic_case,
     publication_page,

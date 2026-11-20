@@ -1,8 +1,8 @@
-"""Tests for llm_dup_dev.eval.annotations."""
+"""Tests for vigitwin.eval.annotations."""
 
 import pytest
 
-from llm_dup_dev.eval.annotations import derive_pair_id, load_annotations
+from vigitwin.eval.annotations import derive_pair_id, load_annotations
 
 
 def _write(tmp_path, text, name="annotations.csv"):
@@ -231,7 +231,7 @@ class TestLoadedAnnotationsFeedEvaluate:
     """The loader's output must be what evaluate() already consumes."""
 
     def test_round_trips_through_evaluate(self, tmp_path):
-        from llm_dup_dev.eval import evaluate
+        from vigitwin.eval import evaluate
 
         path = _write(
             tmp_path,

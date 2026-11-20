@@ -10,7 +10,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
     NarrativeMeasurementValue,

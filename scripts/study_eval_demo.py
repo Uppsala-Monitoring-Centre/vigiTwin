@@ -22,15 +22,15 @@ from pathlib import Path
 
 import openpyxl
 
-from llm_dup_dev.study_eval import workflow
-from llm_dup_dev.study_eval.schemas import (
+from vigitwin.study_eval import workflow
+from vigitwin.study_eval.schemas import (
     PairPrediction,
     PredictionSet,
     ReferencePair,
     ReferenceSet,
 )
-from llm_dup_dev.study_eval.scle.arbitration import _dim_header
-from llm_dup_dev.study_eval.scle.workbook import NOT_APPLICABLE
+from vigitwin.study_eval.scle.arbitration import _dim_header
+from vigitwin.study_eval.scle.workbook import NOT_APPLICABLE
 
 #: (reference label, what the method decided). Note the two vocabularies:
 #: reference labels are 'duplicate' / 'non_duplicate' / 'abstain', while

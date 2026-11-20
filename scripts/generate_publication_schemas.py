@@ -23,15 +23,15 @@ from pathlib import Path
 
 from pydantic import SecretStr
 
-from llm_dup_dev.models.enums import DrugRole, ReportingContextLevel
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.enums import DrugRole, ReportingContextLevel
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     PairFeatures,
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.enums import AnchorType
-from llm_dup_dev.models.report import (
+from vigitwin.models.enums import AnchorType
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -40,9 +40,9 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.review_html.evidence.build import build_evidence_case
-from llm_dup_dev.review_html.evidence.models import EvidencePageVM, number_cases
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.build import build_evidence_case
+from vigitwin.review_html.evidence.models import EvidencePageVM, number_cases
+from vigitwin.review_html.evidence.publication import (
     PublicationSecrets,
     PublicationTransformManifest,
     ScramblingKeyRecord,

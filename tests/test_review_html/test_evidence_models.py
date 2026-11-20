@@ -7,7 +7,7 @@ evidence.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     Attribution,
     AttributionKind,
     EvidenceCell,

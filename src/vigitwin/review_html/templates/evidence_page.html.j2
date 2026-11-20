@@ -1,0 +1,134 @@
+{#
+  An evidence review document: one or more cases in one HTML file.
+
+  One case per file is this phase's output. The same template over a longer
+  ``vm.cases`` is the supplementary document a later phase assembles, so there
+  is nothing to restructure then — only the collection's front matter to fill.
+#}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>{{ vm.title }}</title>
+<style>
+{% include "_evidence.css.j2" %}
+</style>
+</head>
+<body>
+<main>
+{#
+  A publication page says what it is before anything else on it. The footer
+  states the transform in full and must stay there, but a footnote is read
+  last, or not at all: a page lifted into a slide, a figure or a printed
+  bundle arrives with transformed values and no indication of it. This band
+  travels with the first thing a reader sees.
+
+  Deliberately a band and not a tint behind the text: a diagonal wash over a
+  page of tables is what print engines drop and screen readers never had, and
+  the one claim this page must not lose is this one. For the same reason it
+  says MASKED and not "anonymised" — what ran is a transform, and whether the
+  result may be released is a disclosure reviewer's conclusion. The line under
+  the word says *select* values, because that is what is true: a transform may
+  leave a value as reported, and a band claiming everything had moved would be
+  the one piece of publication metadata a reader cannot check. What this run
+  actually did, and the caveat that the page is not certified anonymised, are
+  in the footer, which is written from the effective policy.
+#}
+  {#
+    One case, so the band belongs here: first element inside <main>, which is
+    what makes it survive a screenshot or a crop. A collection draws one per
+    example instead — see _evidence_case.html.j2 — because every example
+    opens a sheet and a band here would sit alone on the cover sheet.
+  #}
+  {% if vm.mode.value == 'publication' and vm.cases | length == 1 %}
+  <div class="masked-banner" role="note">
+    {#- The word is capitalised in the markup, not only by CSS: a copy
+       of this page with its stylesheet stripped, or any reader taking the
+       text, must still carry it. -#}
+    <span class="masked-word">MASKED</span>
+    <span class="masked-detail">Select displayed values have been
+    transformed.</span>
+  </div>
+  {% endif %}
+{#
+  The heading is skipped when a single case already carries its own title:
+  the case's own <h2> is then the document's heading, and printing both would
+  show the same words twice. A collection always gets the heading, because its
+  title names the collection rather than any one case.
+#}
+  {% set single_titled = vm.cases | length == 1 and vm.cases[0].title %}
+  {% if not single_titled %}
+  {% if vm.cases | length > 1 %}<div class="kicker">Evidence review</div>{% endif %}
+  <h1>{{ vm.title }}</h1>
+  {% endif %}
+  {% if vm.intro %}<p class="intro">{{ vm.intro }}</p>{% endif %}
+  {% if vm.note %}<p class="note">{{ vm.note }}</p>{% endif %}
+
+  {% for case in vm.cases %}
+  {% include "_evidence_case.html.j2" %}
+  {% endfor %}
+
+  <footer>
+    {{ (vm.provenance.lines or ['vigiTwin']) | join(' · ') }} ·
+    vigitwin.review_html, evidence format{% if vm.generated_at %} · rendered {{ vm.generated_at }}{% endif %}.
+    <br/>
+    {% if vm.mode.value == 'publication' %}
+    {#
+      What was transformed comes from the run, not from this template: the
+      policy is configurable, and a footer naming every attribute category
+      would be wrong for any run that left one of them as reported.
+    #}
+    Prepared for publication.
+    {{ vm.transform_note or "Displayed values have been transformed, and the
+    assessments, scores, contributions and penalties are those of the
+    original reports." }}
+    {% if vm.approved_for_release %}
+    {#
+      Said only on the strength of a signed, pinned release: the candidate
+      wording is the default because the candidate state is the safe one.
+      The manifest beside this page says the same thing, and a test holds
+      the two to the same phrase.
+    #}
+    Cleared for public sharing by the study's disclosure reviewer.
+    {% else %}
+    A candidate for disclosure review, not a document certified as
+    anonymised.
+    {% endif %}
+    {% else %}
+    This is an internal evidence review. It may contain original report
+    identifiers, country names and narrative text, and is not a
+    publication-safe document.
+    {% endif %}
+  </footer>
+</main>
+{#
+  The repeating per-sheet footer, for paper. A sheet lifted out of a printed
+  bundle carries neither the MASKED band nor the footer above, both of which
+  appear once per document; this is the one claim that travels with every
+  sheet. Static text: Chrome paints a fixed element once per page but reaches
+  neither @page margin boxes nor counter(page), so there is no page number
+  here and cannot be. Outside <main> so no `main > *` rule can reach it, and
+  outside <style> so the rendered scan reads it like any other markup.
+#}
+<div class="page-footer">
+  {%- if vm.mode.value == 'publication' -%}
+    {%- if vm.approved_for_release -%}
+      {#-
+        The title, like a running head, and then the one claim a released
+        sheet must not lose. Being cleared for publication settles the
+        disclosure question and leaves the interpretive one: a reader must
+        not take a shifted date for a real one, and on a loose sheet this is
+        the only place that says so.
+      -#}
+      {{ vm.title }} — displayed values transformed.
+    {%- else -%}
+      Candidate for disclosure review — displayed values transformed, not
+      certified as anonymised.
+    {%- endif -%}
+  {%- else -%}
+    Internal evidence review — may contain original identifiers and narrative
+    text. Not publication-safe.
+  {%- endif -%}
+</div>
+</body>
+</html>

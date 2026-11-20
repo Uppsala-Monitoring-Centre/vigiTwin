@@ -14,16 +14,16 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.models.explicit_link import (
+from vigitwin.models.explicit_link import (
     ExplicitLinkAssessment,
     ExplicitLinkVerdict,
 )
-from llm_dup_dev.review_html.evidence.collection import (
+from vigitwin.review_html.evidence.collection import (
     _with_declared_settings,
 )
-from llm_dup_dev.review_html.evidence.manifest import ExampleDataset
-from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
-from llm_dup_dev.review_html.evidence.summary import build_assessment_summary
+from vigitwin.review_html.evidence.manifest import ExampleDataset
+from vigitwin.review_html.evidence.settings import EvidenceRunSettings
+from vigitwin.review_html.evidence.summary import build_assessment_summary
 
 from tests.test_review_html.test_evidence_build import (
     _classification,
@@ -118,8 +118,8 @@ class TestWhatThePagePrints:
     """
 
     def _html(self, verdict, run_settings=None):
-        from llm_dup_dev.review_html.evidence.models import EvidencePageVM
-        from llm_dup_dev.review_html.render import render_evidence_page
+        from vigitwin.review_html.evidence.models import EvidencePageVM
+        from vigitwin.review_html.render import render_evidence_page
 
         case = _case(
             features=_features(

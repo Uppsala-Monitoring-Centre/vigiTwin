@@ -15,8 +15,8 @@ reader could check.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.models import FreqRowVM
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.models import FreqRowVM
+from vigitwin.review_html.evidence.publication import (
     CountryMaskingOverride,
     DisclosureCode,
     PublicationApprovals,
@@ -170,7 +170,7 @@ class TestTheCountryYearPopulation:
         """``reporting_context`` takes the year the two reports *share*, so
         an offset carrying either of them into another year leaves the page
         naming a country-year its own dates do not support."""
-        from llm_dup_dev.review_html.evidence.publication.scramble import (
+        from vigitwin.review_html.evidence.publication.scramble import (
             _collect_dates,
             CaseTransform,
         )
@@ -204,7 +204,7 @@ class TestTheCountryYearPopulation:
     def test_a_case_with_no_context_year_is_unconstrained(self):
         """A global or country-level context displays no year, so there is no
         population attribution for an offset to break."""
-        from llm_dup_dev.review_html.evidence.publication.scramble import (
+        from vigitwin.review_html.evidence.publication.scramble import (
             _ContextGuard,
         )
 

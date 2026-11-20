@@ -80,7 +80,6 @@ If specifications conflict with legacy code, **the specification takes precedenc
 ./
 ├── agents.md
 ├── README.md
-├── main.py
 ├── pyproject.toml
 │
 ├── docs/
@@ -98,7 +97,7 @@ If specifications conflict with legacy code, **the specification takes precedenc
 ├── examples/                          # One valid document per schema
 ├── schemas/                           # JSON Schema for every emitted artifact
 │
-└── src/llm_dup_dev/
+└── src/vigitwin/
     ├── models/                        # Report, ReportPair, PairFeatures, results
     ├── data/                          # ReportLoader / StatsProvider protocols;
     │                                  #   synthetic + offline (frozen) providers
@@ -164,7 +163,9 @@ Keep the list short and justified; each addition is a cost to every consumer.
 
 ## Conventions
 - Python ≥3.11, <3.13
-- Package installed as `llm_dup_dev` (src layout via pyproject.toml)
+- Distribution and import path are both `vigitwin` (src layout via
+pyproject.toml). Renamed from `llm-dup-dev` / `llm_dup_dev` in 1.3.0 — see
+`docs/migration_notes_package_rename.md`
 - Data files (`.csv`, `.parquet`, `.pkl`, `.json`, `.xlsx`) should not be saved 
 in this repo and as an extra precaution are gitignored — never commit them
 
@@ -178,7 +179,7 @@ run in CI (`.github/workflows/ci.yml`):
 .venv/bin/mypy                  # blocking in CI — must stay at zero
 ```
 
-- **All three block.** 2031 tests, all on synthetic data, no network or
+- **All three block.** 2910 tests, all on synthetic data, no network or
   database; zero ruff findings; zero mypy errors. A PR that reddens any of them
   does not merge.
 - **Zero is the baseline, so a finding is a regression.** Through 1.0.0 ruff and
@@ -259,7 +260,7 @@ run in CI (`.github/workflows/ci.yml`):
   notice it; it goes under `[Unreleased]`.
 
 ### Tags, GitHub Releases and DOIs
-Three separate things, deliberately decoupled — conflating them is how a
+Four separate things, deliberately decoupled — conflating them is how a
 provisional commit acquires a permanent citation:
 
 | | What it is | Cost |
@@ -267,6 +268,7 @@ provisional commit acquires a permanent citation:
 | `version` in `pyproject.toml` | how far the method has moved | spent the moment any artifact records it |
 | a git tag | an immutable name for a commit | free; in practice irrevocable once public |
 | a GitHub **Release** | what Zenodo watches | mints a permanent version DOI, listed forever on the concept record |
+| a **PyPI upload** | what `pip install vigitwin` gets | irrevocable: that version number can never be reused, even after deletion |
 
 - **`origin` is where work happens; `github` mirrors selected validated
   functionality, not `main`.** Development, PRs and review all run on Azure
@@ -320,6 +322,18 @@ provisional commit acquires a permanent citation:
   version (`study-2026-performance-evaluation`), pointing at the version tag
   that was used. It names the analysis, not the contract — see § Versioning
   on why a study cycle is not a release.
+- **PyPI publishes from the mirror, and only on a tag.** The release workflow
+  (`.github/workflows/release.yml`) fires on a `v*` tag pushed to `github` and
+  uploads via PyPI trusted publishing — no token exists anywhere in this
+  repository. Azure DevOps does not read `.github/workflows` and PyPI has no
+  Azure DevOps provider, so **the mirroring gate is the publishing gate,
+  structurally rather than by convention**: nothing can reach PyPI that has
+  not first met the two conditions above. The `pypi` GitHub environment is
+  protected, so the upload still waits for a human after every check has run.
+  Rehearse on TestPyPI with `workflow_dispatch` before a real tag — an sdist
+  is the source, published, and a bad upload burns the version number for
+  good. A tag that predates the workflow cannot fire it, so catching the
+  mirror up with `--tags` is safe.
 
 ## What This Repo Is NOT
 - No UI layer — HTML snippets are embedded in a larger calling system

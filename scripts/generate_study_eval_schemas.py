@@ -8,30 +8,30 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_dup_dev.study_eval.manifest import ArtifactRef, EvaluationRunManifest
-from llm_dup_dev.study_eval.records import SamplingRecord
-from llm_dup_dev.study_eval.sampling import SCLECase, SCLESample
-from llm_dup_dev.study_eval.schemas import (
+from vigitwin.study_eval.manifest import ArtifactRef, EvaluationRunManifest
+from vigitwin.study_eval.records import SamplingRecord
+from vigitwin.study_eval.sampling import SCLECase, SCLESample
+from vigitwin.study_eval.schemas import (
     PairPrediction,
     PredictionSet,
     ReferencePair,
     ReferenceSet,
 )
-from llm_dup_dev.study_eval.scle.agreement import AgreementReport, DimensionAgreement
-from llm_dup_dev.study_eval.scle.arbitration import (
+from vigitwin.study_eval.scle.agreement import AgreementReport, DimensionAgreement
+from vigitwin.study_eval.scle.arbitration import (
     ArbitrationDecision,
     ArbitrationSubmission,
 )
-from llm_dup_dev.study_eval.scle.consensus import (
+from vigitwin.study_eval.scle.consensus import (
     ConsensusAssessment,
     SCLEConsensusResult,
 )
-from llm_dup_dev.study_eval.scle.discrepancy import (
+from vigitwin.study_eval.scle.discrepancy import (
     DimensionDisagreement,
     DiscrepancyReport,
     PairDiscrepancy,
 )
-from llm_dup_dev.study_eval.scle.form import (
+from vigitwin.study_eval.scle.form import (
     CaseDifficulty,
     ReferenceLabelIssue,
     ReviewerSubmission,

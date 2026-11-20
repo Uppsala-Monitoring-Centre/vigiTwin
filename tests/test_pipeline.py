@@ -2,14 +2,14 @@
 
 import pytest
 
-from llm_dup_dev.classifier.config import PipelineConfig
-from llm_dup_dev.feature_generation.pipeline import generate_pair_features
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.models.enums import (
+from vigitwin.classifier.config import PipelineConfig
+from vigitwin.feature_generation.pipeline import generate_pair_features
+from vigitwin.feature_generation.probability import FrequencyStats
+from vigitwin.models.enums import (
     InconsistencySeverity,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
     SourceIdentifierType,
@@ -184,7 +184,7 @@ class TestGeneratePairFeatures:
             stats=stats_similar,
             config=default_config,
         )
-        from llm_dup_dev.models.pair_features import PairFeatures
+        from vigitwin.models.pair_features import PairFeatures
 
         json_str = features.model_dump_json()
         restored = PairFeatures.model_validate_json(json_str)
@@ -322,7 +322,7 @@ class TestOrientationInvariance:
     record cannot tell which orientation produced it. If a future
     orientation-dependent rule made the decision differ, one ``pair_id`` would
     mean two different answers — precisely what canonical pair identity exists
-    to prevent (see :mod:`llm_dup_dev.models.pair_identity`). Nothing else
+    to prevent (see :mod:`vigitwin.models.pair_identity`). Nothing else
     guards that property, so these tests do.
 
     Both a near-duplicate pair and a clearly unrelated one are covered, so the
@@ -348,8 +348,8 @@ class TestOrientationInvariance:
         answers and the orientation must be canonicalised upstream — do not
         relax the assertion.
         """
-        from llm_dup_dev.classifier.config import DecisionThresholds
-        from llm_dup_dev.classifier.decision_logic import classify
+        from vigitwin.classifier.config import DecisionThresholds
+        from vigitwin.classifier.decision_logic import classify
 
         fwd, rev = _reversed_pair(*pair, stats_similar, default_config)
         thresholds = DecisionThresholds()

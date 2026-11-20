@@ -11,14 +11,14 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from llm_dup_dev.run_manifest import _git
-from llm_dup_dev.run_manifest._git import (
+from vigitwin.run_manifest import _git
+from vigitwin.run_manifest._git import (
     dev_repo_path,
     try_dev_git_commit,
     try_git_commit,
 )
-from llm_dup_dev.run_manifest.builder import build_run_manifest
-from llm_dup_dev.study_eval.manifest import build_manifest
+from vigitwin.run_manifest.builder import build_run_manifest
+from vigitwin.study_eval.manifest import build_manifest
 
 
 def _init_repo(path: Path) -> str:
@@ -46,9 +46,9 @@ def _init_repo(path: Path) -> str:
 
 
 def test_dev_repo_path_points_at_the_package_source() -> None:
-    import llm_dup_dev
+    import vigitwin
 
-    assert dev_repo_path() == Path(llm_dup_dev.__file__).resolve().parent
+    assert dev_repo_path() == Path(vigitwin.__file__).resolve().parent
 
 
 def test_commit_is_read_from_the_repo_tracking_the_source(tmp_path, monkeypatch):
@@ -71,7 +71,7 @@ def test_untracked_source_reports_nothing_not_the_enclosing_repo(
     """
     consumer = tmp_path / "consumer"
     consumer_sha = _init_repo(consumer)
-    installed = consumer / ".venv" / "lib" / "site-packages" / "llm_dup_dev"
+    installed = consumer / ".venv" / "lib" / "site-packages" / "vigitwin"
     installed.mkdir(parents=True)
     (installed / "__init__.py").write_text("")
     monkeypatch.setattr(_git, "dev_repo_path", lambda: installed)

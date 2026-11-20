@@ -45,7 +45,7 @@ reviewer meeting `S: evidence_extraction` for the first time can look it up.
 ## The auto-context block is now sized to the sample
 
 Two policies decide whether a context column is written, both declared per
-column in `_CONTEXT_COLS` ([scle/workbook.py](../src/llm_dup_dev/study_eval/scle/workbook.py)):
+column in `_CONTEXT_COLS` ([scle/workbook.py](../src/vigitwin/study_eval/scle/workbook.py)):
 
 - **constant** — the column holds one value for the whole workbook, so it is
   stated once on the `metadata` sheet and no column is written. This always

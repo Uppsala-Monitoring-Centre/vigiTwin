@@ -20,8 +20,8 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.review_html.evidence.models import FreqRowVM
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.models import FreqRowVM
+from vigitwin.review_html.evidence.publication import (
     ApprovedText,
     DisclosureCode,
     DisclosureFinding,
@@ -33,7 +33,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     export_approvals_form,
     write_approvals_form,
 )
-from llm_dup_dev.review_html.evidence.publication.approvals import (
+from vigitwin.review_html.evidence.publication.approvals import (
     RENDERED_SCAN_PATH,
     merge_approvals_form,
     resolvable,

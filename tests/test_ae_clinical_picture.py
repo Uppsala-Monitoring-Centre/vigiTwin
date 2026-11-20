@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.classifier.config import PipelineConfig
-from llm_dup_dev.data.synthetic import (
+from vigitwin.classifier.config import PipelineConfig
+from vigitwin.data.synthetic import (
     SyntheticReportLoader,
     SyntheticStatsProvider,
 )
-from llm_dup_dev.feature_generation.pipeline import generate_pair_features
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.llm import LLMResponse
-from llm_dup_dev.llm.fake import FakeLLMClient
-from llm_dup_dev.llm.tasks.ae_clinical_picture import (
+from vigitwin.feature_generation.pipeline import generate_pair_features
+from vigitwin.feature_generation.probability import FrequencyStats
+from vigitwin.llm import LLMResponse
+from vigitwin.llm.fake import FakeLLMClient
+from vigitwin.llm.tasks.ae_clinical_picture import (
     SOURCE_LABEL,
     SUPPRESSED_BY_DECISIVE_GLOBAL,
     AEClinicalPictureVerdict,
@@ -23,13 +23,13 @@ from llm_dup_dev.llm.tasks.ae_clinical_picture import (
     build_ae_clinical_picture_request,
     collapse_subordinate_findings,
 )
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AEClinicalPictureStatus,
     InconsistencySeverity,
 )
-from llm_dup_dev.models.report import AdverseEvent, Report
-from llm_dup_dev.models.report_pair import ReportPair
-from llm_dup_dev.pipeline.runner import PipelineRunner
+from vigitwin.models.report import AdverseEvent, Report
+from vigitwin.models.report_pair import ReportPair
+from vigitwin.pipeline.runner import PipelineRunner
 
 
 # ---------------------------------------------------------------------------
@@ -534,7 +534,7 @@ class TestPipelineFeatureMerge:
         self, report_a, report_b, fake_client
     ):
         """Decisive global mismatch contributes 1 decisive to merged counts."""
-        from llm_dup_dev.llm.tasks.ae_clinical_picture import (
+        from vigitwin.llm.tasks.ae_clinical_picture import (
             assess_ae_clinical_picture,
         )
 
@@ -585,7 +585,7 @@ class TestPipelineFeatureMerge:
     def test_two_moderates_both_contribute_to_merged_counts(
         self, report_a, report_b, fake_client
     ):
-        from llm_dup_dev.llm.tasks.ae_clinical_picture import (
+        from vigitwin.llm.tasks.ae_clinical_picture import (
             assess_ae_clinical_picture,
         )
 

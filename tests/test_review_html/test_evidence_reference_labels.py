@@ -16,9 +16,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.review_html.evidence.build import normalise_reference_term
-from llm_dup_dev.review_html.evidence.manifest import CuratedExampleManifest
-from llm_dup_dev.review_html.formats import reference_from_annotation
+from vigitwin.review_html.evidence.build import normalise_reference_term
+from vigitwin.review_html.evidence.manifest import CuratedExampleManifest
+from vigitwin.review_html.formats import reference_from_annotation
 
 
 def _dataset(**extra) -> dict:

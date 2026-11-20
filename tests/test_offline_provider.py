@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenNarrativeDemographics,
     FrozenPairBundle,
     FrozenScopeStats,
@@ -28,14 +28,14 @@ from llm_dup_dev.data.offline import (
     save_frozen_source_case_extractions,
     save_screening_details,
 )
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
     NarrativeMeasurementValue,
     NarrativeSex,
     NarrativeSexValue,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     CaseIdentifierFamily,
     EvidenceSpan,
     NarrativeSourceCase,
@@ -43,10 +43,10 @@ from llm_dup_dev.models.narrative_source_case import (
     SourceIdentifierType,
     SourceType,
 )
-from llm_dup_dev.data.protocols import PairContextSink, StatsProvider
-from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.models.report import (
+from vigitwin.data.protocols import PairContextSink, StatsProvider
+from vigitwin.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
+from vigitwin.feature_generation.probability import FrequencyStats
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -54,8 +54,8 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.models.report_pair import ReportPair
-from llm_dup_dev.pipeline.runner import PipelineRunner
+from vigitwin.models.report_pair import ReportPair
+from vigitwin.pipeline.runner import PipelineRunner
 
 
 # ---------------------------------------------------------------------------

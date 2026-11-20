@@ -18,8 +18,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "llm_dup_dev"
-PACKAGE = "llm_dup_dev.characterization"
+SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "vigitwin"
+PACKAGE = "vigitwin.characterization"
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -51,7 +51,7 @@ def test_characterization_does_not_import_the_study_eval_package_root():
     """Submodules only — the root pulls in the entire four-step workflow."""
     offenders: list[str] = []
     for path in (SOURCE_ROOT / "characterization").rglob("*.py"):
-        if "llm_dup_dev.study_eval" in _imported_modules(path):
+        if "vigitwin.study_eval" in _imported_modules(path):
             offenders.append(str(path.relative_to(SOURCE_ROOT)))
 
     assert offenders == []

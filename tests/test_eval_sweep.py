@@ -1,4 +1,4 @@
-"""Tests for llm_dup_dev.eval.sweep.
+"""Tests for vigitwin.eval.sweep.
 
 The three hazard tests are the point of this file. Each guards a *silent*
 failure — a sweep that reports a confident number over the wrong ground truth is
@@ -7,22 +7,22 @@ worse than one that crashes.
 
 import pytest
 
-from llm_dup_dev.classifier.config import DecisionThresholds
-from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.eval.labels import AbstainMode
-from llm_dup_dev.eval.sweep import check_coverage, grid_over, sweep
-from llm_dup_dev.eval.report import sweep_to_markdown, sweep_to_text
-from llm_dup_dev.feature_generation.probability import compute_l_patient
-from llm_dup_dev.models.enums import (
+from vigitwin.classifier.config import DecisionThresholds
+from vigitwin.classifier.decision_logic import classify
+from vigitwin.eval.labels import AbstainMode
+from vigitwin.eval.sweep import check_coverage, grid_over, sweep
+from vigitwin.eval.report import sweep_to_markdown, sweep_to_text
+from vigitwin.feature_generation.probability import compute_l_patient
+from vigitwin.models.enums import (
     AnchorType,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
     SourceIdentifierType,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     InconsistencyCounts,
     PairFeatures,
@@ -129,7 +129,7 @@ class TestCoverage:
 
     A mismatched file therefore yields a confident-looking score over a handful
     of pairs. Coverage exists to make that visible. Since pair ids are now
-    canonical (llm_dup_dev.models.pair_identity), a file listing a pair the
+    canonical (vigitwin.models.pair_identity), a file listing a pair the
     other way round is no longer one of the ways to get here — but a features
     file written before canonicalisation still is.
     """

@@ -6,7 +6,7 @@ All reports use synthetic data only — no real pharmacovigilance data.
 from __future__ import annotations
 
 
-from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
+from vigitwin.feature_generation.clinical_date_inconsistencies import (
     ClinicalDateFinding,
     ClinicalDateResult,
     EntityType,
@@ -18,8 +18,8 @@ from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (
     effective_overall_ae_onset_date,
     latest_plausible_date,
 )
-from llm_dup_dev.models.enums import DrugRole
-from llm_dup_dev.models.report import (
+from vigitwin.models.enums import DrugRole
+from vigitwin.models.report import (
     AdverseEvent,
     DateValue,
     Drug,

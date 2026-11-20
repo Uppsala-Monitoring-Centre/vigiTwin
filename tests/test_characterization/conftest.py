@@ -14,9 +14,9 @@ from typing import Sequence
 
 import pytest
 
-from llm_dup_dev.models.enums import DrugRole
-from llm_dup_dev.models.pair_identity import canonical_pair_id, canonical_report_ids
-from llm_dup_dev.models.report import (
+from vigitwin.models.enums import DrugRole
+from vigitwin.models.pair_identity import canonical_pair_id, canonical_report_ids
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -24,7 +24,7 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.study_eval.schemas import ReferencePair, ReferenceSet
+from vigitwin.study_eval.schemas import ReferencePair, ReferenceSet
 
 
 def sourced(value: str, source: str = "structured") -> SourcedValue:

@@ -15,13 +15,13 @@ what was decided, and on what.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     DecisionPathway,
     DecisionStage,
     EvidenceRole,
     TileState,
 )
-from llm_dup_dev.review_html.render import render_evidence_page
+from vigitwin.review_html.render import render_evidence_page
 from tests.test_review_html.conftest import (
     probabilistic_case,
     publication_page,
@@ -87,8 +87,8 @@ class TestAThinArtifactStillReadsAsATile:
 
     @staticmethod
     def _case():
-        from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.classification import ClassificationResult
+        from vigitwin.models.enums import (
             IndependenceAssessment,
             RelationshipAssessment,
         )
@@ -210,7 +210,7 @@ class TestTheDecisionDrivingEvidenceIsNamed:
     def test_a_clause_that_begins_with_a_name_keeps_it(self):
         """Jinja's ``capitalize`` lower-cases the rest of the string, which
         turned "vigiTwin assessed ..." into "Vigitwin assessed ..."."""
-        from llm_dup_dev.review_html.evidence.build import _as_sentence
+        from vigitwin.review_html.evidence.build import _as_sentence
 
         assert _as_sentence("vigiTwin assessed the reports") == (
             "vigiTwin assessed the reports."
@@ -236,8 +236,8 @@ class TestTheColourSaysWhichWayTheDecisionWent:
             assert tile.pathway_css_class.endswith("value-match")
 
     def test_an_independent_outcome_is_red(self):
-        from llm_dup_dev.models.classification import ClassificationResult
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.classification import ClassificationResult
+        from vigitwin.models.enums import (
             IndependenceAssessment,
             IndependenceReason,
         )
@@ -281,11 +281,11 @@ class TestTheColourSaysWhichWayTheDecisionWent:
         assert 'class="decision decision-value value-mismatch"' in html
 
     def test_an_abstention_points_neither_way(self):
-        from llm_dup_dev.models.classification import (
+        from vigitwin.models.classification import (
             ClassificationResult,
             InconsistencyPenalty,
         )
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.enums import (
             IndependenceAssessment,
             IndependenceReason,
             RelationshipAssessment,
@@ -378,8 +378,8 @@ class TestSourceFindingsLeaveTheScoredTrace:
     def test_an_ordinary_finding_stays_in_the_scored_trace(self):
         """The anti-requirement: nothing is deferred where the source context
         did not decide."""
-        from llm_dup_dev.models.enums import InconsistencySeverity
-        from llm_dup_dev.models.pair_features import (
+        from vigitwin.models.enums import InconsistencySeverity
+        from vigitwin.models.pair_features import (
             Inconsistency,
             InconsistencyCounts,
         )
@@ -413,7 +413,7 @@ class TestSourceContextHasEquivalentStanding:
     def test_the_identifier_is_a_cell_like_any_other_value(self):
         """So it is coloured by the page's one colour rule, and a publication
         transform reaches it by kind."""
-        from llm_dup_dev.review_html.evidence.models import (
+        from vigitwin.review_html.evidence.models import (
             EvidenceRole,
             ValueKind,
         )
@@ -511,26 +511,26 @@ class TestThePanelPenaltyIsTheTotalOfWhatItLists:
 
     def test_an_ordinary_finding_beside_it_is_still_counted(self):
         """Not a blanket zero: the figure is the sum of what is listed."""
-        from llm_dup_dev.models.classification import (
+        from vigitwin.models.classification import (
             ClassificationResult,
             InconsistencyPenalty,
             PenaltyTerm,
         )
-        from llm_dup_dev.models.enums import (
+        from vigitwin.models.enums import (
             IndependenceAssessment,
             IndependenceReason,
             InconsistencySeverity,
             RelationshipAssessment,
         )
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseAssessment,
             SourceCaseVerdict,
             SourceIdentifierType,
         )
-        from llm_dup_dev.feature_generation.source_case_inconsistency import (
+        from vigitwin.feature_generation.source_case_inconsistency import (
             source_case_findings,
         )
-        from llm_dup_dev.models.pair_features import (
+        from vigitwin.models.pair_features import (
             Inconsistency,
             InconsistencyCounts,
         )
@@ -599,11 +599,11 @@ class TestThePanelPenaltyIsTheTotalOfWhatItLists:
     def test_an_unweighed_run_falls_back_to_the_stored_total(self):
         """With no weights recorded there is no sum to take, and quoting a
         default this run may not have used would be worse."""
-        from llm_dup_dev.review_html.evidence.build import (
+        from vigitwin.review_html.evidence.build import (
             _scored_penalty_total,
         )
-        from llm_dup_dev.models.classification import InconsistencyPenalty
-        from llm_dup_dev.review_html.evidence.models import DiscrepancyVM
+        from vigitwin.models.classification import InconsistencyPenalty
+        from vigitwin.review_html.evidence.models import DiscrepancyVM
 
         penalty = InconsistencyPenalty(w_tot=7.0, threshold=None)
         unknown = DiscrepancyVM(severity="moderate", text="x", weight=None)
@@ -635,8 +635,8 @@ class TestTheLimitationsListDoesNotNameTheSourceFinding:
     def test_a_genuinely_unmapped_finding_still_records_one(self):
         """The anti-requirement: the gap is scoped to source verdicts, not
         removed."""
-        from llm_dup_dev.models.enums import InconsistencySeverity
-        from llm_dup_dev.models.pair_features import (
+        from vigitwin.models.enums import InconsistencySeverity
+        from vigitwin.models.pair_features import (
             Inconsistency,
             InconsistencyCounts,
         )
@@ -692,8 +692,8 @@ class TestOutcomesAreNamedForTheReader:
             assert "Different_case" not in html
 
     def test_an_abstention_keeps_its_own_word(self):
-        from llm_dup_dev.models.enums import RelationshipAssessment
-        from llm_dup_dev.review_html.evidence.build import relationship_label
+        from vigitwin.models.enums import RelationshipAssessment
+        from vigitwin.review_html.evidence.build import relationship_label
 
         assert relationship_label(RelationshipAssessment.ABSTAIN) == "Abstain"
 
@@ -709,7 +709,7 @@ class TestTheSourceKindIsSourceNeutral:
 
     @staticmethod
     def _case_with(kind):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseAssessment,
             SourceCaseVerdict,
         )
@@ -732,7 +732,7 @@ class TestTheSourceKindIsSourceNeutral:
         )
 
     def test_the_catch_all_kinds_read_as_a_shared_external_source(self):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceIdentifierType,
         )
 
@@ -748,7 +748,7 @@ class TestTheSourceKindIsSourceNeutral:
             )
 
     def test_the_prose_reads_the_same_way(self):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceIdentifierType,
         )
 
@@ -761,7 +761,7 @@ class TestTheSourceKindIsSourceNeutral:
     def test_a_specific_kind_is_still_named_specifically(self):
         """The anti-requirement: source-neutral where the type is a
         catch-all, not everywhere."""
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceIdentifierType,
         )
 
@@ -770,7 +770,7 @@ class TestTheSourceKindIsSourceNeutral:
         assert case.source_context.identifier_label == "Trial registration"
 
     def test_no_literature_claim_reaches_the_page(self):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceIdentifierType,
         )
 

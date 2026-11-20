@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from llm_dup_dev.models.classification import (
+from vigitwin.models.classification import (
     ClassificationResult,
     InconsistencyPenalty,
     PenaltyTerm,
 )
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AnchorType,
     DrugRole,
     IndependenceAssessment,
@@ -24,7 +24,7 @@ from llm_dup_dev.models.enums import (
     RelationshipAssessment,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     ClinicalDateFindingSummary,
     FeatureContribution,
@@ -34,7 +34,7 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.report import (
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -43,8 +43,8 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.review_html.evidence.build import build_evidence_case
-from llm_dup_dev.review_html.evidence.models import EvidenceRole
+from vigitwin.review_html.evidence.build import build_evidence_case
+from vigitwin.review_html.evidence.models import EvidenceRole
 
 
 def _report(

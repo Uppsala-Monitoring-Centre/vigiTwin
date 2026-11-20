@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from pydantic import SecretStr
 
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     DrugRole,
     InconsistencySeverity,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     ClinicalDateFindingSummary,
     ClinicalDateInconsistencyCounts,
     FeatureContribution,
@@ -23,7 +23,7 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.report import (
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -33,13 +33,13 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     EvidenceCaseVM,
     EvidencePageVM,
     number_cases,
 )
-from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.settings import EvidenceRunSettings
+from vigitwin.review_html.evidence.publication import (
     PublicationApprovals,
     PublicationPolicy,
     PublicationSecrets,
@@ -47,7 +47,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     scramble_page,
 )
 from tests.conftest import report_a, report_b, report_c, report_empty
-from llm_dup_dev.review_html.evidence.build import build_evidence_case
+from vigitwin.review_html.evidence.build import build_evidence_case
 from tests.test_review_html.test_evidence_build import (
     _case,
     _classification,
@@ -256,11 +256,11 @@ def case_with_human_text() -> EvidenceCaseVM:
     A curator's written interpretation, and the verbatim narrative snippets
     behind a narrative-derived demographic value.
     """
-    from llm_dup_dev.models.narrative_demographics import (
+    from vigitwin.models.narrative_demographics import (
         NarrativeAgeValue,
         NarrativeDemographics,
     )
-    from llm_dup_dev.review_html.evidence.build import ExamplePresentation
+    from vigitwin.review_html.evidence.build import ExamplePresentation
 
     r1 = _detailed_report(
         "R1", age=81, onset="2023-11-13", report_date="2024-02-20"
@@ -323,23 +323,23 @@ def shared_source_case(
     The point of the fixture is that the page has to say so: a matching score
     and a penalty are both computed here and neither decided anything.
     """
-    from llm_dup_dev.models.classification import (
+    from vigitwin.models.classification import (
         ClassificationResult,
         InconsistencyPenalty,
         PenaltyTerm,
     )
-    from llm_dup_dev.models.enums import (
+    from vigitwin.models.enums import (
         IndependenceAssessment,
         IndependenceReason,
         InconsistencySeverity,
         RelationshipAssessment,
     )
-    from llm_dup_dev.models.narrative_source_case import (
+    from vigitwin.models.narrative_source_case import (
         SourceCaseAssessment,
         SourceCaseVerdict,
         SourceIdentifierType,
     )
-    from llm_dup_dev.feature_generation.source_case_inconsistency import (
+    from vigitwin.feature_generation.source_case_inconsistency import (
         source_case_findings,
     )
 
@@ -419,12 +419,12 @@ def probabilistic_case(
     so both stages run on the figures and the page should say so in the same
     two tiles, in the same place.
     """
-    from llm_dup_dev.models.classification import (
+    from vigitwin.models.classification import (
         ClassificationResult,
         InconsistencyPenalty,
         PenaltyTerm,
     )
-    from llm_dup_dev.models.enums import (
+    from vigitwin.models.enums import (
         IndependenceAssessment,
         IndependenceReason,
         InconsistencySeverity,

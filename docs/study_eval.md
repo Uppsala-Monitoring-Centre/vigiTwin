@@ -1,6 +1,6 @@
 # `study_eval` — performance-evaluation package
 
-`llm_dup_dev.study_eval` implements the deterministic and administrative parts of
+`vigitwin.study_eval` implements the deterministic and administrative parts of
 a case-level method-evaluation study — aggregate precision/recall estimates plus
 a structured case-level examination (SCLE) with two reviewers and arbitration.
 It is generic: nothing is hardcoded to a particular screening method or set of
@@ -8,14 +8,14 @@ reference sets. It is developed and tested entirely with synthetic data in this
 repository; the secure repository (`llm_dup_pv_secure`) adds a thin adapter that
 builds the input models from a frozen run and invokes the workflow.
 
-The package is a subpackage of `llm_dup_dev` (it reuses `eval`, `review_html`,
-`models`, and `run_manifest`), but nothing else in `llm_dup_dev` imports it.
+The package is a subpackage of `vigitwin` (it reuses `eval`, `review_html`,
+`models`, and `run_manifest`), but nothing else in `vigitwin` imports it.
 
 ## The four steps
 
 The study runs interactively — typically in a notebook on the secure side — with
 human input between steps. Each step is a function in
-[workflow.py](../src/llm_dup_dev/study_eval/workflow.py) that reads the previous
+[workflow.py](../src/vigitwin/study_eval/workflow.py) that reads the previous
 step's artifacts and writes its own plus a checksummed
 `evaluation_run_manifest.json`.
 
@@ -32,7 +32,7 @@ is — one that builds synthetic inputs and fills the workbooks a human would
 otherwise fill — run [`scripts/study_eval_demo.py`](../scripts/study_eval_demo.py).
 
 ```python
-from llm_dup_dev.study_eval import workflow
+from vigitwin.study_eval import workflow
 
 # Step 1 — one call handles any mix of precision- and recall-role reference sets.
 analysis = workflow.run_analysis(
@@ -75,11 +75,11 @@ backup in when a primary pair must be dropped.
 A thin CLI wraps the same four functions (workbooks require the `study` extra):
 
 ```
-python -m llm_dup_dev.study_eval analyze   --reference-set precision.json --reference-set fda_gold.json \
+python -m vigitwin.study_eval analyze   --reference-set precision.json --reference-set fda_gold.json \
                                            --predictions frozen_primary.json --seed study-2026 --output-dir results/
-python -m llm_dup_dev.study_eval workbooks  --sample results/scle_sample_precision_*.json --reviewer r1 --reviewer r2 --output-dir review/
-python -m llm_dup_dev.study_eval arbitrate  --sample ... --workbook r1.xlsx --workbook r2.xlsx --output-dir arb/
-python -m llm_dup_dev.study_eval finalize   --sample ... --workbook r1.xlsx --workbook r2.xlsx --arbitration arb.xlsx --output-dir final/
+python -m vigitwin.study_eval workbooks  --sample results/scle_sample_precision_*.json --reviewer r1 --reviewer r2 --output-dir review/
+python -m vigitwin.study_eval arbitrate  --sample ... --workbook r1.xlsx --workbook r2.xlsx --output-dir arb/
+python -m vigitwin.study_eval finalize   --sample ... --workbook r1.xlsx --workbook r2.xlsx --arbitration arb.xlsx --output-dir final/
 ```
 
 ## Reference-set characteristics ("Table 1")
@@ -87,11 +87,11 @@ python -m llm_dup_dev.study_eval finalize   --sample ... --workbook r1.xlsx --wo
 Before Step 1, describe the sets themselves — reporting years, countries, patient
 age and sex, commonest drugs and adverse events, and how often the two reports of
 a pair share a country. That is
-[`llm_dup_dev.characterization`](reference_set_characteristics.md), a separate
+[`vigitwin.characterization`](reference_set_characteristics.md), a separate
 command that runs against the *same* `ReferenceSet` files `analyze` reads:
 
 ```
-python -m llm_dup_dev.characterization --reference-set precision.json \
+python -m vigitwin.characterization --reference-set precision.json \
     --reports reports.json --output-dir results/characteristics
 ```
 
@@ -99,12 +99,12 @@ It is deliberately **not** a `study_eval` subcommand or a parameter on
 `run_analysis`. `study_eval` never handles `Report` objects — its whole input
 contract is pair ids, labels and predictions — and threading reports through it
 would put report content into the signature of the performance analysis. Nothing
-in `llm_dup_dev` imports `characterization`, and a test enforces that.
+in `vigitwin` imports `characterization`, and a test enforces that.
 
 ## Input models (generic)
 
 Two model families, both in
-[schemas.py](../src/llm_dup_dev/study_eval/schemas.py):
+[schemas.py](../src/vigitwin/study_eval/schemas.py):
 
 - **`ReferenceSet`** — `set_id`, `role` (`"precision"` or `"recall"`), optional
   `label`/`provenance`, and `pairs: list[ReferencePair]`. A precision set is the
@@ -189,19 +189,19 @@ analysis variant and CI method.
   `RecallResult.screening_evaluated_set_ids` states the scope of the screening
   figures for any consumer that builds one.
 - All proportions carry a two-sided 95% **Wilson** confidence interval
-  ([stats.py](../src/llm_dup_dev/study_eval/stats.py)); `ci_method` is recorded
+  ([stats.py](../src/vigitwin/study_eval/stats.py)); `ci_method` is recorded
   on every estimate.
 
 ## Analysis variants and secondary analyses
 
 `run_analysis` takes a `positive_class`: a `PositiveClass(name, positive_labels)`
-([aggregate.py](../src/llm_dup_dev/study_eval/aggregate.py)) saying which of the
+([aggregate.py](../src/vigitwin/study_eval/aggregate.py)) saying which of the
 adjudicator's four output labels count as positive. It drives the aggregate
 estimates and — when `sample_scle=True` — both the SCLE strata (confusion cells /
 joint strata) and each case's auto-context.
 
 The division of ownership is deliberate, and matches the one
-[`scle/vocabularies.py`](../src/llm_dup_dev/study_eval/scle/vocabularies.py)
+[`scle/vocabularies.py`](../src/vigitwin/study_eval/scle/vocabularies.py)
 applies to the SCLE vocabularies:
 
 - **The package owns** the output vocabulary (`ADJUDICATOR_LABELS`, the
@@ -235,7 +235,7 @@ as positive.
 
 ## SCLE reviewer workflow details
 
-- **Reviewer workbook** ([scle/workbook.py](../src/llm_dup_dev/study_eval/scle/workbook.py)):
+- **Reviewer workbook** ([scle/workbook.py](../src/vigitwin/study_eval/scle/workbook.py)):
   a `pairs` sheet with greyed auto-context columns on the left (filled by the
   package — reference label, adjudicator output, confusion cell / joint stratum,
   decision trace), dropdown-validated response columns on the right. The pair id
@@ -263,7 +263,7 @@ as positive.
   explicit policy behave this way, so a small draw that happens to look uniform
   never loses a column. Read-back matches columns by header and needs only
   `Pair ID`, so the varying layout costs it nothing.
-- **Study vocabularies** ([scle/vocabularies.py](../src/llm_dup_dev/study_eval/scle/vocabularies.py)):
+- **Study vocabularies** ([scle/vocabularies.py](../src/vigitwin/study_eval/scle/vocabularies.py)):
   two ordered lists the study freezes and the caller supplies —
   `error_stages` (method components a reviewer may flag as contributing to a
   misclassification) and `feature_domains`. **Each entry becomes one tick-only
@@ -272,7 +272,7 @@ as positive.
   the examination. Each list is embedded in a worksheet of its own, so a workbook
   describes its own columns and every later step recovers them from the data
   rather than being handed the configuration again.
-- **Agreement** ([scle/agreement.py](../src/llm_dup_dev/study_eval/scle/agreement.py)):
+- **Agreement** ([scle/agreement.py](../src/vigitwin/study_eval/scle/agreement.py)):
   per structured dimension, percent agreement and Cohen's kappa, plus an overall
   percent agreement. Each configured error stage is **its own dimension**
   (`error_stage::<stage>`) with its own kappa; the feature domains stay a single
@@ -287,7 +287,7 @@ as positive.
   `merge_consensus` raises rather than discarding it. The method-difference
   explanations are carried across too, resolved by a single consensus column —
   the arbiter's rationale covers both free-text blocks.
-- **Consensus** ([scle/consensus.py](../src/llm_dup_dev/study_eval/scle/consensus.py))
+- **Consensus** ([scle/consensus.py](../src/vigitwin/study_eval/scle/consensus.py))
   preserves both reviews verbatim (with checksums); every consensus dimension
   records whether it came from `reviewer_agreement` or `arbitration`. Primary
   reference labels are never altered; reference-label concerns are collected for
@@ -298,8 +298,9 @@ as positive.
 The secure-side adapter is deliberately thin: its whole job is to **map frozen
 data into the two input models, then call the four workflow functions**. It does
 not reimplement metrics, CIs, sampling, or workbook logic — the package owns all
-of that. The package is installed into the secure repo as `llm-dup-dev[study]`
-(the `study` extra pulls `openpyxl`); pin the exact version you validate against.
+of that. The package is installed into the secure repo as plain `vigitwin`
+(`openpyxl` is a core dependency, so there is no extra to ask for); pin the
+exact version you validate against.
 
 The committed `schemas/study_reference_set.schema.json` and
 `schemas/study_prediction_set.schema.json` (with their `examples/`) are the exact
@@ -343,11 +344,11 @@ input contracts; use them as fixtures in the secure repo's tests.
 
 ```python
 # secure repo — illustrative; the loaders/PipelineRunner are yours.
-from llm_dup_dev.study_eval import (
+from vigitwin.study_eval import (
     ReferencePair, ReferenceSet, PairPrediction, PredictionSet, workflow,
 )
-from llm_dup_dev.study_eval.scle.packets import PacketContent
-from llm_dup_dev.models.pair_identity import canonical_pair_id, canonical_report_ids
+from vigitwin.study_eval.scle.packets import PacketContent
+from vigitwin.models.pair_identity import canonical_pair_id, canonical_report_ids
 
 def to_reference_pair(r1, r2, cluster, label) -> ReferencePair:
     # Canonical identity: ids ascending, pair_id derived from that order. Never
@@ -376,7 +377,7 @@ def to_reference_set(frozen_set) -> ReferenceSet:
 
 # The frozen run persists its PairResults with
 # pipeline.export.write_pair_results(...); read them back keyed by pair_id.
-from llm_dup_dev.pipeline.export import read_pair_results
+from vigitwin.pipeline.export import read_pair_results
 
 def to_prediction_set(pair_results_path, config_id, screened_pair_ids) -> PredictionSet:
     results = read_pair_results(pair_results_path)   # {pair_id: PairResult}
@@ -409,7 +410,7 @@ predictions = to_prediction_set(
     PRIMARY_RUN / "pair_results.json", "primary", screened_pair_ids)
 
 # Describe the sets before estimating anything over them (see the section above).
-from llm_dup_dev.characterization import (
+from vigitwin.characterization import (
     build_characterization_report, write_characterization_report,
 )
 write_characterization_report(
@@ -426,8 +427,8 @@ analysis = workflow.run_analysis(
 sample = analysis.scle_samples[f"precision::{prec.set_id}"]
 
 # render packets into a packets/ folder beside the workbooks so the links resolve
-from llm_dup_dev.data.offline import load_screening_details
-from llm_dup_dev.study_eval.scle.packets import generate_packets
+from vigitwin.data.offline import load_screening_details
+from vigitwin.study_eval.scle.packets import generate_packets
 primary_results = read_pair_results(PRIMARY_RUN / "pair_results.json")
 # optional: show the screening algorithm's own basis on each packet, so
 # reviewers can compare the adjudication against the screening method
@@ -447,7 +448,7 @@ workflow.run_analysis(
     [prec], to_prediction_set(LLM_AE_RUN / "pair_results.json",
                               "llm_ae_clinical_picture", screened_pair_ids),
     seed=STUDY_SEED, sample_scle=False, output_dir=SECURE_OUT / "sec_llm")
-from llm_dup_dev.study_eval import ABSTAIN_POSITIVE, PositiveClass
+from vigitwin.study_eval import ABSTAIN_POSITIVE, PositiveClass
 workflow.run_analysis([prec], predictions, seed=STUDY_SEED, sample_scle=False,
                       positive_class=ABSTAIN_POSITIVE, output_dir=SECURE_OUT / "sec_abstain")
 
@@ -463,7 +464,7 @@ workflow.run_analysis([prec], predictions, seed=STUDY_SEED, sample_scle=False,
 
 ### Confidential content
 Implement `PacketContentProvider`
-([scle/packets.py](../src/llm_dup_dev/study_eval/scle/packets.py)) over
+([scle/packets.py](../src/vigitwin/study_eval/scle/packets.py)) over
 confidential storage for the static review packets; confidential content never
 enters the generic schemas. Put the packets in a `packets/` subfolder **beside
 the workbooks** so the pair-id hyperlinks resolve.
@@ -473,7 +474,7 @@ because both use the same filename scheme (`review_html`'s `_safe_filename`):
 `study_eval.scle.packets.generate_packets` (shown above — it also surfaces the
 reference label on the page), or, if you already have a saved run on disk,
 `review_html.load_saved_run` / `render_saved_run`
-([review_html/saved_run.py](../src/llm_dup_dev/review_html/saved_run.py)), which
+([review_html/saved_run.py](../src/vigitwin/review_html/saved_run.py)), which
 reconstructs the run from its `pair_results.json` and renders every pair. Render
 the SCLE-sampled pairs into `packets/` either way.
 

@@ -10,8 +10,8 @@ in nothing else — no role, no attribution, no contribution, no row ordering.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.models import EvidenceCaseVM
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.models import EvidenceCaseVM
+from vigitwin.review_html.evidence.publication import (
     SubstitutionTable,
     walk_cells,
 )
@@ -144,8 +144,8 @@ class TestTheEvidenceTreeSurvives:
 
 
 def _case_with_an_age_discrepancy() -> EvidenceCaseVM:
-    from llm_dup_dev.models.enums import InconsistencySeverity
-    from llm_dup_dev.models.pair_features import (
+    from vigitwin.models.enums import InconsistencySeverity
+    from vigitwin.models.pair_features import (
         Inconsistency,
         InconsistencyCounts,
     )
@@ -183,11 +183,11 @@ class TestMatchingFeatureRowsQuoteTransformedValues:
 
     @staticmethod
     def _case_with_an_age_contribution():
-        from llm_dup_dev.models.pair_features import (
+        from vigitwin.models.pair_features import (
             FeatureContribution,
             ProbabilityEstimate,
         )
-        from llm_dup_dev.review_html.evidence.models import ValueKind
+        from vigitwin.review_html.evidence.models import ValueKind
         from tests.test_review_html.test_evidence_build import (
             _case,
             _features,
@@ -255,7 +255,7 @@ class TestUnchangedValuesAreLegitimate:
 
     @staticmethod
     def _zero_only():
-        from llm_dup_dev.review_html.evidence.publication import (
+        from vigitwin.review_html.evidence.publication import (
             PublicationPolicy,
         )
 
@@ -312,10 +312,10 @@ class TestSeparationsAreRequotedForPresentation:
         )
 
     def test_the_quoted_figure_matches_the_published_dates(self):
-        from llm_dup_dev.feature_generation.clinical_date_alignment import (
+        from vigitwin.feature_generation.clinical_date_alignment import (
             min_day_difference,
         )
-        from llm_dup_dev.review_html.evidence.publication import (
+        from vigitwin.review_html.evidence.publication import (
             parse_partial_date,
         )
 

@@ -29,8 +29,8 @@ flipped orientation silently scored zero pairs while still reporting a number.
 
 ## The dev-side API to use
 
-All in `llm_dup_dev.models.pair_identity` (re-exported from
-`llm_dup_dev.models`):
+All in `vigitwin.models.pair_identity` (re-exported from
+`vigitwin.models`):
 
 | Function | Use it when |
 |---|---|
@@ -178,6 +178,6 @@ silently. Two things to decide when you re-copy them:
   longer expressible. Use two distinct report ids.
 - **`eval.sweep.Coverage` lost its `reversed_orientation` field**, and
   `eval.sweep._reverse_pair_id` is gone.
-- **`llm_dup_dev.eval.annotations.derive_pair_id` is now canonical.** The name
+- **`vigitwin.eval.annotations.derive_pair_id` is now canonical.** The name
   and signature are unchanged; the returned id no longer depends on argument
   order.

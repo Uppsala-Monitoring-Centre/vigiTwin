@@ -11,19 +11,19 @@ import json
 import pytest
 import yaml
 
-from llm_dup_dev.pipeline.export import write_pair_results
-from llm_dup_dev.review_html.evidence.collection import (
+from vigitwin.pipeline.export import write_pair_results
+from vigitwin.review_html.evidence.collection import (
     build_collection,
     export_summary_drafts,
     write_summary_drafts,
 )
-from llm_dup_dev.review_html.evidence.manifest import (
+from vigitwin.review_html.evidence.manifest import (
     CuratedExampleManifest,
     SummaryMode,
     load_curated_manifest,
     write_curated_manifest,
 )
-from llm_dup_dev.review_html.selection import MissingPairPolicy
+from vigitwin.review_html.selection import MissingPairPolicy
 
 from tests.test_review_html.test_render import _make_pair_result
 
@@ -135,7 +135,7 @@ class TestFormats:
         """A manifest is data; the loader that builds objects has no place here."""
         from pathlib import Path
 
-        src = Path("src/llm_dup_dev").rglob("*.py")
+        src = Path("src/vigitwin").rglob("*.py")
         offenders = [
             str(p) for p in src if "yaml.load(" in p.read_text(encoding="utf-8")
         ]
@@ -306,7 +306,7 @@ class TestSummaryMode:
     """An interpretation replaces the generated summary unless told otherwise."""
 
     def test_interpretation_is_the_default_when_one_is_supplied(self):
-        from llm_dup_dev.review_html.evidence.manifest import CuratedExample
+        from vigitwin.review_html.evidence.manifest import CuratedExample
 
         example = CuratedExample(
             dataset="d", pair_id="p", case_interpretation="text"
@@ -314,13 +314,13 @@ class TestSummaryMode:
         assert example.resolved_summary_mode() is SummaryMode.INTERPRETATION
 
     def test_deterministic_without_an_interpretation(self):
-        from llm_dup_dev.review_html.evidence.manifest import CuratedExample
+        from vigitwin.review_html.evidence.manifest import CuratedExample
 
         example = CuratedExample(dataset="d", pair_id="p")
         assert example.resolved_summary_mode() is SummaryMode.DETERMINISTIC
 
     def test_explicit_mode_wins(self):
-        from llm_dup_dev.review_html.evidence.manifest import CuratedExample
+        from vigitwin.review_html.evidence.manifest import CuratedExample
 
         example = CuratedExample(
             dataset="d",
@@ -348,7 +348,7 @@ class TestBuildCollection:
         assert [c.example_id for c in page.cases] == ["S2", "S1"]
 
     def test_each_dataset_is_loaded_once(self, run_dir, monkeypatch):
-        import llm_dup_dev.review_html.saved_run as saved_run
+        import vigitwin.review_html.saved_run as saved_run
 
         calls = {"n": 0}
         original = saved_run.load_saved_run

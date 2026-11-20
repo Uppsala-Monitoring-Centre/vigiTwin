@@ -5,14 +5,14 @@ from __future__ import annotations
 import openpyxl
 import pytest
 
-from llm_dup_dev.study_eval.scle.arbitration import (
+from vigitwin.study_eval.scle.arbitration import (
     read_arbitration,
     write_arbitration_workbook,
 )
-from llm_dup_dev.study_eval.scle.consensus import merge_consensus
-from llm_dup_dev.study_eval.scle.discrepancy import detect_discrepancies
-from llm_dup_dev.study_eval.results import write_scle_consensus_csv
-from llm_dup_dev.study_eval.scle.workbook import (
+from vigitwin.study_eval.scle.consensus import merge_consensus
+from vigitwin.study_eval.scle.discrepancy import detect_discrepancies
+from vigitwin.study_eval.results import write_scle_consensus_csv
+from vigitwin.study_eval.scle.workbook import (
     NOT_APPLICABLE,
     read_reviewer_submission,
     write_reviewer_workbook,
@@ -82,7 +82,7 @@ def test_arbitration_workbook_contains_only_disagreement_pairs(tmp_path):
 
 
 def test_detect_rejects_mismatched_pairs():
-    from llm_dup_dev.study_eval.scle.form import (
+    from vigitwin.study_eval.scle.form import (
         CaseDifficulty,
         ReferenceLabelIssue,
         ReviewerSubmission,

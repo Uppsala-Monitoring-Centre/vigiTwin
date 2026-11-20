@@ -13,8 +13,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.models.report import PartialDate
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.models.report import PartialDate
+from vigitwin.review_html.evidence.publication import (
     SEVERITY_BOUNDARY_DAYS,
     DisclosureCode,
     PublicationPolicy,
@@ -27,7 +27,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     severity_band,
     shift_partial_date,
 )
-from llm_dup_dev.review_html.evidence.publication.dates import (
+from vigitwin.review_html.evidence.publication.dates import (
     DateRole,
     offset_tiers,
     within_plausible_window,
@@ -95,7 +95,7 @@ class TestTheShiftRule:
         real counts to a year they did not come from, so the year is frozen
         and the *offset* is constrained instead — see the country-year
         population tests."""
-        from llm_dup_dev.review_html.evidence.publication import scramble as mod
+        from vigitwin.review_html.evidence.publication import scramble as mod
 
         assert not hasattr(mod, "shift_year")
 
@@ -450,7 +450,7 @@ class TestSeverityBands:
     """
 
     def test_the_boundaries_come_from_the_pipeline(self):
-        from llm_dup_dev.feature_generation.clinical_date_inconsistencies import (  # noqa: E501
+        from vigitwin.feature_generation.clinical_date_inconsistencies import (  # noqa: E501
             _CLINICAL_DATE_MINOR_DAYS,
             _CLINICAL_DATE_MODERATE_DAYS,
             _DECISIVE_IMPOSSIBILITY_GRACE_DAYS,

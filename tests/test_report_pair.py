@@ -1,4 +1,4 @@
-"""Tests for the canonical identity of llm_dup_dev.models.ReportPair.
+"""Tests for the canonical identity of vigitwin.models.ReportPair.
 
 A pair has one identity regardless of the order its two report ids arrive in.
 Construction canonicalises; reading an existing record validates and refuses,
@@ -10,8 +10,8 @@ invariant exists to protect.
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.models.report import Report
-from llm_dup_dev.models.report_pair import (
+from vigitwin.models.report import Report
+from vigitwin.models.report_pair import (
     ALLOW_NONCANONICAL_CONTEXT_KEY,
     ReportPair,
 )

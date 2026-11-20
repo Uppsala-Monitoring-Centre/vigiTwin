@@ -2,10 +2,10 @@
 
 import pytest
 
-from llm_dup_dev.data.protocols import ReportLoader, StatsProvider
-from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.models.report_pair import ReportPair
+from vigitwin.data.protocols import ReportLoader, StatsProvider
+from vigitwin.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
+from vigitwin.feature_generation.probability import FrequencyStats
+from vigitwin.models.report_pair import ReportPair
 
 
 # ===================================================================

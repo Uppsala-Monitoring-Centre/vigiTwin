@@ -12,9 +12,9 @@ import json
 
 import pytest
 
-from llm_dup_dev.pipeline.export import write_pair_results
-from llm_dup_dev.review_html.evidence.cli import main
-from llm_dup_dev.review_html.render import EVIDENCE_DOCUMENT_FILENAME
+from vigitwin.pipeline.export import write_pair_results
+from vigitwin.review_html.evidence.cli import main
+from vigitwin.review_html.render import EVIDENCE_DOCUMENT_FILENAME
 
 from tests.test_review_html.test_render import _make_pair_result
 
@@ -90,7 +90,7 @@ def collection(tmp_path, report_a, report_b, report_c):
 
 
 class TestCollectionCLI:
-    """The documented flags of ``python -m llm_dup_dev.review_html.evidence``."""
+    """The documented flags of ``python -m vigitwin.review_html.evidence``."""
 
     def test_writes_one_file_per_example_plus_index(self, collection):
         out = collection / "out"

@@ -1,6 +1,6 @@
 # Migration notes — pinned resolutions and a mergeable form (1.2.6)
 
-Three breaking changes in `llm_dup_dev.review_html.evidence.publication`. The
+Three breaking changes in `vigitwin.review_html.evidence.publication`. The
 first invalidates every `FindingResolution` written before this version, by
 design — read it before the next secure-side run.
 

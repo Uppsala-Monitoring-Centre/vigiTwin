@@ -10,19 +10,19 @@ from __future__ import annotations
 
 import re
 
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     EvidenceCell,
     EvidencePageVM,
     PresentationMode,
     ValueKind,
 )
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.publication import (
     REVIEW_FILENAME,
     PublicationPolicy,
     write_publication_evidence,
     write_side_by_side,
 )
-from llm_dup_dev.review_html.render import render_evidence_page
+from vigitwin.review_html.render import render_evidence_page
 from tests.test_review_html.conftest import (
     case_with_human_text,
     publication_page,

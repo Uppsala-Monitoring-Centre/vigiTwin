@@ -15,28 +15,28 @@ with per-zone thresholds:
     below limited:            always Independent
 """
 
-from llm_dup_dev.classifier.config import DecisionThresholds
-from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.feature_generation.probability import compute_l_patient
-from llm_dup_dev.models.enums import (
+from vigitwin.classifier.config import DecisionThresholds
+from vigitwin.classifier.decision_logic import classify
+from vigitwin.feature_generation.probability import compute_l_patient
+from vigitwin.models.enums import (
     AnchorType,
     RelationshipAssessment,
     IndependenceAssessment,
     IndependenceReason,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.explicit_link import (
+from vigitwin.models.explicit_link import (
     ExplicitLinkAssessment,
     ExplicitLinkDirection,
     ExplicitLinkMatch,
     ExplicitLinkVerdict,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
     SourceIdentifierType,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     InconsistencyCounts,
@@ -44,7 +44,7 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.report import CaseIdentifierKind
+from vigitwin.models.report import CaseIdentifierKind
 
 
 # ---------------------------------------------------------------------------
@@ -922,7 +922,7 @@ class TestUncomparableCaseThreeWayRule:
             ),
         )
         # Inject one minor inconsistency directly.
-        from llm_dup_dev.models.pair_features import InconsistencyCounts
+        from vigitwin.models.pair_features import InconsistencyCounts
         f.inconsistency_counts = InconsistencyCounts(minor=1)
         result = classify(f, THRESHOLDS)
         _assert_same_case(result)
@@ -1011,7 +1011,7 @@ class TestUncomparableCaseThreeWayRule:
                 SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
             ),
         )
-        from llm_dup_dev.models.pair_features import InconsistencyCounts
+        from vigitwin.models.pair_features import InconsistencyCounts
         f.inconsistency_counts = InconsistencyCounts(minor=3)
         result = classify(f, THRESHOLDS)
         _assert_different_case(result)

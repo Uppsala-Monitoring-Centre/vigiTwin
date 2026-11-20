@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from llm_dup_dev.models.report_pair import ReportPair
-from llm_dup_dev.study_eval.loading import (
+from vigitwin.models.report_pair import ReportPair
+from vigitwin.study_eval.loading import (
     load_report_pairs,
     reference_set_from_report_pairs,
     write_json,
@@ -124,7 +124,7 @@ class TestReferenceSetFromReportPairs:
 
     def test_round_trips_through_the_committed_artifact_shape(self, tmp_path):
         """The output is a normal ReferenceSet file the CLIs already read."""
-        from llm_dup_dev.study_eval.loading import load_reference_set
+        from vigitwin.study_eval.loading import load_reference_set
 
         result = reference_set_from_report_pairs(_pairs(), set_id="frozen_vs")
         path = write_json(result, tmp_path / "set.json")

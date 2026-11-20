@@ -8,11 +8,11 @@ report that names its counterpart still names it.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.publication import (
     AliasBook,
     parse_country_scope,
 )
-from llm_dup_dev.review_html.evidence.publication.aliases import (
+from vigitwin.review_html.evidence.publication.aliases import (
     NON_COUNTRY_CONTEXT,
     case_slug,
 )

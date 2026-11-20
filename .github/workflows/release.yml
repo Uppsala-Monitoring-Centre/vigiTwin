@@ -1,0 +1,201 @@
+name: Release
+
+# Publishes to PyPI from the public GitHub mirror, and only from there.
+#
+# Azure DevOps — where development, PRs and review actually happen — does not
+# read .github/workflows, and PyPI trusted publishing has no Azure DevOps
+# provider. So the mirroring gate in `agents.md` § Tags, GitHub Releases and
+# DOIs is also the publishing gate, structurally rather than by convention: a
+# tag pushed to `origin` triggers nothing, and a tag pushed to `github` is
+# what releases. Tags that predate this file cannot fire it, because Actions
+# resolves a tag-push workflow from the tagged tree.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      index:
+        description: "Which index to publish to"
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build and inspect
+    # Pinned for the same reason as ci.yml: a release artifact should not
+    # depend on which image the `latest` label happened to point at.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        # twine >= 7.0 is required, not 6.x: hatchling 1.33 emits
+        # Metadata-Version 2.5, and twine 6.2 rejects our own artifact with
+        # "'2.5' is not a valid metadata version". Verified locally.
+        run: python -m pip install "build>=1.2" "twine>=7.0"
+
+      - name: Tag matches pyproject version
+        if: github.ref_type == 'tag'
+        # Reads the same field hatchling reads, so it cannot disagree with the
+        # built artifact's version.
+        run: |
+          python - <<'PY'
+          import os, sys, tomllib
+          with open("pyproject.toml", "rb") as fh:
+              version = tomllib.load(fh)["project"]["version"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          if tag != f"v{version}":
+              sys.exit(f"tag {tag!r} does not match pyproject version {version!r}")
+          print(f"tag {tag} matches version {version}")
+          PY
+
+      - name: Build
+        run: python -m build
+
+      - name: Inspect the artifacts
+        # Fail-closed in both directions. The forbidden list guards against
+        # shipping something that must stay private; the required list guards
+        # against the sdist allowlist in pyproject.toml silently losing a file
+        # to a .gitignore pattern (the global `*.json` rule is re-included
+        # only by two negations, and a new data fixture would vanish with no
+        # error). A configuration flag protects neither; this checks the bytes.
+        run: |
+          python - <<'PY'
+          import pathlib, sys, tarfile, tomllib, zipfile
+
+          with open("pyproject.toml", "rb") as fh:
+              version = tomllib.load(fh)["project"]["version"]
+
+          dist = pathlib.Path("dist")
+          sdist = dist / f"vigitwin-{version}.tar.gz"
+          wheel = dist / f"vigitwin-{version}-py3-none-any.whl"
+          built = sorted(p.name for p in dist.iterdir())
+          expected = sorted([sdist.name, wheel.name])
+          if built != expected:
+              sys.exit(f"dist/ holds {built}, expected exactly {expected}")
+
+          FORBIDDEN_PREFIXES = (
+              "_reference_secure_side/", "outputs/", "dist/", "build/",
+              ".venv/", ".git/", ".github/", ".claude/",
+              ".mypy_cache/", ".pytest_cache/", ".ruff_cache/",
+          )
+          # Mirrors the data-file patterns in .gitignore. `.jsonl` is
+          # deliberately absent: tests/data holds two .jsonl golden files that
+          # must ship for the suite to run from an sdist.
+          FORBIDDEN_SUFFIXES = (
+              ".csv", ".parquet", ".pkl", ".feather", ".xlsx",
+              ".pem", ".key", ".crt", ".log", ".whl", ".so", ".dylib",
+          )
+          REQUIRED = (
+              "pyproject.toml", "README.md", "LICENSE", "NOTICE", "PKG-INFO",
+              "src/vigitwin/__init__.py",
+              "src/vigitwin/py.typed",
+              "src/vigitwin/review_html/templates/pair.html.j2",
+              "schemas/report.schema.json",
+              "examples/report_example.json",
+              "tests/data/decision_logic_golden.jsonl",
+          )
+
+          with tarfile.open(sdist) as tf:
+              members = tf.getnames()
+          root = f"vigitwin-{version}"
+          rel = []
+          for name in members:
+              if name == root:
+                  continue
+              if not name.startswith(root + "/"):
+                  sys.exit(f"sdist member escapes its root directory: {name}")
+              rel.append(name[len(root) + 1:])
+
+          bad = sorted(
+              n for n in rel
+              if n.startswith(FORBIDDEN_PREFIXES)
+              or n.endswith(FORBIDDEN_SUFFIXES)
+              or "__pycache__" in n
+              or n.endswith(".DS_Store")
+          )
+          if bad:
+              sys.exit("sdist contains forbidden paths:\n  " + "\n  ".join(bad))
+
+          missing = [n for n in REQUIRED if n not in rel]
+          if missing:
+              sys.exit("sdist is missing required files:\n  " + "\n  ".join(missing))
+
+          with zipfile.ZipFile(wheel) as zf:
+              names = zf.namelist()
+          for required in (
+              "vigitwin/py.typed",
+              "vigitwin/review_html/templates/pair.html.j2",
+              f"vigitwin-{version}.dist-info/licenses/LICENSE",
+              f"vigitwin-{version}.dist-info/licenses/NOTICE",
+          ):
+              if required not in names:
+                  sys.exit(f"wheel is missing {required}")
+
+          print(f"{len(rel)} sdist members, {len(names)} wheel members - clean")
+          PY
+
+      - name: twine check
+        # --strict turns a README rendering warning into a failure. PyPI's
+        # rendering of a long_description cannot be corrected after upload, so
+        # a malformed README is permanent for that version.
+        run: python -m twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # Both publish jobs install nothing and build nothing: they upload the exact
+  # bytes that passed the inspection above. Rebuilding here would defeat it.
+  publish-testpypi:
+    name: publish to TestPyPI
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.index == 'testpypi'
+    runs-on: ubuntu-24.04
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/vigitwin
+    permissions:
+      id-token: write    # the OIDC token trusted publishing exchanges
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      # Pinned to an exact version, unlike the @v7/@v8 above: this is the one
+      # action that can write to a public index, and a version number there
+      # can never be reused or corrected.
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: build
+    if: >-
+      github.ref_type == 'tag' ||
+      (github.event_name == 'workflow_dispatch' && inputs.index == 'pypi')
+    runs-on: ubuntu-24.04
+    # Protect this environment with required reviewers: it is where
+    # `agents.md`'s "the decision is the maintainer's" becomes mechanical.
+    # Everything above runs on a tag push; this job then waits for a human.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/vigitwin
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@v1.14.3

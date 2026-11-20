@@ -1,6 +1,6 @@
 # Migration notes — publication disclosure checks (1.2.5)
 
-Three breaking changes in `llm_dup_dev.review_html.evidence.publication`, all
+Three breaking changes in `vigitwin.review_html.evidence.publication`, all
 small to act on. None changes the offset any existing supplement was published
 with.
 

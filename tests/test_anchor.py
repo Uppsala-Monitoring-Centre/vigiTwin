@@ -1,7 +1,7 @@
 """Tests for anchor population selection."""
 
-from llm_dup_dev.models.enums import AnchorType
-from llm_dup_dev.feature_generation.anchor import select_anchor
+from vigitwin.models.enums import AnchorType
+from vigitwin.feature_generation.anchor import select_anchor
 
 
 class TestAnchorSelection:

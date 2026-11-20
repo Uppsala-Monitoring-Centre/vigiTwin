@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import json
 
-from llm_dup_dev.review_html.render import EVIDENCE_DOCUMENT_FILENAME
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.render import EVIDENCE_DOCUMENT_FILENAME
+from vigitwin.review_html.evidence.publication import (
     MANIFEST_FILENAME,
     REVIEW_FILENAME,
     PublicationApprovals,
@@ -131,7 +131,7 @@ class TestThePublicManifest:
     def test_the_key_record_carries_the_survivor_counts(self):
         """Secure-side, because the number says how much the salt was
         actually doing for this case — which is an audit question."""
-        from llm_dup_dev.review_html.evidence.publication.key import (
+        from vigitwin.review_html.evidence.publication.key import (
             build_key_record,
         )
 
@@ -343,7 +343,7 @@ class TestThePageAndTheManifestNeverDisagree:
 
     @staticmethod
     def _rendered(result) -> str:
-        from llm_dup_dev.review_html.render import render_evidence_page
+        from vigitwin.review_html.render import render_evidence_page
 
         return render_evidence_page(result.page)
 

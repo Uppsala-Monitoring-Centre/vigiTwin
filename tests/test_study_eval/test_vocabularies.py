@@ -5,13 +5,13 @@ from __future__ import annotations
 import openpyxl
 import pytest
 
-from llm_dup_dev.study_eval.scle.vocabularies import (
+from vigitwin.study_eval.scle.vocabularies import (
     ERROR_STAGES_SHEET,
     FEATURE_DOMAINS_SHEET,
     normalise_vocabulary,
     read_vocabulary_sheet,
 )
-from llm_dup_dev.study_eval.scle.workbook import (
+from vigitwin.study_eval.scle.workbook import (
     workbook_vocabularies,
     write_reviewer_workbook,
 )

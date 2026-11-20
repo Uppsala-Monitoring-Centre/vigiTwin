@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import math
 
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AnchorType,
     InconsistencySeverity,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     Inconsistency,
     ProbabilityEstimate,
 )
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     EvidenceRole,
     sign_css_class,
 )

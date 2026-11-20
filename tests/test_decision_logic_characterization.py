@@ -43,30 +43,30 @@ import json
 import os
 from pathlib import Path
 
-from llm_dup_dev.classifier.config import DecisionThresholds
-from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.models.enums import (
+from vigitwin.classifier.config import DecisionThresholds
+from vigitwin.classifier.decision_logic import classify
+from vigitwin.models.enums import (
     AnchorType,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.explicit_link import (
+from vigitwin.models.explicit_link import (
     ExplicitLinkAssessment,
     ExplicitLinkDirection,
     ExplicitLinkMatch,
     ExplicitLinkVerdict,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     InconsistencyCounts,
     PairFeatures,
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.report import CaseIdentifierKind
+from vigitwin.models.report import CaseIdentifierKind
 
 GOLDEN_PATH = Path(__file__).parent / "data" / "decision_logic_golden.jsonl"
 GOLDEN_FORMAT = 1

@@ -1,22 +1,22 @@
 """Tests for the eval bridge between new pipeline output and eval framework."""
 
-from llm_dup_dev.eval.bridge import evaluate_batch, evaluate_results, to_eval_dict
-from llm_dup_dev.eval.labels import AbstainMode
-from llm_dup_dev.models.classification import ClassificationResult
-from llm_dup_dev.models.enums import (
+from vigitwin.eval.bridge import evaluate_batch, evaluate_results, to_eval_dict
+from vigitwin.eval.labels import AbstainMode
+from vigitwin.models.classification import ClassificationResult
+from vigitwin.models.enums import (
     AnchorType,
     RelationshipAssessment,
     IndependenceAssessment,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     InconsistencyCounts,
     PairFeatures,
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.pipeline.runner import BatchResult, PairResult
+from vigitwin.pipeline.runner import BatchResult, PairResult
 
 
 # ---------------------------------------------------------------------------

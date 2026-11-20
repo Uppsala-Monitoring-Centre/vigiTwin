@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.study_eval.aggregate import (
+from vigitwin.study_eval.aggregate import (
     PRIMARY,
     run_precision_analysis,
     run_recall_analysis,
 )
-from llm_dup_dev.study_eval.sampling import (
+from vigitwin.study_eval.sampling import (
     promote_backup,
     sample_scle_precision,
     sample_scle_recall,

@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from llm_dup_dev.study_eval.aggregate import (
+from vigitwin.study_eval.aggregate import (
     ABSTAIN_POSITIVE,
     OTHERWISE_RELATED_POSITIVE,
     PRIMARY,
@@ -20,12 +20,12 @@ from llm_dup_dev.study_eval.aggregate import (
     run_precision_variants,
     run_recall_analysis,
 )
-from llm_dup_dev.study_eval.results import (
+from vigitwin.study_eval.results import (
     summary_to_markdown,
     write_secondary_comparison_csv,
     write_study_artifacts,
 )
-from llm_dup_dev.study_eval.schemas import PredictionSet
+from vigitwin.study_eval.schemas import PredictionSet
 
 from tests.test_study_eval.conftest import make_precision, make_recall
 

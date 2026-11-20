@@ -23,7 +23,7 @@ positive_labels)`. This package owns the adjudicator's output vocabulary
 a rule's labels are validated as a non-empty subset of that vocabulary, and a
 blank name is rejected. It does **not** own which rules a study runs, what they
 are called, or which one is the baseline. That is the same division
-[`scle/vocabularies.py`](../src/llm_dup_dev/study_eval/scle/vocabularies.py)
+[`scle/vocabularies.py`](../src/vigitwin/study_eval/scle/vocabularies.py)
 already applies to the SCLE error-stage and feature-domain lists, so the study now
 injects frozen configuration in two places rather than one.
 
@@ -96,7 +96,7 @@ sampling order changed.
    sits together. The protocol's three analyses are:
 
    ```python
-   from llm_dup_dev.study_eval import PositiveClass
+   from vigitwin.study_eval import PositiveClass
 
    PRIMARY_RULE = PositiveClass(
        name="primary", positive_labels=frozenset({"Duplicates"}))

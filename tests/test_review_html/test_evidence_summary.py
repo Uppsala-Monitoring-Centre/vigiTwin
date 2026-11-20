@@ -10,12 +10,12 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.models.classification import (
+from vigitwin.models.classification import (
     ClassificationResult,
     InconsistencyPenalty,
     PenaltyTerm,
 )
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AnchorType,
     IndependenceAssessment,
     IndependenceReason,
@@ -23,15 +23,15 @@ from llm_dup_dev.models.enums import (
     RelationshipAssessment,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.explicit_link import (
+from vigitwin.models.explicit_link import (
     ExplicitLinkAssessment,
     ExplicitLinkVerdict,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     Inconsistency,
@@ -40,8 +40,8 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.review_html.evidence.settings import EvidenceRunSettings
-from llm_dup_dev.review_html.evidence.summary import (
+from vigitwin.review_html.evidence.settings import EvidenceRunSettings
+from vigitwin.review_html.evidence.summary import (
     SummarySlot,
     build_assessment_summary,
     context_phrase,

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.review_html.evidence.build import (
+from vigitwin.review_html.evidence.build import (
     ExamplePresentation,
     build_evidence_case,
     ReferenceInfo,
@@ -18,21 +18,21 @@ from llm_dup_dev.review_html.evidence.build import (
     SCLEState,
     build_evidence_case,
 )
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     EvidencePageVM,
     PresentationMode,
 )
-from llm_dup_dev.review_html.render import (
+from vigitwin.review_html.render import (
     EVIDENCE_DOCUMENT_FILENAME,
     evidence_filename,
     render_evidence_page,
     write_evidence_batch_html,
     write_evidence_html,
 )
-from llm_dup_dev.models.report import AdverseEvent, Drug
-from llm_dup_dev.models.pair_features import Inconsistency, InconsistencyCounts
-from llm_dup_dev.models.classification import InconsistencyPenalty, PenaltyTerm
-from llm_dup_dev.models.enums import (
+from vigitwin.models.report import AdverseEvent, Drug
+from vigitwin.models.pair_features import Inconsistency, InconsistencyCounts
+from vigitwin.models.classification import InconsistencyPenalty, PenaltyTerm
+from vigitwin.models.enums import (
     IndependenceAssessment,
     IndependenceReason,
     InconsistencySeverity,
@@ -218,7 +218,7 @@ class TestSections:
         assert "<dt>Additional matching features</dt>" in html
 
     def test_frequency_headings_name_the_sets(self):
-        from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
+        from vigitwin.data.offline import FrozenPairBundle, FrozenScopeStats
 
         html = _html(
             frozen_bundle=FrozenPairBundle(
@@ -618,7 +618,7 @@ class TestAbsentValueRendering:
 
     def test_an_absent_drug_column_is_blank(self):
         """The presence column already says which report carries the drug."""
-        from llm_dup_dev.models.report import Drug
+        from vigitwin.models.report import Drug
 
         r1 = _report("R001", drugs=[Drug(substance="aspirin", sources=["s"])])
         case = build_evidence_case(
@@ -635,7 +635,7 @@ class TestAbsentValueRendering:
         assert "A only" in html
 
     def test_an_absent_ae_column_is_blank(self):
-        from llm_dup_dev.models.report import AdverseEvent
+        from vigitwin.models.report import AdverseEvent
 
         r1 = _report(
             "R001", aes=[AdverseEvent(pt_name="rash", sources=["s"])]
@@ -662,7 +662,7 @@ class TestAbsentValueRendering:
 
     def test_a_date_range_boundary_keeps_its_dash(self):
         """Inside "X to Y" the slot must hold something, or the phrase truncates."""
-        from llm_dup_dev.models.report import Drug, PartialDate
+        from vigitwin.models.report import Drug, PartialDate
 
         r1 = _report(
             "R001",
@@ -827,7 +827,7 @@ class TestNoGapReachesThePage:
         return case
 
     def test_a_provenance_gap_is_recorded_but_not_printed(self):
-        from llm_dup_dev.review_html.evidence.models import (
+        from vigitwin.review_html.evidence.models import (
             EvidenceGap,
             EvidenceGapCode,
         )
@@ -843,7 +843,7 @@ class TestNoGapReachesThePage:
         assert "own stored description" not in html
 
     def test_an_absence_gap_is_recorded_but_not_printed_either(self):
-        from llm_dup_dev.review_html.evidence.models import (
+        from vigitwin.review_html.evidence.models import (
             EvidenceGap,
             EvidenceGapCode,
         )
@@ -861,7 +861,7 @@ class TestNoGapReachesThePage:
 
     def test_the_page_still_collects_every_case_gap(self):
         """``EvidencePageVM.gaps`` is the caller's way in, and is unchanged."""
-        from llm_dup_dev.review_html.evidence.models import (
+        from vigitwin.review_html.evidence.models import (
             EvidenceGap,
             EvidenceGapCode,
         )

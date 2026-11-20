@@ -22,13 +22,13 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_dup_dev.characterization.builder import (
+from vigitwin.characterization.builder import (
     build_reference_set_characteristics,
     resolution_policy_summary,
 )
-from llm_dup_dev.characterization.models import CharacterizationReport
-from llm_dup_dev.models.enums import DrugRole
-from llm_dup_dev.models.report import (
+from vigitwin.characterization.models import CharacterizationReport
+from vigitwin.models.enums import DrugRole
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -36,7 +36,7 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.study_eval.schemas import ReferencePair, ReferenceSet
+from vigitwin.study_eval.schemas import ReferencePair, ReferenceSet
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "schemas"

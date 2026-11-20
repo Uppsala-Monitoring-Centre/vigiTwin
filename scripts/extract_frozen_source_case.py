@@ -33,13 +33,13 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenSourceCaseExtractions,
     save_frozen_source_case_extractions,
 )
-from llm_dup_dev.llm.protocols import LLMClient
-from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
-from llm_dup_dev.models.report import Report
+from vigitwin.llm.protocols import LLMClient
+from vigitwin.llm.tasks.narrative_source_case import extract_source_case
+from vigitwin.models.report import Report
 
 logger = logging.getLogger(__name__)
 

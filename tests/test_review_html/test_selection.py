@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.review_html.saved_run import load_saved_run
-from llm_dup_dev.review_html.selection import (
+from vigitwin.review_html.saved_run import load_saved_run
+from vigitwin.review_html.selection import (
     MissingPairPolicy,
     PairSelection,
     apply_selection,
@@ -22,13 +22,13 @@ from tests.test_review_html.test_saved_run import (
     _write_pairs,
     _write_reports,
 )
-from llm_dup_dev.pipeline.export import write_pair_results
+from vigitwin.pipeline.export import write_pair_results
 
 
 @pytest.fixture
 def run_dir(tmp_path, report_a, report_b, report_c):
     """A saved run of three pairs over four synthetic reports."""
-    from llm_dup_dev.models.report import Report
+    from vigitwin.models.report import Report
 
     report_d = Report(report_id="R004")
     _write_reports(tmp_path, report_a, report_b, report_c, report_d)

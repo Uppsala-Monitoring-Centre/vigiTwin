@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.study_eval.preflight import (
+from vigitwin.study_eval.preflight import (
     preflight_reference_set,
     preflight_reference_sets,
 )
-from llm_dup_dev.study_eval.schemas import PairPrediction, PredictionSet
+from vigitwin.study_eval.schemas import PairPrediction, PredictionSet
 from tests.test_study_eval.conftest import make_precision, make_recall
 
 

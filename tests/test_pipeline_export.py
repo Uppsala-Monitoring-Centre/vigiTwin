@@ -1,15 +1,15 @@
-"""Tests for llm_dup_dev.pipeline.export."""
+"""Tests for vigitwin.pipeline.export."""
 
 import json
 
 import pytest
 
-from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.models.enums import (
+from vigitwin.classifier.decision_logic import classify
+from vigitwin.models.enums import (
     AnchorType,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     InconsistencyCounts,
@@ -17,17 +17,17 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.enums import AEClinicalPictureStatus
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.enums import AEClinicalPictureStatus
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
 )
-from llm_dup_dev.models.pair_features import AEClinicalPictureResult
-from llm_dup_dev.pipeline.export import (
+from vigitwin.models.pair_features import AEClinicalPictureResult
+from vigitwin.pipeline.export import (
     read_classifications,
     read_pair_features,
     read_pair_results,
@@ -35,7 +35,7 @@ from llm_dup_dev.pipeline.export import (
     write_pair_features,
     write_pair_results,
 )
-from llm_dup_dev.pipeline.runner import PairResult
+from vigitwin.pipeline.runner import PairResult
 
 
 def _features(pair_id="R001__R002", moderate=1):
@@ -186,7 +186,7 @@ class TestReviewCliCompatibility:
         The CLI now shares these readers, so this asserts the round trip the
         asymmetry always implied.
         """
-        from llm_dup_dev.review_html import cli
+        from vigitwin.review_html import cli
 
         results = [_result("A__B")]
         fpath = tmp_path / "features.json"

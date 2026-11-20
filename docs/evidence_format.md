@@ -676,7 +676,7 @@ features file. They live on `PipelineConfig` and `DecisionThresholds`, and are
 recorded only in a `RunManifest`. So:
 
 ```python
-from llm_dup_dev.review_html import load_evidence_run_settings
+from vigitwin.review_html import load_evidence_run_settings
 
 settings = load_evidence_run_settings("run_manifest.yaml")   # or .json
 ```
@@ -696,7 +696,7 @@ Three ways to choose what gets rendered, in increasing order of deliberation:
 every pair in the artifact, an explicit list of ids, or a curated manifest.
 
 ```python
-from llm_dup_dev.review_html import PairSelection, MissingPairPolicy, render_saved_run
+from vigitwin.review_html import PairSelection, MissingPairPolicy, render_saved_run
 
 render_saved_run(
     reports_path="reports.json",
@@ -1118,7 +1118,7 @@ described as publication-ready.
 
 The confidentiality transformations — date and age offsets, country masking,
 identifier replacement, narrative review — and the fail-closed publication
-export built on them live in `llm_dup_dev.review_html.evidence.publication`,
+export built on them live in `vigitwin.review_html.evidence.publication`,
 and are described in `docs/evidence_publication_mode.md`. They produce a
 *second* presentation from the same cases and the same template; this one is
 unchanged by them and stays the default.
@@ -1142,7 +1142,7 @@ tree is byte-identical once the `text` fields are stripped.
 ### Python
 
 ```python
-from llm_dup_dev.review_html import (
+from vigitwin.review_html import (
     build_evidence_case,          # one pair -> EvidenceCaseVM
     build_assessment_summary,     # the deterministic prose
     build_collection,             # a loaded manifest -> EvidencePageVM
@@ -1162,7 +1162,7 @@ framing) and `EvidenceRunSettings`.
 ### A whole saved run, or a selection from one
 
 ```bash
-.venv/bin/python -m llm_dup_dev.review_html \
+.venv/bin/python -m vigitwin.review_html \
     --reports reports.json --pairs pairs.json \
     --features features.json --classifications classifications.json \
     --pair-frequencies pair_frequencies.json --run-manifest run_manifest.json \
@@ -1184,7 +1184,7 @@ page the same way, so one directory cannot hold both.
 ### A curated collection
 
 ```bash
-.venv/bin/python -m llm_dup_dev.review_html.evidence \
+.venv/bin/python -m vigitwin.review_html.evidence \
     --manifest collection.yaml \
     --output-dir outputs/supplement/
 ```

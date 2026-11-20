@@ -3,13 +3,13 @@
 
 import pytest
 
-from llm_dup_dev.models import (
+from vigitwin.models import (
     ClassificationResult,
     RelationshipAssessment,
     IndependenceAssessment,
     Report,
 )
-from llm_dup_dev.models.report import PartialDate
+from vigitwin.models.report import PartialDate
 
 
 class TestReportSerialization:

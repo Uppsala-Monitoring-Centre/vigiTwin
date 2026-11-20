@@ -83,7 +83,7 @@
       "type": "object"
     },
     "PresentationMode": {
-      "description": "Which presentation a page is \u2014 and so what it may be shown to.\n\n``INTERNAL`` is the default everywhere, which is the point: the existing\npresentation is unchanged, and a page becomes a publication candidate\nonly by being put through\n:func:`llm_dup_dev.review_html.evidence.publication.scramble_page`. The\nfooter states the mode, so the two cannot be mistaken for one another\nonce they are separate files on a disk.\n\n``PUBLICATION`` says the displayed values have been transformed. It does\nnot say the page is anonymous: that is a disclosure reviewer's\nconclusion, never an attribute a renderer can set.",
+      "description": "Which presentation a page is \u2014 and so what it may be shown to.\n\n``INTERNAL`` is the default everywhere, which is the point: the existing\npresentation is unchanged, and a page becomes a publication candidate\nonly by being put through\n:func:`vigitwin.review_html.evidence.publication.scramble_page`. The\nfooter states the mode, so the two cannot be mistaken for one another\nonce they are separate files on a disk.\n\n``PUBLICATION`` says the displayed values have been transformed. It does\nnot say the page is anonymous: that is a disclosure reviewer's\nconclusion, never an attribute a renderer can set.",
       "enum": [
         "internal",
         "publication"

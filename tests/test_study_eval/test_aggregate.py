@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.study_eval.aggregate import (
+from vigitwin.study_eval.aggregate import (
     ABSTAIN_POSITIVE,
     ADJUDICATOR_LABELS,
     OTHERWISE_RELATED_POSITIVE,

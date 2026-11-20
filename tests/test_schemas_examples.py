@@ -16,20 +16,20 @@ from pathlib import Path
 
 import pytest
 
-from llm_dup_dev.characterization.models import CharacterizationReport
-from llm_dup_dev.data.offline import (
+from vigitwin.characterization.models import CharacterizationReport
+from vigitwin.data.offline import (
     FrozenNarrativeDemographics,
     FrozenSourceCaseExtractions,
     ScreeningDetails,
 )
-from llm_dup_dev.models.report import Report
-from llm_dup_dev.models.report_pair import ReportPair
-from llm_dup_dev.models.pair_features import PairFeatures
-from llm_dup_dev.models.classification import ClassificationResult
-from llm_dup_dev.models.narrative_demographics import NarrativeDemographics
-from llm_dup_dev.models.narrative_source_case import NarrativeSourceCase
-from llm_dup_dev.feature_generation.probability import FrequencyStats
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.models.report import Report
+from vigitwin.models.report_pair import ReportPair
+from vigitwin.models.pair_features import PairFeatures
+from vigitwin.models.classification import ClassificationResult
+from vigitwin.models.narrative_demographics import NarrativeDemographics
+from vigitwin.models.narrative_source_case import NarrativeSourceCase
+from vigitwin.feature_generation.probability import FrequencyStats
+from vigitwin.review_html.evidence.publication import (
     PublicationTransformManifest,
     ScramblingKeyRecord,
 )

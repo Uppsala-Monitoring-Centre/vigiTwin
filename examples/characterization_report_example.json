@@ -4,7 +4,7 @@
   "characterization_id": "abc123def456",
   "dataset_id": "dataset0001ab",
   "dev_package": {
-    "name": "llm-dup-dev",
+    "name": "vigitwin",
     "version": null
   },
   "dev_git_commit": null,

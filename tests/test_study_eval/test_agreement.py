@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.study_eval.scle.agreement import _cohens_kappa, compute_agreement
-from llm_dup_dev.study_eval.scle.form import (
+from vigitwin.study_eval.scle.agreement import _cohens_kappa, compute_agreement
+from vigitwin.study_eval.scle.form import (
     CaseDifficulty,
     ReferenceLabelIssue,
     ReviewerSubmission,

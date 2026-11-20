@@ -15,13 +15,13 @@ it, and the fences around it.
 
 from __future__ import annotations
 
-from llm_dup_dev.models.enums import DrugRole, ReportingContextLevel
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.enums import DrugRole, ReportingContextLevel
+from vigitwin.models.pair_features import (
     FeatureContribution,
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.report import (
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     DateValue,
@@ -30,9 +30,9 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.review_html.evidence.build import build_evidence_case
-from llm_dup_dev.review_html.evidence.models import ValueKind
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.build import build_evidence_case
+from vigitwin.review_html.evidence.models import ValueKind
+from vigitwin.review_html.evidence.publication import (
     DateRole,
     DisclosureCode,
     PublicationPolicy,
@@ -40,7 +40,7 @@ from llm_dup_dev.review_html.evidence.publication import (
     check_cross_block,
     offset_candidates,
 )
-from llm_dup_dev.review_html.evidence.publication.substitute import walk_cells
+from vigitwin.review_html.evidence.publication.substitute import walk_cells
 from tests.test_review_html.conftest import (
     _classification,
     _features,

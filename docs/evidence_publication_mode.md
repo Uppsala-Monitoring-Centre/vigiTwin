@@ -6,7 +6,7 @@ narrative text. Every page says so in its footer, and it is not publishable.
 
 Publication mode is a second presentation of the same cases, built from the
 same view model and the same template, with the displayed values transformed.
-It lives in `llm_dup_dev.review_html.evidence.publication`.
+It lives in `vigitwin.review_html.evidence.publication`.
 
 Two things it is not:
 
@@ -951,7 +951,7 @@ It prints originals, so it is a secure-side artifact and says so on the page.
 ## Running it
 
 ```
-VIGITWIN_PUBLICATION_SALT=… python -m llm_dup_dev.review_html.evidence \
+VIGITWIN_PUBLICATION_SALT=… python -m vigitwin.review_html.evidence \
     --manifest collection.yaml \
     --mode publication \
     --output-dir outputs/publication/ \

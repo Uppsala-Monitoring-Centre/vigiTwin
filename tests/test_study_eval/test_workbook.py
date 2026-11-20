@@ -5,12 +5,12 @@ from __future__ import annotations
 import openpyxl
 import pytest
 
-from llm_dup_dev.study_eval.scle.form import YesNo
-from llm_dup_dev.study_eval.scle.vocabularies import (
+from vigitwin.study_eval.scle.form import YesNo
+from vigitwin.study_eval.scle.vocabularies import (
     ERROR_STAGES_SHEET,
     FEATURE_DOMAINS_SHEET,
 )
-from llm_dup_dev.study_eval.scle.workbook import (
+from vigitwin.study_eval.scle.workbook import (
     DOMAIN_HEADER_PREFIX,
     GUIDANCE_SHEET,
     NOT_APPLICABLE,
@@ -289,8 +289,8 @@ def test_every_question_carries_guidance(tmp_path):
 
 def _recall_sample(specs, modes=None, *, seed="s"):
     """Draw a recall SCLE sample from a ``make_recall`` spec."""
-    from llm_dup_dev.study_eval.aggregate import PRIMARY, run_recall_analysis
-    from llm_dup_dev.study_eval.sampling import sample_scle_recall
+    from vigitwin.study_eval.aggregate import PRIMARY, run_recall_analysis
+    from vigitwin.study_eval.sampling import sample_scle_recall
     from tests.test_study_eval.conftest import make_recall
 
     rsets, preds = make_recall(specs, modes=modes)

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from llm_dup_dev.characterization.builder import (
+from vigitwin.characterization.builder import (
     NO_DRUG_ROLE_REASON,
     NO_HIERARCHY_REASON,
     build_reference_set_characteristics,
 )
-from llm_dup_dev.models.enums import DrugRole
+from vigitwin.models.enums import DrugRole
 
 from .conftest import (
     age,

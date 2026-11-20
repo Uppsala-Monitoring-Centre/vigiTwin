@@ -9,7 +9,7 @@ The pipeline takes candidate report pairs (typically produced upstream by vigiMa
 ## Architecture overview
 
 ```
-llm_dup_dev (this repo)              llm_dup_pv_secure (secure repo)
+vigiTwin (this repo)              llm_dup_pv_secure (secure repo)
 ─────────────────────────            ──────────────────────────────
 Models, feature generation,          Database access, real data,
 decision logic, eval framework       LLM execution via Azure
@@ -21,10 +21,10 @@ Defines:                             Implements:
   ClassificationResult
   EvalSummary
 
-        ← pip install llm_dup_dev ←
+        ← pip install vigitwin ←
 ```
 
-The secure repo installs `llm_dup_dev` as a dependency and provides concrete implementations of two protocols that connect the pipeline to the pharmacovigilance database.
+The secure repo installs `vigitwin` as a dependency and provides concrete implementations of two protocols that connect the pipeline to the pharmacovigilance database.
 
 The pipeline supports **two operating modes**:
 
@@ -41,24 +41,30 @@ Both modes use the same `PipelineRunner` API. The only difference is which `Stat
 
 ### Install the package
 
-In the secure repo's virtual environment:
+In the secure repo's virtual environment, from a checkout:
 
 ```bash
-pip install -e /path/to/llm_dup_dev[dev]
+pip install -e /path/to/vigitwin[dev]
 ```
 
-Or, if published to an internal package registry:
+Or, once the distribution is published to PyPI:
 
 ```bash
-pip install llm-dup-dev[dev]
+pip install vigitwin[dev]
 ```
+
+The distribution and the import path are both `vigitwin` as of 1.3.0. Before
+that they were `llm-dup-dev` and `llm_dup_dev` respectively — see
+[`migration_notes_package_rename.md`](migration_notes_package_rename.md), and
+note that a stale `llm_dup_dev` left installed alongside will keep satisfying
+old imports and hide the ones you have not migrated.
 
 ### Verify installation
 
 ```python
-from llm_dup_dev.pipeline.runner import PipelineRunner
-from llm_dup_dev.data.protocols import ReportLoader, StatsProvider
-print("llm_dup_dev installed successfully")
+from vigitwin.pipeline.runner import PipelineRunner
+from vigitwin.data.protocols import ReportLoader, StatsProvider
+print("vigitwin installed successfully")
 ```
 
 ---
@@ -85,25 +91,25 @@ is the importable API below.
 
 | Import path | Names |
 |---|---|
-| `llm_dup_dev.pipeline.runner` | `PipelineRunner`, `PairResult`, `BatchResult` |
-| `llm_dup_dev.pipeline.export` | `write_pair_features`, `read_pair_features`, `write_classifications`, `read_classifications`, `write_pair_results`, `read_pair_results` |
-| `llm_dup_dev.classifier` | `classify`, `PipelineConfig`, `DecisionThresholds` |
-| `llm_dup_dev.classifier.config` | `PipelineConfig`, `DecisionThresholds` |
+| `vigitwin.pipeline.runner` | `PipelineRunner`, `PairResult`, `BatchResult` |
+| `vigitwin.pipeline.export` | `write_pair_features`, `read_pair_features`, `write_classifications`, `read_classifications`, `write_pair_results`, `read_pair_results` |
+| `vigitwin.classifier` | `classify`, `PipelineConfig`, `DecisionThresholds` |
+| `vigitwin.classifier.config` | `PipelineConfig`, `DecisionThresholds` |
 
 ### Data access — the protocols you implement
 
 | Import path | Names |
 |---|---|
-| `llm_dup_dev.data.protocols` | `ReportLoader`, `StatsProvider`, `PairContextSink` |
-| `llm_dup_dev.data.synthetic` | `SyntheticReportLoader`, `SyntheticStatsProvider` |
-| `llm_dup_dev.data.offline` | `FrozenStatsProvider`, `FrozenPairBundle`, `FrozenScopeStats`, `FrozenSourceCaseExtractions`, `FrozenNarrativeDemographics`, `ScreeningDetails`, `load_reports`, `index_by_id`, and the `save_*` / `load_*` pair for each frozen artifact above |
-| `llm_dup_dev.feature_generation.probability` | `FrequencyStats` |
+| `vigitwin.data.protocols` | `ReportLoader`, `StatsProvider`, `PairContextSink` |
+| `vigitwin.data.synthetic` | `SyntheticReportLoader`, `SyntheticStatsProvider` |
+| `vigitwin.data.offline` | `FrozenStatsProvider`, `FrozenPairBundle`, `FrozenScopeStats`, `FrozenSourceCaseExtractions`, `FrozenNarrativeDemographics`, `ScreeningDetails`, `load_reports`, `index_by_id`, and the `save_*` / `load_*` pair for each frozen artifact above |
+| `vigitwin.feature_generation.probability` | `FrequencyStats` |
 
 ### Models
 
-`llm_dup_dev.models` re-exports every model name that is part of the contract;
+`vigitwin.models` re-exports every model name that is part of the contract;
 importing from the package root is preferred over the submodule path. The
-submodules `llm_dup_dev.models.report`, `.report_pair`, `.pair_features`,
+submodules `vigitwin.models.report`, `.report_pair`, `.pair_features`,
 `.classification`, `.narrative_source_case`, `.enums`, and `.pair_identity` are
 also stable paths.
 
@@ -118,10 +124,10 @@ plus the label enums (`IndependenceAssessment`, `RelationshipAssessment`,
 
 | Import path | Names |
 |---|---|
-| `llm_dup_dev.llm` | `LLMClient`, `LLMRequest`, `LLMResponse`, `LLMInfo`, `TokenUsage`, `LLMConfigurationError` |
-| `llm_dup_dev.llm.tasks.narrative_source_case` | `extract_source_case` |
-| `llm_dup_dev.llm.tasks.narrative_demographics` | the extraction entry points documented below |
-| `llm_dup_dev.feature_generation.narrative_demographics` | the merge entry points documented below |
+| `vigitwin.llm` | `LLMClient`, `LLMRequest`, `LLMResponse`, `LLMInfo`, `TokenUsage`, `LLMConfigurationError` |
+| `vigitwin.llm.tasks.narrative_source_case` | `extract_source_case` |
+| `vigitwin.llm.tasks.narrative_demographics` | the extraction entry points documented below |
+| `vigitwin.feature_generation.narrative_demographics` | the merge entry points documented below |
 
 ### Evaluation, study workflow, and reporting
 
@@ -130,15 +136,15 @@ Each of these packages declares `__all__`; **the contract is exactly its
 
 | Import path | Covers |
 |---|---|
-| `llm_dup_dev.eval` | `evaluate`, `evaluate_batch`, `EvalSummary`, `ConfusionMatrix`, sweeps, text/markdown formatting |
-| `llm_dup_dev.study_eval` | the four workflow steps (`run_analysis`, `generate_reviewer_workbooks`, `build_arbitration`, `finalize`), reference/prediction set models and loaders, sampling, estimation |
-| `llm_dup_dev.characterization` | reference-set "Table 1" builders, models, and writers |
-| `llm_dup_dev.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models; for the evidence format, `ReviewFormat`, `build_evidence_case`, `build_assessment_summary`, `build_collection`, `load_curated_manifest`, `load_evidence_run_settings`, `write_evidence_html`, `write_evidence_batch_html`, `write_evidence_document`, `EVIDENCE_DOCUMENT_FILENAME`, `render_evidence_page`, `PairSelection`, `MissingPairPolicy`, `screening_verdict`, `page_provenance`, `reference_from_annotation`, `normalise_reference_term`, `REFERENCE_VOCABULARY`, `BUILTIN_REFERENCE_TERMS`, `AE_ONSET_LABEL`, `ExampleDataset`, and the models `EvidenceCaseVM`, `CaseSummaryVM`, `EvidencePageVM`, `EvidenceRole`, `EvidenceRunSettings`, `CuratedExampleManifest`, `AssessmentSummary`, `ReferenceInfo`, `ExamplePresentation`, `SCLEAssessment`, `SCLEState`, `ScreeningVerdict`, `ProvenanceVM`, `PresentationMode`, `DecisionTileVM`, `DecisionStage`, `DecisionPathway`, `SourceContextVM` |
-| `llm_dup_dev.review_html.evidence.publication` | the contract is its `__all__`. Entry points `scramble_page`, `write_publication_evidence`, `write_scrambling_key`, `write_side_by_side`, `verify_rendered_output`, `write_approvals_form`, `export_approvals_form`, `ApprovalsFormWrite`, `verify_combined_document`, `digest_candidate`; configuration `PublicationPolicy`, `PublicationSecrets`, `PublicationApprovals`, `ApprovedText`, `FindingResolution`, `CountryMaskingOverride`, `ReleaseApproval`, `digest_text`, `DateRole`, `offset_tiers`, `offset_floor`, `check_cross_block`, `KIND_POLICIES`, `FREE_TEXT_FIELDS`, `NUMERIC_TEXT_FIELDS`, `SALT_ENV_VAR`; results `ScrambleResult`, `CaseTransform`, `DisclosureReport`, `DisclosureFinding`, `DisclosureCode`, `PublicationBlocked`, `NotClearedForRelease`, `ScramblingKeyRecord`, `PublicationTransformManifest`, `CountryMaskingSummary`, `SourceMaskingSummary`. See `docs/evidence_publication_mode.md` |
-| `llm_dup_dev.dataset_manifest` | `build_dataset_manifest`, `write_dataset_manifest`, models |
-| `llm_dup_dev.run_manifest` | `build_run_manifest`, `write_run_manifest`, models |
+| `vigitwin.eval` | `evaluate`, `evaluate_batch`, `EvalSummary`, `ConfusionMatrix`, sweeps, text/markdown formatting |
+| `vigitwin.study_eval` | the four workflow steps (`run_analysis`, `generate_reviewer_workbooks`, `build_arbitration`, `finalize`), reference/prediction set models and loaders, sampling, estimation |
+| `vigitwin.characterization` | reference-set "Table 1" builders, models, and writers |
+| `vigitwin.review_html` | `render_pair_html`, `render_batch_html`, `render_result_html`, `render_results_html`, `render_saved_run`, `load_saved_run`, and their view models; for the evidence format, `ReviewFormat`, `build_evidence_case`, `build_assessment_summary`, `build_collection`, `load_curated_manifest`, `load_evidence_run_settings`, `write_evidence_html`, `write_evidence_batch_html`, `write_evidence_document`, `EVIDENCE_DOCUMENT_FILENAME`, `render_evidence_page`, `PairSelection`, `MissingPairPolicy`, `screening_verdict`, `page_provenance`, `reference_from_annotation`, `normalise_reference_term`, `REFERENCE_VOCABULARY`, `BUILTIN_REFERENCE_TERMS`, `AE_ONSET_LABEL`, `ExampleDataset`, and the models `EvidenceCaseVM`, `CaseSummaryVM`, `EvidencePageVM`, `EvidenceRole`, `EvidenceRunSettings`, `CuratedExampleManifest`, `AssessmentSummary`, `ReferenceInfo`, `ExamplePresentation`, `SCLEAssessment`, `SCLEState`, `ScreeningVerdict`, `ProvenanceVM`, `PresentationMode`, `DecisionTileVM`, `DecisionStage`, `DecisionPathway`, `SourceContextVM` |
+| `vigitwin.review_html.evidence.publication` | the contract is its `__all__`. Entry points `scramble_page`, `write_publication_evidence`, `write_scrambling_key`, `write_side_by_side`, `verify_rendered_output`, `write_approvals_form`, `export_approvals_form`, `ApprovalsFormWrite`, `verify_combined_document`, `digest_candidate`; configuration `PublicationPolicy`, `PublicationSecrets`, `PublicationApprovals`, `ApprovedText`, `FindingResolution`, `CountryMaskingOverride`, `ReleaseApproval`, `digest_text`, `DateRole`, `offset_tiers`, `offset_floor`, `check_cross_block`, `KIND_POLICIES`, `FREE_TEXT_FIELDS`, `NUMERIC_TEXT_FIELDS`, `SALT_ENV_VAR`; results `ScrambleResult`, `CaseTransform`, `DisclosureReport`, `DisclosureFinding`, `DisclosureCode`, `PublicationBlocked`, `NotClearedForRelease`, `ScramblingKeyRecord`, `PublicationTransformManifest`, `CountryMaskingSummary`, `SourceMaskingSummary`. See `docs/evidence_publication_mode.md` |
+| `vigitwin.dataset_manifest` | `build_dataset_manifest`, `write_dataset_manifest`, models |
+| `vigitwin.run_manifest` | `build_run_manifest`, `write_run_manifest`, models |
 
-> **Known gap.** `llm_dup_dev.data`, `.pipeline`, and `.feature_generation` do
+> **Known gap.** `vigitwin.data`, `.pipeline`, and `.feature_generation` do
 > not yet declare `__all__`, so for those three the tables above are the only
 > statement of the boundary. Adding the declarations is a backward-compatible
 > follow-up.
@@ -199,12 +205,12 @@ No database query occurs.
 ### Setting up offline mode in the secure repo
 
 ```python
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenPairBundle,
     FrozenScopeStats,
     FrozenStatsProvider,
 )
-from llm_dup_dev.pipeline.runner import PipelineRunner
+from vigitwin.pipeline.runner import PipelineRunner
 
 # Build (or load from disk) a bundle for each pair
 bundles = {
@@ -246,11 +252,11 @@ The per-report narrative source/case extractor (`extract_source_case`) calls an 
 **Preprocessing step (online, once):**
 
 ```python
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenSourceCaseExtractions,
     save_frozen_source_case_extractions,
 )
-from llm_dup_dev.llm.tasks.narrative_source_case import extract_source_case
+from vigitwin.llm.tasks.narrative_source_case import extract_source_case
 
 extractions = {}
 for report in unique_reports_in_batch:
@@ -268,7 +274,7 @@ save_frozen_source_case_extractions(bundle, "source_case.json")
 **Evaluation step (offline, repeatable):**
 
 ```python
-from llm_dup_dev.data.offline import load_frozen_source_case_extractions
+from vigitwin.data.offline import load_frozen_source_case_extractions
 
 bundle = load_frozen_source_case_extractions("source_case.json")
 
@@ -281,7 +287,7 @@ runner = PipelineRunner(
 
 Partial bundles are allowed: `report_id` keys present in the bundle are served from it, and missing keys fall back to live extraction via `llm_client` (or to `None` if no client is configured). A `None` extraction does not fail the pair — the source-context evidence is simply absent and the decision rests on the rarity-based L_match evidence alone.
 
-> **⚠ Silent disable when neither path is wired.** With `llm_client=None` *and* no `frozen_source_case_extractions` covering the pair, the source-context evidence (including DOI-based linkage) never contributes — there is no error, just a missing `source_case_assessment` block in `features.json` and no source-context zone in the explanation. `PipelineRunner.run_batch` emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger when this configuration is detected, and the saved run manifest records `feature_flags.source_case_override_enabled = false`. For deployments that intentionally run without an LLM client at inference time, see *Wiring without an LLM client* below.
+> **⚠ Silent disable when neither path is wired.** With `llm_client=None` *and* no `frozen_source_case_extractions` covering the pair, the source-context evidence (including DOI-based linkage) never contributes — there is no error, just a missing `source_case_assessment` block in `features.json` and no source-context zone in the explanation. `PipelineRunner.run_batch` emits a `WARNING` on the `vigitwin.pipeline.runner` logger when this configuration is detected, and the saved run manifest records `feature_flags.source_case_override_enabled = false`. For deployments that intentionally run without an LLM client at inference time, see *Wiring without an LLM client* below.
 
 The JSON artifact matches `schemas/frozen_source_case_extractions.schema.json` and is validated by `FrozenSourceCaseExtractions.model_validate_json` on load, so schema drift between preprocessing and evaluation surfaces as a `ValidationError` rather than silent misinterpretation.
 
@@ -290,10 +296,10 @@ The JSON artifact matches `schemas/frozen_source_case_extractions.schema.json` a
 A parallel per-report extractor, `extract_narrative_demographics`, pulls candidate patient **age**, **sex**, **weight**, and **height** values (each with an `evidence` snippet) from a single narrative. Its deterministic consumer is a merge helper rather than a pair-level comparator:
 
 ```python
-from llm_dup_dev.llm.tasks.narrative_demographics import (
+from vigitwin.llm.tasks.narrative_demographics import (
     extract_narrative_demographics,
 )
-from llm_dup_dev.feature_generation.narrative_demographics import (
+from vigitwin.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
 )
 
@@ -314,11 +320,11 @@ Parallel to source/case, per-report narrative demographics can be frozen once an
 **Preprocessing step (online, once):**
 
 ```python
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenNarrativeDemographics,
     save_frozen_narrative_demographics,
 )
-from llm_dup_dev.llm.tasks.narrative_demographics import (
+from vigitwin.llm.tasks.narrative_demographics import (
     extract_narrative_demographics,
 )
 
@@ -335,7 +341,7 @@ save_frozen_narrative_demographics(bundle, "narrative_demographics.json")
 **Evaluation step (offline, repeatable):**
 
 ```python
-from llm_dup_dev.data.offline import load_frozen_narrative_demographics
+from vigitwin.data.offline import load_frozen_narrative_demographics
 
 bundle = load_frozen_narrative_demographics("narrative_demographics.json")
 
@@ -357,13 +363,13 @@ The JSON artifact matches `schemas/frozen_narrative_demographics.schema.json` an
 Loads structured `Report` objects from the database. Must implement three methods:
 
 ```python
-from llm_dup_dev.data.protocols import ReportLoader
-from llm_dup_dev.models.report import (
+from vigitwin.data.protocols import ReportLoader
+from vigitwin.models.report import (
     Report, Drug, AdverseEvent, SourcedValue, AgeValue,
     MeasurementValue, DateValue, PartialDate,
     CaseIdentifierKind, CaseIdentifierRef,
 )
-from llm_dup_dev.models.report_pair import ReportPair
+from vigitwin.models.report_pair import ReportPair
 
 
 class SqlReportLoader:
@@ -468,10 +474,10 @@ See `schemas/report.schema.json` for the full JSON schema and `examples/report_e
 
 Enables LLM-based assessment of whether two reports describe a clinically inconsistent adverse-event picture. With the default `ae_clinical_picture_mode = "auto"`, omitting the client falls back to the deterministic, MedDRA-hierarchy-based assessor (`feature_generation/ae_clinical_picture_rules.py`) — see *AE clinical-picture mode* below. Selecting `mode = "llm"` explicitly opts out of the fallback: the pipeline then records `ae_clinical_picture_status = "not_assessed"` with `ae_clinical_picture_reason = "no_llm_client"` and the AE component contributes nothing to the classification.
 
-Implement the `LLMClient` protocol from `llm_dup_dev.llm.protocols`:
+Implement the `LLMClient` protocol from `vigitwin.llm.protocols`:
 
 ```python
-from llm_dup_dev.llm import LLMClient, LLMRequest, LLMResponse
+from vigitwin.llm import LLMClient, LLMRequest, LLMResponse
 
 
 class AzureOpenAIClient:
@@ -550,7 +556,7 @@ Forward the value in the secure-side `make_pipeline()` factory:
 
 ```python
 import yaml
-from llm_dup_dev.pipeline.runner import PipelineRunner
+from vigitwin.pipeline.runner import PipelineRunner
 
 with open("configs/default_config.yaml") as f:
     cfg = yaml.safe_load(f) or {}
@@ -593,11 +599,11 @@ python scripts/extract_frozen_narrative_demographics.py \
 Inference step (offline, deterministic, no `llm_client`):
 
 ```python
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     load_frozen_narrative_demographics,
     load_frozen_source_case_extractions,
 )
-from llm_dup_dev.pipeline.runner import PipelineRunner
+from vigitwin.pipeline.runner import PipelineRunner
 
 runner = PipelineRunner(
     report_loader=loader,
@@ -613,15 +619,15 @@ runner = PipelineRunner(
 )
 ```
 
-Omitting either bundle in this configuration silently disables the corresponding feature: missing source/case → no source-context evidence (no DOI-based linkage); missing narrative demographics → no LLM-derived patient age/sex/weight/height candidates merged into reports. The runner emits a `WARNING` on the `llm_dup_dev.pipeline.runner` logger in either case, and the saved run manifest records `feature_flags.source_case_override_enabled = false` / `feature_flags.narrative_demographics_extraction_enabled = false` so the disabled state is auditable in archived runs.
+Omitting either bundle in this configuration silently disables the corresponding feature: missing source/case → no source-context evidence (no DOI-based linkage); missing narrative demographics → no LLM-derived patient age/sex/weight/height candidates merged into reports. The runner emits a `WARNING` on the `vigitwin.pipeline.runner` logger in either case, and the saved run manifest records `feature_flags.source_case_override_enabled = false` / `feature_flags.narrative_demographics_extraction_enabled = false` so the disabled state is auditable in archived runs.
 
 ### 3. StatsProvider
 
 Computes frequency statistics from the database for a given clinical context:
 
 ```python
-from llm_dup_dev.data.protocols import StatsProvider
-from llm_dup_dev.feature_generation.probability import FrequencyStats
+from vigitwin.data.protocols import StatsProvider
+from vigitwin.feature_generation.probability import FrequencyStats
 
 
 class SqlStatsProvider:
@@ -681,8 +687,8 @@ Apply the same pattern for `N_AEs` and `N_drugs_AEs` (intersection).
 ### Live mode (single pair)
 
 ```python
-from llm_dup_dev.pipeline.runner import PipelineRunner
-from llm_dup_dev.models.report_pair import ReportPair
+from vigitwin.pipeline.runner import PipelineRunner
+from vigitwin.models.report_pair import ReportPair
 
 # Live mode: SqlStatsProvider queries the database at runtime
 runner = PipelineRunner(
@@ -746,7 +752,7 @@ labels = batch.labels()  # {"12345__67890": "Duplicates", ...}
 ### Against human annotations
 
 ```python
-from llm_dup_dev.eval import evaluate_batch, summary_to_text
+from vigitwin.eval import evaluate_batch, summary_to_text
 
 # annotations: list of dicts from the eval set
 # Each must have: pair_id, duplicates_assessment
@@ -849,17 +855,17 @@ re-running the pipeline — no reports, no database, no LLM. Persist the feature
 once, then sweep as often as you like:
 
 ```python
-from llm_dup_dev.pipeline.export import write_pair_features
+from vigitwin.pipeline.export import write_pair_features
 
 batch = runner.run_batch(pairs)
 write_pair_features(batch.results, "features.json")   # do this once
 ```
 
 ```python
-from llm_dup_dev.eval import (
+from vigitwin.eval import (
     AbstainMode, grid_over, load_annotations, sweep, sweep_to_text,
 )
-from llm_dup_dev.pipeline.export import read_pair_features
+from vigitwin.pipeline.export import read_pair_features
 
 features = read_pair_features("features.json")
 annotations = load_annotations("annotations.csv")
@@ -929,7 +935,7 @@ opposite orientations), a row pairing a report with itself, and a label outside
 ### Pipeline configuration
 
 ```python
-from llm_dup_dev.classifier.config import (
+from vigitwin.classifier.config import (
     PipelineConfig, DecisionThresholds,
     DomainSizeConfig, InconsistencyThresholds, AnchorConfig,
 )
@@ -1028,8 +1034,8 @@ Secure deployments should save **one `run_manifest.yaml` per run folder**. The c
 import sys
 from pathlib import Path
 
-from llm_dup_dev.pipeline.runner import PipelineRunner
-from llm_dup_dev.run_manifest import (
+from vigitwin.pipeline.runner import PipelineRunner
+from vigitwin.run_manifest import (
     DatasetRef,
     build_run_manifest,
     write_run_manifest,
@@ -1088,7 +1094,7 @@ write_run_manifest(results_dir, manifest, formats=("yaml", "json"))
 | `created_at` | datetime (UTC) | auto / caller | When the manifest was built. |
 | `run_id` | str | auto / caller | Stable identifier for this run. Defaults to a 12-char hex token. |
 | `run_name` | str \| null | caller | Optional human-readable label. |
-| `dev_package.name` | str | auto | Always `"llm-dup-dev"`. |
+| `dev_package.name` | str | auto | Always `"vigitwin"`. |
 | `dev_package.version` | str \| null | auto | From `importlib.metadata`; `null` if the package is not installed via metadata (e.g. PYTHONPATH dev runs). |
 | `dev_git_commit` | str \| null | auto | Short SHA of HEAD in the checkout that tracks the dev package's source. `null` when the running package is not a working copy (an installed wheel), or git is unavailable — never the calling repository's commit. |
 | `input_paths` | dict | caller | Free-form. Suggested keys: `frozen_bundles`, `frozen_source_case`, `frozen_narrative_demographics`, `report_loader`. |
@@ -1138,14 +1144,14 @@ validation_sets/
 ### Describing the extracted set
 
 Once a validation set's reports are extracted, run
-[`llm_dup_dev.characterization`](reference_set_characteristics.md) over its
+[`vigitwin.characterization`](reference_set_characteristics.md) over its
 reference sets to produce the descriptive "Table 1" alongside the manifest —
 reporting years, countries, patient age and sex, commonest drugs and adverse
 events, and pair-level agreement on country, year and sex. It is aggregate-only
 (no report content) and joins back to the manifest via `dataset_id`:
 
 ```python
-from llm_dup_dev.characterization import (
+from vigitwin.characterization import (
     build_characterization_report, write_characterization_report,
 )
 
@@ -1168,7 +1174,7 @@ belongs to the *extract*, and one run covers every study that later uses it.
 from datetime import datetime, timezone
 from pathlib import Path
 
-from llm_dup_dev.dataset_manifest import (
+from vigitwin.dataset_manifest import (
     DatasetSnapshot,
     build_dataset_manifest,
     write_dataset_manifest,
@@ -1248,7 +1254,7 @@ and output are unchanged by the second one's existence.
 ### Single pair
 
 ```python
-from llm_dup_dev.review_html import render_pair_html
+from vigitwin.review_html import render_pair_html
 from pathlib import Path
 
 # report_1, report_2: Report objects loaded by your SqlReportLoader
@@ -1279,7 +1285,7 @@ path = render_pair_html(
 ### Batch mode
 
 ```python
-from llm_dup_dev.review_html import render_batch_html, PairRenderInput
+from vigitwin.review_html import render_batch_html, PairRenderInput
 
 items = [
     PairRenderInput(
@@ -1303,7 +1309,7 @@ output_dir = render_batch_html(items, output_dir=Path("outputs/review"))
 When you have `PairResult` objects from the pipeline, use `render_result_html` / `render_results_html` to render pages with the full prediction/evaluation view (decision summary, detailed evidence, classification):
 
 ```python
-from llm_dup_dev.review_html import render_result_html, render_results_html, ResultRenderInput
+from vigitwin.review_html import render_result_html, render_results_html, ResultRenderInput
 
 # Single result
 path = render_result_html(
@@ -1343,7 +1349,7 @@ All rendering functions default to `outputs/review_html/`. Override with the `ou
 If reports and pipeline outputs have already been serialised to JSON:
 
 ```bash
-python -m llm_dup_dev.review_html \
+python -m vigitwin.review_html \
     --reports reports.json \
     --pairs pairs.json \
     --features features.json \
@@ -1389,7 +1395,7 @@ Each page contains:
 
 Reviewers comparing this pipeline's adjudication against the screening method that
 surfaced the pair need to see what that method computed. Supply a `ScreeningDetails`
-artifact (defined in [`src/llm_dup_dev/data/offline.py`](../src/llm_dup_dev/data/offline.py))
+artifact (defined in [`src/vigitwin/data/offline.py`](../src/vigitwin/data/offline.py))
 and each covered pair gets a **Screening Algorithm** section directly beneath
 Classification:
 
@@ -1429,7 +1435,7 @@ Pass it as `--screening screening.json` on the CLI, `screening_path=` to
 Same artifacts, same loader, different output. On the CLI:
 
 ```bash
-python -m llm_dup_dev.review_html \
+python -m vigitwin.review_html \
     --reports reports.json --pairs pairs.json \
     --features features.json --classifications classifications.json \
     --pair-frequencies pair_frequencies.json \
@@ -1452,7 +1458,7 @@ A curated collection spanning several reference sets is driven by a manifest
 rather than a command line:
 
 ```bash
-python -m llm_dup_dev.review_html.evidence \
+python -m vigitwin.review_html.evidence \
     --manifest collection.yaml --output-dir outputs/supplement/
 ```
 
@@ -1484,13 +1490,13 @@ unaffected.
 | `docs/data_contracts.md` | Data layer design and contracts |
 | `docs/repository_roles.md` | Security controls between repos |
 | `docs/evidence_format.md` | The `evidence` review format: colour semantics, ordering, the curated manifest |
-| `src/llm_dup_dev/review_html/__init__.py` | `render_pair_html` / `render_batch_html` API docstrings |
+| `src/vigitwin/review_html/__init__.py` | `render_pair_html` / `render_batch_html` API docstrings |
 
 ---
 
 ## Testing
 
-### Run the test suite (in llm_dup_dev)
+### Run the test suite (in vigiTwin)
 
 ```bash
 pip install -e ".[dev]"
@@ -1502,10 +1508,10 @@ python -m pytest tests/ -v
 ### Quick smoke test (in the secure repo)
 
 ```python
-from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
-from llm_dup_dev.pipeline.runner import PipelineRunner
-from llm_dup_dev.models.report import Report, Drug, AdverseEvent, SourcedValue, AgeValue
-from llm_dup_dev.models.report_pair import ReportPair
+from vigitwin.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
+from vigitwin.pipeline.runner import PipelineRunner
+from vigitwin.models.report import Report, Drug, AdverseEvent, SourcedValue, AgeValue
+from vigitwin.models.report_pair import ReportPair
 
 # Build two minimal test reports
 r1 = Report(

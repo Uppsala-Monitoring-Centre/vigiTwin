@@ -5,15 +5,15 @@ import math
 import pytest
 from pydantic import ValidationError
 
-from llm_dup_dev.classifier.config import DomainSizeConfig
-from llm_dup_dev.classifier.decision_logic import classify
-from llm_dup_dev.feature_generation.anchor import select_anchor
-from llm_dup_dev.feature_generation.matching import (
+from vigitwin.classifier.config import DomainSizeConfig
+from vigitwin.classifier.decision_logic import classify
+from vigitwin.feature_generation.anchor import select_anchor
+from vigitwin.feature_generation.matching import (
     ClinicalDateMatch,
     DemographicMatch,
     MatchResult,
 )
-from llm_dup_dev.feature_generation.probability import (
+from vigitwin.feature_generation.probability import (
     MARGINAL_FLOOR,
     FrequencyStats,
     _clinical_date_domain_sizes,
@@ -24,13 +24,13 @@ from llm_dup_dev.feature_generation.probability import (
     n_anchor_pairs,
     probability_any_collision,
 )
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AnchorType,
     IndependenceAssessment,
     IndependenceReason,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     InconsistencyCounts,
@@ -1722,7 +1722,7 @@ class TestComputeLPatient:
         compute_probability passes the internal form; callers reading a
         serialized PairFeatures pass the model form. They must agree.
         """
-        from llm_dup_dev.feature_generation.probability import FeatureProbability
+        from vigitwin.feature_generation.probability import FeatureProbability
 
         internal = [
             FeatureProbability(feature="patient_sex", p_f=0.5, method="domain_size"),

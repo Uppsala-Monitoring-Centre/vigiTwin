@@ -6,19 +6,19 @@ is covered by the canonical ``tests/test_schemas_examples.py``.
 
 import pytest
 
-from llm_dup_dev.llm.fake import FakeLLMClient
-from llm_dup_dev.llm.tasks.narrative_source_case import (
+from vigitwin.llm.fake import FakeLLMClient
+from vigitwin.llm.tasks.narrative_source_case import (
     build_source_case_request,
     extract_source_case,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
     SourceIdentifier,
     SourceIdentifierType,
     SourceType,
 )
-from llm_dup_dev.models.report import Report
+from vigitwin.models.report import Report
 
 
 @pytest.fixture

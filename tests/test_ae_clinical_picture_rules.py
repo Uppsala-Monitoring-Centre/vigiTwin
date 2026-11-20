@@ -14,15 +14,15 @@ Covers the nine scenarios listed in the spec:
 
 from __future__ import annotations
 
-from llm_dup_dev.feature_generation.ae_clinical_picture_rules import (
+from vigitwin.feature_generation.ae_clinical_picture_rules import (
     assess_ae_clinical_picture_rule_based,
 )
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AEClinicalPictureStatus,
     InconsistencySeverity,
 )
-from llm_dup_dev.models.pair_features import GlobalOverlapLevel
-from llm_dup_dev.models.report import AdverseEvent, Report
+from vigitwin.models.pair_features import GlobalOverlapLevel
+from vigitwin.models.report import AdverseEvent, Report
 
 
 def _ae(pt: str, hlt: str | None = None, hlgt: str | None = None, soc: str | None = None) -> AdverseEvent:

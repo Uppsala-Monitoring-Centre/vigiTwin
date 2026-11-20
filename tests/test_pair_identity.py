@@ -1,4 +1,4 @@
-"""Tests for llm_dup_dev.models.pair_identity.
+"""Tests for vigitwin.models.pair_identity.
 
 The invariant under test: a pair has one identity regardless of the order its
 two report ids arrive in. Everything downstream joins on ``pair_id`` alone —
@@ -9,7 +9,7 @@ number.
 
 import pytest
 
-from llm_dup_dev.models.pair_identity import (
+from vigitwin.models.pair_identity import (
     PAIR_ID_SEPARATOR,
     canonical_pair_id,
     canonical_report_ids,

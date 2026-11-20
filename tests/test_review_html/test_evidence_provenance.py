@@ -10,13 +10,13 @@ from __future__ import annotations
 
 import json
 
-from llm_dup_dev.review_html.evidence.models import EvidencePageVM, ProvenanceVM
-from llm_dup_dev.review_html.evidence.settings import (
+from vigitwin.review_html.evidence.models import EvidencePageVM, ProvenanceVM
+from vigitwin.review_html.evidence.settings import (
     EvidenceRunSettings,
     load_evidence_run_settings,
     page_provenance,
 )
-from llm_dup_dev.review_html.render import render_evidence_page
+from vigitwin.review_html.render import render_evidence_page
 
 from tests.test_review_html.test_evidence_build import _case, _features, _report
 
@@ -24,7 +24,7 @@ _MANIFEST = {
     "schema_version": "1.0",
     "run_id": "eval_2026-11-15",
     "created_at": "2026-11-15T09:12:00Z",
-    "dev_package": {"name": "llm_dup_dev", "version": "1.1.3"},
+    "dev_package": {"name": "vigitwin", "version": "1.1.3"},
     "dev_git_commit": "171f436e46be8deb92864b9f01b7639d09c5984e",
     "pipeline_config": {"epsilon": 1e-15},
     "decision_thresholds": {

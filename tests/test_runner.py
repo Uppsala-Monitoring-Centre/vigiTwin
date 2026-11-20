@@ -4,32 +4,32 @@ import logging
 
 import pytest
 
-from llm_dup_dev.classifier.config import DecisionThresholds
-from llm_dup_dev.llm import LLMConfigurationError
-from llm_dup_dev.data.offline import (
+from vigitwin.classifier.config import DecisionThresholds
+from vigitwin.llm import LLMConfigurationError
+from vigitwin.data.offline import (
     FrozenNarrativeDemographics,
     FrozenSourceCaseExtractions,
 )
-from llm_dup_dev.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
-from llm_dup_dev.llm.fake import FakeLLMClient
-from llm_dup_dev.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.data.synthetic import SyntheticReportLoader, SyntheticStatsProvider
+from vigitwin.llm.fake import FakeLLMClient
+from vigitwin.llm.tasks.ae_clinical_picture import AEClinicalPictureVerdict
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
 )
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.narrative_source_case import (
     CaseIdentifierFamily,
     NarrativeSourceCase,
     SourceIdentifier,
     SourceIdentifierType,
 )
-from llm_dup_dev.models.enums import (
+from vigitwin.models.enums import (
     AEClinicalPictureStatus,
     IndependenceAssessment,
     IndependenceReason,
 )
-from llm_dup_dev.models.explicit_link import ExplicitLinkVerdict
-from llm_dup_dev.models.report import (
+from vigitwin.models.explicit_link import ExplicitLinkVerdict
+from vigitwin.models.report import (
     AdverseEvent,
     AgeValue,
     CaseIdentifierKind,
@@ -37,8 +37,8 @@ from llm_dup_dev.models.report import (
     Report,
     SourcedValue,
 )
-from llm_dup_dev.models.report_pair import ReportPair
-from llm_dup_dev.pipeline.runner import (
+from vigitwin.models.report_pair import ReportPair
+from vigitwin.pipeline.runner import (
     BatchResult,
     PairResult,
     PipelineRunner,
@@ -489,7 +489,7 @@ class TestFrozenSourceCaseExtractions:
             frozen_source_case_extractions=bundle,
             frozen_narrative_demographics=demographics_bundle,
         )
-        with caplog.at_level("WARNING", logger="llm_dup_dev.pipeline.runner"):
+        with caplog.at_level("WARNING", logger="vigitwin.pipeline.runner"):
             runner_.run_batch([pair_ab])
         assert "Source-context evidence is disabled" not in caplog.text
         assert "Narrative-demographics extraction is disabled" not in caplog.text
@@ -505,7 +505,7 @@ class TestFrozenSourceCaseExtractions:
             llm_client=None,
             ae_clinical_picture_mode="rule_based",
         )
-        with caplog.at_level("WARNING", logger="llm_dup_dev.pipeline.runner"):
+        with caplog.at_level("WARNING", logger="vigitwin.pipeline.runner"):
             runner_.run_batch([pair_ab])
         assert "Source-context evidence is disabled" in caplog.text
         assert "Narrative-demographics extraction is disabled" in caplog.text

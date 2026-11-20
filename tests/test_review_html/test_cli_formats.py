@@ -10,9 +10,9 @@ import json
 
 import pytest
 
-from llm_dup_dev.pipeline.export import write_pair_results
-from llm_dup_dev.review_html.cli import main
-from llm_dup_dev.review_html.render import EVIDENCE_DOCUMENT_FILENAME
+from vigitwin.pipeline.export import write_pair_results
+from vigitwin.review_html.cli import main
+from vigitwin.review_html.render import EVIDENCE_DOCUMENT_FILENAME
 
 from tests.test_review_html.test_render import _make_pair_result
 

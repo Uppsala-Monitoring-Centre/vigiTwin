@@ -1,13 +1,13 @@
-"""Tests for llm_dup_dev.review_html.normalize."""
+"""Tests for vigitwin.review_html.normalize."""
 
-from llm_dup_dev.models.report import (
+from vigitwin.models.report import (
     AgeValue,
     DateValue,
     MeasurementValue,
     PartialDate,
     SourcedValue,
 )
-from llm_dup_dev.review_html.normalize import (
+from vigitwin.review_html.normalize import (
     MISSING,
     format_age_values,
     format_date_values,

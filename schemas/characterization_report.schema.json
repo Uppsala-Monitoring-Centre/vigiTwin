@@ -225,7 +225,7 @@
       "description": "Identity of the dev-side package that produced the manifest.",
       "properties": {
         "name": {
-          "default": "llm-dup-dev",
+          "default": "vigitwin",
           "title": "Name",
           "type": "string"
         },

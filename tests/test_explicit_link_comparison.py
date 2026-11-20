@@ -2,17 +2,17 @@
 
 import pytest
 
-from llm_dup_dev.feature_generation.explicit_link_comparison import (
+from vigitwin.feature_generation.explicit_link_comparison import (
     MIN_IDENTIFIER_LENGTH,
     compare_explicit_links,
     is_matchable_identifier,
     normalize_case_identifier,
 )
-from llm_dup_dev.models.explicit_link import (
+from vigitwin.models.explicit_link import (
     ExplicitLinkDirection,
     ExplicitLinkVerdict,
 )
-from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef, Report
+from vigitwin.models.report import CaseIdentifierKind, CaseIdentifierRef, Report
 
 
 # A realistic worldwide-unique-style identifier: long enough to clear the

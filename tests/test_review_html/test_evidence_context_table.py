@@ -11,9 +11,9 @@ is absent.
 
 from __future__ import annotations
 
-from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
-from llm_dup_dev.models.enums import AnchorType, ReportingContextLevel
-from llm_dup_dev.models.pair_features import (
+from vigitwin.data.offline import FrozenPairBundle, FrozenScopeStats
+from vigitwin.models.enums import AnchorType, ReportingContextLevel
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     ReportingContext,
 )

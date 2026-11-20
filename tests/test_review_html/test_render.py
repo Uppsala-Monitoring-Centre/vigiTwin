@@ -1,16 +1,16 @@
-"""Tests for llm_dup_dev.review_html.render."""
+"""Tests for vigitwin.review_html.render."""
 
 
-from llm_dup_dev.data.offline import FrozenPairBundle, FrozenScopeStats
-from llm_dup_dev.models.classification import ClassificationResult
-from llm_dup_dev.models.enums import (
+from vigitwin.data.offline import FrozenPairBundle, FrozenScopeStats
+from vigitwin.models.classification import ClassificationResult
+from vigitwin.models.enums import (
     AnchorType,
     RelationshipAssessment,
     IndependenceAssessment,
     InconsistencySeverity,
     ReportingContextLevel,
 )
-from llm_dup_dev.models.pair_features import (
+from vigitwin.models.pair_features import (
     AnchorPopulation,
     FeatureContribution,
     InconsistencyCounts,
@@ -19,16 +19,16 @@ from llm_dup_dev.models.pair_features import (
     ProbabilityEstimate,
     ReportingContext,
 )
-from llm_dup_dev.models.report import Report
-from llm_dup_dev.pipeline.runner import PairResult
-from llm_dup_dev.review_html import (
+from vigitwin.models.report import Report
+from vigitwin.pipeline.runner import PairResult
+from vigitwin.review_html import (
     render_pair_html,
     render_result_html,
     render_results_html,
     ResultRenderInput,
 )
-from llm_dup_dev.review_html.compare import build_pair_view_model
-from llm_dup_dev.review_html.models import (
+from vigitwin.review_html.compare import build_pair_view_model
+from vigitwin.review_html.models import (
     BatchIndexItem,
     ComparisonStatus,
     FieldComparison,
@@ -37,7 +37,7 @@ from llm_dup_dev.review_html.models import (
     NarrativeComparison,
     PairViewModel,
 )
-from llm_dup_dev.review_html.render import (
+from vigitwin.review_html.render import (
     _safe_filename,
     render_index,
     render_pair,
@@ -686,7 +686,7 @@ class TestPredictionRendering:
             report_a, report_b, pair_id="R001__R002",
             features=features, classification=classification,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
         assert item.final_label == "Duplicates"
         assert item.l_match == 3.8
@@ -716,7 +716,7 @@ class TestPredictionRendering:
             report_a, report_b, pair_id="R001__R002",
             features=features, classification=classification,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
         html = render_index([item])
         assert "Duplicates" in html
@@ -744,8 +744,8 @@ class TestPredictionRendering:
 
     def test_key_drugs_bolded_in_index(self, report_a, report_b):
         """Suspected/interacting drugs are bolded; concomitant and role=None are not."""
-        from llm_dup_dev.models.enums import DrugRole
-        from llm_dup_dev.models.report import Drug
+        from vigitwin.models.enums import DrugRole
+        from vigitwin.models.report import Drug
 
         # Give report_a drugs with explicit roles
         r_a = report_a.model_copy(deep=True)
@@ -764,7 +764,7 @@ class TestPredictionRendering:
             r_a, r_b, pair_id="R001__R002",
             features=features, classification=classification,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
 
         # Anchor label: pregabalin should be bolded (suspected), somnolence is an AE (plain)
@@ -783,7 +783,7 @@ class TestPredictionRendering:
             report_a, report_b, pair_id="R001__R002",
             features=features, classification=classification,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
         # No drugs have explicit suspected/interacting role → no bolding
         assert "<strong>" not in (item.anchor_label or "")
@@ -799,9 +799,9 @@ class TestPredictionRendering:
         drug set is the anchor and thus never an additional feature; this
         covers the complementary anchor type.
         """
-        from llm_dup_dev.models.enums import AnchorType, DrugRole
-        from llm_dup_dev.models.pair_features import AnchorPopulation
-        from llm_dup_dev.models.report import Drug
+        from vigitwin.models.enums import AnchorType, DrugRole
+        from vigitwin.models.pair_features import AnchorPopulation
+        from vigitwin.models.report import Drug
 
         r_a = report_a.model_copy(deep=True)
         r_a.drugs = [Drug(substance="pregabalin", sources=["s"], role=DrugRole.SUSPECTED)]
@@ -824,7 +824,7 @@ class TestPredictionRendering:
             r_a, r_b, pair_id="R001__R002",
             features=features, classification=_make_classification(),
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
 
         assert "<strong>pregabalin</strong>" in item.matching_features
@@ -904,7 +904,7 @@ class TestMissingOptionalFields:
             features=_make_features("EVAL"),
             classification=_make_classification("EVAL"),
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         items = [
             build_batch_index_item(vm_plain, "PLAIN.html"),
             build_batch_index_item(vm_eval, "EVAL.html"),
@@ -918,7 +918,7 @@ class TestMissingOptionalFields:
     def test_index_no_extra_columns_when_all_none(self, report_a, report_b):
         """Index omits evaluation columns when no pair has them."""
         vm = build_pair_view_model(report_a, report_b, pair_id="PLAIN")
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         items = [build_batch_index_item(vm, "PLAIN.html")]
         html = render_index(items)
         assert "Inconsistencies" not in html
@@ -1075,7 +1075,7 @@ class TestAnnotationRendering:
             classification=_make_classification(),
             annotation=_make_annotation("R001__R002", "duplicates"),
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
         assert item.annotation_label == "Duplicates"
         assert item.annotation_agrees is True
@@ -1087,7 +1087,7 @@ class TestAnnotationRendering:
             classification=_make_classification(),
             annotation=_make_annotation("R001__R002", "duplicates"),
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
         html = render_index([item])
         assert "Human annotation" in html
@@ -1097,7 +1097,7 @@ class TestAnnotationRendering:
     def test_batch_index_no_annotation_column_when_absent(self, report_a, report_b):
         """Annotation column is omitted from the index when no items have one."""
         vm = build_pair_view_model(report_a, report_b, pair_id="R001__R002")
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
         item = build_batch_index_item(vm, "R001__R002.html")
         html = render_index([item])
         assert "Human annotation" not in html
@@ -1124,12 +1124,12 @@ class TestAEClinicalPictureRendering:
     """Suppressed AE findings render with the badge but don't inflate counts."""
 
     def _features_with_ae(self) -> PairFeatures:
-        from llm_dup_dev.llm.tasks.ae_clinical_picture import (
+        from vigitwin.llm.tasks.ae_clinical_picture import (
             SOURCE_LABEL,
             SUPPRESSED_BY_DECISIVE_GLOBAL,
         )
-        from llm_dup_dev.models.enums import AEClinicalPictureStatus
-        from llm_dup_dev.models.pair_features import AEClinicalPictureCounts
+        from vigitwin.models.enums import AEClinicalPictureStatus
+        from vigitwin.models.pair_features import AEClinicalPictureCounts
 
         feats = _make_features()
         feats.inconsistencies = list(feats.inconsistencies) + [
@@ -1190,7 +1190,7 @@ class TestAEClinicalPictureRendering:
     def test_suppressed_excluded_from_index_inconsistency_items(
         self, report_a, report_b
     ):
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         feats = self._features_with_ae()
         vm = build_pair_view_model(
@@ -1210,7 +1210,7 @@ class TestAEClinicalPictureRendering:
         assert "myocardial infarction" in ae_items[0].text
 
     def test_not_assessed_status_panel_rendered(self, report_a, report_b):
-        from llm_dup_dev.models.enums import AEClinicalPictureStatus
+        from vigitwin.models.enums import AEClinicalPictureStatus
 
         feats = _make_features()
         feats.ae_clinical_picture_status = AEClinicalPictureStatus.NOT_ASSESSED
@@ -1232,7 +1232,7 @@ class TestAEClinicalPictureRendering:
 
 def _features_with_source_case(verdict, **kwargs):
     """Build features carrying a SourceCaseAssessment with the given verdict."""
-    from llm_dup_dev.models.narrative_source_case import SourceCaseAssessment
+    from vigitwin.models.narrative_source_case import SourceCaseAssessment
 
     feats = _make_features()
     feats.source_case_assessment = SourceCaseAssessment(
@@ -1245,11 +1245,11 @@ class TestIndexSourceCaseSurface:
     def test_short_label_populated_for_same_source_same_case(
         self, report_a, report_b,
     ):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseVerdict,
             SourceIdentifierType,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         feats = _features_with_source_case(
             SourceCaseVerdict.SAME_SOURCE_SAME_CASE,
@@ -1274,8 +1274,8 @@ class TestIndexSourceCaseSurface:
     def test_no_decisive_signal_filtered_out_on_index(
         self, report_a, report_b,
     ):
-        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.models.narrative_source_case import SourceCaseVerdict
+        from vigitwin.review_html.compare import build_batch_index_item
 
         feats = _features_with_source_case(SourceCaseVerdict.NO_DECISIVE_SIGNAL)
         vm = build_pair_view_model(
@@ -1292,8 +1292,8 @@ class TestIndexSourceCaseSurface:
         assert vm.decision_summary.source_case.verdict == "no_decisive_signal"
 
     def test_not_assessed_filtered_upstream(self, report_a, report_b):
-        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.models.narrative_source_case import SourceCaseVerdict
+        from vigitwin.review_html.compare import build_batch_index_item
 
         feats = _features_with_source_case(SourceCaseVerdict.NOT_ASSESSED)
         vm = build_pair_view_model(
@@ -1307,11 +1307,11 @@ class TestIndexSourceCaseSurface:
         assert vm.decision_summary.source_case is None
 
     def test_renamed_uncomparable_case_short_label(self, report_a, report_b):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseVerdict,
             SourceIdentifierType,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         feats = _features_with_source_case(
             SourceCaseVerdict.SAME_SOURCE_UNCOMPARABLE_CASE,
@@ -1331,11 +1331,11 @@ class TestIndexSourceCaseSurface:
     def test_render_index_surfaces_badge_and_identifier(
         self, report_a, report_b,
     ):
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.models.narrative_source_case import (
             SourceCaseVerdict,
             SourceIdentifierType,
         )
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         feats = _features_with_source_case(
             SourceCaseVerdict.SAME_SOURCE_SINGLE_PATIENT,
@@ -1359,7 +1359,7 @@ class TestIndexSourceCaseSurface:
     def test_render_index_omits_badge_when_no_source_case(
         self, report_a, report_b,
     ):
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         # No source_case_assessment attached -> badge absent.
         vm = build_pair_view_model(
@@ -1389,8 +1389,8 @@ class TestPenaltyRendering:
 
     def test_custom_weights_agree_on_the_page(self, report_a, report_b):
         """The rendered row and the rendered explanation must not contradict."""
-        from llm_dup_dev.classifier.config import DecisionThresholds
-        from llm_dup_dev.classifier.decision_logic import classify
+        from vigitwin.classifier.config import DecisionThresholds
+        from vigitwin.classifier.decision_logic import classify
 
         features = _make_features()
         features.L_match = 4.0
@@ -1413,11 +1413,11 @@ class TestPenaltyRendering:
 
     def test_penalty_row_present_for_multi_patient_default(self, report_a, report_b):
         """Regression: this row used to be missing entirely."""
-        from llm_dup_dev.classifier.decision_logic import classify
-        from llm_dup_dev.models.narrative_source_case import (
+        from vigitwin.classifier.decision_logic import classify
+        from vigitwin.models.narrative_source_case import (
             SourceCaseAssessment, SourceIdentifierType,
         )
-        from llm_dup_dev.models.narrative_source_case import SourceCaseVerdict
+        from vigitwin.models.narrative_source_case import SourceCaseVerdict
 
         features = _make_features()
         features.L_match = 0.5
@@ -1499,7 +1499,7 @@ def _linked_reports(report_a, report_b, target_kind=None):
     ``target_kind`` selects which of report_a's own fields carries the
     shared value; report_b's C.1.9 pointer is a bare string either way.
     """
-    from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+    from vigitwin.models.report import CaseIdentifierKind, CaseIdentifierRef
 
     shared = "US-EXAMPLECO-2020-000123"
     a = report_a.model_copy(update={
@@ -1516,7 +1516,7 @@ def _linked_reports(report_a, report_b, target_kind=None):
 
 def _features_with_link(report_1, report_2, pair_id="R001__R002") -> PairFeatures:
     """Attach a real comparator verdict for the two reports."""
-    from llm_dup_dev.feature_generation.explicit_link_comparison import (
+    from vigitwin.feature_generation.explicit_link_comparison import (
         compare_explicit_links,
     )
 
@@ -1547,7 +1547,7 @@ class TestExplicitLinkRendering:
         assert "Explicit Case Links" not in html
 
     def test_linked_pair_renders_match_table(self, report_a, report_b):
-        from llm_dup_dev.models.report import CaseIdentifierKind
+        from vigitwin.models.report import CaseIdentifierKind
 
         a, b = _linked_reports(
             report_a, report_b, target_kind=CaseIdentifierKind.AUTHORITY_NUMBER
@@ -1563,7 +1563,7 @@ class TestExplicitLinkRendering:
 
     def test_unlinked_pair_renders_identifier_lists(self, report_a, report_b):
         """The negative case shows *why* nothing resolved."""
-        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+        from vigitwin.models.report import CaseIdentifierKind, CaseIdentifierRef
 
         a = report_a.model_copy(update={
             "case_identifiers": [
@@ -1586,7 +1586,7 @@ class TestExplicitLinkRendering:
 
     def test_identifier_values_are_escaped(self, report_a, report_b):
         """Identifier text is data — it must never reach the page as markup."""
-        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
+        from vigitwin.models.report import CaseIdentifierKind, CaseIdentifierRef
 
         hostile = "<script>alert('x')</script>"
         a = report_a.model_copy(update={
@@ -1605,7 +1605,7 @@ class TestExplicitLinkRendering:
     # -- Batch index --
 
     def test_index_column_present_when_linked(self, report_a, report_b):
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         a, b = _linked_reports(report_a, report_b)
         vm = build_pair_view_model(
@@ -1620,7 +1620,7 @@ class TestExplicitLinkRendering:
         assert "link-badge" in html
 
     def test_index_column_absent_when_no_pair_is_linked(self, report_a, report_b):
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.review_html.compare import build_batch_index_item
 
         vm = build_pair_view_model(
             report_a, report_b, pair_id="R001__R002",
@@ -1634,8 +1634,8 @@ class TestExplicitLinkRendering:
         self, report_a, report_b
     ):
         """NO_LINK belongs on the pair page, not as an index column."""
-        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.models.report import CaseIdentifierKind, CaseIdentifierRef
+        from vigitwin.review_html.compare import build_batch_index_item
 
         a = report_a.model_copy(update={
             "case_identifiers": [
@@ -1656,8 +1656,8 @@ class TestExplicitLinkRendering:
     def test_bidirectional_link_gets_a_combined_short_label(
         self, report_a, report_b
     ):
-        from llm_dup_dev.models.report import CaseIdentifierKind, CaseIdentifierRef
-        from llm_dup_dev.review_html.compare import build_batch_index_item
+        from vigitwin.models.report import CaseIdentifierKind, CaseIdentifierRef
+        from vigitwin.review_html.compare import build_batch_index_item
 
         id_a, id_b = "US-EXAMPLECO-2020-000123", "GB-OTHER-77001122"
         def ref(value):

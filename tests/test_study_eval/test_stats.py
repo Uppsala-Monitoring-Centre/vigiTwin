@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from llm_dup_dev.study_eval.stats import estimate, wilson_interval
+from vigitwin.study_eval.stats import estimate, wilson_interval
 
 
 def test_wilson_matches_reference_values():
@@ -82,7 +82,7 @@ def test_z_for_level_matches_stdlib_inverse_normal(level):
     """Covers the central branch and both tail branches of the approximation."""
     from statistics import NormalDist
 
-    from llm_dup_dev.study_eval.stats import _z_for_level
+    from vigitwin.study_eval.stats import _z_for_level
 
     expected = NormalDist().inv_cdf(1 - (1 - level) / 2)
     # The docstring claims ~1e-4; the observed worst case across these levels
@@ -93,7 +93,7 @@ def test_z_for_level_matches_stdlib_inverse_normal(level):
 
 def test_z_for_level_returns_the_exact_constant_at_95_percent():
     """The prespecified level must not go through the approximation at all."""
-    from llm_dup_dev.study_eval.stats import _Z_95, _z_for_level
+    from vigitwin.study_eval.stats import _Z_95, _z_for_level
 
     assert _z_for_level(0.95) == _Z_95
     assert _z_for_level(0.95 + 1e-12) == _Z_95  # within the documented tolerance
@@ -105,7 +105,7 @@ def test_z_for_level_is_monotonic():
 
 
 def _z(level):
-    from llm_dup_dev.study_eval.stats import _z_for_level
+    from vigitwin.study_eval.stats import _z_for_level
 
     return _z_for_level(level)
 

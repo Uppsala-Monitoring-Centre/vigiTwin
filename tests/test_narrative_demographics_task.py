@@ -2,12 +2,12 @@
 
 import pytest
 
-from llm_dup_dev.llm.fake import FakeLLMClient
-from llm_dup_dev.llm.tasks.narrative_demographics import (
+from vigitwin.llm.fake import FakeLLMClient
+from vigitwin.llm.tasks.narrative_demographics import (
     build_narrative_demographics_request,
     extract_narrative_demographics,
 )
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
     NarrativeMeasurementValue,

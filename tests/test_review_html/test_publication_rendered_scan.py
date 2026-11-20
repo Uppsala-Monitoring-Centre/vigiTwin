@@ -18,20 +18,20 @@ from pathlib import Path
 
 import pytest
 
-from llm_dup_dev.review_html.evidence.models import (
+from vigitwin.review_html.evidence.models import (
     EvidencePageVM,
     PresentationMode,
 )
-from llm_dup_dev.review_html.evidence.publication.substitute import (
+from vigitwin.review_html.evidence.publication.substitute import (
     SubstitutionTable,
     scan_rendered_html,
 )
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.publication import (
     verify_combined_document,
     verify_rendered_output,
     write_publication_evidence,
 )
-from llm_dup_dev.review_html.render import render_evidence_page
+from vigitwin.review_html.render import render_evidence_page
 from tests.test_review_html.conftest import (
     publication_page,
     scramble,
@@ -41,7 +41,7 @@ from tests.test_review_html.conftest import (
 TEMPLATES = (
     Path(__file__).resolve().parents[2]
     / "src"
-    / "llm_dup_dev"
+    / "vigitwin"
     / "review_html"
     / "templates"
 )

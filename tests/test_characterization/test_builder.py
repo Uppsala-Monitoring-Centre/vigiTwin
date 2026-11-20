@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from llm_dup_dev.characterization.builder import (
+from vigitwin.characterization.builder import (
     UNLABELLED_KEY,
     build_characterization_report,
     build_reference_set_characteristics,
@@ -180,7 +180,7 @@ class TestReportEnvelope:
         assert isinstance(report.created_at, datetime)
         assert report.created_at.tzinfo is not None
         assert re.fullmatch(r"[0-9a-f]{12}", report.characterization_id)
-        assert report.dev_package.name == "llm-dup-dev"
+        assert report.dev_package.name == "vigitwin"
 
     def test_explicit_values_win_over_the_defaults(self, simple_reports):
         moment = datetime.fromisoformat("2026-03-01T12:00:00+00:00")

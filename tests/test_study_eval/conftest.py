@@ -7,13 +7,13 @@ the generic :class:`ReferenceSet` / :class:`PredictionSet` inputs.
 
 from __future__ import annotations
 
-from llm_dup_dev.study_eval.aggregate import (
+from vigitwin.study_eval.aggregate import (
     PRIMARY,
     PositiveClass,
     run_precision_analysis,
 )
-from llm_dup_dev.study_eval.sampling import sample_scle_precision
-from llm_dup_dev.study_eval.schemas import (
+from vigitwin.study_eval.sampling import sample_scle_precision
+from vigitwin.study_eval.schemas import (
     PairPrediction,
     PredictionSet,
     ReferencePair,
@@ -145,7 +145,7 @@ def fill_reviewer_workbook(
     """
     import openpyxl
 
-    from llm_dup_dev.study_eval.scle.workbook import (
+    from vigitwin.study_eval.scle.workbook import (
         DOMAIN_HEADER_PREFIX,
         NOT_APPLICABLE,
         STAGE_HEADER_PREFIX,
@@ -186,7 +186,7 @@ def fill_arbitration_workbook(path, discrepancy) -> None:
     """Fill an arbitration workbook, resolving each disagreement to reviewer A."""
     import openpyxl
 
-    from llm_dup_dev.study_eval.scle.arbitration import _dim_header
+    from vigitwin.study_eval.scle.arbitration import _dim_header
 
     wb = openpyxl.load_workbook(path)
     ws = wb["pairs"]

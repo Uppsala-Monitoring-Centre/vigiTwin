@@ -12,13 +12,13 @@ import json
 
 import pytest
 
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenPairBundle,
     FrozenScopeStats,
     index_by_id,
     load_reports,
 )
-from llm_dup_dev.models.report import Report
+from vigitwin.models.report import Report
 
 
 def _write(tmp_path, payload, name="reports.json"):

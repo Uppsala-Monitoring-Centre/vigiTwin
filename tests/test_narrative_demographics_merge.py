@@ -1,18 +1,18 @@
 """Tests for :func:`merge_narrative_demographics`."""
 
-from llm_dup_dev.classifier.config import InconsistencyThresholds
-from llm_dup_dev.feature_generation.inconsistencies import detect_inconsistencies
-from llm_dup_dev.feature_generation.narrative_demographics import (
+from vigitwin.classifier.config import InconsistencyThresholds
+from vigitwin.feature_generation.inconsistencies import detect_inconsistencies
+from vigitwin.feature_generation.narrative_demographics import (
     merge_narrative_demographics,
 )
-from llm_dup_dev.models.narrative_demographics import (
+from vigitwin.models.narrative_demographics import (
     NarrativeAgeValue,
     NarrativeDemographics,
     NarrativeMeasurementValue,
     NarrativeSex,
     NarrativeSexValue,
 )
-from llm_dup_dev.models.report import (
+from vigitwin.models.report import (
     AgeValue,
     MeasurementValue,
     Report,

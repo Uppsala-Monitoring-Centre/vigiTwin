@@ -10,7 +10,7 @@ so it cannot come to quote a value the table above it no longer shows.
 
 from __future__ import annotations
 
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.publication import (
     ApprovedText,
     DisclosureCode,
     PublicationApprovals,

@@ -2,11 +2,11 @@
 
 import pytest
 
-from llm_dup_dev.feature_generation.source_case_inconsistency import (
+from vigitwin.feature_generation.source_case_inconsistency import (
     source_case_findings,
 )
-from llm_dup_dev.models.enums import InconsistencySeverity
-from llm_dup_dev.models.narrative_source_case import (
+from vigitwin.models.enums import InconsistencySeverity
+from vigitwin.models.narrative_source_case import (
     SourceCaseAssessment,
     SourceCaseVerdict,
     SourceIdentifierType,

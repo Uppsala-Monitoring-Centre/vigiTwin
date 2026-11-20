@@ -12,8 +12,8 @@ import json
 
 import pytest
 
-from llm_dup_dev.review_html.evidence.cli import main
-from llm_dup_dev.review_html.evidence.publication import (
+from vigitwin.review_html.evidence.cli import main
+from vigitwin.review_html.evidence.publication import (
     MANIFEST_FILENAME,
     REVIEW_FILENAME,
     ApprovedText,
@@ -537,11 +537,11 @@ class TestTheConsoleAgreesWithTheArtifacts:
     def test_a_released_run_says_cleared(
         self, collection, salted, approved, capsys  # noqa: F811
     ):
-        from llm_dup_dev.review_html.evidence.collection import build_collection
-        from llm_dup_dev.review_html.evidence.manifest import (
+        from vigitwin.review_html.evidence.collection import build_collection
+        from vigitwin.review_html.evidence.manifest import (
             load_curated_manifest,
         )
-        from llm_dup_dev.review_html.evidence.publication import (
+        from vigitwin.review_html.evidence.publication import (
             PublicationSecrets,
             scramble_page,
         )

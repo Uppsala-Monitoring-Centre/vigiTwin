@@ -26,6 +26,14 @@ Thumbs.db
 # Generated output (review_html.render.DEFAULT_OUTPUT_DIR renders here)
 outputs/
 
+# Build artifacts. `python -m build` writes into dist/, which was previously
+# ignored only by a nested dist/.gitignore — which hatchling does not read
+# when it collects VCS ignore patterns, so a stale wheel there was a plausible
+# member of a public sdist.
+dist/
+build/
+*.egg-info/
+
 # Azure / secrets
 *.pem
 *.key

@@ -4,7 +4,7 @@
   "run_id": "abc123def456",
   "stage": "analysis",
   "dev_package": {
-    "name": "llm-dup-dev",
+    "name": "vigitwin",
     "version": null
   },
   "dev_git_commit": null,

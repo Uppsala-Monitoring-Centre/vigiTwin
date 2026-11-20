@@ -31,15 +31,15 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from llm_dup_dev.data.offline import (
+from vigitwin.data.offline import (
     FrozenNarrativeDemographics,
     save_frozen_narrative_demographics,
 )
-from llm_dup_dev.llm.protocols import LLMClient
-from llm_dup_dev.llm.tasks.narrative_demographics import (
+from vigitwin.llm.protocols import LLMClient
+from vigitwin.llm.tasks.narrative_demographics import (
     extract_narrative_demographics,
 )
-from llm_dup_dev.models.report import Report
+from vigitwin.models.report import Report
 
 logger = logging.getLogger(__name__)
 
