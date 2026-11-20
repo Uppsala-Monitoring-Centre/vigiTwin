@@ -109,10 +109,13 @@ changed, no schema shape changed, and the publication layer's key derivation
 is untouched — `VIGITWIN_PUBLICATION_SALT` keeps its name and previously
 derived key ids still reproduce.
 
-### Added — the package is ready to publish on PyPI, and not yet published
+### Added — `pip install vigitwin`
 
 `README.md` has promised since 1.0.0 that a PyPI release would accompany the
-rename. Everything needed is now in place; **nothing has been uploaded.**
+rename. **1.3.0 is the first version published to PyPI.** The upload is a
+separate, later step than the change recorded here: this entry describes the
+packaging work, which merged first; the upload followed once the version had
+been exercised against the secure companion repository and mirrored to GitHub.
 
 - **Packaging metadata that was simply absent.** `pyproject.toml` had no
   `license`, no `classifiers`, no `[project.urls]`, no `authors` and no
@@ -143,14 +146,17 @@ rename. Everything needed is now in place; **nothing has been uploaded.**
   convention. The workflow asserts the tag matches `pyproject.toml`, runs
   `twine check --strict`, and audits the built sdist in both directions —
   failing if it contains a forbidden path or data-file extension, *and*
-  failing if it is missing a file it must ship. The `pypi` environment is
-  meant to be protected, so the upload waits for a human after every check
+  failing if it is missing a file it must ship. The `pypi` environment carries
+  a required reviewer, so the upload waits for a human after every check
   passes.
 
-The first upload still requires what `agents.md` requires of any public
-version: exercised against the secure companion repository, and judged stable
-and of value to the broader community. Until then the README says it is not on
-PyPI, and the install line still pins a tag.
+The path was rehearsed on TestPyPI before any real version was spent, via the
+workflow's `workflow_dispatch` input — which confirmed the one thing that
+could not be checked locally, that the index accepts the Metadata-Version 2.5
+hatchling now emits. Published files carry a PEP 740 provenance attestation
+naming this repository, `release.yml` and the environment that uploaded them;
+that attestation, not a changelog line, is what proves where a release came
+from.
 
 ### Changed — one lookup for the distribution name, not nine
 

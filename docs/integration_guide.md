@@ -41,16 +41,16 @@ Both modes use the same `PipelineRunner` API. The only difference is which `Stat
 
 ### Install the package
 
-In the secure repo's virtual environment, from a checkout:
-
-```bash
-pip install -e /path/to/vigitwin[dev]
-```
-
-Or, once the distribution is published to PyPI:
+In the secure repo's virtual environment:
 
 ```bash
 pip install vigitwin[dev]
+```
+
+Or, to work against a local checkout:
+
+```bash
+pip install -e /path/to/vigitwin[dev]
 ```
 
 The distribution and the import path are both `vigitwin` as of 1.3.0. Before
@@ -1503,7 +1503,7 @@ pip install -e ".[dev]"
 python -m pytest tests/ -v
 ```
 
-552 tests covering all modules.
+2910 tests covering all modules, all on synthetic data.
 
 ### Quick smoke test (in the secure repo)
 

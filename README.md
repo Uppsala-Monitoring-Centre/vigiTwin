@@ -55,19 +55,30 @@ Shorter tour: [`docs/pipeline_overview.md`](https://github.com/Uppsala-Monitorin
 ## Install
 
 ```bash
-pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.0.2
+pip install vigitwin
 ```
 
 Python 3.11 or 3.12. The package is pure Python with four dependencies
 (`pydantic`, `jinja2`, `pyyaml`, `openpyxl`) and installs anywhere.
 
-**Not yet on PyPI.** The project is packaged and ready for it as of 1.3.0 —
-metadata, licence files, a typing marker and a trusted-publishing release
-workflow are all in place — but nothing has been uploaded. The first upload
-follows a version being exercised against the secure companion repository and
-mirrored here, as `agents.md` § Tags, GitHub Releases and DOIs requires. Until
-then, install from a tag; this line and the pinned tag above both change in
-the same release that publishes.
+To pin a specific public version from source instead:
+
+```bash
+pip install git+https://github.com/Uppsala-Monitoring-Centre/vigiTwin.git@v1.3.0
+```
+
+Not every version is published. A version reaches PyPI only after it has been
+exercised against the secure companion repository and judged stable and of
+value beyond this project, which `agents.md` § Tags, GitHub Releases and DOIs
+requires; 1.3.0 is the first. Uploads are performed by GitHub Actions from
+this repository's public mirror using PyPI trusted publishing, so no token
+exists anywhere in the project and every published file carries a [PEP
+740](https://peps.python.org/pep-0740/) attestation naming the workflow that
+built it:
+
+```bash
+curl -s https://pypi.org/integrity/vigitwin/1.3.0/vigitwin-1.3.0-py3-none-any.whl/provenance
+```
 
 ## What you can run without database access
 
